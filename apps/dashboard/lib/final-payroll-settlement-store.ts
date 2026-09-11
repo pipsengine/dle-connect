@@ -1018,9 +1018,9 @@ export const resolveFinalPayrollForEmployee = async (input: {
   const openResignationHref = resignation
     ? `/hris/offboarding/resignation-management?id=${encodeURIComponent(resignation.id)}&period=${encodeURIComponent(resignation.period)}`
     : startResignationHref;
-  const newSettlementHref = resignation && resignationReadyForFinalPayroll(resignation)
+  const newSettlementHref = resignation
     ? resignationFinalPayrollHref(resignation)
-    : openResignationHref;
+    : `/hris/offboarding/final-payroll-processing/new-settlement?employeeCode=${encodeURIComponent(code || employeeId)}`;
 
   return {
     settlement,

@@ -59,20 +59,12 @@ export default function EmployeeFinalSettlementPanel({
   }, [employeeId, employeeCode]);
 
   const settlement = data?.settlement;
-  const needsResignationFirst = !settlement && !data?.resignationReady;
   const openHref = settlement
     ? (data?.registerHref || `/hris/offboarding/final-payroll-processing?id=${encodeURIComponent(settlement.id)}`)
-    : needsResignationFirst
-      ? (data?.openResignationHref
-        || `/hris/offboarding/resignation-management/new?employeeCode=${encodeURIComponent(employeeCode || employeeId)}`)
-      : (data?.newSettlementHref
-        || `/hris/offboarding/final-payroll-processing/new-settlement?employeeCode=${encodeURIComponent(employeeCode || employeeId)}`);
+    : (data?.newSettlementHref
+      || `/hris/offboarding/final-payroll-processing/new-settlement?employeeCode=${encodeURIComponent(employeeCode || employeeId)}`);
 
-  const ctaLabel = settlement
-    ? 'Open Settlement'
-    : needsResignationFirst
-      ? (data?.resignation ? 'Open Resignation (then Final Payroll)' : 'Start Resignation First')
-      : 'Proceed to Final Settlement';
+  const ctaLabel = settlement ? 'Open Settlement' : 'Start Final Settlement';
 
   return (
     <div className="rounded-xl border border-slate-200 bg-white p-4">
@@ -84,7 +76,7 @@ export default function EmployeeFinalSettlementPanel({
           <div>
             <div className="text-sm font-extrabold text-slate-900">Final Payroll Settlement</div>
             <div className="text-xs text-slate-500 font-semibold mt-0.5">
-              After resignation clearance — calculate and approve final pay.
+              After resignation clearance — or run final pay now and complete resignation later.
             </div>
           </div>
         </div>
@@ -106,7 +98,7 @@ export default function EmployeeFinalSettlementPanel({
               : settlement?.status
                 || (data?.resignation
                   ? `Resignation: ${data.resignation.status}`
-                  : 'Not started — begin with Resignation')}
+                  : 'Not started')}
           </div>
         </div>
         <div className="rounded-xl border border-slate-100 bg-slate-50 p-3">

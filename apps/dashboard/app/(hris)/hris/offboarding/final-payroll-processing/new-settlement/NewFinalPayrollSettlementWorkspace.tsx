@@ -168,28 +168,13 @@ export default function NewFinalPayrollSettlementWorkspace({
       let nextReason = reason;
       let nextRemarks = remarks;
 
-      if (effectiveExitType === 'Resignation') {
-        if (!resignation) {
-          setLinkedResignation(null);
-          setResignationGate(
-            'No active resignation found for this employee. Start Resignation Management first (standard: Resignation → Notice → Clearance → Final Payroll).',
-          );
-          setBusy(false);
-          return;
-        }
+      if (resignation) {
         setLinkedResignation({
           id: resignation.id,
           status: resignation.status,
           referenceNumber: resignation.referenceNumber,
         });
-        if (!resignationReadyForFinalPayroll(resignation)) {
-          setResignationGate(
-            `Resignation ${resignation.referenceNumber || resignation.id} is at "${resignation.status}". Advance through notice/handover to Clearance, then proceed to Final Payroll from that case.`,
-          );
-          setBusy(false);
-          return;
-        }
-        nextExitType = 'Resignation';
+        nextExitType = effectiveExitType || 'Resignation';
         nextResignationDate = resignation.resignationDate?.slice(0, 10) || resignationDate || initialResignationDate || '';
         nextLastWorkingDay = resignation.lastWorkingDay?.slice(0, 10) || lastWorkingDay || initialLastWorkingDay || '';
         nextNoticePeriod = noticePeriodLabelFromDays(Number(resignation.noticePeriodDays || 0)) || noticePeriod;
@@ -201,14 +186,16 @@ export default function NewFinalPayrollSettlementWorkspace({
         setNoticePeriod(nextNoticePeriod);
         setReason(nextReason);
         setRemarks(nextRemarks);
-      } else if (resignation) {
-        setLinkedResignation({
-          id: resignation.id,
-          status: resignation.status,
-          referenceNumber: resignation.referenceNumber,
-        });
+        if (!resignationReadyForFinalPayroll(resignation)) {
+          setResignationGate(
+            `Resignation ${resignation.referenceNumber || resignation.id} is at "${resignation.status}". Final payroll can still run now; complete notice, handover, and clearance later.`,
+          );
+        }
       } else {
         setLinkedResignation(null);
+        setResignationGate(
+          'No resignation on file yet. Final payroll can run now. Complete Resignation → Notice → Clearance later.',
+        );
       }
 
       const res = await fetch('/api/hris/offboarding/final-payroll', {
@@ -236,8 +223,10 @@ export default function NewFinalPayrollSettlementWorkspace({
           : 'Preview only — not saved until you click Save as Draft or Submit for Approval.',
       );
       const qs = new URLSearchParams({ employeeCode });
-      if (resignation?.id) qs.set('resignationId', resignation.id);
-      if (effectiveExitType === 'Resignation') qs.set('fromResignation', '1');
+      if (resignation?.id) {
+        qs.set('resignationId', resignation.id);
+        qs.set('fromResignation', '1');
+      }
       router.replace(`/hris/offboarding/final-payroll-processing/new-settlement?${qs.toString()}`);
     } catch (err: any) {
       setError(err?.message || 'Unable to load employee settlement preview.');
@@ -422,7 +411,7 @@ export default function NewFinalPayrollSettlementWorkspace({
             <p>
               {fromResignation || initialResignationId
                 ? 'Settlement opened from a resignation case — review calculation, then save or submit.'
-                : 'Standard flow: complete Resignation → Clearance first, then calculate final settlement here.'}
+                : 'Calculate and submit final settlement now. Resignation, notice, and clearance can be completed later.'}
             </p>
           </div>
         </div>
@@ -441,21 +430,26 @@ export default function NewFinalPayrollSettlementWorkspace({
 
       {error ? <p className={styles.error}>{error}</p> : null}
       {resignationGate ? (
-        <div className={styles.error} style={{ display: 'grid', gap: 8 }}>
-          <span>{resignationGate}</span>
-          <span>
-            <Link href="/hris/offboarding/resignation-management">Open Resignation Register</Link>
-            {' · '}
-            <Link
-              href={`/hris/offboarding/resignation-management/new?employeeCode=${encodeURIComponent(query || initialEmployeeCode || '')}`}
-            >
-              Start Resignation
-            </Link>
-          </span>
+        <div className={styles.info}>
+          <Info />
+          <div>
+            <b>Resignation is optional for now</b>
+            <p>{resignationGate}</p>
+            <p>
+              Optional later:{' '}
+              <Link href="/hris/offboarding/resignation-management">Open Resignation Register</Link>
+              {' · '}
+              <Link
+                href={`/hris/offboarding/resignation-management/new?employeeCode=${encodeURIComponent(query || initialEmployeeCode || '')}`}
+              >
+                Start Resignation
+              </Link>
+            </p>
+          </div>
         </div>
       ) : null}
       {message ? <p>{message}</p> : null}
-      {linkedResignation && !resignationGate ? (
+      {linkedResignation ? (
         <p style={{ margin: '0 0 10px' }}>
           Linked resignation:{' '}
           <Link href={`/hris/offboarding/resignation-management?id=${encodeURIComponent(linkedResignation.id)}`}>

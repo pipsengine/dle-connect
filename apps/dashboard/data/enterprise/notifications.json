@@ -2,6 +2,1278 @@
   "schemaVersion": 1,
   "notifications": [
     {
+      "id": "ntf-1789027351782-eotddy",
+      "recipientUserId": "P0289",
+      "recipientUsername": "P0289",
+      "recipientEmployeeCode": "P0289",
+      "recipientRoles": [],
+      "kind": "Approval",
+      "module": "Timesheet Approval",
+      "title": "Timesheet submitted for supervisor review",
+      "body": "HR (bulk submit booked drafts) submitted timesheet hdr-2026-08-20-p0289---mrs-ebele-victoria-onugha-painting-day for period 2026-09. Supervisor review can now start.",
+      "severity": "warning",
+      "status": "Unread",
+      "href": "/hris/time-and-logs/timesheet-approval",
+      "createdAt": "2026-09-10T08:02:31.782Z",
+      "actor": "Timesheet Workflow",
+      "channels": [
+        "In-App",
+        "Email"
+      ],
+      "metadata": {
+        "headerId": "hdr-2026-08-20-p0289---mrs-ebele-victoria-onugha-painting-day",
+        "periodId": "per-2026-09",
+        "projectCode": "",
+        "recipientCode": "P0289"
+      }
+    },
+    {
+      "id": "ntf-1789027259331-08fikn",
+      "recipientUserId": "P0289",
+      "recipientUsername": "P0289",
+      "recipientEmployeeCode": "P0289",
+      "recipientRoles": [],
+      "kind": "Approval",
+      "module": "Timesheet Approval",
+      "title": "Timesheet submitted for supervisor review",
+      "body": "HR (bulk submit booked drafts) submitted timesheet hdr-2026-08-19-p0289---mrs-ebele-victoria-onugha-painting-day for period 2026-09. Supervisor review can now start.",
+      "severity": "warning",
+      "status": "Unread",
+      "href": "/hris/time-and-logs/timesheet-approval",
+      "createdAt": "2026-09-10T08:00:59.331Z",
+      "actor": "Timesheet Workflow",
+      "channels": [
+        "In-App",
+        "Email"
+      ],
+      "metadata": {
+        "headerId": "hdr-2026-08-19-p0289---mrs-ebele-victoria-onugha-painting-day",
+        "periodId": "per-2026-09",
+        "projectCode": "",
+        "recipientCode": "P0289"
+      }
+    },
+    {
+      "id": "ntf-1789027093616-w5affv",
+      "recipientUserId": "P0072",
+      "recipientUsername": "P0072",
+      "recipientEmployeeCode": "P0072",
+      "recipientRoles": [],
+      "kind": "Approval",
+      "module": "Timesheet Approval",
+      "title": "Timesheet submitted for supervisor review",
+      "body": "HR (bulk submit booked drafts) submitted timesheet hdr-2026-08-17-p0072---mr-owoloja-akande-welding-day for period 2026-09. Supervisor review can now start.",
+      "severity": "warning",
+      "status": "Unread",
+      "href": "/hris/time-and-logs/timesheet-approval",
+      "createdAt": "2026-09-10T07:58:13.616Z",
+      "actor": "Timesheet Workflow",
+      "channels": [
+        "In-App",
+        "Email"
+      ],
+      "metadata": {
+        "headerId": "hdr-2026-08-17-p0072---mr-owoloja-akande-welding-day",
+        "periodId": "per-2026-09",
+        "projectCode": "",
+        "recipientCode": "P0072"
+      }
+    },
+    {
+      "id": "ntf-1789027089212-3d8xn0",
+      "recipientUserId": "P0436",
+      "recipientUsername": "P0436",
+      "recipientEmployeeCode": "P0436",
+      "recipientRoles": [],
+      "kind": "Approval",
+      "module": "Timesheet Approval",
+      "title": "Timesheet submitted for supervisor review",
+      "body": "HR (bulk submit booked drafts) submitted timesheet hdr-2026-08-17-mr-sunday-okewu-[p0436]-blasting-day for period 2026-09. Supervisor review can now start.",
+      "severity": "warning",
+      "status": "Unread",
+      "href": "/hris/time-and-logs/timesheet-approval",
+      "createdAt": "2026-09-10T07:58:09.212Z",
+      "actor": "Timesheet Workflow",
+      "channels": [
+        "In-App",
+        "Email"
+      ],
+      "metadata": {
+        "headerId": "hdr-2026-08-17-mr-sunday-okewu-[p0436]-blasting-day",
+        "periodId": "per-2026-09",
+        "projectCode": "",
+        "recipientCode": "P0436"
+      }
+    },
+    {
+      "id": "ntf-1789027086878-1zh6jz",
+      "recipientUserId": "0000_",
+      "recipientUsername": "0000_",
+      "recipientEmployeeCode": "0000_",
+      "recipientRoles": [
+        "Supervisor",
+        "Foreman",
+        "Site Lead"
+      ],
+      "kind": "Approval",
+      "module": "Timesheet Approval",
+      "title": "Timesheet submitted for supervisor review",
+      "body": "HR (bulk submit booked drafts) submitted timesheet hdr-2026-08-17-0000_---mr-bakare-blasting for period 2026-09. Supervisor review can now start.",
+      "severity": "warning",
+      "status": "Unread",
+      "href": "/hris/time-and-logs/timesheet-approval",
+      "createdAt": "2026-09-10T07:58:06.878Z",
+      "actor": "Timesheet Workflow",
+      "channels": [
+        "In-App",
+        "Email"
+      ],
+      "metadata": {
+        "headerId": "hdr-2026-08-17-0000_---mr-bakare-blasting",
+        "periodId": "per-2026-09",
+        "projectCode": ""
+      }
+    },
+    {
+      "id": "ntf-1789027083460-2av1vq",
+      "recipientUserId": "P0289",
+      "recipientUsername": "P0289",
+      "recipientEmployeeCode": "P0289",
+      "recipientRoles": [],
+      "kind": "Approval",
+      "module": "Timesheet Approval",
+      "title": "Timesheet submitted for supervisor review",
+      "body": "HR (bulk submit booked drafts) submitted timesheet hdr-2026-08-18-p0289---mrs-ebele-victoria-onugha-painting-day for period 2026-09. Supervisor review can now start.",
+      "severity": "warning",
+      "status": "Unread",
+      "href": "/hris/time-and-logs/timesheet-approval",
+      "createdAt": "2026-09-10T07:58:03.460Z",
+      "actor": "Timesheet Workflow",
+      "channels": [
+        "In-App",
+        "Email"
+      ],
+      "metadata": {
+        "headerId": "hdr-2026-08-18-p0289---mrs-ebele-victoria-onugha-painting-day",
+        "periodId": "per-2026-09",
+        "projectCode": "",
+        "recipientCode": "P0289"
+      }
+    },
+    {
+      "id": "ntf-1789027078858-hrzwu9",
+      "recipientUserId": "P0072",
+      "recipientUsername": "P0072",
+      "recipientEmployeeCode": "P0072",
+      "recipientRoles": [],
+      "kind": "Approval",
+      "module": "Timesheet Approval",
+      "title": "Timesheet submitted for supervisor review",
+      "body": "HR (bulk submit booked drafts) submitted timesheet hdr-2026-08-19-p0072---mr-owoloja-akande-welding-day for period 2026-09. Supervisor review can now start.",
+      "severity": "warning",
+      "status": "Unread",
+      "href": "/hris/time-and-logs/timesheet-approval",
+      "createdAt": "2026-09-10T07:57:58.858Z",
+      "actor": "Timesheet Workflow",
+      "channels": [
+        "In-App",
+        "Email"
+      ],
+      "metadata": {
+        "headerId": "hdr-2026-08-19-p0072---mr-owoloja-akande-welding-day",
+        "periodId": "per-2026-09",
+        "projectCode": "",
+        "recipientCode": "P0072"
+      }
+    },
+    {
+      "id": "ntf-1789027075511-nb11fb",
+      "recipientUserId": "0000_",
+      "recipientUsername": "0000_",
+      "recipientEmployeeCode": "0000_",
+      "recipientRoles": [
+        "Supervisor",
+        "Foreman",
+        "Site Lead"
+      ],
+      "kind": "Approval",
+      "module": "Timesheet Approval",
+      "title": "Timesheet submitted for supervisor review",
+      "body": "HR (bulk submit booked drafts) submitted timesheet hdr-2026-08-19-0000_---mr-bakare-blasting-day for period 2026-09. Supervisor review can now start.",
+      "severity": "warning",
+      "status": "Unread",
+      "href": "/hris/time-and-logs/timesheet-approval",
+      "createdAt": "2026-09-10T07:57:55.511Z",
+      "actor": "Timesheet Workflow",
+      "channels": [
+        "In-App",
+        "Email"
+      ],
+      "metadata": {
+        "headerId": "hdr-2026-08-19-0000_---mr-bakare-blasting-day",
+        "periodId": "per-2026-09",
+        "projectCode": ""
+      }
+    },
+    {
+      "id": "ntf-1789027073608-f0tpbi",
+      "recipientUserId": "C1001",
+      "recipientUsername": "C1001",
+      "recipientEmployeeCode": "C1001",
+      "recipientRoles": [],
+      "kind": "Approval",
+      "module": "Timesheet Approval",
+      "title": "Timesheet submitted for supervisor review",
+      "body": "HR (bulk submit booked drafts) submitted timesheet hdr-2026-08-21-c1001---jimoh-gbadamosi-blasting-day for period 2026-09. Supervisor review can now start.",
+      "severity": "warning",
+      "status": "Unread",
+      "href": "/hris/time-and-logs/timesheet-approval",
+      "createdAt": "2026-09-10T07:57:53.608Z",
+      "actor": "Timesheet Workflow",
+      "channels": [
+        "In-App",
+        "Email"
+      ],
+      "metadata": {
+        "headerId": "hdr-2026-08-21-c1001---jimoh-gbadamosi-blasting-day",
+        "periodId": "per-2026-09",
+        "projectCode": "",
+        "recipientCode": "C1001"
+      }
+    },
+    {
+      "id": "ntf-1789027071050-8019j3",
+      "recipientUserId": "P0072",
+      "recipientUsername": "P0072",
+      "recipientEmployeeCode": "P0072",
+      "recipientRoles": [],
+      "kind": "Approval",
+      "module": "Timesheet Approval",
+      "title": "Timesheet submitted for supervisor review",
+      "body": "HR (bulk submit booked drafts) submitted timesheet hdr-2026-08-24-p0072---mr-owoloja-akande-welding-day for period 2026-09. Supervisor review can now start.",
+      "severity": "warning",
+      "status": "Unread",
+      "href": "/hris/time-and-logs/timesheet-approval",
+      "createdAt": "2026-09-10T07:57:51.050Z",
+      "actor": "Timesheet Workflow",
+      "channels": [
+        "In-App",
+        "Email"
+      ],
+      "metadata": {
+        "headerId": "hdr-2026-08-24-p0072---mr-owoloja-akande-welding-day",
+        "periodId": "per-2026-09",
+        "projectCode": "",
+        "recipientCode": "P0072"
+      }
+    },
+    {
+      "id": "ntf-1789027067598-phimey",
+      "recipientUserId": "C1001",
+      "recipientUsername": "C1001",
+      "recipientEmployeeCode": "C1001",
+      "recipientRoles": [],
+      "kind": "Approval",
+      "module": "Timesheet Approval",
+      "title": "Timesheet submitted for supervisor review",
+      "body": "HR (bulk submit booked drafts) submitted timesheet hdr-2026-08-24-c1001---jimoh-gbadamosi-blasting-day for period 2026-09. Supervisor review can now start.",
+      "severity": "warning",
+      "status": "Unread",
+      "href": "/hris/time-and-logs/timesheet-approval",
+      "createdAt": "2026-09-10T07:57:47.598Z",
+      "actor": "Timesheet Workflow",
+      "channels": [
+        "In-App",
+        "Email"
+      ],
+      "metadata": {
+        "headerId": "hdr-2026-08-24-c1001---jimoh-gbadamosi-blasting-day",
+        "periodId": "per-2026-09",
+        "projectCode": "",
+        "recipientCode": "C1001"
+      }
+    },
+    {
+      "id": "ntf-1789027065015-27yrpb",
+      "recipientUserId": "0000_",
+      "recipientUsername": "0000_",
+      "recipientEmployeeCode": "0000_",
+      "recipientRoles": [
+        "Supervisor",
+        "Foreman",
+        "Site Lead"
+      ],
+      "kind": "Approval",
+      "module": "Timesheet Approval",
+      "title": "Timesheet submitted for supervisor review",
+      "body": "HR (bulk submit booked drafts) submitted timesheet hdr-2026-08-24-0000_---mr-bakare-blasting-day for period 2026-09. Supervisor review can now start.",
+      "severity": "warning",
+      "status": "Unread",
+      "href": "/hris/time-and-logs/timesheet-approval",
+      "createdAt": "2026-09-10T07:57:45.015Z",
+      "actor": "Timesheet Workflow",
+      "channels": [
+        "In-App",
+        "Email"
+      ],
+      "metadata": {
+        "headerId": "hdr-2026-08-24-0000_---mr-bakare-blasting-day",
+        "periodId": "per-2026-09",
+        "projectCode": ""
+      }
+    },
+    {
+      "id": "ntf-1789027063079-zy61v8",
+      "recipientUserId": "C1882",
+      "recipientUsername": "C1882",
+      "recipientEmployeeCode": "C1882",
+      "recipientRoles": [],
+      "kind": "Approval",
+      "module": "Timesheet Approval",
+      "title": "Timesheet submitted for supervisor review",
+      "body": "HR (bulk submit booked drafts) submitted timesheet hdr-2026-08-25-c1882---momoh-mohammed-fitting-day for period 2026-09. Supervisor review can now start.",
+      "severity": "warning",
+      "status": "Unread",
+      "href": "/hris/time-and-logs/timesheet-approval",
+      "createdAt": "2026-09-10T07:57:43.079Z",
+      "actor": "Timesheet Workflow",
+      "channels": [
+        "In-App",
+        "Email"
+      ],
+      "metadata": {
+        "headerId": "hdr-2026-08-25-c1882---momoh-mohammed-fitting-day",
+        "periodId": "per-2026-09",
+        "projectCode": "",
+        "recipientCode": "C1882"
+      }
+    },
+    {
+      "id": "ntf-1789027059734-vvefp2",
+      "recipientUserId": "C1001",
+      "recipientUsername": "C1001",
+      "recipientEmployeeCode": "C1001",
+      "recipientRoles": [],
+      "kind": "Approval",
+      "module": "Timesheet Approval",
+      "title": "Timesheet submitted for supervisor review",
+      "body": "HR (bulk submit booked drafts) submitted timesheet hdr-2026-08-27-c1001---jimoh-gbadamosi-blasting-day for period 2026-09. Supervisor review can now start.",
+      "severity": "warning",
+      "status": "Unread",
+      "href": "/hris/time-and-logs/timesheet-approval",
+      "createdAt": "2026-09-10T07:57:39.734Z",
+      "actor": "Timesheet Workflow",
+      "channels": [
+        "In-App",
+        "Email"
+      ],
+      "metadata": {
+        "headerId": "hdr-2026-08-27-c1001---jimoh-gbadamosi-blasting-day",
+        "periodId": "per-2026-09",
+        "projectCode": "",
+        "recipientCode": "C1001"
+      }
+    },
+    {
+      "id": "ntf-1789027057206-nkc93l",
+      "recipientUserId": "P0072",
+      "recipientUsername": "P0072",
+      "recipientEmployeeCode": "P0072",
+      "recipientRoles": [],
+      "kind": "Approval",
+      "module": "Timesheet Approval",
+      "title": "Timesheet submitted for supervisor review",
+      "body": "HR (bulk submit booked drafts) submitted timesheet hdr-2026-08-29-p0072---mr-owoloja-akande-welding-day for period 2026-09. Supervisor review can now start.",
+      "severity": "warning",
+      "status": "Unread",
+      "href": "/hris/time-and-logs/timesheet-approval",
+      "createdAt": "2026-09-10T07:57:37.206Z",
+      "actor": "Timesheet Workflow",
+      "channels": [
+        "In-App",
+        "Email"
+      ],
+      "metadata": {
+        "headerId": "hdr-2026-08-29-p0072---mr-owoloja-akande-welding-day",
+        "periodId": "per-2026-09",
+        "projectCode": "",
+        "recipientCode": "P0072"
+      }
+    },
+    {
+      "id": "ntf-1789027053446-sq65fm",
+      "recipientUserId": "C1882",
+      "recipientUsername": "C1882",
+      "recipientEmployeeCode": "C1882",
+      "recipientRoles": [],
+      "kind": "Approval",
+      "module": "Timesheet Approval",
+      "title": "Timesheet submitted for supervisor review",
+      "body": "HR (bulk submit booked drafts) submitted timesheet hdr-2026-09-01-c1882---momoh-mohammed-fitting-day for period 2026-09. Supervisor review can now start.",
+      "severity": "warning",
+      "status": "Unread",
+      "href": "/hris/time-and-logs/timesheet-approval",
+      "createdAt": "2026-09-10T07:57:33.446Z",
+      "actor": "Timesheet Workflow",
+      "channels": [
+        "In-App",
+        "Email"
+      ],
+      "metadata": {
+        "headerId": "hdr-2026-09-01-c1882---momoh-mohammed-fitting-day",
+        "periodId": "per-2026-09",
+        "projectCode": "",
+        "recipientCode": "C1882"
+      }
+    },
+    {
+      "id": "ntf-1789027049962-4ygvhk",
+      "recipientUserId": "C1001",
+      "recipientUsername": "C1001",
+      "recipientEmployeeCode": "C1001",
+      "recipientRoles": [],
+      "kind": "Approval",
+      "module": "Timesheet Approval",
+      "title": "Timesheet submitted for supervisor review",
+      "body": "HR (bulk submit booked drafts) submitted timesheet hdr-2026-09-01-c1001---jimoh-gbadamosi-blasting-day for period 2026-09. Supervisor review can now start.",
+      "severity": "warning",
+      "status": "Unread",
+      "href": "/hris/time-and-logs/timesheet-approval",
+      "createdAt": "2026-09-10T07:57:29.962Z",
+      "actor": "Timesheet Workflow",
+      "channels": [
+        "In-App",
+        "Email"
+      ],
+      "metadata": {
+        "headerId": "hdr-2026-09-01-c1001---jimoh-gbadamosi-blasting-day",
+        "periodId": "per-2026-09",
+        "projectCode": "",
+        "recipientCode": "C1001"
+      }
+    },
+    {
+      "id": "ntf-1789027047454-5cnjbh",
+      "recipientUserId": "C1882",
+      "recipientUsername": "C1882",
+      "recipientEmployeeCode": "C1882",
+      "recipientRoles": [],
+      "kind": "Approval",
+      "module": "Timesheet Approval",
+      "title": "Timesheet submitted for supervisor review",
+      "body": "HR (bulk submit booked drafts) submitted timesheet hdr-2026-09-02-c1882---momoh-mohammed-fitting-day for period 2026-09. Supervisor review can now start.",
+      "severity": "warning",
+      "status": "Unread",
+      "href": "/hris/time-and-logs/timesheet-approval",
+      "createdAt": "2026-09-10T07:57:27.454Z",
+      "actor": "Timesheet Workflow",
+      "channels": [
+        "In-App",
+        "Email"
+      ],
+      "metadata": {
+        "headerId": "hdr-2026-09-02-c1882---momoh-mohammed-fitting-day",
+        "periodId": "per-2026-09",
+        "projectCode": "",
+        "recipientCode": "C1882"
+      }
+    },
+    {
+      "id": "ntf-1789027044033-35rcnc",
+      "recipientUserId": "C1882",
+      "recipientUsername": "C1882",
+      "recipientEmployeeCode": "C1882",
+      "recipientRoles": [],
+      "kind": "Approval",
+      "module": "Timesheet Approval",
+      "title": "Timesheet submitted for supervisor review",
+      "body": "HR (bulk submit booked drafts) submitted timesheet hdr-2026-09-03-c1882---momoh-mohammed-fitting-day for period 2026-09. Supervisor review can now start.",
+      "severity": "warning",
+      "status": "Unread",
+      "href": "/hris/time-and-logs/timesheet-approval",
+      "createdAt": "2026-09-10T07:57:24.033Z",
+      "actor": "Timesheet Workflow",
+      "channels": [
+        "In-App",
+        "Email"
+      ],
+      "metadata": {
+        "headerId": "hdr-2026-09-03-c1882---momoh-mohammed-fitting-day",
+        "periodId": "per-2026-09",
+        "projectCode": "",
+        "recipientCode": "C1882"
+      }
+    },
+    {
+      "id": "ntf-1789027040066-qusde7",
+      "recipientUserId": "0000_",
+      "recipientUsername": "0000_",
+      "recipientEmployeeCode": "0000_",
+      "recipientRoles": [
+        "Supervisor",
+        "Foreman",
+        "Site Lead"
+      ],
+      "kind": "Approval",
+      "module": "Timesheet Approval",
+      "title": "Timesheet submitted for supervisor review",
+      "body": "HR (bulk submit booked drafts) submitted timesheet hdr-2026-09-03-0000_---mr-bakare-blasting-day for period 2026-09. Supervisor review can now start.",
+      "severity": "warning",
+      "status": "Unread",
+      "href": "/hris/time-and-logs/timesheet-approval",
+      "createdAt": "2026-09-10T07:57:20.066Z",
+      "actor": "Timesheet Workflow",
+      "channels": [
+        "In-App",
+        "Email"
+      ],
+      "metadata": {
+        "headerId": "hdr-2026-09-03-0000_---mr-bakare-blasting-day",
+        "periodId": "per-2026-09",
+        "projectCode": ""
+      }
+    },
+    {
+      "id": "ntf-1789027038173-eipd21",
+      "recipientUserId": "C1882",
+      "recipientUsername": "C1882",
+      "recipientEmployeeCode": "C1882",
+      "recipientRoles": [],
+      "kind": "Approval",
+      "module": "Timesheet Approval",
+      "title": "Timesheet submitted for supervisor review",
+      "body": "HR (bulk submit booked drafts) submitted timesheet hdr-2026-09-04-c1882---momoh-mohammed-fitting-day for period 2026-09. Supervisor review can now start.",
+      "severity": "warning",
+      "status": "Unread",
+      "href": "/hris/time-and-logs/timesheet-approval",
+      "createdAt": "2026-09-10T07:57:18.173Z",
+      "actor": "Timesheet Workflow",
+      "channels": [
+        "In-App",
+        "Email"
+      ],
+      "metadata": {
+        "headerId": "hdr-2026-09-04-c1882---momoh-mohammed-fitting-day",
+        "periodId": "per-2026-09",
+        "projectCode": "",
+        "recipientCode": "C1882"
+      }
+    },
+    {
+      "id": "ntf-1789027034753-sa756n",
+      "recipientUserId": "C1229",
+      "recipientUsername": "C1229",
+      "recipientEmployeeCode": "C1229",
+      "recipientRoles": [],
+      "kind": "Approval",
+      "module": "Timesheet Approval",
+      "title": "Timesheet submitted for supervisor review",
+      "body": "HR (bulk submit booked drafts) submitted timesheet hdr-2026-09-04-c1229---shittu-olawale-welding-day for period 2026-09. Supervisor review can now start.",
+      "severity": "warning",
+      "status": "Unread",
+      "href": "/hris/time-and-logs/timesheet-approval",
+      "createdAt": "2026-09-10T07:57:14.753Z",
+      "actor": "Timesheet Workflow",
+      "channels": [
+        "In-App",
+        "Email"
+      ],
+      "metadata": {
+        "headerId": "hdr-2026-09-04-c1229---shittu-olawale-welding-day",
+        "periodId": "per-2026-09",
+        "projectCode": "",
+        "recipientCode": "C1229"
+      }
+    },
+    {
+      "id": "ntf-1789027031253-o4fuy3",
+      "recipientUserId": "0000_",
+      "recipientUsername": "0000_",
+      "recipientEmployeeCode": "0000_",
+      "recipientRoles": [
+        "Supervisor",
+        "Foreman",
+        "Site Lead"
+      ],
+      "kind": "Approval",
+      "module": "Timesheet Approval",
+      "title": "Timesheet submitted for supervisor review",
+      "body": "HR (bulk submit booked drafts) submitted timesheet hdr-2026-09-04-0000_---mr-bakare-blasting-day for period 2026-09. Supervisor review can now start.",
+      "severity": "warning",
+      "status": "Unread",
+      "href": "/hris/time-and-logs/timesheet-approval",
+      "createdAt": "2026-09-10T07:57:11.253Z",
+      "actor": "Timesheet Workflow",
+      "channels": [
+        "In-App",
+        "Email"
+      ],
+      "metadata": {
+        "headerId": "hdr-2026-09-04-0000_---mr-bakare-blasting-day",
+        "periodId": "per-2026-09",
+        "projectCode": ""
+      }
+    },
+    {
+      "id": "ntf-1789027029013-54jgem",
+      "recipientUserId": "P0436",
+      "recipientUsername": "P0436",
+      "recipientEmployeeCode": "P0436",
+      "recipientRoles": [],
+      "kind": "Approval",
+      "module": "Timesheet Approval",
+      "title": "Timesheet submitted for supervisor review",
+      "body": "HR (bulk submit booked drafts) submitted timesheet hdr-2026-09-05-p0436---mr-sunday-okewu-maintenance-day for period 2026-09. Supervisor review can now start.",
+      "severity": "warning",
+      "status": "Unread",
+      "href": "/hris/time-and-logs/timesheet-approval",
+      "createdAt": "2026-09-10T07:57:09.013Z",
+      "actor": "Timesheet Workflow",
+      "channels": [
+        "In-App",
+        "Email"
+      ],
+      "metadata": {
+        "headerId": "hdr-2026-09-05-p0436---mr-sunday-okewu-maintenance-day",
+        "periodId": "per-2026-09",
+        "projectCode": "",
+        "recipientCode": "P0436"
+      }
+    },
+    {
+      "id": "ntf-1789027025930-2n1spq",
+      "recipientUserId": "P0289",
+      "recipientUsername": "P0289",
+      "recipientEmployeeCode": "P0289",
+      "recipientRoles": [],
+      "kind": "Approval",
+      "module": "Timesheet Approval",
+      "title": "Timesheet submitted for supervisor review",
+      "body": "HR (bulk submit booked drafts) submitted timesheet hdr-2026-09-07-p0289---mrs-ebele-victoria-onugha-painting-day for period 2026-09. Supervisor review can now start.",
+      "severity": "warning",
+      "status": "Unread",
+      "href": "/hris/time-and-logs/timesheet-approval",
+      "createdAt": "2026-09-10T07:57:05.930Z",
+      "actor": "Timesheet Workflow",
+      "channels": [
+        "In-App",
+        "Email"
+      ],
+      "metadata": {
+        "headerId": "hdr-2026-09-07-p0289---mrs-ebele-victoria-onugha-painting-day",
+        "periodId": "per-2026-09",
+        "projectCode": "",
+        "recipientCode": "P0289"
+      }
+    },
+    {
+      "id": "ntf-1789027023911-hgwrfv",
+      "recipientUserId": "P0277",
+      "recipientUsername": "P0277",
+      "recipientEmployeeCode": "P0277",
+      "recipientRoles": [],
+      "kind": "Approval",
+      "module": "Timesheet Approval",
+      "title": "Timesheet submitted for supervisor review",
+      "body": "HR (bulk submit booked drafts) submitted timesheet hdr-2026-09-07-p0277---mr-adebobola-moruf-akinsanya-blasting-day for period 2026-09. Supervisor review can now start.",
+      "severity": "warning",
+      "status": "Unread",
+      "href": "/hris/time-and-logs/timesheet-approval",
+      "createdAt": "2026-09-10T07:57:03.911Z",
+      "actor": "Timesheet Workflow",
+      "channels": [
+        "In-App",
+        "Email"
+      ],
+      "metadata": {
+        "headerId": "hdr-2026-09-07-p0277---mr-adebobola-moruf-akinsanya-blasting-day",
+        "periodId": "per-2026-09",
+        "projectCode": "",
+        "recipientCode": "P0277"
+      }
+    },
+    {
+      "id": "ntf-1789027013297-jxsfn6",
+      "recipientUserId": "P0436",
+      "recipientUsername": "P0436",
+      "recipientEmployeeCode": "P0436",
+      "recipientRoles": [],
+      "kind": "Approval",
+      "module": "Timesheet Approval",
+      "title": "Timesheet submitted for supervisor review",
+      "body": "HR (bulk submit booked drafts) submitted timesheet hdr-2026-09-07-mr-sunday-okewu-[p0436]-blasting-day for period 2026-09. Supervisor review can now start.",
+      "severity": "warning",
+      "status": "Unread",
+      "href": "/hris/time-and-logs/timesheet-approval",
+      "createdAt": "2026-09-10T07:56:53.297Z",
+      "actor": "Timesheet Workflow",
+      "channels": [
+        "In-App",
+        "Email"
+      ],
+      "metadata": {
+        "headerId": "hdr-2026-09-07-mr-sunday-okewu-[p0436]-blasting-day",
+        "periodId": "per-2026-09",
+        "projectCode": "",
+        "recipientCode": "P0436"
+      }
+    },
+    {
+      "id": "ntf-1789027011316-anpqpw",
+      "recipientUserId": "C1882",
+      "recipientUsername": "C1882",
+      "recipientEmployeeCode": "C1882",
+      "recipientRoles": [],
+      "kind": "Approval",
+      "module": "Timesheet Approval",
+      "title": "Timesheet submitted for supervisor review",
+      "body": "HR (bulk submit booked drafts) submitted timesheet hdr-2026-09-07-c1882---momoh-mohammed-fitting-day for period 2026-09. Supervisor review can now start.",
+      "severity": "warning",
+      "status": "Unread",
+      "href": "/hris/time-and-logs/timesheet-approval",
+      "createdAt": "2026-09-10T07:56:51.316Z",
+      "actor": "Timesheet Workflow",
+      "channels": [
+        "In-App",
+        "Email"
+      ],
+      "metadata": {
+        "headerId": "hdr-2026-09-07-c1882---momoh-mohammed-fitting-day",
+        "periodId": "per-2026-09",
+        "projectCode": "",
+        "recipientCode": "C1882"
+      }
+    },
+    {
+      "id": "ntf-1789027007911-vkvqbz",
+      "recipientUserId": "C1229",
+      "recipientUsername": "C1229",
+      "recipientEmployeeCode": "C1229",
+      "recipientRoles": [],
+      "kind": "Approval",
+      "module": "Timesheet Approval",
+      "title": "Timesheet submitted for supervisor review",
+      "body": "HR (bulk submit booked drafts) submitted timesheet hdr-2026-09-07-c1229---shittu-olawale-welding-day for period 2026-09. Supervisor review can now start.",
+      "severity": "warning",
+      "status": "Unread",
+      "href": "/hris/time-and-logs/timesheet-approval",
+      "createdAt": "2026-09-10T07:56:47.911Z",
+      "actor": "Timesheet Workflow",
+      "channels": [
+        "In-App",
+        "Email"
+      ],
+      "metadata": {
+        "headerId": "hdr-2026-09-07-c1229---shittu-olawale-welding-day",
+        "periodId": "per-2026-09",
+        "projectCode": "",
+        "recipientCode": "C1229"
+      }
+    },
+    {
+      "id": "ntf-1789027003089-iio01s",
+      "recipientUserId": "0000_",
+      "recipientUsername": "0000_",
+      "recipientEmployeeCode": "0000_",
+      "recipientRoles": [
+        "Supervisor",
+        "Foreman",
+        "Site Lead"
+      ],
+      "kind": "Approval",
+      "module": "Timesheet Approval",
+      "title": "Timesheet submitted for supervisor review",
+      "body": "HR (bulk submit booked drafts) submitted timesheet hdr-2026-09-07-0000_---mr-bakare-blasting-day for period 2026-09. Supervisor review can now start.",
+      "severity": "warning",
+      "status": "Unread",
+      "href": "/hris/time-and-logs/timesheet-approval",
+      "createdAt": "2026-09-10T07:56:43.089Z",
+      "actor": "Timesheet Workflow",
+      "channels": [
+        "In-App",
+        "Email"
+      ],
+      "metadata": {
+        "headerId": "hdr-2026-09-07-0000_---mr-bakare-blasting-day",
+        "periodId": "per-2026-09",
+        "projectCode": ""
+      }
+    },
+    {
+      "id": "ntf-1789027000016-yx1kmx",
+      "recipientUserId": "P0442",
+      "recipientUsername": "P0442",
+      "recipientEmployeeCode": "P0442",
+      "recipientRoles": [],
+      "kind": "Approval",
+      "module": "Timesheet Approval",
+      "title": "Timesheet submitted for supervisor review",
+      "body": "HR (bulk submit booked drafts) submitted timesheet hdr-2026-09-08-p0442---mrs-temitope-abiodun-odulate-blasting-day for period 2026-09. Supervisor review can now start.",
+      "severity": "warning",
+      "status": "Unread",
+      "href": "/hris/time-and-logs/timesheet-approval",
+      "createdAt": "2026-09-10T07:56:40.016Z",
+      "actor": "Timesheet Workflow",
+      "channels": [
+        "In-App",
+        "Email"
+      ],
+      "metadata": {
+        "headerId": "hdr-2026-09-08-p0442---mrs-temitope-abiodun-odulate-blasting-day",
+        "periodId": "per-2026-09",
+        "projectCode": "",
+        "recipientCode": "P0442"
+      }
+    },
+    {
+      "id": "ntf-1789026998098-nw9xrc",
+      "recipientUserId": "P0277",
+      "recipientUsername": "P0277",
+      "recipientEmployeeCode": "P0277",
+      "recipientRoles": [],
+      "kind": "Approval",
+      "module": "Timesheet Approval",
+      "title": "Timesheet submitted for supervisor review",
+      "body": "HR (bulk submit booked drafts) submitted timesheet hdr-2026-09-08-p0277---mr-adebobola-moruf-akinsanya-galvanizing-day for period 2026-09. Supervisor review can now start.",
+      "severity": "warning",
+      "status": "Unread",
+      "href": "/hris/time-and-logs/timesheet-approval",
+      "createdAt": "2026-09-10T07:56:38.098Z",
+      "actor": "Timesheet Workflow",
+      "channels": [
+        "In-App",
+        "Email"
+      ],
+      "metadata": {
+        "headerId": "hdr-2026-09-08-p0277---mr-adebobola-moruf-akinsanya-galvanizing-day",
+        "periodId": "per-2026-09",
+        "projectCode": "",
+        "recipientCode": "P0277"
+      }
+    },
+    {
+      "id": "ntf-1789026988355-poocqx",
+      "recipientUserId": "P0072",
+      "recipientUsername": "P0072",
+      "recipientEmployeeCode": "P0072",
+      "recipientRoles": [],
+      "kind": "Approval",
+      "module": "Timesheet Approval",
+      "title": "Timesheet submitted for supervisor review",
+      "body": "HR (bulk submit booked drafts) submitted timesheet hdr-2026-09-08-p0072---mr-owoloja-akande-welding-day for period 2026-09. Supervisor review can now start.",
+      "severity": "warning",
+      "status": "Unread",
+      "href": "/hris/time-and-logs/timesheet-approval",
+      "createdAt": "2026-09-10T07:56:28.355Z",
+      "actor": "Timesheet Workflow",
+      "channels": [
+        "In-App",
+        "Email"
+      ],
+      "metadata": {
+        "headerId": "hdr-2026-09-08-p0072---mr-owoloja-akande-welding-day",
+        "periodId": "per-2026-09",
+        "projectCode": "",
+        "recipientCode": "P0072"
+      }
+    },
+    {
+      "id": "ntf-1789026985102-a1yx1e",
+      "recipientUserId": "C2225",
+      "recipientUsername": "C2225",
+      "recipientEmployeeCode": "C2225",
+      "recipientRoles": [],
+      "kind": "Approval",
+      "module": "Timesheet Approval",
+      "title": "Timesheet submitted for supervisor review",
+      "body": "HR (bulk submit booked drafts) submitted timesheet hdr-2026-09-08-c2225---abel-daniel-blasting-day for period 2026-09. Supervisor review can now start.",
+      "severity": "warning",
+      "status": "Unread",
+      "href": "/hris/time-and-logs/timesheet-approval",
+      "createdAt": "2026-09-10T07:56:25.102Z",
+      "actor": "Timesheet Workflow",
+      "channels": [
+        "In-App",
+        "Email"
+      ],
+      "metadata": {
+        "headerId": "hdr-2026-09-08-c2225---abel-daniel-blasting-day",
+        "periodId": "per-2026-09",
+        "projectCode": "",
+        "recipientCode": "C2225"
+      }
+    },
+    {
+      "id": "ntf-1789026982410-fgscp2",
+      "recipientUserId": "C1882",
+      "recipientUsername": "C1882",
+      "recipientEmployeeCode": "C1882",
+      "recipientRoles": [],
+      "kind": "Approval",
+      "module": "Timesheet Approval",
+      "title": "Timesheet submitted for supervisor review",
+      "body": "HR (bulk submit booked drafts) submitted timesheet hdr-2026-09-08-c1882---momoh-mohammed-fitting-day for period 2026-09. Supervisor review can now start.",
+      "severity": "warning",
+      "status": "Unread",
+      "href": "/hris/time-and-logs/timesheet-approval",
+      "createdAt": "2026-09-10T07:56:22.410Z",
+      "actor": "Timesheet Workflow",
+      "channels": [
+        "In-App",
+        "Email"
+      ],
+      "metadata": {
+        "headerId": "hdr-2026-09-08-c1882---momoh-mohammed-fitting-day",
+        "periodId": "per-2026-09",
+        "projectCode": "",
+        "recipientCode": "C1882"
+      }
+    },
+    {
+      "id": "ntf-1789026978994-ipxybw",
+      "recipientUserId": "C1720",
+      "recipientUsername": "C1720",
+      "recipientEmployeeCode": "C1720",
+      "recipientRoles": [],
+      "kind": "Approval",
+      "module": "Timesheet Approval",
+      "title": "Timesheet submitted for supervisor review",
+      "body": "HR (bulk submit booked drafts) submitted timesheet hdr-2026-09-08-c1720---adanou-raymond-fitting-day for period 2026-09. Supervisor review can now start.",
+      "severity": "warning",
+      "status": "Unread",
+      "href": "/hris/time-and-logs/timesheet-approval",
+      "createdAt": "2026-09-10T07:56:18.994Z",
+      "actor": "Timesheet Workflow",
+      "channels": [
+        "In-App",
+        "Email"
+      ],
+      "metadata": {
+        "headerId": "hdr-2026-09-08-c1720---adanou-raymond-fitting-day",
+        "periodId": "per-2026-09",
+        "projectCode": "",
+        "recipientCode": "C1720"
+      }
+    },
+    {
+      "id": "ntf-1789026975908-ymawqj",
+      "recipientUserId": "C1229",
+      "recipientUsername": "C1229",
+      "recipientEmployeeCode": "C1229",
+      "recipientRoles": [],
+      "kind": "Approval",
+      "module": "Timesheet Approval",
+      "title": "Timesheet submitted for supervisor review",
+      "body": "HR (bulk submit booked drafts) submitted timesheet hdr-2026-09-08-c1229---shittu-olawale-welding-day for period 2026-09. Supervisor review can now start.",
+      "severity": "warning",
+      "status": "Unread",
+      "href": "/hris/time-and-logs/timesheet-approval",
+      "createdAt": "2026-09-10T07:56:15.908Z",
+      "actor": "Timesheet Workflow",
+      "channels": [
+        "In-App",
+        "Email"
+      ],
+      "metadata": {
+        "headerId": "hdr-2026-09-08-c1229---shittu-olawale-welding-day",
+        "periodId": "per-2026-09",
+        "projectCode": "",
+        "recipientCode": "C1229"
+      }
+    },
+    {
+      "id": "ntf-1789026972446-h5hvrq",
+      "recipientUserId": "C1001",
+      "recipientUsername": "C1001",
+      "recipientEmployeeCode": "C1001",
+      "recipientRoles": [],
+      "kind": "Approval",
+      "module": "Timesheet Approval",
+      "title": "Timesheet submitted for supervisor review",
+      "body": "HR (bulk submit booked drafts) submitted timesheet hdr-2026-09-08-c1001---jimoh-gbadamosi-blasting-day for period 2026-09. Supervisor review can now start.",
+      "severity": "warning",
+      "status": "Unread",
+      "href": "/hris/time-and-logs/timesheet-approval",
+      "createdAt": "2026-09-10T07:56:12.446Z",
+      "actor": "Timesheet Workflow",
+      "channels": [
+        "In-App",
+        "Email"
+      ],
+      "metadata": {
+        "headerId": "hdr-2026-09-08-c1001---jimoh-gbadamosi-blasting-day",
+        "periodId": "per-2026-09",
+        "projectCode": "",
+        "recipientCode": "C1001"
+      }
+    },
+    {
+      "id": "ntf-1789026969938-es81gv",
+      "recipientUserId": "0000_",
+      "recipientUsername": "0000_",
+      "recipientEmployeeCode": "0000_",
+      "recipientRoles": [
+        "Supervisor",
+        "Foreman",
+        "Site Lead"
+      ],
+      "kind": "Approval",
+      "module": "Timesheet Approval",
+      "title": "Timesheet submitted for supervisor review",
+      "body": "HR (bulk submit booked drafts) submitted timesheet hdr-2026-09-08-0000_---mr-bakare-blasting-day for period 2026-09. Supervisor review can now start.",
+      "severity": "warning",
+      "status": "Unread",
+      "href": "/hris/time-and-logs/timesheet-approval",
+      "createdAt": "2026-09-10T07:56:09.939Z",
+      "actor": "Timesheet Workflow",
+      "channels": [
+        "In-App",
+        "Email"
+      ],
+      "metadata": {
+        "headerId": "hdr-2026-09-08-0000_---mr-bakare-blasting-day",
+        "periodId": "per-2026-09",
+        "projectCode": ""
+      }
+    },
+    {
+      "id": "ntf-1789026967191-usencb",
+      "recipientUserId": "P0442",
+      "recipientUsername": "P0442",
+      "recipientEmployeeCode": "P0442",
+      "recipientRoles": [],
+      "kind": "Approval",
+      "module": "Timesheet Approval",
+      "title": "Timesheet submitted for supervisor review",
+      "body": "HR (bulk submit booked drafts) submitted timesheet hdr-2026-09-09-p0442---mrs-temitope-abiodun-odulate-blasting-day for period 2026-09. Supervisor review can now start.",
+      "severity": "warning",
+      "status": "Unread",
+      "href": "/hris/time-and-logs/timesheet-approval",
+      "createdAt": "2026-09-10T07:56:07.191Z",
+      "actor": "Timesheet Workflow",
+      "channels": [
+        "In-App",
+        "Email"
+      ],
+      "metadata": {
+        "headerId": "hdr-2026-09-09-p0442---mrs-temitope-abiodun-odulate-blasting-day",
+        "periodId": "per-2026-09",
+        "projectCode": "",
+        "recipientCode": "P0442"
+      }
+    },
+    {
+      "id": "ntf-1789026963999-6rjc6t",
+      "recipientUserId": "P0436",
+      "recipientUsername": "P0436",
+      "recipientEmployeeCode": "P0436",
+      "recipientRoles": [],
+      "kind": "Approval",
+      "module": "Timesheet Approval",
+      "title": "Timesheet submitted for supervisor review",
+      "body": "HR (bulk submit booked drafts) submitted timesheet hdr-2026-09-09-p0436---mr-sunday-okewu-maintenance-day for period 2026-09. Supervisor review can now start.",
+      "severity": "warning",
+      "status": "Unread",
+      "href": "/hris/time-and-logs/timesheet-approval",
+      "createdAt": "2026-09-10T07:56:03.999Z",
+      "actor": "Timesheet Workflow",
+      "channels": [
+        "In-App",
+        "Email"
+      ],
+      "metadata": {
+        "headerId": "hdr-2026-09-09-p0436---mr-sunday-okewu-maintenance-day",
+        "periodId": "per-2026-09",
+        "projectCode": "",
+        "recipientCode": "P0436"
+      }
+    },
+    {
+      "id": "ntf-1789026962018-5wer2m",
+      "recipientUserId": "P0072",
+      "recipientUsername": "P0072",
+      "recipientEmployeeCode": "P0072",
+      "recipientRoles": [],
+      "kind": "Approval",
+      "module": "Timesheet Approval",
+      "title": "Timesheet submitted for supervisor review",
+      "body": "HR (bulk submit booked drafts) submitted timesheet hdr-2026-09-09-p0072---mr-owoloja-akande-welding-day for period 2026-09. Supervisor review can now start.",
+      "severity": "warning",
+      "status": "Unread",
+      "href": "/hris/time-and-logs/timesheet-approval",
+      "createdAt": "2026-09-10T07:56:02.019Z",
+      "actor": "Timesheet Workflow",
+      "channels": [
+        "In-App",
+        "Email"
+      ],
+      "metadata": {
+        "headerId": "hdr-2026-09-09-p0072---mr-owoloja-akande-welding-day",
+        "periodId": "per-2026-09",
+        "projectCode": "",
+        "recipientCode": "P0072"
+      }
+    },
+    {
+      "id": "ntf-1789026957817-437f71",
+      "recipientUserId": "P0013",
+      "recipientUsername": "P0013",
+      "recipientEmployeeCode": "P0013",
+      "recipientRoles": [],
+      "kind": "Approval",
+      "module": "Timesheet Approval",
+      "title": "Timesheet submitted for supervisor review",
+      "body": "HR (bulk submit booked drafts) submitted timesheet hdr-2026-09-09-p0013---mr-samuel-karonwi-blasting-day for period 2026-09. Supervisor review can now start.",
+      "severity": "warning",
+      "status": "Unread",
+      "href": "/hris/time-and-logs/timesheet-approval",
+      "createdAt": "2026-09-10T07:55:57.817Z",
+      "actor": "Timesheet Workflow",
+      "channels": [
+        "In-App",
+        "Email"
+      ],
+      "metadata": {
+        "headerId": "hdr-2026-09-09-p0013---mr-samuel-karonwi-blasting-day",
+        "periodId": "per-2026-09",
+        "projectCode": "",
+        "recipientCode": "P0013"
+      }
+    },
+    {
+      "id": "ntf-1789026955934-ut7ac8",
+      "recipientUserId": "C2225",
+      "recipientUsername": "C2225",
+      "recipientEmployeeCode": "C2225",
+      "recipientRoles": [],
+      "kind": "Approval",
+      "module": "Timesheet Approval",
+      "title": "Timesheet submitted for supervisor review",
+      "body": "HR (bulk submit booked drafts) submitted timesheet hdr-2026-09-09-c2225---abel-daniel-blasting-day for period 2026-09. Supervisor review can now start.",
+      "severity": "warning",
+      "status": "Unread",
+      "href": "/hris/time-and-logs/timesheet-approval",
+      "createdAt": "2026-09-10T07:55:55.934Z",
+      "actor": "Timesheet Workflow",
+      "channels": [
+        "In-App",
+        "Email"
+      ],
+      "metadata": {
+        "headerId": "hdr-2026-09-09-c2225---abel-daniel-blasting-day",
+        "periodId": "per-2026-09",
+        "projectCode": "",
+        "recipientCode": "C2225"
+      }
+    },
+    {
+      "id": "ntf-1789026953290-vg3u11",
+      "recipientUserId": "C1882",
+      "recipientUsername": "C1882",
+      "recipientEmployeeCode": "C1882",
+      "recipientRoles": [],
+      "kind": "Approval",
+      "module": "Timesheet Approval",
+      "title": "Timesheet submitted for supervisor review",
+      "body": "HR (bulk submit booked drafts) submitted timesheet hdr-2026-09-09-c1882---momoh-mohammed-fitting-day for period 2026-09. Supervisor review can now start.",
+      "severity": "warning",
+      "status": "Unread",
+      "href": "/hris/time-and-logs/timesheet-approval",
+      "createdAt": "2026-09-10T07:55:53.290Z",
+      "actor": "Timesheet Workflow",
+      "channels": [
+        "In-App",
+        "Email"
+      ],
+      "metadata": {
+        "headerId": "hdr-2026-09-09-c1882---momoh-mohammed-fitting-day",
+        "periodId": "per-2026-09",
+        "projectCode": "",
+        "recipientCode": "C1882"
+      }
+    },
+    {
+      "id": "ntf-1789026949884-x2oa8b",
+      "recipientUserId": "C1229",
+      "recipientUsername": "C1229",
+      "recipientEmployeeCode": "C1229",
+      "recipientRoles": [],
+      "kind": "Approval",
+      "module": "Timesheet Approval",
+      "title": "Timesheet submitted for supervisor review",
+      "body": "HR (bulk submit booked drafts) submitted timesheet hdr-2026-09-09-c1229---shittu-olawale-welding-day for period 2026-09. Supervisor review can now start.",
+      "severity": "warning",
+      "status": "Unread",
+      "href": "/hris/time-and-logs/timesheet-approval",
+      "createdAt": "2026-09-10T07:55:49.884Z",
+      "actor": "Timesheet Workflow",
+      "channels": [
+        "In-App",
+        "Email"
+      ],
+      "metadata": {
+        "headerId": "hdr-2026-09-09-c1229---shittu-olawale-welding-day",
+        "periodId": "per-2026-09",
+        "projectCode": "",
+        "recipientCode": "C1229"
+      }
+    },
+    {
+      "id": "ntf-1789026946399-s7ei9m",
+      "recipientUserId": "0000_",
+      "recipientUsername": "0000_",
+      "recipientEmployeeCode": "0000_",
+      "recipientRoles": [
+        "Supervisor",
+        "Foreman",
+        "Site Lead"
+      ],
+      "kind": "Approval",
+      "module": "Timesheet Approval",
+      "title": "Timesheet submitted for supervisor review",
+      "body": "HR (bulk submit booked drafts) submitted timesheet hdr-2026-09-09-0000_---mr-bakare-blasting-day for period 2026-09. Supervisor review can now start.",
+      "severity": "warning",
+      "status": "Unread",
+      "href": "/hris/time-and-logs/timesheet-approval",
+      "createdAt": "2026-09-10T07:55:46.399Z",
+      "actor": "Timesheet Workflow",
+      "channels": [
+        "In-App",
+        "Email"
+      ],
+      "metadata": {
+        "headerId": "hdr-2026-09-09-0000_---mr-bakare-blasting-day",
+        "periodId": "per-2026-09",
+        "projectCode": ""
+      }
+    },
+    {
+      "id": "ntf-1789026942659-tqnw8r",
+      "recipientUserId": "P0442",
+      "recipientUsername": "P0442",
+      "recipientEmployeeCode": "P0442",
+      "recipientRoles": [],
+      "kind": "Approval",
+      "module": "Timesheet Approval",
+      "title": "Timesheet submitted for supervisor review",
+      "body": "HR (bulk submit booked drafts) submitted timesheet hdr-2026-09-10-p0442---mrs-temitope-abiodun-odulate-blasting-day for period 2026-09. Supervisor review can now start.",
+      "severity": "warning",
+      "status": "Unread",
+      "href": "/hris/time-and-logs/timesheet-approval",
+      "createdAt": "2026-09-10T07:55:42.659Z",
+      "actor": "Timesheet Workflow",
+      "channels": [
+        "In-App",
+        "Email"
+      ],
+      "metadata": {
+        "headerId": "hdr-2026-09-10-p0442---mrs-temitope-abiodun-odulate-blasting-day",
+        "periodId": "per-2026-09",
+        "projectCode": "",
+        "recipientCode": "P0442"
+      }
+    },
+    {
       "id": "ntf-1788967578743-xnqttq",
       "recipientUserId": "P0413",
       "recipientUsername": "P0413",

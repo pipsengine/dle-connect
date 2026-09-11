@@ -9,6 +9,7 @@ import { normalizePayrollMatchKey, readActiveSagePayrollEmployeeKeys, type SageP
 import { approvedPaidLeaveForDate } from '@/lib/leave-management-store';
 import { assignmentMatchesSupervisor, readSupervisorAssignments } from '@/lib/supervisor-assignment-store';
 import { extractSupervisorEmployeeCode, normalizeTimesheetLocationLabel, supervisorCodesMatch } from '@/lib/timesheet-agege-blasting';
+import { timesheetAttendanceMatchKeys } from '@/lib/timesheet-attendance-match';
 import { clearEmployeeFromDraftHeaders, employeeIsOtherTimesheetSupervisor } from '@/lib/timesheet-booking-clash';
 import { canonicalProjectManagerForCode, withCanonicalProjectManager } from '@/lib/timesheet-canonical-project-managers';
 import {
@@ -3499,19 +3500,7 @@ export const actorMatchesTimesheetSupervisor = (
   );
 };
 
-const attendanceMatchKeys = (...values: Array<string | number | null | undefined>) => {
-  const keys = new Set<string>();
-  for (const value of values) {
-    const normalized = normalizePayrollMatchKey(value);
-    if (!normalized) continue;
-    keys.add(normalized);
-    const withoutTypePrefix = normalized.replace(/^[PCLNI]+(?=\d)/, '').replace(/^0+/, '');
-    if (withoutTypePrefix) keys.add(withoutTypePrefix);
-    const numeric = normalized.replace(/^[A-Z]+/, '').replace(/^0+/, '');
-    if (numeric) keys.add(numeric);
-  }
-  return [...keys];
-};
+const attendanceMatchKeys = timesheetAttendanceMatchKeys;
 
 const supervisorEmployeeScope = async (supervisorId: string) => {
   const selected = cleanSupervisorLabel(supervisorId);
@@ -3551,6 +3540,27 @@ const supervisorEmployeeScope = async (supervisorId: string) => {
       employee.fullName,
       employee.sourceEmployeeId,
     ].flatMap((value) => attendanceMatchKeys(value)).forEach((key) => keys.add(key));
+  }
+  if (selectedCode) {
+    attendanceMatchKeys(selectedCode, selected).forEach((key) => keys.add(key));
+    const self = source.employees.find((employee) =>
+      !['Resigned', 'Terminated', 'Retired'].includes(employee.status)
+      && (
+        supervisorCodesMatch(employee.employeeCode, selectedCode)
+        || supervisorCodesMatch(employee.employeeId, selectedCode)
+      ),
+    );
+    const selfCode = String(self?.employeeCode || self?.employeeId || selectedCode).trim();
+    if (selfCode && !existingCodes.has(selfCode.toLowerCase())) {
+      existingCodes.add(selfCode.toLowerCase());
+      employees.unshift({ employeeCode: selfCode, fullName: self?.fullName || selected });
+      [
+        self?.employeeId,
+        self?.employeeCode,
+        self?.fullName,
+        self?.sourceEmployeeId,
+      ].flatMap((value) => attendanceMatchKeys(value)).forEach((key) => keys.add(key));
+    }
   }
   return { keys, employees };
 };
@@ -3637,21 +3647,9 @@ export async function syncAttendanceForTimesheet(
     console.warn('Timesheet attendance sync could not resolve approved leave:', approvedLeaveResult.reason);
   }
   
-  // Business Rule: A timesheet is created for a Work Center / Site.
-  // First find employees who clocked in at the selected device/site.
-  // Then enforce the selected supervisor's assigned employee list.
-  const workCenterKey = normalizeAttendanceScope(workCenterName);
-  const locationKey = normalizeAttendanceScope(locationName);
-  const exactWorkCenterRecords = clockingRecords.filter((r) => {
-    const site = normalizeAttendanceScope(r.site);
-    const location = normalizeAttendanceScope(r.location);
-    return (
-      (workCenterKey && (site === workCenterKey || location === workCenterKey)) ||
-      (locationKey && (site === locationKey || location === locationKey))
-    );
-  });
-  const recordsInScope = exactWorkCenterRecords.length > 0 ? exactWorkCenterRecords : clockingRecords;
-  const attendanceCandidates = recordsInScope
+  // Assigned crew clocks count wherever they punched. Cutting / Blasting / Galvanizing
+  // share the Agege gate; office/terminal is often Unassigned and must not hide present staff.
+  const attendanceCandidates = clockingRecords
     .map((attendance) => {
       const payrollEmployee = [
         attendance.employeeId,
@@ -3664,8 +3662,7 @@ export async function syncAttendanceForTimesheet(
       return { attendance, payrollEmployee };
     })
     .filter(({ attendance, payrollEmployee }) => {
-      if (!supervisorScopeResolved) return false;
-      if (allowedSupervisorKeys.size === 0) return false;
+      if (!allowedSupervisorKeys.size) return false;
       return attendanceMatchKeys(
         attendance.employeeId,
         attendance.employeeName,
