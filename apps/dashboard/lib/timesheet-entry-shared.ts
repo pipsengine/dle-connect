@@ -1,5 +1,7 @@
 /** Client-safe timesheet types and constants (no Node/SQL imports). */
 
+import { timesheetLocationsMatch } from '@/lib/timesheet-agege-blasting';
+
 export const STANDARD_TIMESHEET_HOURS = 8;
 export const DAILY_BREAK_HOURS = 1;
 export const GROSS_TIMESHEET_HOURS = STANDARD_TIMESHEET_HOURS + DAILY_BREAK_HOURS;
@@ -339,6 +341,70 @@ export const timesheetHeaderMatchesShift = (headerShiftLabel: string | null | un
 export const timesheetShiftHeaderSlug = (shiftLabel?: string | null) => (
   resolveTimesheetShift(shiftLabel).kind === 'Night' ? 'night' : 'day'
 );
+
+export const timesheetHeaderIdentitySlug = (value?: string | null) =>
+  String(value || '').trim().toLowerCase().replace(/\s+/g, '-');
+
+export const timesheetLocationHeaderSlug = (locationName?: string | null) =>
+  String(locationName || '').trim().toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+
+export const buildTimesheetHeaderId = (input: {
+  date: string;
+  supervisorId: string;
+  workCenterName: string;
+  shiftLabel?: string | null;
+  locationName?: string | null;
+}) => {
+  const parts = [
+    'hdr',
+    input.date,
+    timesheetHeaderIdentitySlug(input.supervisorId),
+    timesheetHeaderIdentitySlug(input.workCenterName),
+    timesheetShiftHeaderSlug(input.shiftLabel),
+  ];
+  const locationSlug = timesheetLocationHeaderSlug(input.locationName);
+  if (locationSlug) parts.push(locationSlug);
+  return parts.join('-');
+};
+
+export type TimesheetLocationHeaderCandidate = {
+  id: string;
+  locationName?: string | null;
+};
+
+export const selectTimesheetHeaderForLocation = <T extends TimesheetLocationHeaderCandidate>(
+  candidates: T[],
+  locationName?: string | null,
+  supervisorHomeLocation?: string | null,
+  locationSpecificId?: string | null,
+): { header: T | null; adoptLegacy: boolean; createLocationSpecific: boolean } => {
+  if (!candidates.length) {
+    return { header: null, adoptLegacy: false, createLocationSpecific: Boolean(String(locationName || '').trim()) };
+  }
+  const target = String(locationName || '').trim();
+  if (!target) {
+    return { header: candidates[0] || null, adoptLegacy: false, createLocationSpecific: false };
+  }
+
+  const located = candidates.find((header) => timesheetLocationsMatch(header.locationName, target));
+  if (located) return { header: located, adoptLegacy: false, createLocationSpecific: false };
+
+  if (locationSpecificId) {
+    const byId = candidates.find((header) => header.id === locationSpecificId);
+    if (byId) return { header: byId, adoptLegacy: false, createLocationSpecific: false };
+  }
+
+  const unlocated = candidates.find((header) => !String(header.locationName || '').trim());
+  const canAdoptLegacy = Boolean(unlocated) && (
+    !String(supervisorHomeLocation || '').trim()
+    || timesheetLocationsMatch(target, supervisorHomeLocation)
+  );
+  if (canAdoptLegacy && unlocated) {
+    return { header: unlocated, adoptLegacy: true, createLocationSpecific: false };
+  }
+
+  return { header: null, adoptLegacy: false, createLocationSpecific: true };
+};
 
 export const addCalendarDays = (isoDate: string, days: number) => {
   const date = new Date(`${isoDate}T12:00:00`);
@@ -706,28 +772,61 @@ export const sumProjectAllocationHours = (
 export const configuredTimesheetDefaultProjectCode = () =>
   String(process.env.TIMESHEET_DEFAULT_PROJECT_CODE || '').trim().toUpperCase();
 
+export const MISCELLANEOUS_TIMESHEET_PROJECT_CODE = 'DL0062';
+
+export const isMiscellaneousTimesheetProjectCode = (code?: string | null) =>
+  canonicalProjectCode(code) === MISCELLANEOUS_TIMESHEET_PROJECT_CODE;
+
+export const requiresMiscellaneousTimesheetConfirm = (projectCodes: string[] = []) => {
+  const productive = [...new Set(
+    projectCodes.map(canonicalProjectCode).filter((code) => code && !isIdleTimeProjectCode(code)),
+  )];
+  return productive.length > 0 && productive.every(isMiscellaneousTimesheetProjectCode);
+};
+
+export const preferredProductiveProjectCodeFromAllocations = (
+  allocations?: Array<{ projectCode: string; hours: number }> | null,
+) => {
+  const booked = normalizeProjectAllocations(allocations).find((item) => (
+    Number(item.hours || 0) > 0.001 && !isIdleTimeProjectCode(item.projectCode)
+  ));
+  return booked?.projectCode ? canonicalProjectCode(booked.projectCode) : '';
+};
+
 /**
- * Resolve primary project for matrix / auto-book:
+ * Auto Distribute books only a job the supervisor already chose:
+ * selected column, a column that already has hours, or the only column.
+ */
+export const resolveAutoDistributeProjectCode = (
+  columns: Array<{ code: string }> = [],
+  lines: Array<{ projectAllocations?: Array<{ projectCode: string; hours: number }> | null }> = [],
+  selectedCode?: string | null,
+) => {
+  const codes = columns.map((column) => canonicalProjectCode(column.code)).filter(Boolean);
+  if (!codes.length) return '';
+  const selected = canonicalProjectCode(selectedCode);
+  if (selected && codes.includes(selected)) return selected;
+  for (const line of lines) {
+    const booked = preferredProductiveProjectCodeFromAllocations(line.projectAllocations);
+    if (booked && codes.includes(booked)) return booked;
+  }
+  return codes.length === 1 ? codes[0] : '';
+};
+
+/**
+ * Resolve primary project for overtime / matrix:
  * 1) already-booked productive allocation
- * 2) configured default when present in the available codes
- * 3) first non-idle available code
+ * 2) first supplied non-idle code (caller must pass a chosen job, not the catalog)
  */
 export const resolvePrimaryProjectCode = (
   projectCodes: string[] = [],
   allocations?: Array<{ projectCode: string; hours: number }> | null,
 ) => {
-  const codes = projectCodes.map(canonicalProjectCode).filter(Boolean);
-  const normalized = normalizeProjectAllocations(allocations);
-  const booked = normalized.find((item) => Number(item.hours || 0) > 0 && !isIdleTimeProjectCode(item.projectCode));
-  if (booked) return canonicalProjectCode(booked.projectCode);
+  const booked = preferredProductiveProjectCodeFromAllocations(allocations);
+  if (booked) return booked;
 
-  const configured = configuredTimesheetDefaultProjectCode();
-  if (configured) {
-    const match = codes.find((code) => code === configured);
-    if (match) return match;
-  }
-
-  return codes.find((code) => !isIdleTimeProjectCode(code)) || codes[0] || 'GENERAL';
+  const codes = projectCodes.map(canonicalProjectCode).filter((code) => code && !isIdleTimeProjectCode(code));
+  return codes[0] || '';
 };
 
 /** Read hours booked on a matrix project column. */

@@ -35,7 +35,7 @@ import {
   validateTimesheetLine,
   type OvertimeAuthorization,
 } from '@/lib/timesheet-overtime-booking';
-import { DAILY_BREAK_HOURS, STANDARD_TIMESHEET_HOURS, DEFAULT_BREAK_IDLE_REASON_ID, DEFAULT_BREAK_IDLE_REASON_NAME, normalizeIdleAllocations, normalizeProjectAllocations, canonicalProjectCode, consolidateProjectAllocationsToPrimary, resolvePrimaryProjectCode, resolveTimesheetHours, attendanceDurationFromClock, reconcileTimesheetLineHours, sumProjectAllocationHours, matrixProductiveHoursCap, upsertMatrixProjectHours, DEFAULT_TIMESHEET_SHIFT_LABEL, resolveTimesheetShift, timesheetHeaderMatchesShift, timesheetLineMatchesShift, applyNightPaperClock, buildRosterTimesheetLine, IDLE_TIME_PROJECT_CODE, IDLE_TIME_PROJECT_NAME, idleTimeProjectHours, productiveProjectHours, isIdleTimeProjectCode, isEditableTimesheetStatus, isTimesheetInApprovalCapture, isManualOffshoreLine, isTimesheetAbsentLine, isOffshoreWorkCenterName, OFFSHORE_ALLOWANCE_HOURS, supervisorTimesheetMessage } from '@/lib/timesheet-entry-shared';
+import { DAILY_BREAK_HOURS, STANDARD_TIMESHEET_HOURS, DEFAULT_BREAK_IDLE_REASON_ID, DEFAULT_BREAK_IDLE_REASON_NAME, normalizeIdleAllocations, normalizeProjectAllocations, canonicalProjectCode, consolidateProjectAllocationsToPrimary, resolvePrimaryProjectCode, resolveTimesheetHours, attendanceDurationFromClock, reconcileTimesheetLineHours, sumProjectAllocationHours, matrixProductiveHoursCap, upsertMatrixProjectHours, DEFAULT_TIMESHEET_SHIFT_LABEL, resolveTimesheetShift, timesheetHeaderMatchesShift, timesheetLineMatchesShift, applyNightPaperClock, buildRosterTimesheetLine, IDLE_TIME_PROJECT_CODE, IDLE_TIME_PROJECT_NAME, idleTimeProjectHours, productiveProjectHours, isIdleTimeProjectCode, isEditableTimesheetStatus, isTimesheetInApprovalCapture, isManualOffshoreLine, isTimesheetAbsentLine, isOffshoreWorkCenterName, OFFSHORE_ALLOWANCE_HOURS, supervisorTimesheetMessage, resolveAutoDistributeProjectCode, requiresMiscellaneousTimesheetConfirm } from '@/lib/timesheet-entry-shared';
 import { applyTimesheetLineDefaults } from '@/lib/timesheet-line-defaults';
 import { canBookOvertimeOnTimesheet } from '@/lib/timesheet-overtime-config';
 import {
@@ -457,6 +457,8 @@ export default function TimesheetEntryClient({ variant = 'admin' }: { variant?: 
   const [selectedEmployees, setSelectedEmployees] = useState<string[]>([]);
   const [showBulkModal, setShowBulkModal] = useState(false);
   const [showSubmitReview, setShowSubmitReview] = useState(false);
+  const [confirmMiscellaneousProject, setConfirmMiscellaneousProject] = useState(false);
+  const [selectedMatrixProjectCode, setSelectedMatrixProjectCode] = useState('');
   const [bulkProject, setBulkProject] = useState('');
   const [bulkHours, setBulkHours] = useState(8);
 
@@ -1218,6 +1220,7 @@ export default function TimesheetEntryClient({ variant = 'admin' }: { variant?: 
     const next = [...matrixColumns];
     next[colIdx] = { ...next[colIdx], code: projectCode, label: project?.name || projectCode };
     setMatrixColumns(next);
+    setSelectedMatrixProjectCode(canonicalProjectCode(projectCode));
     if (!previousCode || canonicalProjectCode(previousCode) === canonicalProjectCode(projectCode)) return;
     const dayContext = { date: selectedDate, holidayDates: payload?.holidayDates ?? [], shiftLabel: selectedShift };
     const standardHours = resolveTimesheetHours(dayContext).standardProductiveHours;
@@ -1262,14 +1265,19 @@ export default function TimesheetEntryClient({ variant = 'admin' }: { variant?: 
     if (!payload || payload.period.status !== 'Open' || !isEditableTimesheetStatus(payload.header?.status ?? 'Draft') || matrixColumns.length === 0) return;
     const dayContext = { date: selectedDate, holidayDates: payload.holidayDates ?? [], shiftLabel: selectedShift };
     const dayRules = resolveTimesheetHours(dayContext);
+    const projectCode = resolveAutoDistributeProjectCode(matrixColumns, localLines, selectedMatrixProjectCode);
+    if (!projectCode) {
+      setNotice('Choose the job this crew worked on, then click Auto Distribute. Hours are not put on the first column automatically.');
+      return;
+    }
     const isNight = resolveTimesheetShift(selectedShift).kind === 'Night';
     const next = localLines.map((line) => {
       if (isTimesheetAbsentLine(line) && !isNight) return line;
-      const projectAllocations = matrixColumns.map((col, index) => ({
+      const projectAllocations = matrixColumns.map((col) => ({
         projectId: col.code,
         projectCode: col.code,
         projectName: col.label || col.code,
-        hours: index === 0 ? dayRules.standardProductiveHours : 0,
+        hours: canonicalProjectCode(col.code) === projectCode ? dayRules.standardProductiveHours : 0,
         remarks: null,
       }));
       const usedHours = round1(projectAllocations.reduce((sum, item) => sum + item.hours, 0));
@@ -1297,7 +1305,8 @@ export default function TimesheetEntryClient({ variant = 'admin' }: { variant?: 
       return draft;
     });
     setLocalLines(next);
-    setNotice(`Standard ${dayRules.standardProductiveHours}h booked on the first project column. Split hours across columns manually as needed.`);
+    setSelectedMatrixProjectCode(projectCode);
+    setNotice(`Standard ${dayRules.standardProductiveHours}h booked on ${projectCode}. Split hours across columns manually as needed.`);
   };
 
   const handleAddNightCrew = (employeeCode: string) => {
@@ -1564,8 +1573,9 @@ export default function TimesheetEntryClient({ variant = 'admin' }: { variant?: 
       .filter(Boolean),
   ))).sort();
   const reviewMissingProjectHours = reviewProjectHours <= 0.001;
+  const reviewRequiresMiscellaneousConfirm = requiresMiscellaneousTimesheetConfirm(reviewProjectCodes);
   const canOpenSubmitReview = canEditTimesheet && reviewLineCount > 0 && reviewErrorCount === 0;
-  const canConfirmSubmit = canOpenSubmitReview && uniqueSubmittableCount > 0 && !reviewMissingProjectHours;
+  const canConfirmSubmit = canOpenSubmitReview && uniqueSubmittableCount > 0 && !reviewMissingProjectHours && (!reviewRequiresMiscellaneousConfirm || confirmMiscellaneousProject);
   const canManageTimesheetSetup = Boolean(payload?.permissions.canManagePeriod);
   const canCreateProject = canManageTimesheetSetup || canEditTimesheet;
   const pageTitle = isWorkforceSupervisor ? 'Workforce Timesheet Entry' : 'Timesheet Entry';
@@ -1758,7 +1768,10 @@ export default function TimesheetEntryClient({ variant = 'admin' }: { variant?: 
           hideAttendanceSync={isOffshoreSheet}
           onCopyPrevious={handleCopyPrevious}
           onSaveDraft={() => handleSave(false, true)}
-          onOpenSubmitReview={() => setShowSubmitReview(true)}
+          onOpenSubmitReview={() => {
+            setConfirmMiscellaneousProject(false);
+            setShowSubmitReview(true);
+          }}
           onBulkOpen={() => setShowBulkModal(true)}
           canOpenSubmitReview={canOpenSubmitReview}
           showEmployeeDetailsPanel={isSuperAdministrator}
@@ -2169,7 +2182,7 @@ export default function TimesheetEntryClient({ variant = 'admin' }: { variant?: 
             <Link href="/hris/time-and-logs/timesheet-reports" className="flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-xs font-black text-slate-700 hover:bg-slate-50">REPORTS</Link>
             <button onClick={handleCopyPrevious} disabled={submitting || !canEditTimesheet} className="flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-xs font-black text-slate-700 hover:bg-slate-50 disabled:opacity-50"><Copy className="h-3.5 w-3.5" />COPY PREVIOUS</button>
             <button onClick={() => handleSave(false, true)} disabled={submitting || !canEditTimesheet} className="flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-xs font-black text-slate-700 hover:bg-slate-50 disabled:opacity-50">SAVE DRAFT</button>
-            <button onClick={() => setShowSubmitReview(true)} disabled={submitting || !canOpenSubmitReview} className="flex items-center gap-2 rounded-xl bg-indigo-600 px-6 py-2.5 text-xs font-black text-white hover:bg-indigo-700 disabled:opacity-50"><ShieldCheck className="h-3.5 w-3.5" />REVIEW & SUBMIT</button>
+            <button onClick={() => { setConfirmMiscellaneousProject(false); setShowSubmitReview(true); }} disabled={submitting || !canOpenSubmitReview} className="flex items-center gap-2 rounded-xl bg-indigo-600 px-6 py-2.5 text-xs font-black text-white hover:bg-indigo-700 disabled:opacity-50"><ShieldCheck className="h-3.5 w-3.5" />REVIEW & SUBMIT</button>
           </div>
         </div>
 
@@ -2566,8 +2579,11 @@ export default function TimesheetEntryClient({ variant = 'admin' }: { variant?: 
             <div className="flex flex-wrap items-start justify-between gap-4 border-b border-slate-100 p-6">
               <div>
                 <p className="text-[10px] font-black uppercase tracking-widest text-indigo-600">Supervisor Review</p>
-                <h3 className="mt-1 text-xl font-black text-slate-950">{selectedDate} / {selectedWorkCenter || 'No work center'}</h3>
+                <h3 className="mt-1 text-xl font-black text-slate-950">{selectedDate} / {selectedLocation ? `${selectedLocation} / ` : ''}{selectedWorkCenter || 'No work center'}</h3>
                 <p className="mt-1 text-sm font-semibold text-slate-500">{supervisorLabel}</p>
+                <p className="mt-2 text-sm font-black text-slate-900">
+                  Job{reviewProjectCodes.length === 1 ? '' : 's'}: {reviewProjectCodes.length ? reviewProjectCodes.join(', ') : 'None selected'}
+                </p>
               </div>
               <button onClick={() => setShowSubmitReview(false)} className="rounded-full p-2 text-slate-400 hover:bg-slate-50 hover:text-slate-700">
                 <XCircle className="h-6 w-6" />
@@ -2625,7 +2641,7 @@ export default function TimesheetEntryClient({ variant = 'admin' }: { variant?: 
               <div className="mt-5 rounded-xl border border-slate-200">
                 <div className="flex items-center justify-between border-b border-slate-100 px-4 py-3">
                   <p className="text-xs font-black uppercase tracking-widest text-slate-500">Line Review</p>
-                  <p className="text-xs font-bold text-slate-400">{reviewProjectCodes.length ? reviewProjectCodes.join(', ') : 'No project allocation'}</p>
+                  <p className="text-xs font-black text-indigo-700">{reviewProjectCodes.length ? reviewProjectCodes.join(', ') : 'No project allocation'}</p>
                 </div>
                 <div className="max-h-[300px] overflow-y-auto">
                   <table className="w-full text-left text-sm">
@@ -2678,11 +2694,24 @@ export default function TimesheetEntryClient({ variant = 'admin' }: { variant?: 
                   {displayError}
                 </p>
               ) : (
-                <p className="text-xs font-semibold text-slate-500">
-                  {reviewMissingProjectHours
-                    ? 'Clock times are present. Choose the job number this crew worked on before you submit.'
-                    : 'Submitting places this timesheet in supervisor review. You can keep correcting it until it is approved and released to the project manager.'}
-                </p>
+                <div className="space-y-3">
+                  <p className="text-xs font-semibold text-slate-500">
+                    {reviewMissingProjectHours
+                      ? 'Clock times are present. Choose the job number this crew worked on before you submit.'
+                      : 'Submitting places this timesheet in supervisor review. You can keep correcting it until it is approved and released to the project manager.'}
+                  </p>
+                  {reviewRequiresMiscellaneousConfirm ? (
+                    <label className="flex items-start gap-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-semibold text-amber-950">
+                      <input
+                        type="checkbox"
+                        className="mt-1"
+                        checked={confirmMiscellaneousProject}
+                        onChange={(event) => setConfirmMiscellaneousProject(event.target.checked)}
+                      />
+                      <span>I confirm this crew worked on DL0062 Miscellaneous Jobs.</span>
+                    </label>
+                  ) : null}
+                </div>
               )}
               <div className="flex items-center gap-3">
                 <button onClick={() => setShowSubmitReview(false)} className="rounded-xl border border-slate-200 px-4 py-2.5 text-xs font-black uppercase tracking-widest text-slate-600 hover:bg-slate-50">Back to Edit</button>

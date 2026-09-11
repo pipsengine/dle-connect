@@ -10,13 +10,14 @@ import {
   APPROVED_PAID_LEAVE_REMARK,
   STANDARD_TIMESHEET_HOURS,
   buildLeaveIdleTimeAllocation,
+  buildTimesheetHeaderId,
   isDayRateTimesheetEmployeeCode,
   isEditableTimesheetStatus,
   isTimesheetPaidLeaveLine,
   normalizeEmployeeLineKey,
   normalizeProjectAllocations,
   resolveTimesheetShift,
-  timesheetShiftHeaderSlug,
+  selectTimesheetHeaderForLocation,
   timesheetDayRulesForDate,
 } from '@/lib/timesheet-entry-shared';
 import {
@@ -204,28 +205,38 @@ const ensureHeader = (
   date: string,
   supervisorId: string,
   workCenterName: string,
+  locationName?: string | null,
 ): TimesheetHeader => {
   const shift = resolveTimesheetShift(null);
-  const shiftSlug = timesheetShiftHeaderSlug(shift.label);
-  const workCenterId = workCenterName.toLowerCase().replace(/\s+/g, '-');
-  const supervisorSlug = supervisorId.toLowerCase().replace(/\s+/g, '-');
-  const headerId = `hdr-${date}-${supervisorSlug}-${workCenterId}-${shiftSlug}`;
-  const existing = headers.find((header) =>
+  const locationSpecificId = buildTimesheetHeaderId({
+    date,
+    supervisorId,
+    workCenterName,
+    shiftLabel: shift.label,
+    locationName,
+  });
+  const candidates = headers.filter((header) =>
     header.timesheetDate === date
     && (supervisorMatches(header.supervisorId, supervisorId) || supervisorMatches(header.supervisorName, supervisorId))
     && header.workCenterName === workCenterName
     && String(header.shiftLabel || '').toLowerCase().includes('day'),
-  ) || headers.find((header) => header.id === headerId);
-  if (existing) return existing;
+  );
+  const pick = selectTimesheetHeaderForLocation(candidates, locationName, undefined, locationSpecificId);
+  if (pick.header) {
+    if (locationName && (pick.adoptLegacy || !pick.header.locationName)) {
+      pick.header.locationName = locationName;
+    }
+    return pick.header;
+  }
 
   const period = calculateTimesheetPeriod(date);
   const created: TimesheetHeader = {
-    id: headerId,
+    id: locationSpecificId,
     periodId: period.id,
     timesheetDate: date,
     supervisorId,
     supervisorName: supervisorId,
-    workCenterId,
+    workCenterId: workCenterName.toLowerCase().replace(/\s+/g, '-'),
     workCenterName,
     status: 'Draft',
     submittedAt: null,
@@ -234,6 +245,7 @@ const ensureHeader = (
     approvedBy: null,
     lastSyncAt: new Date().toISOString(),
     shiftLabel: shift.label,
+    locationName: locationName || null,
   };
   headers.push(created);
   return created;
@@ -261,6 +273,7 @@ export async function syncCCodeLeaveToTimesheet(input: LeaveTimesheetSyncInput) 
   const { headers, lines } = await readTimesheetData({ softFail: true });
   const keys = employeeKeys(employeeCode, employee.employeeId, employee.fullName);
   const workCenterName = resolveWorkCenterName(employee, headers, lines, employeeCode, supervisorId);
+  const employeeLocationName = normalizeTimesheetLocationLabel(employee.location || employee.workLocation) || '';
   let daysUpdated = 0;
   const headersToWrite = new Map<string, { header: TimesheetHeader; lines: TimesheetLine[] }>();
 
@@ -301,7 +314,7 @@ export async function syncCCodeLeaveToTimesheet(input: LeaveTimesheetSyncInput) 
       continue;
     }
 
-    const header = ensureHeader(headers, date, supervisorId, workCenterName);
+    const header = ensureHeader(headers, date, supervisorId, workCenterName, employeeLocationName);
     if (!isEditableTimesheetStatus(header.status)) continue;
 
     const lineId = `line-${header.id}-${employeeCode}`;

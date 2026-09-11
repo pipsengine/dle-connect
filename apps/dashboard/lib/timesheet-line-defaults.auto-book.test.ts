@@ -75,6 +75,14 @@ const alreadyBooked = ensureClockedLinesHaveProjectAllocation(
 assert.equal(alreadyBooked.bookedCount, 0);
 assert.equal(alreadyBooked.lines[0].projectAllocations[0]?.projectCode, 'DL1985');
 
+const previousDefault = process.env.TIMESHEET_DEFAULT_PROJECT_CODE;
+process.env.TIMESHEET_DEFAULT_PROJECT_CODE = 'DL9999';
+const envDefaultIgnored = ensureClockedLinesHaveProjectAllocation([baseLine()], projects, dayContext);
+assert.equal(envDefaultIgnored.bookedCount, 0);
+assert.equal(envDefaultIgnored.projectCode, null);
+if (previousDefault === undefined) delete process.env.TIMESHEET_DEFAULT_PROJECT_CODE;
+else process.env.TIMESHEET_DEFAULT_PROJECT_CODE = previousDefault;
+
 const absent = ensureClockedLinesHaveProjectAllocation(
   [baseLine({ clockIn: null, clockOut: null, attendanceDuration: 0 })],
   projects,

@@ -114,6 +114,31 @@ export const normalizeTimesheetLocationLabel = (value: string | null | undefined
 export const isAgegeTimesheetLocation = (value: string | null | undefined) =>
   /\bagege\b/i.test(normalizeTimesheetLocationLabel(value) || clean(value));
 
+/** Compact location key so "Lagos - Idi Oro" and "IDI-ORO" match. */
+export const timesheetLocationMatchKey = (value: string | null | undefined) =>
+  (normalizeTimesheetLocationLabel(value) || clean(value)).toLowerCase().replace(/[^a-z0-9]+/g, '');
+
+export const timesheetLocationsMatch = (a?: string | null, b?: string | null) => {
+  const left = timesheetLocationMatchKey(a);
+  const right = timesheetLocationMatchKey(b);
+  if (!left || !right) return false;
+  return left === right || left.includes(right) || right.includes(left);
+};
+
+/**
+ * Location-scoped crew: matching site only.
+ * People with a blank HR location stay on the supervisor's home-yard sheet.
+ */
+export const timesheetCrewMatchesLocation = (
+  employeeLocationValue: string | null | undefined,
+  targetLocation?: string | null,
+  supervisorHomeLocation?: string | null,
+) => {
+  if (!clean(targetLocation)) return true;
+  if (!clean(employeeLocationValue)) return timesheetLocationsMatch(targetLocation, supervisorHomeLocation);
+  return timesheetLocationsMatch(employeeLocationValue, targetLocation);
+};
+
 /** True when a "location" is really a trade / work-center label (e.g. Painting). */
 export const isTimesheetTradeLabelLocation = (
   locationName: string | null | undefined,

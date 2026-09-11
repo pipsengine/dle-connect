@@ -17,7 +17,6 @@ import {
   applyNightPaperClock,
   isIdleTimeProjectCode,
   productiveProjectHours,
-  configuredTimesheetDefaultProjectCode,
   isManualOffshoreLine,
 } from '@/lib/timesheet-entry-shared';
 import { withCanonicalProjectManager } from '@/lib/timesheet-canonical-project-managers';
@@ -44,8 +43,8 @@ const bookableProjects = (projects: TimesheetBookableProject[]) =>
   });
 
 /**
- * Only book onto a job the supervisor already chose, or TIMESHEET_DEFAULT_PROJECT_CODE.
- * Never guess the first catalog project (supervisors see that as "miscellaneous").
+ * Only book onto a job the supervisor already chose on this sheet.
+ * Never guess a catalog project or TIMESHEET_DEFAULT_PROJECT_CODE.
  */
 export const resolveBookableTimesheetProject = (
   projects: TimesheetBookableProject[],
@@ -54,16 +53,8 @@ export const resolveBookableTimesheetProject = (
   const bookable = bookableProjects(projects);
   if (!bookable.length) return null;
   const preferred = String(preferredCode || '').trim().toUpperCase();
-  if (preferred) {
-    const match = bookable.find((project) => project.code.toUpperCase() === preferred);
-    if (match) return match;
-  }
-  const configured = configuredTimesheetDefaultProjectCode();
-  if (configured) {
-    const match = bookable.find((project) => project.code.toUpperCase() === configured);
-    if (match) return match;
-  }
-  return null;
+  if (!preferred) return null;
+  return bookable.find((project) => project.code.toUpperCase() === preferred) || null;
 };
 
 const preferredProjectCodeFromLines = (lines: TimesheetLine[]) => {
@@ -77,8 +68,8 @@ const preferredProjectCodeFromLines = (lines: TimesheetLine[]) => {
 };
 
 /**
- * Fill empty clocked rows from a job already on this sheet.
- * Does not pick a miscellaneous catalog project for the supervisor.
+ * Fill empty clocked rows from a job already booked on this sheet.
+ * Clock-in is attendance only — do not auto-book DL0062 or a default project.
  */
 export const ensureClockedLinesHaveProjectAllocation = (
   lines: TimesheetLine[],

@@ -8,7 +8,7 @@ import { readPayrollEmployees } from '@/lib/payroll-employee-source';
 import { normalizePayrollMatchKey, readActiveSagePayrollEmployeeKeys, type SagePayrollEmployee } from '@/lib/sage-people-payroll-store';
 import { approvedPaidLeaveForDate } from '@/lib/leave-management-store';
 import { assignmentMatchesSupervisor, readSupervisorAssignments } from '@/lib/supervisor-assignment-store';
-import { extractSupervisorEmployeeCode, normalizeTimesheetLocationLabel, supervisorCodesMatch } from '@/lib/timesheet-agege-blasting';
+import { extractSupervisorEmployeeCode, normalizeTimesheetLocationLabel, supervisorCodesMatch, timesheetCrewMatchesLocation, timesheetLocationsMatch } from '@/lib/timesheet-agege-blasting';
 import { timesheetAttendanceMatchKeys } from '@/lib/timesheet-attendance-match';
 import { clearEmployeeFromDraftHeaders, employeeIsOtherTimesheetSupervisor } from '@/lib/timesheet-booking-clash';
 import { canonicalProjectManagerForCode, withCanonicalProjectManager } from '@/lib/timesheet-canonical-project-managers';
@@ -30,7 +30,8 @@ import {
   timesheetHeaderMatchesShift,
   timesheetLineMatchesShift,
   timesheetLineHasBookedHours,
-  timesheetShiftHeaderSlug,
+  buildTimesheetHeaderId,
+  selectTimesheetHeaderForLocation,
   type TimesheetLine,
 } from '@/lib/timesheet-entry-shared';
 
@@ -122,6 +123,8 @@ export type TimesheetHeader = {
   lastSyncAt: string | null;
   /** Timesheet shift label, e.g. "01 (Day)" / "02 (Night)". */
   shiftLabel?: string | null;
+  /** Yard / site this header belongs to (Agege vs Idi-Oro). */
+  locationName?: string | null;
   workflowHistory?: TimesheetWorkflowEvent[];
   payrollAcknowledgedAt?: string | null;
   payrollAcknowledgedBy?: string | null;
@@ -896,6 +899,8 @@ IF COL_LENGTH(N'hris.TimesheetHeaders', N'CurrentApprover') IS NULL
 ALTER TABLE [hris].[TimesheetHeaders] ADD [CurrentApprover] NVARCHAR(220) NULL;
 IF COL_LENGTH(N'hris.TimesheetHeaders', N'ShiftLabel') IS NULL
 ALTER TABLE [hris].[TimesheetHeaders] ADD [ShiftLabel] NVARCHAR(40) NULL;
+IF COL_LENGTH(N'hris.TimesheetHeaders', N'LocationName') IS NULL
+ALTER TABLE [hris].[TimesheetHeaders] ADD [LocationName] NVARCHAR(180) NULL;
 IF COL_LENGTH(N'hris.TimesheetLines', N'AttendanceMode') IS NULL
 ALTER TABLE [hris].[TimesheetLines] ADD [AttendanceMode] NVARCHAR(20) NULL;
 IF COL_LENGTH(N'hris.TimesheetLines', N'OffshoreAllowanceHours') IS NULL
@@ -1570,6 +1575,7 @@ async function readTimesheetDataUncached(options?: { softFail?: boolean }) {
     currentApprovalStage: row.CurrentApprovalStage,
     currentApprover: row.CurrentApprover,
     shiftLabel: row.ShiftLabel || null,
+    locationName: row.LocationName || null,
     workflowHistory: eventsByHeader.get(row.Id) || [],
   }));
   const lines: TimesheetLine[] = linesResult.recordset.map((row) => ({
@@ -1666,6 +1672,7 @@ const mapTimesheetHeaderRow = (row: any, eventsByHeader: Map<string, TimesheetWo
   currentApprovalStage: row.CurrentApprovalStage,
   currentApprover: row.CurrentApprover,
   shiftLabel: row.ShiftLabel || null,
+  locationName: row.LocationName || null,
   workflowHistory: eventsByHeader.get(String(row.Id)) || [],
 });
 
@@ -2038,6 +2045,7 @@ export async function readTimesheetApprovalData(options?: { softFail?: boolean }
     currentApprovalStage: row.CurrentApprovalStage,
     currentApprover: row.CurrentApprover,
     shiftLabel: row.ShiftLabel || null,
+    locationName: row.LocationName || null,
     workflowHistory: eventsByHeader.get(row.Id) || [],
   }));
   const lines: TimesheetLine[] = linesResult.recordset.map((row) => ({
@@ -2094,12 +2102,13 @@ export async function writeTimesheetData(data: { headers: TimesheetHeader[]; lin
         .input('CurrentApprovalStage', sql.NVarChar(60), header.currentApprovalStage ?? null)
         .input('CurrentApprover', sql.NVarChar(220), header.currentApprover ?? null)
         .input('ShiftLabel', sql.NVarChar(40), header.shiftLabel ?? null)
+        .input('LocationName', sql.NVarChar(180), header.locationName ?? null)
         .query(`
 MERGE [hris].[TimesheetHeaders] AS target
 USING (SELECT @Id AS [Id]) AS source ON target.[Id]=source.[Id]
-WHEN MATCHED THEN UPDATE SET [PeriodId]=@PeriodId,[TimesheetDate]=@TimesheetDate,[SupervisorId]=@SupervisorId,[SupervisorName]=@SupervisorName,[WorkCenterId]=@WorkCenterId,[WorkCenterName]=@WorkCenterName,[Status]=@Status,[SubmittedAt]=@SubmittedAt,[SubmittedBy]=@SubmittedBy,[ApprovedAt]=@ApprovedAt,[ApprovedBy]=@ApprovedBy,[LastSyncAt]=@LastSyncAt,[PayrollAcknowledgedAt]=@PayrollAcknowledgedAt,[PayrollAcknowledgedBy]=@PayrollAcknowledgedBy,[ProjectManager]=@ProjectManager,[ProjectManagerProjectCode]=@ProjectManagerProjectCode,[CurrentApprovalStage]=@CurrentApprovalStage,[CurrentApprover]=@CurrentApprover,[ShiftLabel]=@ShiftLabel
-WHEN NOT MATCHED THEN INSERT ([Id],[PeriodId],[TimesheetDate],[SupervisorId],[SupervisorName],[WorkCenterId],[WorkCenterName],[Status],[SubmittedAt],[SubmittedBy],[ApprovedAt],[ApprovedBy],[LastSyncAt],[PayrollAcknowledgedAt],[PayrollAcknowledgedBy],[ProjectManager],[ProjectManagerProjectCode],[CurrentApprovalStage],[CurrentApprover],[ShiftLabel])
-VALUES (@Id,@PeriodId,@TimesheetDate,@SupervisorId,@SupervisorName,@WorkCenterId,@WorkCenterName,@Status,@SubmittedAt,@SubmittedBy,@ApprovedAt,@ApprovedBy,@LastSyncAt,@PayrollAcknowledgedAt,@PayrollAcknowledgedBy,@ProjectManager,@ProjectManagerProjectCode,@CurrentApprovalStage,@CurrentApprover,@ShiftLabel);`);
+WHEN MATCHED THEN UPDATE SET [PeriodId]=@PeriodId,[TimesheetDate]=@TimesheetDate,[SupervisorId]=@SupervisorId,[SupervisorName]=@SupervisorName,[WorkCenterId]=@WorkCenterId,[WorkCenterName]=@WorkCenterName,[Status]=@Status,[SubmittedAt]=@SubmittedAt,[SubmittedBy]=@SubmittedBy,[ApprovedAt]=@ApprovedAt,[ApprovedBy]=@ApprovedBy,[LastSyncAt]=@LastSyncAt,[PayrollAcknowledgedAt]=@PayrollAcknowledgedAt,[PayrollAcknowledgedBy]=@PayrollAcknowledgedBy,[ProjectManager]=@ProjectManager,[ProjectManagerProjectCode]=@ProjectManagerProjectCode,[CurrentApprovalStage]=@CurrentApprovalStage,[CurrentApprover]=@CurrentApprover,[ShiftLabel]=@ShiftLabel,[LocationName]=@LocationName
+WHEN NOT MATCHED THEN INSERT ([Id],[PeriodId],[TimesheetDate],[SupervisorId],[SupervisorName],[WorkCenterId],[WorkCenterName],[Status],[SubmittedAt],[SubmittedBy],[ApprovedAt],[ApprovedBy],[LastSyncAt],[PayrollAcknowledgedAt],[PayrollAcknowledgedBy],[ProjectManager],[ProjectManagerProjectCode],[CurrentApprovalStage],[CurrentApprover],[ShiftLabel],[LocationName])
+VALUES (@Id,@PeriodId,@TimesheetDate,@SupervisorId,@SupervisorName,@WorkCenterId,@WorkCenterName,@Status,@SubmittedAt,@SubmittedBy,@ApprovedAt,@ApprovedBy,@LastSyncAt,@PayrollAcknowledgedAt,@PayrollAcknowledgedBy,@ProjectManager,@ProjectManagerProjectCode,@CurrentApprovalStage,@CurrentApprover,@ShiftLabel,@LocationName);`);
       await new sql.Request(tx).input('HeaderId', sql.NVarChar(160), header.id).query(`DELETE FROM [hris].[TimesheetWorkflowEvents] WHERE [HeaderId]=@HeaderId`);
       for (const event of header.workflowHistory || []) {
         await new sql.Request(tx)
@@ -2216,12 +2225,13 @@ export async function writeTimesheetHeaderLines(header: TimesheetHeader, lines: 
       .input('CurrentApprovalStage', sql.NVarChar(60), header.currentApprovalStage ?? null)
       .input('CurrentApprover', sql.NVarChar(220), header.currentApprover ?? null)
       .input('ShiftLabel', sql.NVarChar(40), header.shiftLabel ?? null)
+      .input('LocationName', sql.NVarChar(180), header.locationName ?? null)
       .query(`
 MERGE [hris].[TimesheetHeaders] AS target
 USING (SELECT @Id AS [Id]) AS source ON target.[Id]=source.[Id]
-WHEN MATCHED THEN UPDATE SET [PeriodId]=@PeriodId,[TimesheetDate]=@TimesheetDate,[SupervisorId]=@SupervisorId,[SupervisorName]=@SupervisorName,[WorkCenterId]=@WorkCenterId,[WorkCenterName]=@WorkCenterName,[Status]=@Status,[SubmittedAt]=@SubmittedAt,[SubmittedBy]=@SubmittedBy,[ApprovedAt]=@ApprovedAt,[ApprovedBy]=@ApprovedBy,[LastSyncAt]=@LastSyncAt,[PayrollAcknowledgedAt]=@PayrollAcknowledgedAt,[PayrollAcknowledgedBy]=@PayrollAcknowledgedBy,[ProjectManager]=@ProjectManager,[ProjectManagerProjectCode]=@ProjectManagerProjectCode,[CurrentApprovalStage]=@CurrentApprovalStage,[CurrentApprover]=@CurrentApprover,[ShiftLabel]=@ShiftLabel
-WHEN NOT MATCHED THEN INSERT ([Id],[PeriodId],[TimesheetDate],[SupervisorId],[SupervisorName],[WorkCenterId],[WorkCenterName],[Status],[SubmittedAt],[SubmittedBy],[ApprovedAt],[ApprovedBy],[LastSyncAt],[PayrollAcknowledgedAt],[PayrollAcknowledgedBy],[ProjectManager],[ProjectManagerProjectCode],[CurrentApprovalStage],[CurrentApprover],[ShiftLabel])
-VALUES (@Id,@PeriodId,@TimesheetDate,@SupervisorId,@SupervisorName,@WorkCenterId,@WorkCenterName,@Status,@SubmittedAt,@SubmittedBy,@ApprovedAt,@ApprovedBy,@LastSyncAt,@PayrollAcknowledgedAt,@PayrollAcknowledgedBy,@ProjectManager,@ProjectManagerProjectCode,@CurrentApprovalStage,@CurrentApprover,@ShiftLabel);`);
+WHEN MATCHED THEN UPDATE SET [PeriodId]=@PeriodId,[TimesheetDate]=@TimesheetDate,[SupervisorId]=@SupervisorId,[SupervisorName]=@SupervisorName,[WorkCenterId]=@WorkCenterId,[WorkCenterName]=@WorkCenterName,[Status]=@Status,[SubmittedAt]=@SubmittedAt,[SubmittedBy]=@SubmittedBy,[ApprovedAt]=@ApprovedAt,[ApprovedBy]=@ApprovedBy,[LastSyncAt]=@LastSyncAt,[PayrollAcknowledgedAt]=@PayrollAcknowledgedAt,[PayrollAcknowledgedBy]=@PayrollAcknowledgedBy,[ProjectManager]=@ProjectManager,[ProjectManagerProjectCode]=@ProjectManagerProjectCode,[CurrentApprovalStage]=@CurrentApprovalStage,[CurrentApprover]=@CurrentApprover,[ShiftLabel]=@ShiftLabel,[LocationName]=@LocationName
+WHEN NOT MATCHED THEN INSERT ([Id],[PeriodId],[TimesheetDate],[SupervisorId],[SupervisorName],[WorkCenterId],[WorkCenterName],[Status],[SubmittedAt],[SubmittedBy],[ApprovedAt],[ApprovedBy],[LastSyncAt],[PayrollAcknowledgedAt],[PayrollAcknowledgedBy],[ProjectManager],[ProjectManagerProjectCode],[CurrentApprovalStage],[CurrentApprover],[ShiftLabel],[LocationName])
+VALUES (@Id,@PeriodId,@TimesheetDate,@SupervisorId,@SupervisorName,@WorkCenterId,@WorkCenterName,@Status,@SubmittedAt,@SubmittedBy,@ApprovedAt,@ApprovedBy,@LastSyncAt,@PayrollAcknowledgedAt,@PayrollAcknowledgedBy,@ProjectManager,@ProjectManagerProjectCode,@CurrentApprovalStage,@CurrentApprover,@ShiftLabel,@LocationName);`);
 
     await new sql.Request(tx).input('HeaderId', sql.NVarChar(160), header.id).query(`DELETE FROM [hris].[TimesheetWorkflowEvents] WHERE [HeaderId]=@HeaderId`);
     for (const event of header.workflowHistory || []) {
@@ -3504,12 +3514,29 @@ const attendanceMatchKeys = timesheetAttendanceMatchKeys;
 
 const supervisorEmployeeScope = async (supervisorId: string) => {
   const selected = cleanSupervisorLabel(supervisorId);
-  if (!selected) return { keys: new Set<string>(), employees: [] as Array<{ employeeCode: string; fullName: string }> };
+  if (!selected) {
+    return {
+      keys: new Set<string>(),
+      employees: [] as Array<{ employeeCode: string; fullName: string; location?: string }>,
+      supervisorLocation: '',
+    };
+  }
   // Timeout is applied by the caller (syncAttendanceForTimesheet) — do not nest another race here.
   const source = await readPayrollEmployees();
   const keys = new Set<string>();
-  const employees: Array<{ employeeCode: string; fullName: string }> = [];
+  const employees: Array<{ employeeCode: string; fullName: string; location?: string }> = [];
   const selectedCode = extractSupervisorEmployeeCode(selected);
+  const payrollLocation = (employee?: { location?: string | null; workLocation?: string | null; officeLocation?: string | null } | null) =>
+    String(employee?.location || employee?.workLocation || employee?.officeLocation || '').trim();
+  const payrollByCode = new Map(
+    source.employees.flatMap((employee) => {
+      const location = payrollLocation(employee);
+      return [employee.employeeCode, employee.employeeId]
+        .map((value) => String(value || '').trim().toLowerCase())
+        .filter(Boolean)
+        .map((key) => [key, { employee, location }] as const);
+    }),
+  );
   try {
     const assignments = selectedCode ? await readSupervisorAssignments({ supervisorEmployeeCode: selectedCode }) : [];
     const matchedAssignments = assignments.filter((assignment) =>
@@ -3520,7 +3547,8 @@ const supervisorEmployeeScope = async (supervisorId: string) => {
     for (const assignment of matchedAssignments) {
       const employeeCode = assignment.employeeCode || '';
       const fullName = assignment.employeeName || employeeCode;
-      employees.push({ employeeCode, fullName });
+      const payroll = payrollByCode.get(employeeCode.toLowerCase());
+      employees.push({ employeeCode, fullName, location: payroll?.location || '' });
       attendanceMatchKeys(employeeCode, fullName).forEach((key) => keys.add(key));
     }
   } catch (error) {
@@ -3533,7 +3561,7 @@ const supervisorEmployeeScope = async (supervisorId: string) => {
     const employeeCode = employee.employeeCode || employee.employeeId;
     if (!employeeCode || existingCodes.has(employeeCode.toLowerCase())) continue;
     existingCodes.add(employeeCode.toLowerCase());
-    employees.push({ employeeCode, fullName: employee.fullName });
+    employees.push({ employeeCode, fullName: employee.fullName, location: payrollLocation(employee) });
     [
       employee.employeeId,
       employee.employeeCode,
@@ -3541,6 +3569,7 @@ const supervisorEmployeeScope = async (supervisorId: string) => {
       employee.sourceEmployeeId,
     ].flatMap((value) => attendanceMatchKeys(value)).forEach((key) => keys.add(key));
   }
+  let supervisorLocation = '';
   if (selectedCode) {
     attendanceMatchKeys(selectedCode, selected).forEach((key) => keys.add(key));
     const self = source.employees.find((employee) =>
@@ -3550,10 +3579,11 @@ const supervisorEmployeeScope = async (supervisorId: string) => {
         || supervisorCodesMatch(employee.employeeId, selectedCode)
       ),
     );
+    supervisorLocation = payrollLocation(self);
     const selfCode = String(self?.employeeCode || self?.employeeId || selectedCode).trim();
     if (selfCode && !existingCodes.has(selfCode.toLowerCase())) {
       existingCodes.add(selfCode.toLowerCase());
-      employees.unshift({ employeeCode: selfCode, fullName: self?.fullName || selected });
+      employees.unshift({ employeeCode: selfCode, fullName: self?.fullName || selected, location: supervisorLocation });
       [
         self?.employeeId,
         self?.employeeCode,
@@ -3562,7 +3592,7 @@ const supervisorEmployeeScope = async (supervisorId: string) => {
       ].flatMap((value) => attendanceMatchKeys(value)).forEach((key) => keys.add(key));
     }
   }
-  return { keys, employees };
+  return { keys, employees, supervisorLocation };
 };
 
 export async function syncAttendanceForTimesheet(
@@ -3577,7 +3607,6 @@ export async function syncAttendanceForTimesheet(
     throw new Error('Offshore timesheets are booked from the HR mobilization roster. Attendance sync is not used because there is no clocking machine.');
   }
   const shift = resolveTimesheetShift(options.shiftLabel);
-  const shiftSlug = timesheetShiftHeaderSlug(shift.label);
   const liveAttendancePromise = withSyncTimeout(
     readLiveClockingActivity(date, { shiftKind: shift.kind }),
     TIMESHEET_LIVE_ATTENDANCE_TIMEOUT_MS,
@@ -3597,8 +3626,9 @@ export async function syncAttendanceForTimesheet(
 
   const activeEmployeeByKey = new Map<string, SagePayrollEmployee>();
   let allowedSupervisorKeys = new Set<string>();
-  let assignedSupervisorEmployees: Array<{ employeeCode: string; fullName: string }> = [];
+  let assignedSupervisorEmployees: Array<{ employeeCode: string; fullName: string; location?: string }> = [];
   let supervisorScopeResolved = false;
+  let supervisorHomeLocation = '';
 
   const [liveResult, scopeResult, activePayrollResult, approvedLeaveResult] = await Promise.allSettled([
     liveAttendancePromise,
@@ -3616,6 +3646,15 @@ export async function syncAttendanceForTimesheet(
     supervisorScopeResolved = true;
     allowedSupervisorKeys = scopeResult.value.keys;
     assignedSupervisorEmployees = scopeResult.value.employees;
+    supervisorHomeLocation = scopeResult.value.supervisorLocation || '';
+    if (locationName) {
+      assignedSupervisorEmployees = assignedSupervisorEmployees.filter((employee) =>
+        timesheetCrewMatchesLocation(employee.location, locationName, supervisorHomeLocation)
+      );
+      allowedSupervisorKeys = new Set(
+        assignedSupervisorEmployees.flatMap((employee) => attendanceMatchKeys(employee.employeeCode, employee.fullName)),
+      );
+    }
   } else {
     console.warn('Timesheet attendance sync could not resolve supervisor employee scope:', scopeResult.reason);
   }
@@ -3738,27 +3777,31 @@ export async function syncAttendanceForTimesheet(
   const period = calculateTimesheetPeriod(date);
 
   const workCenterId = workCenterName.toLowerCase().replace(/\s+/g, '-');
-  const supervisorSlug = supervisorId.toLowerCase().replace(/\s+/g, '-');
-  const shiftHeaderId = `hdr-${date}-${supervisorSlug}-${workCenterId}-${shiftSlug}`;
-  let header = headers.find((h) => (
+  const locationSpecificId = buildTimesheetHeaderId({
+    date,
+    supervisorId,
+    workCenterName,
+    shiftLabel: shift.label,
+    locationName,
+  });
+  const headerCandidates = headers.filter((h) => (
     h.timesheetDate === date
     && h.supervisorId === supervisorId
     && h.workCenterName === workCenterName
     && timesheetHeaderMatchesShift(h.shiftLabel, shift.label)
   ));
-  // Prefer explicit night/day header id; fall back to legacy header only for Day.
+  const pick = selectTimesheetHeaderForLocation(headerCandidates, locationName, supervisorHomeLocation, locationSpecificId);
+  let header = pick.header;
+  // Prefer explicit night/day header id; fall back to legacy header only for Day home yard.
   if (!header && shift.kind === 'Day') {
-    header = headers.find((h) => (
-      h.timesheetDate === date
-      && h.supervisorId === supervisorId
-      && h.workCenterName === workCenterName
-      && !String(h.shiftLabel || '').toLowerCase().includes('night')
-      && h.id !== shiftHeaderId
-    )) || headers.find((h) => h.id === `hdr-${date}-${supervisorSlug}-${workCenterId}`);
+    header = headers.find((h) => h.id === `hdr-${date}-${supervisorId.toLowerCase().replace(/\s+/g, '-')}-${workCenterId}`) || null;
+    if (header && locationName && header.locationName && !timesheetLocationsMatch(header.locationName, locationName)) {
+      header = null;
+    }
   }
   if (!header) {
     header = {
-      id: shiftHeaderId,
+      id: locationSpecificId,
       periodId: period.id,
       timesheetDate: date,
       supervisorId,
@@ -3772,11 +3815,15 @@ export async function syncAttendanceForTimesheet(
       approvedBy: null,
       lastSyncAt: new Date().toISOString(),
       shiftLabel: shift.label,
+      locationName: locationName || null,
     };
     if (persist) headers.push(header);
   } else {
     header.lastSyncAt = new Date().toISOString();
     header.shiftLabel = shift.label;
+    if (locationName && (pick.adoptLegacy || !header.locationName)) {
+      header.locationName = locationName;
+    }
   }
 
   const syncHeaderRef = {
@@ -3877,9 +3924,14 @@ export async function syncAttendanceForTimesheet(
     ...syncedFromAttendance,
     ...preservedNightLines.map((line) => ({ ...line, headerId: header!.id })),
   ];
+  const syncedKeys = new Set(newLines.flatMap((line) => attendanceMatchKeys(line.employeeId, line.employeeNo, line.employeeName)));
+  const parkedOtherLocationLines = existingHeaderLines.filter((line) =>
+    !attendanceMatchKeys(line.employeeId, line.employeeNo, line.employeeName).some((key) => syncedKeys.has(key))
+  );
+  const persistLines = [...newLines, ...parkedOtherLocationLines];
 
   if (persist) {
-    await writeTimesheetHeaderLines(header, newLines);
+    await writeTimesheetHeaderLines(header, persistLines);
     const supervisorEmployee = {
       employeeNo: extractSupervisorEmployeeCode(supervisorId) || supervisorId,
       employeeId: extractSupervisorEmployeeCode(supervisorId) || supervisorId,

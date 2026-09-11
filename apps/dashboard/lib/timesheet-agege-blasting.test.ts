@@ -13,6 +13,8 @@ import {
   supervisorCodeLookupVariants,
   supervisorCodesMatch,
   timesheetEmployeeRecordsMatch,
+  timesheetLocationsMatch,
+  timesheetCrewMatchesLocation,
 } from './timesheet-agege-blasting.ts';
 
 assert.equal(extractSupervisorEmployeeCode('C1001 - JIMOH GBADAMOSI'), 'C1001');
@@ -86,5 +88,15 @@ const untouched = applyAgegeBlastingSupervisorContext({
 assert.equal(untouched.forced, false);
 assert.equal(untouched.locationName, 'IDI_ORO');
 assert.equal(untouched.workCenterName, 'Maintenance');
+
+assert.equal(timesheetLocationsMatch('AGEGE', 'Agege'), true);
+assert.equal(timesheetLocationsMatch('Lagos - Idi Oro', 'IDI-ORO'), true);
+assert.equal(timesheetLocationsMatch('IDI_ORO', 'Idi-Oro'), true);
+assert.equal(timesheetLocationsMatch('AGEGE', 'IDI-ORO'), false);
+assert.equal(timesheetCrewMatchesLocation('AGEGE', 'AGEGE', 'AGEGE'), true);
+assert.equal(timesheetCrewMatchesLocation('Lagos - Idi Oro', 'IDI-ORO', 'AGEGE'), true);
+assert.equal(timesheetCrewMatchesLocation('AGEGE', 'IDI-ORO', 'AGEGE'), false);
+assert.equal(timesheetCrewMatchesLocation('', 'AGEGE', 'AGEGE'), true);
+assert.equal(timesheetCrewMatchesLocation('', 'IDI-ORO', 'AGEGE'), false);
 
 console.log('timesheet-agege-blasting.test.ts: ok');
