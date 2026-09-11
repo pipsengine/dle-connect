@@ -9,6 +9,8 @@ import {
   CheckSquare,
   ChevronRight,
   Download,
+  Eye,
+  EyeOff,
   FileText,
   Landmark,
   LockKeyhole,
@@ -25,9 +27,11 @@ import {
   X,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
+import type { ReactNode } from 'react';
 import EmployeeAvatar from '@/components/hris/EmployeeAvatar';
 import { EssCard, EssSectionHeader } from './ess-portal-ui';
 import { EssPayslipDocument, EssPayslipPrintStyles } from './ess-payslip-document';
+import { MaskedMoney } from './ess-masked-money';
 import {
   buildPayslipModel,
   fmtDate,
@@ -62,7 +66,7 @@ function PayrollKpiCard({
   iconBg,
 }: {
   label: string;
-  value: string;
+  value: ReactNode;
   subtitle: string;
   icon: LucideIcon;
   accent: string;
@@ -157,6 +161,7 @@ export function EssPayrollDashboardView({
   const [customEmail, setCustomEmail] = useState(employeeEmail);
   const [emailKind, setEmailKind] = useState<'payslip' | 'tax'>('payslip');
   const [emailBulk, setEmailBulk] = useState(false);
+  const [amountsVisible, setAmountsVisible] = useState(false);
 
   const selected = periods.find((item) => item.period === selectedPeriod) || periods[0];
 
@@ -188,26 +193,43 @@ export function EssPayrollDashboardView({
 
   const insights = useMemo(() => {
     if (!selected) return [];
-    const rows: Array<{ title: string; tone: 'green' | 'blue' | 'orange'; icon: LucideIcon }> = [];
+    const rows: Array<{ key: string; tone: 'green' | 'blue' | 'orange'; icon: LucideIcon; content: ReactNode }> = [];
     if (netChangePct !== null) {
       rows.push({
-        title: `Your net pay ${netChangePct >= 0 ? 'increased' : 'decreased'} by ${Math.abs(netChangePct).toFixed(1)}% compared to ${previous?.periodLabel || previous?.period || 'last period'}`,
+        key: 'net-change',
         tone: netChangePct >= 0 ? 'green' : 'orange',
         icon: netChangePct >= 0 ? TrendingUp : TrendingDown,
+        content: (
+          <>
+            Your net pay {netChangePct >= 0 ? 'increased' : 'decreased'} by{' '}
+            <MaskedMoney value={`${Math.abs(netChangePct).toFixed(1)}%`} visible={amountsVisible} placeholder="••••" />
+            {' '}compared to {previous?.periodLabel || previous?.period || 'last period'}
+          </>
+        ),
       });
     }
     rows.push({
-      title: `PAYE tax for this period is ${money2(model?.payeTax || 0)}`,
+      key: 'paye',
       tone: 'blue',
       icon: FileText,
+      content: (
+        <>
+          PAYE tax for this period is <MaskedMoney value={money2(model?.payeTax || 0)} visible={amountsVisible} />
+        </>
+      ),
     });
     rows.push({
-      title: `Pension contribution recorded at ${money2(model?.pensionEmployee || 0)}`,
+      key: 'pension',
       tone: 'blue',
       icon: Landmark,
+      content: (
+        <>
+          Pension contribution recorded at <MaskedMoney value={money2(model?.pensionEmployee || 0)} visible={amountsVisible} />
+        </>
+      ),
     });
     return rows;
-  }, [model?.payeTax, model?.pensionEmployee, netChangePct, previous, selected]);
+  }, [amountsVisible, model?.payeTax, model?.pensionEmployee, netChangePct, previous, selected]);
 
   const targetPayslips = (periodsList: string[]) =>
     periods.filter((item) => periodsList.includes(item.period));
@@ -358,6 +380,16 @@ export function EssPayrollDashboardView({
         <div className="flex flex-wrap gap-2">
           <button
             type="button"
+            onClick={() => setAmountsVisible((current) => !current)}
+            aria-pressed={amountsVisible}
+            aria-label={amountsVisible ? 'Hide payslip amounts' : 'Show payslip amounts'}
+            className="inline-flex h-11 items-center gap-2 rounded-[12px] border border-[#D1D5DB] bg-white px-4 text-[14px] font-semibold text-[#111827] hover:bg-[#F8FAFC]"
+          >
+            {amountsVisible ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+            {amountsVisible ? 'Hide amounts' : 'Show amounts'}
+          </button>
+          <button
+            type="button"
             disabled={Boolean(busyAction)}
             onClick={() => void downloadPayslips([selected.period], 'payslip')}
             className="inline-flex h-11 items-center gap-2 rounded-[12px] bg-[#2563EB] px-4 text-[14px] font-semibold text-white shadow-[0_2px_10px_rgba(37,99,235,0.18)] hover:bg-[#1D4ED8] disabled:opacity-60"
@@ -381,11 +413,11 @@ export function EssPayrollDashboardView({
       </div>
 
       <div className="ess-no-print grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-6">
-        <PayrollKpiCard label="Gross Pay" value={money(model?.grossPay || selected.grossPay)} subtitle="Current period earnings" icon={Wallet} accent="#8B5CF6" iconBg="#F5F3FF" />
-        <PayrollKpiCard label="Net Pay" value={money(selected.netPay)} subtitle="Take-home pay" icon={Banknote} accent="#22C55E" iconBg="#ECFDF3" />
-        <PayrollKpiCard label="Total Deductions" value={money(selected.deductions)} subtitle="Statutory and other deductions" icon={Shield} accent="#F59E0B" iconBg="#FFF7ED" />
-        <PayrollKpiCard label="Total Tax (PAYE)" value={money(model?.payeTax || 0)} subtitle="Income tax withheld" icon={FileText} accent="#0EA5E9" iconBg="#EFF8FF" />
-        <PayrollKpiCard label="Pension Contribution" value={money(model?.pensionEmployee || 0)} subtitle="Employee contribution" icon={Users} accent="#06B6D4" iconBg="#E0F7FA" />
+        <PayrollKpiCard label="Gross Pay" value={<MaskedMoney value={money(model?.grossPay || selected.grossPay)} visible={amountsVisible} />} subtitle="Current period earnings" icon={Wallet} accent="#8B5CF6" iconBg="#F5F3FF" />
+        <PayrollKpiCard label="Net Pay" value={<MaskedMoney value={money(selected.netPay)} visible={amountsVisible} />} subtitle="Take-home pay" icon={Banknote} accent="#22C55E" iconBg="#ECFDF3" />
+        <PayrollKpiCard label="Total Deductions" value={<MaskedMoney value={money(selected.deductions)} visible={amountsVisible} />} subtitle="Statutory and other deductions" icon={Shield} accent="#F59E0B" iconBg="#FFF7ED" />
+        <PayrollKpiCard label="Total Tax (PAYE)" value={<MaskedMoney value={money(model?.payeTax || 0)} visible={amountsVisible} />} subtitle="Income tax withheld" icon={FileText} accent="#0EA5E9" iconBg="#EFF8FF" />
+        <PayrollKpiCard label="Pension Contribution" value={<MaskedMoney value={money(model?.pensionEmployee || 0)} visible={amountsVisible} />} subtitle="Employee contribution" icon={Users} accent="#06B6D4" iconBg="#E0F7FA" />
         <PayrollKpiCard label="Payslips on File" value={String(periods.length)} subtitle="Released payroll periods" icon={Building2} accent="#8B5CF6" iconBg="#F3E8FF" />
       </div>
 
@@ -459,7 +491,9 @@ export function EssPayrollDashboardView({
                   {(model?.ytdRows || []).slice(0, 7).map(([label, value]) => (
                     <div key={label} className="flex items-center justify-between gap-3 rounded-[10px] px-1 py-1.5">
                       <span className="text-[13px] font-medium text-[#6B7280]">{label.replace('YTD ', '')}</span>
-                      <span className="text-[14px] font-bold text-[#111827]">{value}</span>
+                      <span className="text-[14px] font-bold text-[#111827]">
+                        <MaskedMoney value={value} visible={amountsVisible} />
+                      </span>
                     </div>
                   ))}
                 </div>
@@ -470,7 +504,7 @@ export function EssPayrollDashboardView({
                 <div className="rounded-[12px] border border-[#E5E7EB] bg-[#F8FAFC] p-4">
                   <p className="text-[12px] font-medium text-[#6B7280]">Average Net Pay</p>
                   <p className="mt-1 text-[24px] font-bold text-[#111827]">
-                    {money(periods.reduce((sum, item) => sum + item.netPay, 0) / Math.max(periods.length, 1))}
+                    <MaskedMoney value={money(periods.reduce((sum, item) => sum + item.netPay, 0) / Math.max(periods.length, 1))} visible={amountsVisible} />
                   </p>
                 </div>
               </div>
@@ -484,11 +518,11 @@ export function EssPayrollDashboardView({
                 const Icon = item.icon;
                 const toneClass = item.tone === 'green' ? 'bg-[#ECFDF3] text-[#047857]' : item.tone === 'orange' ? 'bg-[#FFF7ED] text-[#B45309]' : 'bg-[#EFF8FF] text-[#1D4ED8]';
                 return (
-                  <div key={item.title} className="flex items-start gap-3 rounded-[12px] border border-[#E5E7EB] bg-[#FAFBFD] p-3">
+                  <div key={item.key} className="flex items-start gap-3 rounded-[12px] border border-[#E5E7EB] bg-[#FAFBFD] p-3">
                     <span className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full ${toneClass}`}>
                       <Icon className="h-4 w-4" />
                     </span>
-                    <p className="text-[13px] font-medium leading-relaxed text-[#111827]">{item.title}</p>
+                    <p className="text-[13px] font-medium leading-relaxed text-[#111827]">{item.content}</p>
                   </div>
                 );
               })}
@@ -502,6 +536,7 @@ export function EssPayrollDashboardView({
             employee={employee}
             generatedAt={payload?.generatedAt}
             showToolbar
+            amountsVisible={amountsVisible}
             onPrint={printPayslip}
             onDownload={() => void downloadPayslips([selected.period], 'payslip')}
             onEmail={() => openEmailModal(false, 'payslip')}

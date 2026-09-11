@@ -2,6 +2,7 @@
 
 import { Fragment, useEffect, useMemo, useState } from 'react';
 import { Download, Mail, Maximize2, Minus, Plus, Printer } from 'lucide-react';
+import { MaskedMoney } from './ess-masked-money';
 import {
   amountInWords,
   buildPayslipModel,
@@ -66,7 +67,21 @@ const PAYSLIP_LOGO_SRC = '/brand/dorman-long-logo.png';
 
 const sectionHeaderClass = 'bg-[#123f82] px-3 py-1.5 text-center text-[11px] font-black uppercase text-white';
 
-function PayslipTable({ title, lines, totalLabel, total, wide = false }: { title: string; lines: PayrollLine[]; totalLabel: string; total: number; wide?: boolean }) {
+function PayslipTable({
+  title,
+  lines,
+  totalLabel,
+  total,
+  wide = false,
+  amountsVisible,
+}: {
+  title: string;
+  lines: PayrollLine[];
+  totalLabel: string;
+  total: number;
+  wide?: boolean;
+  amountsVisible: boolean;
+}) {
   const visibleLines = lines.filter(nonZeroPayrollLine);
   return (
     <div className={`${wide ? 'overflow-hidden' : 'overflow-hidden rounded-[8px] border border-[#2f67b1]'}`}>
@@ -84,12 +99,16 @@ function PayslipTable({ title, lines, totalLabel, total, wide = false }: { title
             <tr key={`${title}-${line.code || line.label}-${index}`}>
               <td className="border border-[#d7e4f4] px-2 py-1 font-semibold uppercase text-[#0F172A]">{line.label}</td>
               <td className="border border-[#d7e4f4] px-2 py-1 text-center">{Number(line.units || 0).toFixed(2)}</td>
-              <td className="border border-[#d7e4f4] px-2 py-1 text-right font-black">{money2(line.amount).replace('NGN', '').trim()}</td>
+              <td className="border border-[#d7e4f4] px-2 py-1 text-right font-black">
+                <MaskedMoney value={money2(line.amount).replace('NGN', '').trim()} visible={amountsVisible} placeholder="••••••" />
+              </td>
             </tr>
           ))}
           <tr className="bg-[#EFF8FF]">
             <td className="border border-[#2f67b1] px-2 py-1.5 text-[11px] font-black uppercase text-[#123f82]" colSpan={2}>{totalLabel}</td>
-            <td className="border border-[#2f67b1] px-2 py-1.5 text-right text-[13px] font-black text-[#123f82]">{money2(total).replace('NGN', '').trim()}</td>
+            <td className="border border-[#2f67b1] px-2 py-1.5 text-right text-[13px] font-black text-[#123f82]">
+              <MaskedMoney value={money2(total).replace('NGN', '').trim()} visible={amountsVisible} placeholder="••••••" />
+            </td>
           </tr>
         </tbody>
       </table>
@@ -97,7 +116,7 @@ function PayslipTable({ title, lines, totalLabel, total, wide = false }: { title
   );
 }
 
-function SummaryBlock({ title, rows }: { title: string; rows: Array<[string, string]> }) {
+function SummaryBlock({ title, rows, amountsVisible }: { title: string; rows: Array<[string, string]>; amountsVisible: boolean }) {
   if (!rows.length) return null;
   return (
     <section className="overflow-hidden rounded-[8px] border border-[#2f67b1]">
@@ -106,7 +125,11 @@ function SummaryBlock({ title, rows }: { title: string; rows: Array<[string, str
         {rows.map(([label, value]) => (
           <div key={label} className="flex items-center justify-between gap-4 px-3 py-1.5 text-[11px]">
             <span className="font-bold text-[#475569]">{label}</span>
-            <span className="font-black text-[#0F172A]">{value}</span>
+            <span className="font-black text-[#0F172A]">
+              {/NGN|₦/.test(value)
+                ? <MaskedMoney value={value} visible={amountsVisible} />
+                : value}
+            </span>
           </div>
         ))}
       </div>
@@ -120,6 +143,7 @@ export function EssPayslipDocument({
   generatedAt,
   zoom: zoomProp = 100,
   showToolbar = true,
+  amountsVisible = false,
   onPrint,
   onDownload,
   onEmail,
@@ -129,6 +153,7 @@ export function EssPayslipDocument({
   generatedAt?: string;
   zoom?: number;
   showToolbar?: boolean;
+  amountsVisible?: boolean;
   onPrint?: () => void;
   onDownload?: () => void;
   onEmail?: () => void;
@@ -210,28 +235,30 @@ export function EssPayslipDocument({
         </section>
 
         <section className="mt-3 grid grid-cols-1 gap-3 lg:grid-cols-2">
-          <PayslipTable title="Earnings" lines={model.earnings} totalLabel="Total Earnings" total={model.grossPay} />
-          <PayslipTable title="Deductions" lines={model.deductions} totalLabel="Total Deductions" total={selected.deductions} />
+          <PayslipTable title="Earnings" lines={model.earnings} totalLabel="Total Earnings" total={model.grossPay} amountsVisible={amountsVisible} />
+          <PayslipTable title="Deductions" lines={model.deductions} totalLabel="Total Deductions" total={selected.deductions} amountsVisible={amountsVisible} />
         </section>
 
         <section className="ess-payslip-net-summary mt-3 rounded-[12px] border border-[#22C55E] bg-[#ECFDF3] p-3 text-center">
           <div className="grid grid-cols-1 gap-2 text-[12px] font-black md:grid-cols-3">
-            <p>Gross Pay: <span className="text-[#0F172A]">{money2(model.grossPay)}</span></p>
-            <p>Total Deductions: <span className="text-[#B45309]">{money2(selected.deductions)}</span></p>
-            <p>Net Pay: <span className="text-[22px] font-black text-[#047857]">{money2(selected.netPay)}</span></p>
+            <p>Gross Pay: <span className="text-[#0F172A]"><MaskedMoney value={money2(model.grossPay)} visible={amountsVisible} /></span></p>
+            <p>Total Deductions: <span className="text-[#B45309]"><MaskedMoney value={money2(selected.deductions)} visible={amountsVisible} /></span></p>
+            <p>Net Pay: <span className="text-[22px] font-black text-[#047857]"><MaskedMoney value={money2(selected.netPay)} visible={amountsVisible} /></span></p>
           </div>
-          <p className="mt-2 text-[11px] font-semibold text-[#475569]">Amount in Words: {amountInWords(selected.netPay)}</p>
+          <p className="mt-2 text-[11px] font-semibold text-[#475569]">
+            Amount in Words: <MaskedMoney value={amountInWords(selected.netPay)} visible={amountsVisible} placeholder="••••••" />
+          </p>
         </section>
 
         <section className="mt-3 overflow-hidden rounded-[8px] border border-[#2f67b1]">
-          <PayslipTable title="Company Contributions" lines={model.employerLines} totalLabel="Total Company Contributions" total={model.totalEmployer} wide />
+          <PayslipTable title="Company Contributions" lines={model.employerLines} totalLabel="Total Company Contributions" total={model.totalEmployer} wide amountsVisible={amountsVisible} />
         </section>
 
         <section className="ess-payslip-summary-grid mt-3 grid grid-cols-1 gap-3 md:grid-cols-2">
           <div className="ess-payslip-leave-block">
-            <SummaryBlock title="Leave Information" rows={model.leaveRows.filter(nonZeroSummaryRow)} />
+            <SummaryBlock title="Leave Information" rows={model.leaveRows.filter(nonZeroSummaryRow)} amountsVisible={amountsVisible} />
           </div>
-          <SummaryBlock title="Year-To-Date Summary" rows={model.ytdRows.filter(nonZeroSummaryRow)} />
+          <SummaryBlock title="Year-To-Date Summary" rows={model.ytdRows.filter(nonZeroSummaryRow)} amountsVisible={amountsVisible} />
         </section>
 
         <footer className="ess-payslip-footer mt-3 rounded-[12px] border border-[#9bb9df] p-3">
