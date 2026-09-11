@@ -68,7 +68,7 @@ import {
   resolveOvertimeBookingOptions,
 } from '@/lib/timesheet-overtime-config';
 import { applyTimesheetLineDefaults, ensureClockedLinesHaveProjectAllocation } from '@/lib/timesheet-line-defaults';
-import { normalizeIdleAllocations, normalizeProjectAllocations, reconcileTimesheetLineHours, resolvePrimaryProjectCode, validateTimesheetLinesForPersist, TIMESHEET_SHIFT_LABELS, resolveTimesheetShift, timesheetHeaderMatchesShift, buildTimesheetHeaderId, selectTimesheetHeaderForLocation, isOffshoreWorkCenterName, isManualOffshoreLine, isTimesheetAbsentLine, isTimesheetInApprovalCapture, applyNightPaperClock, timesheetLineHasBookedHours, buildManualOffshoreLine, buildRosterTimesheetLine, projectCodeFromOffshoreWorkCenter, OFFSHORE_LOCATION_NAME, DEFAULT_TIMESHEET_SHIFT_LABEL, supervisorTimesheetMessage, type TimesheetDayContext } from '@/lib/timesheet-entry-shared';
+import { normalizeIdleAllocations, normalizeProjectAllocations, reconcileTimesheetLineHours, resolvePrimaryProjectCode, validateTimesheetLinesForPersist, TIMESHEET_SHIFT_LABELS, resolveTimesheetShift, timesheetHeaderMatchesShift, buildTimesheetHeaderId, selectTimesheetHeaderForLocation, timesheetWorkCentersMatch, isOffshoreWorkCenterName, isManualOffshoreLine, isTimesheetAbsentLine, isTimesheetInApprovalCapture, applyNightPaperClock, timesheetLineHasBookedHours, buildManualOffshoreLine, buildRosterTimesheetLine, projectCodeFromOffshoreWorkCenter, OFFSHORE_LOCATION_NAME, DEFAULT_TIMESHEET_SHIFT_LABEL, supervisorTimesheetMessage, dedupeTimesheetLinesByEmployee, type TimesheetDayContext } from '@/lib/timesheet-entry-shared';
 import { findSameDayBookingConflicts, releaseLinesAlreadyBookedElsewhere, type TimesheetAlreadyBookedSkip } from '@/lib/timesheet-booking-clash';
 import { assertTimesheetRecaptureAllowed, reopenTimesheetForRecapture } from '@/lib/timesheet-recapture';
 import { submitTimesheetForApproval } from '@/lib/timesheet-submit';
@@ -650,16 +650,12 @@ const employeeMatchesWorkCenter = (employee: {
   officeLocation?: string | null;
   location?: string | null;
 }, workCenterName?: string) => {
-  const selected = clean(workCenterName).toLowerCase();
-  if (!selected) return true;
-  const assigned = clean(employee.workCenter).toLowerCase();
-  if (assigned) {
-    return assigned === selected || assigned.includes(selected) || selected.includes(assigned);
-  }
+  if (!clean(workCenterName)) return true;
+  const assigned = clean(employee.workCenter);
+  if (assigned) return timesheetWorkCentersMatch(assigned, workCenterName);
   return [employee.department, employee.division, employee.businessUnit, employee.costCenter, employee.projectSite]
-    .map((value) => clean(value).toLowerCase())
-    .filter(Boolean)
-    .some((value) => value === selected || value.includes(selected) || selected.includes(value));
+    .filter((value) => clean(value))
+    .some((value) => timesheetWorkCentersMatch(value, workCenterName));
 };
 
 const supervisorMatchesSelection = (employee: {
@@ -1166,6 +1162,12 @@ const buildPayload = async (
   const supervisorHomeLocation = selectedSupervisorProfile ? employeeLocation(selectedSupervisorProfile) : '';
   const selectedSupervisorEmployeesFromDirectory = selectedSupervisorAllDirectReports
     .filter((employee) => timesheetCrewMatchesLocation(employeeLocation(employee), targetLocation, supervisorHomeLocation))
+    .filter((employee) => {
+      if (!targetWorkCenter) return true;
+      const hasTrade = Boolean(clean(employee.workCenter) || clean(employee.department) || clean(employee.division) || clean(employee.businessUnit));
+      if (!hasTrade) return true;
+      return employeeMatchesWorkCenter(employee, targetWorkCenter);
+    })
     .map((employee) => ({
       employeeId: clean(employee.employeeId),
       employeeCode: clean(employee.employeeCode),
@@ -1353,12 +1355,15 @@ const buildPayload = async (
       ));
       for (const sibling of siblings) {
         const siblingLines = allLines.filter((line) => String(line.headerId) === String(sibling.id));
-        const move = siblingLines.filter(lineBelongsToSelectedCrew);
+        const move = siblingLines.filter((line) => (
+          lineBelongsToSelectedCrew(line)
+          && !lines.some((existing) => timesheetEmployeeRecordsMatch(existing, line))
+        ));
         if (!move.length) continue;
-        const remaining = siblingLines.filter((line) => !lineBelongsToSelectedCrew(line));
+        const remaining = siblingLines.filter((line) => !move.some((item) => item.id === line.id));
         const relocated = move.map((line) => ({
           ...line,
-          id: `line-${header!.id}-${line.employeeNo || line.employeeId}`,
+          id: `line-${header!.id}-${String(line.employeeNo || line.employeeId).replace(/[^A-Za-z0-9]/g, '')}`,
           headerId: header!.id,
         }));
         lines = [...lines, ...relocated];
@@ -1392,10 +1397,13 @@ const buildPayload = async (
         keys.forEach((key) => existingKeys.add(key));
       }
     }
+    lines = dedupeTimesheetLinesByEmployee(lines).lines;
     if (persistRoster && period.status === 'Open' && isTimesheetEditableStatus(header.status)) {
-      const persistLines = adoptLegacyHeader
-        ? [...lines, ...headerLines.filter((line) => !lineBelongsToSelectedCrew(line))]
-        : lines;
+      const persistLines = dedupeTimesheetLinesByEmployee(
+        adoptLegacyHeader
+          ? [...lines, ...headerLines.filter((line) => !lineBelongsToSelectedCrew(line))]
+          : lines,
+      ).lines;
       await writeTimesheetHeaderLines(header, persistLines);
       for (const sibling of siblingWrites) {
         await writeTimesheetHeaderLines(sibling.header, sibling.lines);
@@ -1469,6 +1477,7 @@ const buildPayload = async (
       ...(hostMobilizations.length ? [OFFSHORE_LOCATION_NAME] : []),
     ],
   ).filter((name) => !isTimesheetTradeLabelLocation(name, workCenterNameList));
+  lines = dedupeTimesheetLinesByEmployee(lines).lines;
   const summary = {
     totalEmployees: lines.length,
     presentEmployees: lines.filter((l) => l.clockIn || isManualOffshoreLine(l)).length,

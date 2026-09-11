@@ -1,6 +1,6 @@
 /** Client-safe timesheet types and constants (no Node/SQL imports). */
 
-import { timesheetLocationsMatch } from '@/lib/timesheet-agege-blasting';
+import { supervisorCodesMatch, timesheetEmployeeRecordsMatch, timesheetLocationsMatch } from '@/lib/timesheet-agege-blasting';
 
 export const STANDARD_TIMESHEET_HOURS = 8;
 export const DAILY_BREAK_HOURS = 1;
@@ -341,6 +341,27 @@ export const timesheetHeaderMatchesShift = (headerShiftLabel: string | null | un
 export const timesheetShiftHeaderSlug = (shiftLabel?: string | null) => (
   resolveTimesheetShift(shiftLabel).kind === 'Night' ? 'night' : 'day'
 );
+
+const TIMESHEET_LOCATION_WORK_CENTER_TOKENS = new Set([
+  'agege', 'idi', 'oro', 'idioro', 'lagos', 'yard', 'site', 'workshop',
+]);
+
+/** Maintenance must not match Electrical Maintenance; Agege Maintenance may match Maintenance. */
+export const timesheetWorkCentersMatch = (left?: string | null, right?: string | null) => {
+  const normalize = (value?: string | null) =>
+    String(value || '').trim().toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+  const a = normalize(left);
+  const b = normalize(right);
+  if (!a || !b) return false;
+  if (a === b) return true;
+  const trade = (value: string) => value
+    .split(' ')
+    .filter((token) => token && !TIMESHEET_LOCATION_WORK_CENTER_TOKENS.has(token))
+    .join(' ');
+  const leftTrade = trade(a);
+  const rightTrade = trade(b);
+  return Boolean(leftTrade && rightTrade && leftTrade === rightTrade);
+};
 
 export const timesheetHeaderIdentitySlug = (value?: string | null) =>
   String(value || '').trim().toLowerCase().replace(/\s+/g, '-');
@@ -1066,6 +1087,18 @@ export const timesheetLineHasBookedHours = (line: {
   || Number(line.totalHours || 0) > 0.001
   || (line.projectAllocations || []).some((item) => Number(item.hours || 0) > 0.001);
 
+/** Job hours only. Break / idle time is attendance, not a booking on another work centre. */
+export const timesheetLineHasProductiveHours = (line: {
+  usedHours?: number | null;
+  projectAllocations?: Array<{ projectCode?: string | null; hours?: number | null }> | null;
+}) =>
+  productiveProjectHours(
+    (line.projectAllocations || []).map((item) => ({
+      projectCode: String(item.projectCode || ''),
+      hours: Number(item.hours || 0),
+    })),
+  ) > 0.001;
+
 /** Paper N: booking hours on the night sheet without a biometric pair uses the night window. */
 export const applyNightPaperClock = <T extends {
   clockIn?: string | null;
@@ -1182,7 +1215,27 @@ export const dedupeTimesheetLinesByEmployee = <T extends TimesheetLine>(lines: T
     duplicateCount += 1;
     byEmployee.set(key, linePersistenceScore(line) >= linePersistenceScore(existing) ? line : existing);
   }
-  return { lines: Array.from(byEmployee.values()), duplicateCount };
+  const collapsed: T[] = [];
+  for (const line of byEmployee.values()) {
+    const index = collapsed.findIndex((item) => {
+      const leftCodes = [item.employeeNo, item.employeeId].map((value) => String(value || '').trim()).filter(Boolean);
+      const rightCodes = [line.employeeNo, line.employeeId].map((value) => String(value || '').trim()).filter(Boolean);
+      if (leftCodes.length && rightCodes.length) {
+        return leftCodes.some((left) => rightCodes.some((right) => (
+          supervisorCodesMatch(left, right)
+          || normalizeEmployeeLineKey({ employeeId: left }) === normalizeEmployeeLineKey({ employeeId: right })
+        )));
+      }
+      return timesheetEmployeeRecordsMatch(item, line);
+    });
+    if (index < 0) {
+      collapsed.push(line);
+      continue;
+    }
+    duplicateCount += 1;
+    collapsed[index] = linePersistenceScore(line) >= linePersistenceScore(collapsed[index]) ? line : collapsed[index];
+  }
+  return { lines: collapsed, duplicateCount };
 };
 
 export const validateTimesheetLinesForPersist = (lines: TimesheetLine[]) => {

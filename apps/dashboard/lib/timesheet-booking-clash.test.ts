@@ -102,4 +102,18 @@ assert.equal(
   'Every worker with hours here is already on another timesheet today. There is nothing new to submit on this sheet.',
 );
 
+const breakOnlyOtherSheet = findSameDayBookingConflicts(
+  [line({ usedHours: 0, projectAllocations: [] })],
+  blasting,
+  [blasting, galvanizing],
+  [line({
+    headerId: 'hdr-galvanizing',
+    usedHours: 0,
+    idleHours: 1,
+    totalHours: 1,
+    projectAllocations: [],
+  })],
+);
+assert.equal(breakOnlyOtherSheet.length, 0);
+
 console.log('timesheet-booking-clash.test.ts: ok');

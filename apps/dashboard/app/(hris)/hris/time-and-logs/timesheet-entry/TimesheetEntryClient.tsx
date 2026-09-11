@@ -35,7 +35,7 @@ import {
   validateTimesheetLine,
   type OvertimeAuthorization,
 } from '@/lib/timesheet-overtime-booking';
-import { DAILY_BREAK_HOURS, STANDARD_TIMESHEET_HOURS, DEFAULT_BREAK_IDLE_REASON_ID, DEFAULT_BREAK_IDLE_REASON_NAME, normalizeIdleAllocations, normalizeProjectAllocations, canonicalProjectCode, consolidateProjectAllocationsToPrimary, resolvePrimaryProjectCode, resolveTimesheetHours, attendanceDurationFromClock, reconcileTimesheetLineHours, sumProjectAllocationHours, matrixProductiveHoursCap, upsertMatrixProjectHours, DEFAULT_TIMESHEET_SHIFT_LABEL, resolveTimesheetShift, timesheetHeaderMatchesShift, timesheetLineMatchesShift, applyNightPaperClock, buildRosterTimesheetLine, IDLE_TIME_PROJECT_CODE, IDLE_TIME_PROJECT_NAME, idleTimeProjectHours, productiveProjectHours, isIdleTimeProjectCode, isEditableTimesheetStatus, isTimesheetInApprovalCapture, isManualOffshoreLine, isTimesheetAbsentLine, isOffshoreWorkCenterName, OFFSHORE_ALLOWANCE_HOURS, supervisorTimesheetMessage, resolveAutoDistributeProjectCode, requiresMiscellaneousTimesheetConfirm } from '@/lib/timesheet-entry-shared';
+import { DAILY_BREAK_HOURS, STANDARD_TIMESHEET_HOURS, DEFAULT_BREAK_IDLE_REASON_ID, DEFAULT_BREAK_IDLE_REASON_NAME, normalizeIdleAllocations, normalizeProjectAllocations, canonicalProjectCode, consolidateProjectAllocationsToPrimary, resolvePrimaryProjectCode, resolveTimesheetHours, attendanceDurationFromClock, reconcileTimesheetLineHours, sumProjectAllocationHours, matrixProductiveHoursCap, upsertMatrixProjectHours, DEFAULT_TIMESHEET_SHIFT_LABEL, resolveTimesheetShift, timesheetHeaderMatchesShift, timesheetLineMatchesShift, applyNightPaperClock, buildRosterTimesheetLine, IDLE_TIME_PROJECT_CODE, IDLE_TIME_PROJECT_NAME, idleTimeProjectHours, productiveProjectHours, isIdleTimeProjectCode, isEditableTimesheetStatus, isTimesheetInApprovalCapture, isManualOffshoreLine, isTimesheetAbsentLine, isOffshoreWorkCenterName, OFFSHORE_ALLOWANCE_HOURS, supervisorTimesheetMessage, resolveAutoDistributeProjectCode, requiresMiscellaneousTimesheetConfirm, dedupeTimesheetLinesByEmployee } from '@/lib/timesheet-entry-shared';
 import { applyTimesheetLineDefaults } from '@/lib/timesheet-line-defaults';
 import { canBookOvertimeOnTimesheet } from '@/lib/timesheet-overtime-config';
 import {
@@ -1378,9 +1378,11 @@ export default function TimesheetEntryClient({ variant = 'admin' }: { variant?: 
     setLocalLines(nextLines);
   };
 
-  const shiftLines = payload?.header && timesheetHeaderMatchesShift(payload.header.shiftLabel, selectedShift)
-    ? localLines
-    : localLines.filter((line) => timesheetLineMatchesShift(line.clockIn, selectedShift, line.clockOut));
+  const shiftLines = dedupeTimesheetLinesByEmployee(
+    payload?.header && timesheetHeaderMatchesShift(payload.header.shiftLabel, selectedShift)
+      ? localLines
+      : localLines.filter((line) => timesheetLineMatchesShift(line.clockIn, selectedShift, line.clockOut)),
+  ).lines;
   const filteredLines = shiftLines.filter((l) =>
     l.employeeName.toLowerCase().includes(query.toLowerCase()) ||
     l.employeeNo.toLowerCase().includes(query.toLowerCase())

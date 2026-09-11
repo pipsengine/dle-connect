@@ -1,10 +1,11 @@
 import { extractSupervisorEmployeeCode, supervisorCodesMatch, timesheetEmployeeRecordsMatch } from '@/lib/timesheet-agege-blasting';
 import {
   normalizeTimesheetStatusKey,
+  productiveProjectHours,
   reconcileTimesheetLineHours,
   supervisorWorkCenterLabel,
   timesheetHeaderShiftKind,
-  timesheetLineHasBookedHours,
+  timesheetLineHasProductiveHours,
   type TimesheetLine,
 } from '@/lib/timesheet-entry-shared';
 
@@ -25,8 +26,7 @@ export type TimesheetAlreadyBookedSkip = {
   lineId?: string;
 };
 
-const bookedHours = (line: TimesheetLine) =>
-  Number(line.usedHours || 0) + (line.projectAllocations || []).reduce((sum, allocation) => sum + Number(allocation.hours || 0), 0);
+const bookedHours = (line: TimesheetLine) => productiveProjectHours(line.projectAllocations);
 
 const clearLineBooking = (line: TimesheetLine): TimesheetLine =>
   reconcileTimesheetLineHours({
@@ -54,7 +54,7 @@ export const isCommittedTimesheetBooking = (
   header: TimesheetHeaderClashRef | null | undefined,
   line: TimesheetLine,
 ) => {
-  if (bookedHours(line) <= 0.001 && !timesheetLineHasBookedHours(line)) return false;
+  if (!timesheetLineHasProductiveHours(line) && bookedHours(line) <= 0.001) return false;
   const status = normalizeTimesheetStatusKey(header?.status);
   if (status && status !== 'draft') return true;
   return !isAutoBookedTimesheetLine(line);
@@ -67,7 +67,7 @@ const clashOnOtherSheet = (
   otherHeaders: TimesheetHeaderClashRef[],
   committedOnly: boolean,
 ) => otherDateLines.find((other) => {
-  if (Number(other.usedHours || 0) <= 0.001 && !timesheetLineHasBookedHours(other)) return false;
+  if (!timesheetLineHasProductiveHours(other)) return false;
   const otherHeader = otherHeaders.find((item) => item.id === other.headerId);
   if (timesheetHeaderShiftKind(otherHeader?.shiftLabel) !== headerKind) return false;
   if (committedOnly && !isCommittedTimesheetBooking(otherHeader, other)) return false;
@@ -203,7 +203,7 @@ export const displaceUncommittedBookingsOnOtherDrafts = (
     let changed = false;
     const next = lines.map((other) => {
       if (!isAutoBookedTimesheetLine(other) && bookedHours(other) > 0.001) return other;
-      if (bookedHours(other) <= 0.001 && !timesheetLineHasBookedHours(other)) return other;
+      if (bookedHours(other) <= 0.001 && !timesheetLineHasProductiveHours(other)) return other;
       if (!isAutoBookedTimesheetLine(other)) return other;
       const match = bookedHere.find((line) => timesheetEmployeeRecordsMatch(line, other));
       if (!match) return other;

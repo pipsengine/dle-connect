@@ -4,6 +4,7 @@ import {
   requiresMiscellaneousTimesheetConfirm,
   resolveAutoDistributeProjectCode,
   selectTimesheetHeaderForLocation,
+  timesheetWorkCentersMatch,
 } from './timesheet-entry-shared.ts';
 
 assert.equal(
@@ -67,5 +68,11 @@ assert.equal(resolveAutoDistributeProjectCode([{ code: 'DL0062' }], []), 'DL0062
 assert.equal(requiresMiscellaneousTimesheetConfirm(['DL0062']), true);
 assert.equal(requiresMiscellaneousTimesheetConfirm(['DL0062', 'DL1985']), false);
 assert.equal(requiresMiscellaneousTimesheetConfirm([]), false);
+
+assert.equal(timesheetWorkCentersMatch('Maintenance', 'Maintenance'), true);
+assert.equal(timesheetWorkCentersMatch('Agege Maintenance', 'Maintenance'), true);
+assert.equal(timesheetWorkCentersMatch('Electrical Maintenance', 'Maintenance'), false);
+assert.equal(timesheetWorkCentersMatch('Blasting', 'Galvanizing'), false);
+assert.equal(timesheetWorkCentersMatch('Blasting', 'Blasting'), true);
 
 console.log('timesheet-location-header.test.ts: ok');
