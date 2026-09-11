@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import {
+  displaceUncommittedBookingsOnOtherDrafts,
   findSameDayBookingConflicts,
   formatSupervisorBookingConflictMessage,
   releaseLinesAlreadyBookedElsewhere,
@@ -29,8 +30,9 @@ const line = (overrides: Partial<TimesheetLine>): TimesheetLine => ({
   ...overrides,
 });
 
-const blasting = { id: 'hdr-blasting', timesheetDate: '2026-09-07', shiftLabel: '01 (Day)', workCenterName: 'Blasting', supervisorName: 'P0277 - Mr ADEBOBOLA MORUF AKINSANYA' };
-const galvanizing = { id: 'hdr-galvanizing', timesheetDate: '2026-09-07', shiftLabel: '01 (Day)', workCenterName: 'Galvanizing', supervisorName: 'P0277 - Mr ADEBOBOLA MORUF AKINSANYA' };
+const blasting = { id: 'hdr-blasting', timesheetDate: '2026-09-07', shiftLabel: '01 (Day)', workCenterName: 'Blasting', supervisorName: 'P0277 - Mr ADEBOBOLA MORUF AKINSANYA', status: 'Draft' };
+const galvanizing = { id: 'hdr-galvanizing', timesheetDate: '2026-09-07', shiftLabel: '01 (Day)', workCenterName: 'Galvanizing', supervisorName: 'P0277 - Mr ADEBOBOLA MORUF AKINSANYA', status: 'Draft' };
+const maintenance = { id: 'hdr-maintenance', timesheetDate: '2026-09-07', shiftLabel: '01 (Day)', workCenterName: 'Maintenance', supervisorName: 'P0436 - Mr SUNDAY OKEWU', status: 'Draft' };
 
 const result = releaseLinesAlreadyBookedElsewhere(
   [line({}), line({ id: 'line-2', employeeId: 'C1720', employeeNo: 'C1720', employeeName: 'ADANOU RAYMOND' })],
@@ -41,10 +43,8 @@ const result = releaseLinesAlreadyBookedElsewhere(
   ],
 );
 
-assert.equal(result.skipped.length, 1);
-assert.equal(result.skipped[0]?.employeeNo, 'C2225');
-assert.match(result.skipped[0]?.bookedOn || '', /Galvanizing/);
-assert.equal(result.lines[0]?.usedHours, 0);
+assert.equal(result.skipped.length, 0);
+assert.equal(result.lines[0]?.usedHours, 8);
 assert.equal(result.lines[1]?.usedHours, 8);
 
 const distinctContract = releaseLinesAlreadyBookedElsewhere(
@@ -91,16 +91,42 @@ const preview = findSameDayBookingConflicts(
   [blasting, galvanizing],
   [line({ headerId: 'hdr-galvanizing' })],
 );
-assert.equal(preview.length, 1);
-assert.equal(preview[0]?.bookedOn, 'Galvanizing');
+assert.equal(preview.length, 0);
+
+const submittedGalvanizingPreview = findSameDayBookingConflicts(
+  [line({ usedHours: 0, projectAllocations: [] })],
+  blasting,
+  [blasting, { ...galvanizing, status: 'Submitted' }],
+  [line({ headerId: 'hdr-galvanizing' })],
+);
+assert.equal(submittedGalvanizingPreview.length, 1);
+assert.equal(submittedGalvanizingPreview[0]?.bookedOn, 'Galvanizing');
 assert.match(
-  formatSupervisorBookingConflictMessage(preview),
+  formatSupervisorBookingConflictMessage(submittedGalvanizingPreview),
   /ABEL DANIEL already has hours on Galvanizing today/,
 );
 assert.equal(
-  formatSupervisorBookingConflictMessage(preview, { allBookedAreConflicts: true }),
+  formatSupervisorBookingConflictMessage(submittedGalvanizingPreview, { allBookedAreConflicts: true }),
   'Every worker with hours here is already on another timesheet today. There is nothing new to submit on this sheet.',
 );
+
+const maintenanceKeepsCrew = findSameDayBookingConflicts(
+  [line({ headerId: 'hdr-maintenance', usedHours: 8 })],
+  maintenance,
+  [maintenance, galvanizing],
+  [line({ headerId: 'hdr-galvanizing' })],
+);
+assert.equal(maintenanceKeepsCrew.length, 0);
+
+const displaced = displaceUncommittedBookingsOnOtherDrafts(
+  [line({ headerId: 'hdr-maintenance', usedHours: 8, projectAllocations: [{ projectId: 'p2', projectCode: 'DL2423', projectName: 'Maintenance', hours: 8, remarks: null }] })],
+  maintenance,
+  [maintenance, galvanizing],
+  [line({ headerId: 'hdr-galvanizing' })],
+);
+assert.equal(displaced.length, 1);
+assert.equal(displaced[0]?.header.id, 'hdr-galvanizing');
+assert.equal(displaced[0]?.lines[0]?.usedHours, 0);
 
 const breakOnlyOtherSheet = findSameDayBookingConflicts(
   [line({ usedHours: 0, projectAllocations: [] })],

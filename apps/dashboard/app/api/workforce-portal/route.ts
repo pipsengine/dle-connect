@@ -3,6 +3,7 @@ import { countDirectReportsFromEmployees, readPayrollEmployees } from '@/lib/pay
 import { employeeReportsToManager, resolveReportingManagerDisplay } from '@/lib/reporting-manager-match';
 import type { DleEmployeeDirectoryRow } from '@/lib/dle-enterprise-db';
 import { AUTH_COOKIE, verifySessionToken, type SessionPayload } from '@/lib/auth/session';
+import { isEmergencyUnlinkedGlobalAdmin } from '@/lib/auth/protected-global-admin';
 import { calculatePayrollEarnings, calculatePermanentUnionDues, isGenericPayrollGrade } from '@/lib/payroll-earnings-engine';
 import { isDailyRatePayrollEmployee, isNonPermanentPayrollEmployee, permanentStyleSageEarnings, sagePayslipAcceptableForEmployee, sanitizePermanentPayslipEarnings } from '@/lib/payroll-employee-classification';
 import { activeLoansVersion, readPayrollLoanApplications, readPayrollLoansConfig } from '@/lib/payroll-loans-engine';
@@ -570,7 +571,7 @@ export async function GET(request: Request) {
   try {
     const session = await getSession(request);
     if (!session) return err(401, 'Unauthenticated.');
-    if (session.isGlobalAdmin) return err(403, 'Global administrator is not linked to an employee self-service profile.');
+    if (isEmergencyUnlinkedGlobalAdmin(session)) return err(403, 'Global administrator is not linked to an employee self-service profile.');
     const locale = compact(request.headers.get('x-ess-locale')) || 'en-NG';
     const cacheKey = `${session.sub}:${session.employeeCode || session.employeeId || session.username}:${locale}`;
     const url = new URL(request.url);
@@ -1292,7 +1293,7 @@ export async function GET(request: Request) {
       generatedAt: new Date().toISOString(),
       locale,
       security: {
-        rbacRole: 'Employee',
+        rbacRole: session.isGlobalAdmin || (session.roles || []).includes('Super Administrator') ? 'Super Administrator' : 'Employee',
         mfa: 'Enabled',
         sso: 'Microsoft Entra ID',
         session: 'Active',
@@ -1563,7 +1564,7 @@ export async function POST(request: Request) {
   try {
     const session = await getSession(request);
     if (!session) return err(401, 'Unauthenticated.');
-    if (session.isGlobalAdmin) return err(403, 'Global administrator is not linked to an employee self-service profile.');
+    if (isEmergencyUnlinkedGlobalAdmin(session)) return err(403, 'Global administrator is not linked to an employee self-service profile.');
     const body = (await request.json().catch(() => ({}))) as Record<string, unknown>;
     const action = compact(body.action);
 

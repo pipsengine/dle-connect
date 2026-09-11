@@ -46,6 +46,24 @@ export const isProtectedGlobalSuperAdminIdentity = (input?: {
 
 export const protectedGlobalSuperAdminRoles = () => ['Super Administrator'] as string[];
 
+/** Break-glass `Admin` login — not an HRIS employee. P0146 stays a linked employee with global rights. */
+export const isEmergencyUnlinkedGlobalAdmin = (input?: {
+  isGlobalAdmin?: boolean;
+  sub?: string | null;
+  userId?: string | null;
+  id?: string | null;
+  username?: string | null;
+  employeeCode?: string | null;
+  employeeId?: string | null;
+} | null) => {
+  if (!input?.isGlobalAdmin) return false;
+  const id = normalize(input.sub || input.userId || input.id);
+  const username = normalize(input.username);
+  if (id !== 'global-admin' && username !== 'admin') return false;
+  const code = normalize(input.employeeCode || input.employeeId);
+  return !code || code === 'admin';
+};
+
 export const assertProtectedGlobalSuperAdminMutable = (
   target: { id?: string | null; username?: string | null; employeeCode?: string | null; employeeId?: string | null },
   action = 'modify',

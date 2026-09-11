@@ -6,6 +6,7 @@ import {
   supervisorWorkCenterLabel,
   timesheetHeaderShiftKind,
   timesheetLineHasProductiveHours,
+  timesheetWorkCentersMatch,
   type TimesheetLine,
 } from '@/lib/timesheet-entry-shared';
 
@@ -60,16 +61,28 @@ export const isCommittedTimesheetBooking = (
   return !isAutoBookedTimesheetLine(line);
 };
 
+const otherDraftIsDifferentWorkCenter = (
+  header: TimesheetHeaderClashRef,
+  otherHeader: TimesheetHeaderClashRef | undefined,
+) => Boolean(
+  otherHeader
+  && normalizeTimesheetStatusKey(otherHeader.status) === 'draft'
+  && !timesheetWorkCentersMatch(header.workCenterName, otherHeader.workCenterName),
+);
+
 const clashOnOtherSheet = (
   line: TimesheetLine,
-  headerKind: ReturnType<typeof timesheetHeaderShiftKind>,
+  header: TimesheetHeaderClashRef,
   otherDateLines: TimesheetLine[],
   otherHeaders: TimesheetHeaderClashRef[],
   committedOnly: boolean,
 ) => otherDateLines.find((other) => {
   if (!timesheetLineHasProductiveHours(other)) return false;
   const otherHeader = otherHeaders.find((item) => item.id === other.headerId);
-  if (timesheetHeaderShiftKind(otherHeader?.shiftLabel) !== headerKind) return false;
+  if (timesheetHeaderShiftKind(otherHeader?.shiftLabel) !== timesheetHeaderShiftKind(header.shiftLabel)) return false;
+  // Draft hours on a different section (Maintenance vs Galvanizing) are not a lock.
+  // The submitting supervisor keeps their crew; the other draft is cleared on submit.
+  if (otherDraftIsDifferentWorkCenter(header, otherHeader)) return false;
   if (committedOnly && !isCommittedTimesheetBooking(otherHeader, other)) return false;
   return timesheetEmployeeRecordsMatch(line, other);
 });
@@ -91,12 +104,11 @@ export const releaseLinesAlreadyBookedElsewhere = (
   otherHeaders: TimesheetHeaderClashRef[],
   otherLines: TimesheetLine[],
 ): { lines: TimesheetLine[]; skipped: TimesheetAlreadyBookedSkip[] } => {
-  const headerKind = timesheetHeaderShiftKind(header.shiftLabel);
   const otherDateLines = otherDateLinesForHeader(header, otherHeaders, otherLines);
   const skipped: TimesheetAlreadyBookedSkip[] = [];
   const nextLines = lines.map((line) => {
     if (bookedHours(line) <= 0.001) return line;
-    const clash = clashOnOtherSheet(line, headerKind, otherDateLines, otherHeaders, true);
+    const clash = clashOnOtherSheet(line, header, otherDateLines, otherHeaders, true);
     if (!clash) return line;
     const otherHeader = otherHeaders.find((item) => item.id === clash.headerId);
     skipped.push(toSkip(line, otherSheetLabel(otherHeader)));
@@ -112,14 +124,13 @@ export const findSameDayBookingConflicts = (
   otherHeaders: TimesheetHeaderClashRef[],
   otherLines: TimesheetLine[],
 ): TimesheetAlreadyBookedSkip[] => {
-  const headerKind = timesheetHeaderShiftKind(header.shiftLabel);
   const otherDateLines = otherDateLinesForHeader(header, otherHeaders, otherLines);
   const skipped: TimesheetAlreadyBookedSkip[] = [];
   for (const line of lines) {
     const clocked = Boolean(String(line.clockIn || '').trim());
     const hoursHere = bookedHours(line) > 0.001;
     if (!clocked && !hoursHere) continue;
-    const clash = clashOnOtherSheet(line, headerKind, otherDateLines, otherHeaders, true);
+    const clash = clashOnOtherSheet(line, header, otherDateLines, otherHeaders, true);
     if (!clash) continue;
     const otherHeader = otherHeaders.find((item) => item.id === clash.headerId);
     skipped.push(toSkip(line, otherSheetLabel(otherHeader)));
@@ -184,7 +195,7 @@ export const omitOtherTimesheetSupervisors = (
   otherHeaders: TimesheetHeaderClashRef[],
 ) => lines.filter((line) => !employeeIsOtherTimesheetSupervisor(line, header, otherHeaders));
 
-/** When this sheet books real hours, take them off other drafts that only have auto-booked miscellaneous hours. */
+/** When this sheet books real hours, take them off other drafts (auto-book or a different work centre). */
 export const displaceUncommittedBookingsOnOtherDrafts = (
   submittingLines: TimesheetLine[],
   header: TimesheetHeaderClashRef,
@@ -199,14 +210,15 @@ export const displaceUncommittedBookingsOnOtherDrafts = (
     if (otherHeader.id === header.id || otherHeader.timesheetDate !== header.timesheetDate) continue;
     if (timesheetHeaderShiftKind(otherHeader.shiftLabel) !== headerKind) continue;
     if (normalizeTimesheetStatusKey(otherHeader.status) !== 'draft') continue;
+    const differentWorkCenter = !timesheetWorkCentersMatch(header.workCenterName, otherHeader.workCenterName);
     const lines = otherLines.filter((line) => line.headerId === otherHeader.id);
     let changed = false;
     const next = lines.map((other) => {
-      if (!isAutoBookedTimesheetLine(other) && bookedHours(other) > 0.001) return other;
-      if (bookedHours(other) <= 0.001 && !timesheetLineHasProductiveHours(other)) return other;
-      if (!isAutoBookedTimesheetLine(other)) return other;
       const match = bookedHere.find((line) => timesheetEmployeeRecordsMatch(line, other));
       if (!match) return other;
+      const autoBook = isAutoBookedTimesheetLine(other);
+      if (!differentWorkCenter && !autoBook) return other;
+      if (bookedHours(other) <= 0.001 && !timesheetLineHasProductiveHours(other)) return other;
       changed = true;
       return clearLineBooking(other);
     });

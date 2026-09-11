@@ -3,6 +3,7 @@ import type { DleEmployeeDirectoryRow } from '@/lib/dle-enterprise-db';
 import { countDirectReportsFromEmployees, payrollDataSourceInfo, readDirectoryEmployees } from '@/lib/payroll-employee-source';
 import { pendingLeaveApprovalsForActor, loadWorkflowLeaveRequests } from '@/lib/leave-workflow-service';
 import { AUTH_COOKIE, verifySessionToken } from '@/lib/auth/session';
+import { isEmergencyUnlinkedGlobalAdmin } from '@/lib/auth/protected-global-admin';
 import { unreadNotificationCountForSession } from '@/lib/enterprise-notifications-feed';
 import { resolveReportingManagerDisplay } from '@/lib/reporting-manager-match';
 
@@ -132,7 +133,7 @@ export async function GET(request: Request) {
   const employeeSource = await readDirectoryEmployees();
   const employee = findEmployee(employeeSource.employees, configuredIdentities.length ? configuredIdentities : sessionIdentities);
 
-  if (session?.isGlobalAdmin) {
+  if (session && isEmergencyUnlinkedGlobalAdmin(session) && !employee) {
     return NextResponse.json({
       status: 'success',
       data: {
@@ -164,7 +165,9 @@ export async function GET(request: Request) {
 
   const linked = Boolean(employee);
   const activeTeamSize = employee ? countDirectReportsFromEmployees(employeeSource.employees, employee) : 0;
-  const role = employee ? rbacRole(employee, activeTeamSize) : session?.roles?.[0] || 'Employee';
+  const role = session?.isGlobalAdmin
+    ? 'Super Administrator'
+    : employee ? rbacRole(employee, activeTeamSize) : session?.roles?.[0] || 'Employee';
   const sessionRoles = (session?.roles || []).map((role) => normalize(role));
   const sessionIsApprover = sessionRoles.some((role) =>
     /super\s*admin|system\s*admin|manager|supervisor|head|hr|leave administrator/.test(role),
