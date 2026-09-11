@@ -18,6 +18,10 @@ import type { FinalPayrollSettlement } from '@/lib/final-payroll-settlement-shar
 import {
   formatFinalPayrollDate,
   formatFinalPayrollMoney,
+  isFinalPayrollEditableDeduction,
+  isFinalPayrollEditableEarning,
+  mergeGrossSalaryEarnings,
+  parseFinalPayrollAmountInput,
   sumIncludedLines,
 } from '@/lib/final-payroll-settlement-shared';
 import {
@@ -114,7 +118,10 @@ export default function NewFinalPayrollSettlementWorkspace({
   const [message, setMessage] = useState<string | null>(null);
 
   const applySettlement = (row: FinalPayrollSettlement, isPersisted: boolean) => {
-    setSettlement(row);
+    setSettlement({
+      ...row,
+      earnings: mergeGrossSalaryEarnings(row.earnings || []),
+    });
     setPersisted(isPersisted && !isPreviewId(row.id));
     setExitType(row.exitType || 'Resignation');
     setResignationDate(row.resignationDate || '');
@@ -271,6 +278,8 @@ export default function NewFinalPayrollSettlementWorkspace({
     setError(null);
     setMessage(null);
     try {
+      const editedEarnings = mergeGrossSalaryEarnings(settlement.earnings || []);
+      const editedDeductions = settlement.deductions || [];
       let current = settlement;
       if (!persisted || isPreviewId(settlement.id)) {
         const createRes = await fetch('/api/hris/offboarding/final-payroll', {
@@ -290,7 +299,6 @@ export default function NewFinalPayrollSettlementWorkspace({
         const createData = await createRes.json();
         if (!createRes.ok || !createData.ok) throw new Error(createData.error || 'Unable to save settlement.');
         current = createData.settlement;
-        applySettlement(current, true);
         router.replace(`/hris/offboarding/final-payroll-processing/new-settlement?id=${encodeURIComponent(current.id)}`);
       }
 
@@ -307,6 +315,8 @@ export default function NewFinalPayrollSettlementWorkspace({
             noticePeriod,
             reasonForLeaving: reason,
             remarks,
+            earnings: editedEarnings,
+            deductions: editedDeductions,
           },
         }),
       });
@@ -381,6 +391,17 @@ export default function NewFinalPayrollSettlementWorkspace({
     } finally {
       setBusy(false);
     }
+  };
+
+  const updateLineAmount = (kind: 'earnings' | 'deductions', lineId: string, raw: string) => {
+    const amount = parseFinalPayrollAmountInput(raw);
+    setSettlement((current) => {
+      if (!current) return current;
+      return {
+        ...current,
+        [kind]: current[kind].map((line) => (line.id === lineId ? { ...line, amount } : line)),
+      };
+    });
   };
 
   const activeLines = useMemo(() => {
@@ -680,21 +701,48 @@ export default function NewFinalPayrollSettlementWorkspace({
                   </tr>
                 </thead>
                 <tbody>
-                  {activeLines.map((line, index) => (
+                  {activeLines.map((line, index) => {
+                    const editable = earningsTab === 'Earnings & Terminal Benefits'
+                      ? isFinalPayrollEditableEarning(line.id)
+                      : earningsTab === 'Deductions & Recoveries'
+                        ? isFinalPayrollEditableDeduction(line.id)
+                        : false;
+                    return (
                     <tr key={line.id}>
                       <td>{index + 1}</td>
                       <td>{line.label}</td>
                       <td>{line.description}</td>
                       <td>{line.policyBasis}</td>
                       <td>{line.periodDays}</td>
-                      <td>{formatFinalPayrollMoney(line.amount, settlement.currency)}</td>
+                      <td>
+                        {editable ? (
+                          <label className={styles.amountEdit}>
+                            <span>{settlement.currency === 'USD' ? '$' : '₦'}</span>
+                            <input
+                              type="number"
+                              min={0}
+                              step={settlement.currency === 'USD' ? '0.01' : '1'}
+                              value={Number(line.amount || 0)}
+                              disabled={busy}
+                              onChange={(event) => updateLineAmount(
+                                earningsTab === 'Deductions & Recoveries' ? 'deductions' : 'earnings',
+                                line.id,
+                                event.target.value,
+                              )}
+                            />
+                          </label>
+                        ) : (
+                          formatFinalPayrollMoney(line.amount, settlement.currency)
+                        )}
+                      </td>
                       <td>
                         <span className={styles.remarksCell} title={line.remarks}>
                           {line.remarks}
                         </span>
                       </td>
                     </tr>
-                  ))}
+                    );
+                  })}
                   <tr className={styles.total}>
                     <td colSpan={5}>Total {earningsTab === 'Earnings & Terminal Benefits' ? 'Earnings' : earningsTab === 'Statutory Deductions' ? 'Statutory' : 'Deductions'}</td>
                     <td>{formatFinalPayrollMoney(totalAmount, settlement.currency)}</td>

@@ -156,6 +156,63 @@ export const formatFinalPayrollMoney = (amount: number, currency: 'NGN' | 'USD')
   return `${amount < 0 ? '-' : ''}${moneySymbol(currency)}${formatted}`;
 };
 
+export const FINAL_PAYROLL_GROSS_SALARY_ID = 'gross-salary';
+export const FINAL_PAYROLL_LEGACY_GROSS_LINE_IDS = ['salary-lwd', 'earned-allowances'] as const;
+export const FINAL_PAYROLL_EDITABLE_EARNING_IDS = ['leave-encashment', 'gratuity'] as const;
+export const FINAL_PAYROLL_EDITABLE_DEDUCTION_IDS = ['staff-loan', 'cash-advance', 'other-deductions'] as const;
+
+const asIdSet = (ids: readonly string[]) => new Set(ids);
+
+export const isFinalPayrollEditableEarning = (lineId: string) =>
+  asIdSet(FINAL_PAYROLL_EDITABLE_EARNING_IDS).has(lineId);
+
+export const isFinalPayrollEditableDeduction = (lineId: string) =>
+  asIdSet(FINAL_PAYROLL_EDITABLE_DEDUCTION_IDS).has(lineId);
+
+/** Combine legacy basic + allowances rows into a single Gross Salary line. */
+export const mergeGrossSalaryEarnings = (lines: FinalPayrollLine[]): FinalPayrollLine[] => {
+  const salary = lines.find((line) => line.id === 'salary-lwd');
+  const allowances = lines.find((line) => line.id === 'earned-allowances');
+  const existingGross = lines.find((line) => line.id === FINAL_PAYROLL_GROSS_SALARY_ID);
+  if (!salary && !allowances) return lines;
+
+  const remarks = [salary?.remarks, allowances?.remarks]
+    .map((value) => String(value || '').trim())
+    .filter((value) => value && value !== '-')
+    .filter((value, index, all) => all.indexOf(value) === index)
+    .join(' · ') || existingGross?.remarks || '-';
+
+  const merged: FinalPayrollLine = {
+    id: FINAL_PAYROLL_GROSS_SALARY_ID,
+    label: 'Gross Salary',
+    description: 'Pro-rated basic salary plus package allowances',
+    policyBasis: 'Actual days worked / pro-rated package',
+    periodDays: salary?.periodDays && salary.periodDays !== '-'
+      ? salary.periodDays
+      : allowances?.periodDays || existingGross?.periodDays || '-',
+    amount: roundFinalPayrollMoney(Number(salary?.amount || 0) + Number(allowances?.amount || 0) + (salary || allowances ? 0 : Number(existingGross?.amount || 0))),
+    remarks,
+    included: Boolean((salary?.included ?? true) && (allowances?.included ?? true) && (existingGross?.included ?? true)),
+  };
+
+  const withoutLegacy = lines.filter((line) =>
+    line.id !== 'salary-lwd'
+    && line.id !== 'earned-allowances'
+    && line.id !== FINAL_PAYROLL_GROSS_SALARY_ID
+  );
+  const outstandingIndex = withoutLegacy.findIndex((line) => line.id === 'outstanding-salary');
+  if (outstandingIndex <= 0) return [merged, ...withoutLegacy];
+  return [...withoutLegacy.slice(0, outstandingIndex), merged, ...withoutLegacy.slice(outstandingIndex)];
+};
+
+export const parseFinalPayrollAmountInput = (raw: string) => {
+  const cleaned = String(raw || '').replace(/,/g, '').trim();
+  if (!cleaned) return 0;
+  const value = Number(cleaned);
+  if (!Number.isFinite(value)) return 0;
+  return roundFinalPayrollMoney(Math.max(0, value));
+};
+
 export const sumIncludedLines = (lines: FinalPayrollLine[]) =>
   roundFinalPayrollMoney(lines.filter((line) => line.included).reduce((sum, line) => sum + Number(line.amount || 0), 0));
 

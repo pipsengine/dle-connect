@@ -327,8 +327,46 @@
 
 .earnings th:nth-child(6),
 .earnings td:nth-child(6) {
-  width: 12%;
+  width: 14%;
   white-space: nowrap;
+}
+
+.amountEdit {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  border: 1px solid #cfdaea;
+  border-radius: 6px;
+  background: #fff;
+  padding: 2px 8px;
+  min-width: 110px;
+}
+
+.amountEdit span {
+  color: #5c7294;
+  font-weight: 700;
+}
+
+.amountEdit input {
+  border: 0;
+  outline: none;
+  width: 88px;
+  background: transparent;
+  color: var(--fp-ink);
+  font: inherit;
+  font-weight: 700;
+  padding: 4px 0;
+}
+
+.amountEdit input::-webkit-outer-spin-button,
+.amountEdit input::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+.amountEdit input[type='number'] {
+  -moz-appearance: textfield;
+  appearance: textfield;
 }
 
 .earnings th:nth-child(7),

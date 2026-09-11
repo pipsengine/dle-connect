@@ -37,6 +37,7 @@ import {
   currentFinalPayrollPeriod,
   formatFinalPayrollDate,
   formatFinalPayrollMoney,
+  mergeGrossSalaryEarnings,
   periodLabelFromCode,
   previousFinalPayrollPeriod,
   roundFinalPayrollMoney,
@@ -311,15 +312,21 @@ export const buildDefaultEarnings = (input: {
   const severanceEligible = /retrench|redundan|layoff/i.test(exitType) && completedYears >= 1 && basic > 0;
   const severance = severanceEligible ? roundMoney(basic * completedYears) : 0;
 
+  const periodRange = `${period.split(' ')[0]} 1 – ${lwd}`;
+  const grossRemarks = [periodRange, packageNote]
+    .map((value) => String(value || '').trim())
+    .filter((value) => value && value !== '-')
+    .join(' · ');
+
   return [
     {
-      id: 'salary-lwd',
-      label: 'Salary up to Last Working Day',
-      description: 'Pro-rated basic salary (from package)',
-      policyBasis: 'Actual days worked',
+      id: 'gross-salary',
+      label: 'Gross Salary',
+      description: 'Pro-rated basic salary plus package allowances',
+      policyBasis: 'Actual days worked / pro-rated package',
       periodDays: `${days} days`,
-      amount: salary,
-      remarks: `${period.split(' ')[0]} 1 – ${lwd}`,
+      amount: roundMoney(salary + earnedAllowances),
+      remarks: grossRemarks || '-',
       included: true,
     },
     {
@@ -340,16 +347,6 @@ export const buildDefaultEarnings = (input: {
       periodDays: '-',
       amount: 0,
       remarks: '-',
-      included: true,
-    },
-    {
-      id: 'earned-allowances',
-      label: 'Earned Allowances',
-      description: 'Housing, transport, medical, utility, and other package allowances',
-      policyBasis: 'Pro-rated package',
-      periodDays: `${days} days`,
-      amount: earnedAllowances,
-      remarks: packageNote,
       included: true,
     },
     {
@@ -720,7 +717,12 @@ const readJsonSettlements = async (): Promise<FinalPayrollSettlement[]> => {
   try {
     const parsed = JSON.parse(await readFile(FILE_PATH, 'utf8'));
     const rows = Array.isArray(parsed) ? parsed : Array.isArray(parsed?.settlements) ? parsed.settlements : [];
-    return rows.filter((row: FinalPayrollSettlement) => row?.id && row?.employeeCode);
+    return rows
+      .filter((row: FinalPayrollSettlement) => row?.id && row?.employeeCode)
+      .map((row: FinalPayrollSettlement) => ({
+        ...row,
+        earnings: mergeGrossSalaryEarnings(row.earnings || []),
+      }));
   } catch {
     return [];
   }
@@ -829,6 +831,7 @@ export const recalculateSettlement = async (settlement: FinalPayrollSettlement):
     noticePeriod: settlement.noticePeriod,
   });
   const autoLineIds = new Set([
+    'gross-salary',
     'salary-lwd',
     'earned-allowances',
     'leave-encashment',
@@ -836,7 +839,7 @@ export const recalculateSettlement = async (settlement: FinalPayrollSettlement):
     'severance',
     'notice-pay',
   ]);
-  const earnings = buildDefaultEarnings({
+  const earnings = mergeGrossSalaryEarnings(buildDefaultEarnings({
     period: settlement.period,
     currency: settlement.currency,
     basicSalary,
@@ -861,7 +864,7 @@ export const recalculateSettlement = async (settlement: FinalPayrollSettlement):
       description: line.description,
       policyBasis: line.policyBasis,
     };
-  });
+  }));
   const nextDeductions = buildDefaultDeductions({
     basicSalary,
     noticeRecoveryDays: terminal.noticeRecoveryDays,
@@ -1274,6 +1277,7 @@ export const updateFinalPayrollSettlement = async (input: {
   const index = all.findIndex((row) => row.id === input.id);
   if (index < 0) throw new Error('Settlement not found.');
   let row = { ...all[index], ...(input.patch || {}) };
+  row.earnings = mergeGrossSalaryEarnings(row.earnings || []);
 
   if (input.action === 'recalculate') row = await recalculateSettlement(row);
   if (input.action === 'submit') {
