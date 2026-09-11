@@ -468,8 +468,8 @@ export function EssPayrollDashboardView({
         </EssCard>
       </div>
 
-      <div className="grid grid-cols-1 gap-5 xl:grid-cols-[320px_minmax(0,1fr)_300px]">
-        <div className="ess-no-print space-y-5">
+      <div className="ess-payslip-page-grid">
+        <div className="ess-payslip-page-ytd ess-no-print space-y-5">
           <EssCard className="p-5">
             <div className="mb-4 flex gap-4 border-b border-[#E5E7EB]">
               {(['Overview', 'Analytics'] as const).map((tab) => (
@@ -530,7 +530,7 @@ export function EssPayrollDashboardView({
           </EssCard>
         </div>
 
-        <EssCard className="ess-payslip-print-host overflow-visible border-0 bg-transparent p-0 shadow-none sm:p-0">
+        <EssCard className="ess-payslip-page-slip ess-payslip-print-host min-w-0 overflow-hidden border-0 bg-transparent p-0 shadow-none sm:p-0">
           <EssPayslipDocument
             selected={selected}
             employee={employee}
@@ -543,7 +543,7 @@ export function EssPayrollDashboardView({
           />
         </EssCard>
 
-        <div className="ess-no-print space-y-5">
+        <div className="ess-payslip-page-history ess-no-print space-y-5">
           <EssCard className="p-5">
             <EssSectionHeader
               title="Payslip History"

@@ -1,6 +1,6 @@
 'use client';
 
-import { Fragment, useEffect, useMemo, useState } from 'react';
+import { Fragment, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { Download, Mail, Maximize2, Minus, Plus, Printer } from 'lucide-react';
 import { MaskedMoney } from './ess-masked-money';
 import {
@@ -16,6 +16,42 @@ import {
   type PayrollHistoryRow,
   type PayrollLine,
 } from './ess-payslip-shared';
+import { A4_WIDTH_PX, payslipFitScale } from './ess-payslip-fit';
+
+function usePayslipFitScale(zoom: number, resetKey: string) {
+  const hostRef = useRef<HTMLDivElement>(null);
+  const sheetRef = useRef<HTMLElement>(null);
+  const [fitScale, setFitScale] = useState(1);
+  const [naturalHeight, setNaturalHeight] = useState(0);
+
+  useLayoutEffect(() => {
+    const host = hostRef.current;
+    const sheet = sheetRef.current;
+    if (!host || !sheet) return;
+
+    const measure = () => {
+      const available = host.clientWidth;
+      if (available < 2) return;
+      const nextFit = payslipFitScale(available);
+      const nextHeight = sheet.scrollHeight;
+      setFitScale((prev) => (Math.abs(prev - nextFit) < 0.001 ? prev : nextFit));
+      setNaturalHeight((prev) => (Math.abs(prev - nextHeight) < 0.5 ? prev : nextHeight));
+    };
+
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(host);
+    observer.observe(sheet);
+    return () => observer.disconnect();
+  }, [resetKey, zoom]);
+
+  return {
+    hostRef,
+    sheetRef,
+    displayScale: fitScale * (zoom / 100),
+    naturalHeight,
+  };
+}
 
 function usePayslipPrintFit() {
   useEffect(() => {
@@ -23,7 +59,6 @@ function usePayslipPrintFit() {
       const el = document.getElementById('ess-payslip-print');
       if (!el) return;
       el.style.zoom = '1';
-      el.style.transform = 'none';
       el.classList.add('ess-payslip-print-mode');
 
       const logo = el.querySelector('.ess-payslip-logo-img') as HTMLImageElement | null;
@@ -51,7 +86,6 @@ function usePayslipPrintFit() {
       if (!el) return;
       el.classList.remove('ess-payslip-print-mode');
       el.style.zoom = '';
-      el.style.transform = '';
     };
 
     window.addEventListener('beforeprint', fit);
@@ -160,6 +194,10 @@ export function EssPayslipDocument({
 }) {
   const [zoom, setZoom] = useState(zoomProp);
   const model = useMemo(() => buildPayslipModel(selected, employee, generatedAt), [selected, employee, generatedAt]);
+  const { hostRef, sheetRef, displayScale, naturalHeight } = usePayslipFitScale(
+    zoom,
+    `${selected.period}:${amountsVisible}:${model.earnings.length}:${model.deductions.length}`,
+  );
   usePayslipPrintFit();
 
   return (
@@ -183,13 +221,28 @@ export function EssPayslipDocument({
         </div>
       ) : null}
 
+      <div ref={hostRef} className="ess-payslip-fit-host w-full min-w-0 overflow-x-auto overflow-y-hidden">
+        <div
+          className="ess-payslip-scale-frame mx-auto overflow-hidden"
+          style={{
+            width: `${A4_WIDTH_PX * displayScale}px`,
+            maxWidth: '100%',
+            height: naturalHeight ? `${naturalHeight * displayScale}px` : 'auto',
+          }}
+        >
       <article
         id="ess-payslip-print"
-        className="ess-payslip-sheet mx-auto rounded-[18px] border border-[#2f67b1] bg-white p-4 text-[11px] leading-tight text-[#0F172A] shadow-[0_12px_32px_rgba(15,23,42,0.08)]"
-        style={{ transform: `scale(${zoom / 100})`, transformOrigin: 'top center', width: 'min(100%, 210mm)' }}
+        ref={sheetRef}
+        className="ess-payslip-sheet @container rounded-[18px] border border-[#2f67b1] bg-white p-4 text-[11px] leading-tight text-[#0F172A] shadow-[0_12px_32px_rgba(15,23,42,0.08)]"
+        style={{
+          width: `${A4_WIDTH_PX}px`,
+          maxWidth: 'none',
+          transform: `scale(${displayScale})`,
+          transformOrigin: 'top left',
+        }}
       >
-        <header className="ess-payslip-header grid grid-cols-1 gap-3 border-b border-[#2f67b1] pb-3 md:grid-cols-[1fr_auto]">
-          <div className="flex items-start gap-4">
+        <header className="ess-payslip-header grid grid-cols-1 gap-3 border-b border-[#2f67b1] pb-3 @min-[36rem]:grid-cols-[1fr_auto]">
+          <div className="flex min-w-0 items-start gap-4">
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
               src={PAYSLIP_LOGO_SRC}
@@ -199,48 +252,48 @@ export function EssPayslipDocument({
               className="ess-payslip-logo-img h-16 w-auto max-w-[12rem] shrink-0 object-contain object-left"
             />
           </div>
-          <div className="text-left md:text-right">
+          <div className="text-left @min-[36rem]:text-right">
             <h2 className="text-[28px] font-black tracking-normal text-[#123f82]">PAYSLIP</h2>
             <p className="mt-0.5 text-[11px] font-black uppercase text-[#475569]">For the month of</p>
             <p className="text-[18px] font-black text-[#123f82]">{selected.periodLabel || selected.period}</p>
           </div>
         </header>
 
-        <section className="grid grid-cols-1 gap-3 border-b border-[#9bb9df] py-3 md:grid-cols-2">
-          <div className="grid grid-cols-[130px_10px_1fr] gap-y-1">
-            <p className="font-black">Company Name</p><p>:</p><p>DORMANLONG ENGINEERING LIMITED</p>
-            <p className="font-black">Company Address</p><p>:</p><p>12/14 AGEGE MOTOR ROAD, IDI-ORO MUSHIN, LAGOS</p>
-            <p className="font-black">RC Number</p><p>:</p><p>744</p>
-            <p className="font-black">TIN</p><p>:</p><p>01714597-0001</p>
+        <section className="grid grid-cols-1 gap-3 border-b border-[#9bb9df] py-3 @min-[40rem]:grid-cols-2">
+          <div className="grid min-w-0 grid-cols-[minmax(0,7.2rem)_0.6rem_minmax(0,1fr)] gap-y-1">
+            <p className="font-black">Company Name</p><p>:</p><p className="min-w-0 break-words">DORMANLONG ENGINEERING LIMITED</p>
+            <p className="font-black">Company Address</p><p>:</p><p className="min-w-0 break-words">12/14 AGEGE MOTOR ROAD, IDI-ORO MUSHIN, LAGOS</p>
+            <p className="font-black">RC Number</p><p>:</p><p className="min-w-0 break-words">744</p>
+            <p className="font-black">TIN</p><p>:</p><p className="min-w-0 break-words">01714597-0001</p>
           </div>
-          <div className="grid grid-cols-[120px_10px_1fr] gap-y-1 md:border-l md:border-[#9bb9df] md:pl-6">
-            <p className="font-black">Pay Period</p><p>:</p><p>{fmtDate(selected.payPeriodStart)} - {fmtDate(selected.payPeriodEnd)}</p>
-            <p className="font-black">Pay Date</p><p>:</p><p>{fmtDate(selected.payDate)}</p>
-            <p className="font-black">Payroll No.</p><p>:</p><p>{selected.payrollNumber || '—'}</p>
-            <p className="font-black">PAYE Ref. No.</p><p>:</p><p>{selected.payeReference || '—'}</p>
+          <div className="grid min-w-0 grid-cols-[minmax(0,7.2rem)_0.6rem_minmax(0,1fr)] gap-y-1 @min-[40rem]:border-l @min-[40rem]:border-[#9bb9df] @min-[40rem]:pl-6">
+            <p className="font-black">Pay Period</p><p>:</p><p className="min-w-0 break-words">{fmtDate(selected.payPeriodStart)} - {fmtDate(selected.payPeriodEnd)}</p>
+            <p className="font-black">Pay Date</p><p>:</p><p className="min-w-0 break-words">{fmtDate(selected.payDate)}</p>
+            <p className="font-black">Payroll No.</p><p>:</p><p className="min-w-0 break-words">{selected.payrollNumber || '—'}</p>
+            <p className="font-black">PAYE Ref. No.</p><p>:</p><p className="min-w-0 break-words">{selected.payeReference || '—'}</p>
           </div>
         </section>
 
         <section className="mt-3 overflow-hidden rounded-[8px] border border-[#2f67b1]">
           <h3 className={sectionHeaderClass}>Employee Information</h3>
-          <div className="grid grid-cols-1 md:grid-cols-2">
+          <div className="grid grid-cols-1 @min-[40rem]:grid-cols-2">
             {[model.employeeRows.filter(visibleInfoRow), model.bankRows.filter(visibleInfoRow)].map((rows, idx) => (
-              <div key={idx ? 'bank' : 'employee'} className={`grid grid-cols-[128px_10px_1fr] gap-y-1 p-3 ${idx ? 'md:border-l md:border-[#9bb9df]' : ''}`}>
+              <div key={idx ? 'bank' : 'employee'} className={`grid min-w-0 grid-cols-[minmax(0,8rem)_0.6rem_minmax(0,1fr)] gap-y-1 p-3 ${idx ? '@min-[40rem]:border-l @min-[40rem]:border-[#9bb9df]' : ''}`}>
                 {rows.map(([label, value]) => (
-                  <Fragment key={label}><p className="font-black">{label}</p><p>:</p><p>{String(value || '—')}</p></Fragment>
+                  <Fragment key={label}><p className="font-black">{label}</p><p>:</p><p className="min-w-0 break-words">{String(value || '—')}</p></Fragment>
                 ))}
               </div>
             ))}
           </div>
         </section>
 
-        <section className="mt-3 grid grid-cols-1 gap-3 lg:grid-cols-2">
+        <section className="mt-3 grid grid-cols-1 gap-3 @min-[40rem]:grid-cols-2">
           <PayslipTable title="Earnings" lines={model.earnings} totalLabel="Total Earnings" total={model.grossPay} amountsVisible={amountsVisible} />
           <PayslipTable title="Deductions" lines={model.deductions} totalLabel="Total Deductions" total={selected.deductions} amountsVisible={amountsVisible} />
         </section>
 
         <section className="ess-payslip-net-summary mt-3 rounded-[12px] border border-[#22C55E] bg-[#ECFDF3] p-3 text-center">
-          <div className="grid grid-cols-1 gap-2 text-[12px] font-black md:grid-cols-3">
+          <div className="grid grid-cols-1 gap-2 text-[12px] font-black @min-[36rem]:grid-cols-3">
             <p>Gross Pay: <span className="text-[#0F172A]"><MaskedMoney value={money2(model.grossPay)} visible={amountsVisible} /></span></p>
             <p>Total Deductions: <span className="text-[#B45309]"><MaskedMoney value={money2(selected.deductions)} visible={amountsVisible} /></span></p>
             <p>Net Pay: <span className="text-[22px] font-black text-[#047857]"><MaskedMoney value={money2(selected.netPay)} visible={amountsVisible} /></span></p>
@@ -254,7 +307,7 @@ export function EssPayslipDocument({
           <PayslipTable title="Company Contributions" lines={model.employerLines} totalLabel="Total Company Contributions" total={model.totalEmployer} wide amountsVisible={amountsVisible} />
         </section>
 
-        <section className="ess-payslip-summary-grid mt-3 grid grid-cols-1 gap-3 md:grid-cols-2">
+        <section className="ess-payslip-summary-grid mt-3 grid grid-cols-1 gap-3 @min-[40rem]:grid-cols-2">
           <div className="ess-payslip-leave-block">
             <SummaryBlock title="Leave Information" rows={model.leaveRows.filter(nonZeroSummaryRow)} amountsVisible={amountsVisible} />
           </div>
@@ -262,7 +315,7 @@ export function EssPayslipDocument({
         </section>
 
         <footer className="ess-payslip-footer mt-3 rounded-[12px] border border-[#9bb9df] p-3">
-          <div className="grid grid-cols-1 gap-3 md:grid-cols-[1fr_110px]">
+          <div className="grid grid-cols-1 gap-3 @min-[36rem]:grid-cols-[minmax(0,1fr)_110px]">
             <div className="leading-5">
               <p className="font-black text-[#123f82]">NOTES</p>
               <p>1. This is a system generated payslip and does not require any signature.</p>
@@ -282,6 +335,8 @@ export function EssPayslipDocument({
           <p className="mt-2 text-center text-[11px] font-black italic text-[#123f82]">THANK YOU FOR YOUR CONTINUED CONTRIBUTION TO DORMANLONG ENGINEERING LIMITED.</p>
         </footer>
       </article>
+        </div>
+      </div>
 
       {showToolbar ? (
         <div className="ess-no-print flex flex-wrap gap-2">
@@ -298,10 +353,41 @@ export function EssPayslipPrintStyles() {
   return (
     <style jsx global>{`
       #ess-payslip-print {
-        width: min(100%, 210mm);
         overflow: visible;
         -webkit-print-color-adjust: exact;
         print-color-adjust: exact;
+      }
+
+      .ess-payslip-page-grid {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr);
+        gap: 1.25rem;
+      }
+
+      .ess-payslip-page-ytd,
+      .ess-payslip-page-slip,
+      .ess-payslip-page-history {
+        min-width: 0;
+      }
+
+      @media (min-width: 1280px) {
+        .ess-payslip-page-grid {
+          grid-template-columns: minmax(0, 280px) minmax(0, 1fr);
+          grid-template-areas:
+            "ytd slip"
+            "history history";
+        }
+
+        .ess-payslip-page-ytd { grid-area: ytd; }
+        .ess-payslip-page-slip { grid-area: slip; }
+        .ess-payslip-page-history { grid-area: history; }
+      }
+
+      @media (min-width: 1800px) {
+        .ess-payslip-page-grid {
+          grid-template-columns: minmax(0, 300px) minmax(0, 1fr) minmax(0, 280px);
+          grid-template-areas: "ytd slip history";
+        }
       }
 
       @media print {
@@ -326,6 +412,10 @@ export function EssPayslipPrintStyles() {
           display: none !important;
         }
 
+        .ess-payslip-page-grid {
+          display: block !important;
+        }
+
         main {
           padding: 0 !important;
           margin: 0 !important;
@@ -340,12 +430,19 @@ export function EssPayslipPrintStyles() {
           visibility: visible !important;
         }
 
-        .ess-payslip-print-host {
+        .ess-payslip-print-host,
+        .ess-payslip-fit-host,
+        .ess-payslip-scale-frame {
           padding: 0 !important;
           margin: 0 !important;
           border: none !important;
           box-shadow: none !important;
           background: transparent !important;
+          width: 210mm !important;
+          max-width: 210mm !important;
+          height: auto !important;
+          overflow: visible !important;
+          transform: none !important;
         }
 
         #ess-payslip-print,
@@ -363,6 +460,8 @@ export function EssPayslipPrintStyles() {
           overflow: hidden !important;
           font-size: 7.6px !important;
           line-height: 1.06 !important;
+          transform: none !important;
+          transform-origin: top left !important;
           -webkit-print-color-adjust: exact !important;
           print-color-adjust: exact !important;
         }
