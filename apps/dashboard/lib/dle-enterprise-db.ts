@@ -77,6 +77,7 @@ export type DleEmployeeDirectoryRow = {
   location: string;
   workLocation: string;
   officeLocation: string;
+  workCenter: string;
   projectSite?: string;
   /** Full shift_pattern from DB (any configured value). */
   shiftPattern?: string;
@@ -467,10 +468,26 @@ const pool = async () => {
     });
   }
   try {
-    return await poolPromise;
+    const connected = await poolPromise;
+    if (connected) await ensureEmployeeJobInfoSchema(connected);
+    return connected;
   } catch {
     return null;
   }
+};
+
+let employeeJobInfoSchemaPromise: Promise<void> | null = null;
+const ensureEmployeeJobInfoSchema = async (p: sql.ConnectionPool) => {
+  if (!employeeJobInfoSchemaPromise) {
+    employeeJobInfoSchemaPromise = p.request().query(`
+IF COL_LENGTH(N'[hris].[EmployeeJobInfo]', N'work_center') IS NULL
+  ALTER TABLE [hris].[EmployeeJobInfo] ADD work_center nvarchar(180) NULL;
+`).then(() => undefined).catch((error) => {
+      employeeJobInfoSchemaPromise = null;
+      console.warn('[DLE Enterprise DB] Could not ensure EmployeeJobInfo.work_center:', error instanceof Error ? error.message : error);
+    });
+  }
+  await employeeJobInfoSchemaPromise;
 };
 
 export const getDleEnterpriseDbPool = pool;
@@ -1186,6 +1203,7 @@ const DIRECTORY_EMPLOYEE_SELECT_SQL = `
       v.created_at,
       v.modified_at,
       j.office_location,
+      j.work_center,
       j.functional_manager,
       j.department_head,
       j.hr_business_partner,
@@ -1261,6 +1279,7 @@ const mapDirectoryEmployeeRow = (row: any): DleEmployeeDirectoryRow => {
   const workMode = str(row.work_mode);
   const workLocation = str(row.work_location);
   const officeLocation = str(row.office_location);
+  const workCenter = str(row.work_center);
   const projectSite = str(row.project_site);
   const nationality = str(row.nationality) || 'Not recorded';
   const emergencyContactCount = Number(row.emergency_contact_count || 0);
@@ -1318,6 +1337,7 @@ const mapDirectoryEmployeeRow = (row: any): DleEmployeeDirectoryRow => {
     location: officeLocation || workLocation || 'Unassigned Location',
     workLocation,
     officeLocation,
+    workCenter,
     projectSite: projectSite || undefined,
     shiftPattern: str(row.shift_pattern) || undefined,
     shift: (['Day', 'Night', 'Rotational'].includes(str(row.shift_pattern)) ? str(row.shift_pattern) : undefined) as DleEmployeeDirectoryRow['shift'],
@@ -3026,6 +3046,7 @@ export const createEmployeeFromDraftInDb = async (draftId: string, employeeCode:
       .input('cost_center', sql.NVarChar(80), nullable(job.costCenter))
       .input('project_site', sql.NVarChar(150), nullable(job.projectSite))
       .input('office_location', sql.NVarChar(150), nullable(job.officeLocation))
+      .input('work_center', sql.NVarChar(180), nullable(job.workCenter))
       .input('reporting_manager', sql.NVarChar(250), nullable(job.reportingManager))
       .input('functional_manager', sql.NVarChar(250), nullable(job.functionalManager))
       .input('department_head', sql.NVarChar(250), nullable(job.departmentHead))
@@ -3038,11 +3059,11 @@ export const createEmployeeFromDraftInDb = async (draftId: string, employeeCode:
       .query(`
         INSERT [hris].[EmployeeJobInfo](
           employee_id, job_title, designation, job_grade, department, division, business_unit, cost_center, project_site,
-          office_location, reporting_manager, functional_manager, department_head, hr_business_partner, role_profile,
+          office_location, work_center, reporting_manager, functional_manager, department_head, hr_business_partner, role_profile,
           job_description, key_responsibilities, is_people_manager, is_budget_owner
         ) VALUES (
           @employee_id, @job_title, @designation, @job_grade, @department, @division, @business_unit, @cost_center, @project_site,
-          @office_location, @reporting_manager, @functional_manager, @department_head, @hr_business_partner, @role_profile,
+          @office_location, @work_center, @reporting_manager, @functional_manager, @department_head, @hr_business_partner, @role_profile,
           @job_description, @key_responsibilities, @is_people_manager, @is_budget_owner
         );
       `);
@@ -3430,7 +3451,8 @@ export const syncHrisEmployeeProfileToDb = async (input: HrisEmployeeProfileSync
       .input('business_unit', sql.NVarChar(150), nullable(job.businessUnit ?? input.businessUnit))
       .input('cost_center', sql.NVarChar(80), nullable(job.costCenter))
       .input('project_site', sql.NVarChar(150), nullable(job.projectSite))
-      .input('office_location', sql.NVarChar(150), nullable(job.officeSite ?? job.location))
+      .input('office_location', sql.NVarChar(150), nullable(job.location ?? job.officeSite))
+      .input('work_center', sql.NVarChar(180), nullable(job.workCenter))
       .input('reporting_manager', sql.NVarChar(250), nullable(job.reportingManager ?? input.reportingManager))
       .input('functional_manager', sql.NVarChar(250), nullable(job.functionalManager))
       .input('department_head', sql.NVarChar(250), nullable(job.departmentHead))
@@ -3452,6 +3474,7 @@ export const syncHrisEmployeeProfileToDb = async (input: HrisEmployeeProfileSync
           cost_center = COALESCE(@cost_center, target.cost_center),
           project_site = COALESCE(@project_site, target.project_site),
           office_location = COALESCE(@office_location, target.office_location),
+          work_center = COALESCE(@work_center, target.work_center),
           reporting_manager = COALESCE(@reporting_manager, target.reporting_manager),
           functional_manager = COALESCE(@functional_manager, target.functional_manager),
           department_head = COALESCE(@department_head, target.department_head),
@@ -3462,11 +3485,11 @@ export const syncHrisEmployeeProfileToDb = async (input: HrisEmployeeProfileSync
           modified_at = SYSUTCDATETIME()
         WHEN NOT MATCHED THEN INSERT (
           employee_id, job_title, designation, job_grade, department, division, business_unit, cost_center,
-          project_site, office_location, reporting_manager, functional_manager, department_head, hr_business_partner,
+          project_site, office_location, work_center, reporting_manager, functional_manager, department_head, hr_business_partner,
           role_profile, job_description, key_responsibilities
         ) VALUES (
           @employee_id, @job_title, @designation, @job_grade, @department, @division, @business_unit, @cost_center,
-          @project_site, @office_location, @reporting_manager, @functional_manager, @department_head, @hr_business_partner,
+          @project_site, @office_location, @work_center, @reporting_manager, @functional_manager, @department_head, @hr_business_partner,
           @role_profile, @job_description, @key_responsibilities
         );
       `);

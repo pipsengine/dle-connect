@@ -1007,7 +1007,7 @@ export const createOvertimeRequest = async (input: OvertimeCreateRequest, roleIn
     jobTitle: employee.jobTitle || 'Unassigned',
     location: employee.workLocation || employee.location || 'Unassigned',
     supervisor: employee.managerName || employee.departmentHead || 'Unassigned',
-    workCenter: employee.costCenter || 'Unassigned',
+    workCenter: employee.workCenter || employee.costCenter || 'Unassigned',
     employmentType: employee.employmentType || employee.employeeCategory || 'Unassigned',
     salaryGrade: employee.salaryGrade || employee.jobGrade || 'Unassigned',
     dayType,

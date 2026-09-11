@@ -492,6 +492,7 @@ const JOB_FIELD_LABELS: Record<string, string> = {
   businessUnit: 'Business Unit',
   costCenter: 'Cost Center',
   location: 'Location',
+  workCenter: 'Work Center',
   officeSite: 'Office / Site',
   projectSite: 'Project Site',
   currentProject: 'Current Project',
@@ -510,6 +511,34 @@ const JOB_FIELD_LABELS: Record<string, string> = {
   jobDescription: 'Job Description',
   keyResponsibilities: 'Key Responsibilities',
 };
+
+const JOB_DETAIL_DISPLAY_KEYS = [
+  'jobTitle',
+  'designation',
+  'jobGrade',
+  'department',
+  'division',
+  'unit',
+  'businessUnit',
+  'costCenter',
+  'location',
+  'workCenter',
+  'projectSite',
+  'currentProject',
+  'projectName',
+  'reportingManager',
+  'functionalManager',
+  'departmentHead',
+  'hrBusinessPartner',
+  'assignmentType',
+  'assignmentStatus',
+  'assignmentEffectiveDate',
+  'assignmentStartDate',
+  'assignmentEndDate',
+  'roleProfile',
+  'jobDescription',
+  'keyResponsibilities',
+];
 
 const humanizeFieldKey = (key: string) => key.replace(/([A-Z])/g, ' $1').replace(/^./, (s) => s.toUpperCase());
 const employmentLabel = (key: string) => EMPLOYMENT_FIELD_LABELS[key] || humanizeFieldKey(key);
@@ -646,6 +675,7 @@ type ProfileFormOptions = {
   divisions: string[];
   businessUnits: string[];
   locations: string[];
+  workCenters?: string[];
   jobTitles: string[];
   jobGrades: string[];
   costCenters: string[];
@@ -2308,8 +2338,8 @@ export default function EmployeeProfileClient({
                     >
                       {!jobEdit ? (
                         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-                          {Object.entries(profileData.jobDetails).map(([k, val]) => (
-                            <Field key={k} label={jobLabel(k)} value={v(val)} />
+                          {JOB_DETAIL_DISPLAY_KEYS.map((k) => (
+                            <Field key={k} label={jobLabel(k)} value={v(profileData.jobDetails[k])} />
                           ))}
                         </div>
                       ) : (
@@ -2375,10 +2405,10 @@ export default function EmployeeProfileClient({
                               options={jobFormOptions?.locations || []}
                             />
                             <SearchableSelectField
-                              label="Office / Site"
-                              value={editValue(jobDraft?.officeSite)}
-                              onChange={(next) => setJobField('officeSite', next)}
-                              options={jobFormOptions?.locations || []}
+                              label="Work Center"
+                              value={editValue(jobDraft?.workCenter)}
+                              onChange={(next) => setJobField('workCenter', next)}
+                              options={jobFormOptions?.workCenters || []}
                             />
                             <SearchableSelectField
                               label="Project Site"
@@ -2397,12 +2427,6 @@ export default function EmployeeProfileClient({
                               value={editValue(jobDraft?.projectName)}
                               onChange={(next) => setJobField('projectName', next)}
                               options={jobFormOptions?.projectSites || []}
-                            />
-                            <SearchableSelectField
-                              label="Site Location"
-                              value={editValue(jobDraft?.siteLocation)}
-                              onChange={(next) => setJobField('siteLocation', next)}
-                              options={jobFormOptions?.locations || []}
                             />
                             <EmployeeDirectoryField
                               label="Reporting Manager"

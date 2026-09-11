@@ -10,6 +10,7 @@ import {
   saveEmployeeDraftToDb,
 } from '@/lib/dle-enterprise-db';
 import { readPayrollEmployees } from '@/lib/payroll-employee-source';
+import { readTimesheetWorkCenters } from '@/lib/timesheet-entry-store';
 import { readActiveSagePayrollEmployees } from '@/lib/sage-people-payroll-store';
 import { listNigeriaBanks, nigeriaBankNames } from '@/lib/nigeria-banks-store';
 
@@ -99,6 +100,7 @@ type FormOptions = {
   divisions: string[];
   businessUnits: string[];
   locations: string[];
+  workCenters: string[];
   jobTitles: string[];
   jobGrades: string[];
   costCenters: string[];
@@ -395,6 +397,7 @@ const fallbackOptionsPayload = (): FormOptions => ({
   divisions: ['Engineering', 'Operations', 'Corporate Services', 'Projects', 'Commercial'],
   businessUnits: ['DLE Projects', 'DLE Fabrication', 'DLE Marine', 'DLE Corporate', 'DLE Energy'],
   locations: ['Lagos HQ', 'Port Harcourt Office', 'Warri Yard', 'Abuja Office', 'Onne Site', 'Kaduna Site', 'Offshore Platform'],
+  workCenters: [],
   jobTitles: [
     'Senior Civil Engineer',
     'Mechanical Supervisor',
@@ -445,9 +448,11 @@ const optionsPayload = async (includeEmployees = false): Promise<FormOptions> =>
   try {
     const employeeSource = await readPayrollEmployees();
     const employees = employeeSource.employees;
+    const catalogWorkCenters = await readTimesheetWorkCenters().catch(() => []);
     if (!employees.length) {
       return {
         ...fallback,
+        workCenters: uniqueSorted(catalogWorkCenters.map((item) => item.name)),
         banks: bankNames.length ? bankNames : fallback.banks,
         bankCatalog: nigeriaBanks.map((bank) => ({
           name: bank.name,
@@ -461,7 +466,11 @@ const optionsPayload = async (includeEmployees = false): Promise<FormOptions> =>
       departments: uniqueSorted(employees.map((employee: any) => employee.department)),
       divisions: uniqueSorted(employees.map((employee: any) => employee.division)),
       businessUnits: uniqueSorted(employees.map((employee: any) => employee.businessUnit)),
-      locations: uniqueSorted(employees.flatMap((employee: any) => [employee.location, employee.workLocation, employee.officeLocation, employee.projectSite])),
+      locations: uniqueSorted(employees.flatMap((employee: any) => [employee.location, employee.workLocation, employee.officeLocation])),
+      workCenters: uniqueSorted([
+        ...catalogWorkCenters.map((item) => item.name),
+        ...employees.map((employee: any) => employee.workCenter),
+      ]),
       jobTitles: uniqueSorted(employees.flatMap((employee: any) => [employee.jobTitle, employee.designation])),
       jobGrades: uniqueSorted(employees.map((employee: any) => employee.jobGrade)),
       costCenters: uniqueSorted(employees.map((employee: any) => employee.costCenter)),
@@ -482,6 +491,7 @@ const optionsPayload = async (includeEmployees = false): Promise<FormOptions> =>
       divisions: mergeUnique(fromDb.divisions, fallback.divisions),
       businessUnits: mergeUnique(fromDb.businessUnits, fallback.businessUnits),
       locations: mergeUnique(fromDb.locations, fallback.locations),
+      workCenters: mergeUnique(fromDb.workCenters, fallback.workCenters),
       jobTitles: mergeUnique(fromDb.jobTitles, fallback.jobTitles),
       jobGrades: mergeUnique(fromDb.jobGrades, fallback.jobGrades),
       costCenters: mergeUnique(fromDb.costCenters, fallback.costCenters),

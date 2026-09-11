@@ -464,6 +464,7 @@ type SupervisorSourceEmployee = {
   businessUnit?: string | null;
   costCenter?: string | null;
   projectSite?: string | null;
+  workCenter?: string | null;
   workLocation?: string | null;
   officeLocation?: string | null;
   location?: string | null;
@@ -606,20 +607,20 @@ const employeeLocation = (employee: {
   location?: string | null;
   workLocation?: string | null;
   officeLocation?: string | null;
-  projectSite?: string | null;
-}) => normalizeTimesheetLocationLabel(employee.location || employee.workLocation || employee.officeLocation || employee.projectSite)
-  || clean(employee.location || employee.workLocation || employee.officeLocation || employee.projectSite);
+}) => normalizeTimesheetLocationLabel(employee.location || employee.workLocation || employee.officeLocation)
+  || clean(employee.location || employee.workLocation || employee.officeLocation);
 
 const employeeMatchesLocation = (employee: Parameters<typeof employeeLocation>[0], locationName?: string) => {
   const selected = (normalizeTimesheetLocationLabel(locationName) || clean(locationName)).toLowerCase();
   if (!selected) return true;
-  return [employee.location, employee.workLocation, employee.officeLocation, employee.projectSite]
+  return [employee.location, employee.workLocation, employee.officeLocation]
     .map((value) => (normalizeTimesheetLocationLabel(value) || clean(value)).toLowerCase())
     .filter(Boolean)
     .some((value) => value === selected || value.includes(selected) || selected.includes(value));
 };
 
 const employeeMatchesWorkCenter = (employee: {
+  workCenter?: string | null;
   department?: string | null;
   division?: string | null;
   businessUnit?: string | null;
@@ -631,7 +632,11 @@ const employeeMatchesWorkCenter = (employee: {
 }, workCenterName?: string) => {
   const selected = clean(workCenterName).toLowerCase();
   if (!selected) return true;
-  return [employee.department, employee.division, employee.businessUnit, employee.costCenter, employee.projectSite, employee.workLocation, employee.officeLocation, employee.location]
+  const assigned = clean(employee.workCenter).toLowerCase();
+  if (assigned) {
+    return assigned === selected || assigned.includes(selected) || selected.includes(assigned);
+  }
+  return [employee.department, employee.division, employee.businessUnit, employee.costCenter, employee.projectSite]
     .map((value) => clean(value).toLowerCase())
     .filter(Boolean)
     .some((value) => value === selected || value.includes(selected) || selected.includes(value));
@@ -791,6 +796,7 @@ const assignedEmployeesForSupervisor = async (supervisor: string, employees: Sup
           businessUnit: assignment.assignmentGroup || '',
           costCenter: '',
           projectSite: '',
+          workCenter: '',
           workLocation: '',
           officeLocation: '',
           location: '',
@@ -805,7 +811,7 @@ const assignedEmployeesForSupervisor = async (supervisor: string, employees: Sup
 };
 
 const defaultWorkCenterForEmployees = (
-  employees: Array<{ department?: string | null; division?: string | null; businessUnit?: string | null; costCenter?: string | null; projectSite?: string | null; workLocation?: string | null; officeLocation?: string | null; location?: string | null }>,
+  employees: Array<{ workCenter?: string | null; department?: string | null; division?: string | null; businessUnit?: string | null; costCenter?: string | null; projectSite?: string | null; workLocation?: string | null; officeLocation?: string | null; location?: string | null }>,
   workCenters: TimesheetWorkCenter[],
   locationName?: string,
 ) => {
@@ -1052,6 +1058,7 @@ const buildPayload = async (
         businessUnit: assignment.assignmentGroup || '',
         costCenter: '',
         projectSite: '',
+        workCenter: '',
         workLocation: '',
         officeLocation: '',
         location: '',
@@ -1152,7 +1159,7 @@ const buildPayload = async (
   const selectedSupervisorEmployeesFromRecords = timesheetRecords
     .filter((record) => {
       if (!managerMatches({ managerName: record.supervisor }, targetSupervisor)) return false;
-      if (targetLocation && !employeeMatchesLocation({ location: record.location, workLocation: record.location, officeLocation: record.site, projectSite: record.site }, targetLocation)) return false;
+      if (targetLocation && !employeeMatchesLocation({ location: record.location, workLocation: record.location, officeLocation: record.site }, targetLocation)) return false;
       if (targetWorkCenter && !employeeMatchesWorkCenter({ department: record.department, businessUnit: record.businessUnit, projectSite: record.site, workLocation: record.location, officeLocation: record.site, location: record.location }, targetWorkCenter)) return false;
       return true;
     })

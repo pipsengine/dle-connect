@@ -331,6 +331,7 @@ const emptyEmployee = (employeeId: string, fullName: string): DleEmployeeDirecto
   location: 'Lagos HQ',
   workLocation: 'Lagos HQ',
   officeLocation: 'Lagos HQ',
+  workCenter: '',
   shiftPattern: '',
   workMode: 'Onsite',
   unionStatus: '',

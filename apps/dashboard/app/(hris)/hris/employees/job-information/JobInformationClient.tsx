@@ -482,6 +482,7 @@ export default function JobInformationClient({ initialNow, employeeId }: { initi
                   actingSupervisor: cur.job.actingSupervisor ?? null,
                   delegatedApprover: cur.job.delegatedApprover ?? null,
                   officeSite: cur.job.officeSite ?? null,
+                  workCenter: cur.job.workCenter ?? null,
                   projectSite: cur.job.projectSite ?? null,
                   currentProject: cur.projectAssignment.currentProject ?? null,
                   projectCode: cur.projectAssignment.projectCode ?? null,
@@ -733,7 +734,7 @@ export default function JobInformationClient({ initialNow, employeeId }: { initi
           { label: 'Business Unit', value: jobData?.businessUnit || '—', detail: jobData?.costCenter || '—', icon: Building2, tone: 'bg-slate-50 text-slate-800 border-slate-200' },
           { label: 'Reporting Manager', value: jobData?.reportingManager || '—', detail: jobData?.functionalManager || '—', icon: Users, tone: 'bg-amber-600/10 text-amber-700 border-amber-200' },
           { label: 'Employment Type', value: empData?.employmentType || '—', detail: empData?.employmentStatus || '—', icon: Calendar, tone: 'bg-white text-slate-800 border-slate-200' },
-          { label: 'Work Location', value: empData?.workLocation || '—', detail: jobData?.officeSite || '—', icon: Building2, tone: 'bg-white text-slate-800 border-slate-200' },
+          { label: 'Work Location', value: empData?.workLocation || '—', detail: jobData?.workCenter || jobData?.officeSite || '—', icon: Building2, tone: 'bg-white text-slate-800 border-slate-200' },
           { label: 'Years in Current Role', value: yrs === null ? '—' : String(yrs), detail: lastApproved ? `Since ${formatDateUtc(lastApproved.effectiveDate)}` : 'No approved job change found', icon: Calendar, tone: 'bg-white text-slate-800 border-slate-200' },
           { label: 'Current Project', value: jobInfo.data?.projectAssignment?.currentProject || jobData?.projectSite || '—', detail: jobInfo.data?.projectAssignment?.assignmentStatus || '—', icon: Building2, tone: 'bg-white text-slate-800 border-slate-200' },
           { label: 'Approval Status', value: approvalStatus, detail: jobInfo.data?.approvalRef || '—', icon: ShieldCheck, tone: approvalTone },
@@ -843,6 +844,7 @@ export default function JobInformationClient({ initialNow, employeeId }: { initi
             <Field label="Division" value={jobData?.division || '—'} />
             <Field label="Business Unit" value={jobData?.businessUnit || '—'} />
             <Field label="Cost Center" value={jobData?.costCenter || '—'} />
+            <Field label="Work Center" value={jobData?.workCenter || '—'} />
             <Field label="Project Site" value={jobData?.projectSite || '—'} />
             <Field label="Work Location" value={empData?.workLocation || '—'} />
           </div>
@@ -1094,6 +1096,7 @@ export default function JobInformationClient({ initialNow, employeeId }: { initi
             <Field label="Business Unit" value={jobData?.businessUnit || '—'} />
             <Field label="Cost Center" value={jobData?.costCenter || '—'} />
             <Field label="Work Location" value={empData?.workLocation || '—'} />
+            <Field label="Work Center" value={jobData?.workCenter || '—'} />
             <Field label="Office Site" value={jobData?.officeSite || '—'} />
             <Field label="Project Site" value={jobData?.projectSite || '—'} />
             <Field label="Employment Type" value={empData?.employmentType || '—'} />
@@ -1615,6 +1618,7 @@ export default function JobInformationClient({ initialNow, employeeId }: { initi
                 ['Business Unit', jobData.businessUnit || ''],
                 ['Cost Center', jobData.costCenter || ''],
                 ['Work Location', empData.workLocation || ''],
+                ['Work Center', jobData.workCenter || ''],
                 ['Office Site', jobData.officeSite || ''],
                 ['Project Site', jobData.projectSite || ''],
                 ['Reporting Manager', jobData.reportingManager || ''],
@@ -1699,6 +1703,7 @@ export default function JobInformationClient({ initialNow, employeeId }: { initi
                 ['Business Unit', jobData.businessUnit || ''],
                 ['Cost Center', jobData.costCenter || ''],
                 ['Work Location', empData.workLocation || ''],
+                ['Work Center', jobData.workCenter || ''],
                 ['Office Site', jobData.officeSite || ''],
                 ['Project Site', jobData.projectSite || ''],
                 ['Reporting Manager', jobData.reportingManager || ''],

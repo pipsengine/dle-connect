@@ -101,6 +101,7 @@ type FormOptions = {
   divisions: string[];
   businessUnits: string[];
   locations: string[];
+  workCenters?: string[];
   jobTitles: string[];
   jobGrades: string[];
   costCenters: string[];
@@ -184,6 +185,7 @@ type DraftJob = {
   costCenter: string;
   projectSite: string;
   officeLocation: string;
+  workCenter: string;
   reportingManager: string;
   functionalManager: string;
   departmentHead: string;
@@ -651,6 +653,7 @@ const makeEmptyDraft = (countryDefault: string): EmployeeDraftPayload => ({
     costCenter: '',
     projectSite: '',
     officeLocation: '',
+    workCenter: '',
     reportingManager: '',
     functionalManager: '',
     departmentHead: '',
@@ -1723,6 +1726,7 @@ export default function AddNewEmployeeClient({ initialNow, initialDraftId, initi
         <SelectField label="Cost Center" value={draft.job.costCenter} onChange={(v) => setDraft((d) => ({ ...d, job: { ...d.job, costCenter: v } }))} options={options.data?.costCenters || []} />
         <SelectField label="Project Site" value={draft.job.projectSite} onChange={(v) => setDraft((d) => ({ ...d, job: { ...d.job, projectSite: v } }))} options={options.data?.projectSites || []} />
         <SelectField label="Office Location" value={draft.job.officeLocation} onChange={(v) => setDraft((d) => ({ ...d, job: { ...d.job, officeLocation: v } }))} options={options.data?.locations || []} />
+        <SelectField label="Work Center" value={draft.job.workCenter} onChange={(v) => setDraft((d) => ({ ...d, job: { ...d.job, workCenter: v } }))} options={options.data?.workCenters || []} />
         <EmployeeDirectoryField
           label="Reporting Manager"
           required

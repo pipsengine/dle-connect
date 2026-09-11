@@ -213,6 +213,7 @@ BEGIN
     cost_center nvarchar(80) NULL,
     project_site nvarchar(150) NULL,
     office_location nvarchar(150) NULL,
+    work_center nvarchar(180) NULL,
     reporting_manager nvarchar(250) NULL,
     functional_manager nvarchar(250) NULL,
     department_head nvarchar(250) NULL,
@@ -229,6 +230,10 @@ BEGIN
     CONSTRAINT FK_EmployeeJobInfo_Employees FOREIGN KEY (employee_id) REFERENCES [hris].[Employees](employee_id)
   );
 END;
+GO
+
+IF COL_LENGTH(N'[hris].[EmployeeJobInfo]', N'work_center') IS NULL
+  ALTER TABLE [hris].[EmployeeJobInfo] ADD work_center nvarchar(180) NULL;
 GO
 
 IF EXISTS (
