@@ -153,6 +153,13 @@ const payrollSalaryReviewPerms = [
   'hris.view',
 ];
 
+/** Process Payroll / Bank & Finance pages — payroll.view must not open these on its own. */
+const payrollOperatorPagePerms = [
+  'page.payroll.management.view',
+  'page.payroll.management.bank-finance.view',
+  'reports.payroll.bank-schedule.view',
+];
+
 const payrollHrReviewPerms = [
   ...payrollSalaryReviewPerms,
   'payroll.workflow.hr-review.view',
@@ -226,9 +233,9 @@ export const roleDefinitions: RoleDefinition[] = [
   role('Onboarding Officer', 'HRIS', ['onboarding.*', 'employees.view', 'employees.edit', 'hris.view', ...performanceHrPerms], 'Onboarding and employee setup.'),
   role('Offboarding Officer', 'HRIS', ['offboarding.*', 'employees.view', 'employees.edit', 'hris.view', ...performanceHrPerms], 'Exit management and offboarding.'),
   role('Employee Records Officer', 'HRIS', ['employees.view', 'employees.create', 'employees.edit', 'documents.view', 'documents.edit', 'hris.view', ...performanceHrPerms, 'offboarding.view'], 'Employee records and document control.'),
-  role('Payroll Administrator', 'Payroll', ['payroll.*'], 'Full payroll administration.'),
-  role('Payroll Officer', 'Payroll', ['payroll.view', 'payroll.create', 'payroll.edit', 'payroll.export', 'payroll.payslip.view', ...payrollSalaryReviewPerms], 'Payroll processing operations and salary setup.'),
-  role('Payroll Supervisor', 'Payroll', ['payroll.view', 'payroll.edit', 'payroll.approve', 'payroll.export', ...payrollSalaryReviewPerms], 'Payroll supervision and salary review.'),
+  role('Payroll Administrator', 'Payroll', ['payroll.*', ...payrollOperatorPagePerms], 'Full payroll administration.'),
+  role('Payroll Officer', 'Payroll', ['payroll.view', 'payroll.create', 'payroll.edit', 'payroll.export', 'payroll.payslip.view', ...payrollSalaryReviewPerms, ...payrollOperatorPagePerms], 'Payroll processing operations and salary setup.'),
+  role('Payroll Supervisor', 'Payroll', ['payroll.view', 'payroll.create', 'payroll.edit', 'payroll.approve', 'payroll.export', ...payrollSalaryReviewPerms, ...payrollOperatorPagePerms], 'Payroll supervision, processing, and salary review.'),
   role('Payroll Approver', 'Payroll', ['payroll.view', 'payroll.approve', 'payroll.reject', ...payrollSalaryReviewPerms], 'Payroll approval authority with salary review access.'),
   role('Payroll Auditor', 'Payroll', ['payroll.view', 'payroll.audit', 'audit.view', 'reports.export', ...payrollSalaryReviewPerms], 'Payroll audit and salary review access.'),
   role('Finance Payroll Reviewer', 'Payroll', [...financeBankFinancePerms, ...payrollFinanceReviewPerms, 'payroll.approve', 'payroll.reject'], 'Finance-side bank schedule, journal posting, payroll approval, and salary review.'),

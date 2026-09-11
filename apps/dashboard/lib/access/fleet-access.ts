@@ -55,9 +55,9 @@ export const FLEET_ADMIN_PERMISSIONS = [
   'logistics.*',
 ] as const;
 
-/** Explicit Driver Supervisor employee codes (comma/space separated). Defaults to L2770. */
+/** Explicit Driver Supervisor employee codes (comma/space separated). Defaults to P0467 (was L2770). */
 export const configuredFleetDriverSupervisorCodes = () =>
-  String(process.env.FLEET_DRIVER_SUPERVISOR_CODES || 'L2770')
+  String(process.env.FLEET_DRIVER_SUPERVISOR_CODES || 'P0467,L2770')
     .split(/[,;\s]+/)
     .map((value) => value.trim().toUpperCase())
     .filter(Boolean);

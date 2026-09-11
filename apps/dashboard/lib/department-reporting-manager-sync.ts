@@ -8,7 +8,7 @@ const LEADERSHIP_PATTERN = /\b(manager|head|lead|supervisor|director)\b/i;
 
 /** Role-based supervisor overrides within ADMINSTRATION pending manual review for admin/front-office staff. */
 export const ADMINSTRATION_ROLE_SUPERVISOR_CODES = {
-  drivers: { supervisorCode: 'L2770', employeeCodes: [
+  drivers: { supervisorCode: 'P0467', employeeCodes: [
     'L0297', 'L1090', 'L1369', 'L1618', 'L1963', 'L2125', 'L2142', 'L2191',
     'L2214', 'L2216', 'L2254', 'L2331', 'L2336', 'L2374', 'L2775', 'L2777',
     'L2779', 'P0309',

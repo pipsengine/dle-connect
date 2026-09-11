@@ -20,7 +20,7 @@ const loadWorkspaceEnv = () => {
 
 loadWorkspaceEnv();
 
-const DRIVER_SUPERVISOR = 'L2770';
+const DRIVER_SUPERVISOR = 'P0467';
 const SECURITY_SUPERVISOR = 'P0272';
 
 const DRIVER_CODES = [
@@ -36,12 +36,12 @@ const main = async () => {
     supervisorEmployeeCode: DRIVER_SUPERVISOR,
     employeeCodes: DRIVER_CODES,
     assignmentGroup: 'ADMINSTRATION Drivers',
-    reason: 'Administration drivers reporting line — supervisor L2770 per HR direction.',
+    reason: 'Administration drivers reporting line — supervisor P0467 per HR direction.',
     performedBy: 'scripts/apply-administration-reporting-lines.mts',
     sourceRows: DRIVER_CODES.map((employeeCode) => ({
       employeeCode,
       matchConfidence: 'AdministrationDriverRule',
-      matchNote: 'Driver/transport staff under ADMINSTRATION assigned to L2770.',
+      matchNote: 'Driver/transport staff under ADMINSTRATION assigned to P0467.',
     })),
   });
 

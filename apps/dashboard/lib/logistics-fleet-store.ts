@@ -1165,12 +1165,12 @@ const findEmployee = (employees: DleEmployeeDirectoryRow[], code: string) => {
 };
 
 const configuredDriverSupervisorCodes = () =>
-  String(process.env.FLEET_DRIVER_SUPERVISOR_CODES || 'L2770')
+  String(process.env.FLEET_DRIVER_SUPERVISOR_CODES || 'P0467,L2770')
     .split(/[,;\s]+/)
     .map((value) => value.trim().toUpperCase())
     .filter(Boolean);
 
-/** Driver Supervisor for trip routing (not the requester's HR line manager). Defaults to L2770. */
+/** Driver Supervisor for trip routing (not the requester's HR line manager). Defaults to P0467. */
 const resolveDriverSupervisor = (employees: DleEmployeeDirectoryRow[]) => {
   for (const code of configuredDriverSupervisorCodes()) {
     const employee = findEmployee(employees, code);
@@ -1307,7 +1307,7 @@ const actorMayDriverSupervisor = (context: TripActionContext) => {
     return true;
   }
   const code = String(context.actorEmployeeCode || '').trim().toUpperCase();
-  if (code && String(process.env.FLEET_DRIVER_SUPERVISOR_CODES || 'L2770')
+  if (code && String(process.env.FLEET_DRIVER_SUPERVISOR_CODES || 'P0467,L2770')
     .split(/[,;\s]+/)
     .map((value) => value.trim().toUpperCase())
     .filter(Boolean)

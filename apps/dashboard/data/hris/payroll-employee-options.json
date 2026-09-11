@@ -1246,11 +1246,11 @@
     "updatedBy": "Sage cutover sync"
   },
   {
-    "employeeId": "L2770",
-    "employeeCode": "L2770",
+    "employeeId": "P0467",
+    "employeeCode": "P0467",
     "nhfApplicable": false,
-    "updatedAt": "2026-06-27T00:18:59.190Z",
-    "updatedBy": "Sage cutover sync"
+    "updatedAt": "2026-09-11T14:40:00.000Z",
+    "updatedBy": "Convert L2770 lumpsum to permanent P0467"
   },
   {
     "employeeId": "L2771",
