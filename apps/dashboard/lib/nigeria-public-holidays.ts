@@ -1,5 +1,5 @@
-import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
+import { readHrisDataFile, writeHrisDataFile } from '@/lib/hris-data-paths';
 
 export type NigeriaPublicHoliday = {
   id: string;
@@ -94,15 +94,26 @@ export const parseGoogleHolidayIcs = (icsText: string): NigeriaPublicHoliday[] =
 
 const readJsonFile = async <T>(filePath: string, fallback: T): Promise<T> => {
   try {
-    return JSON.parse(await readFile(filePath, 'utf8')) as T;
+    const found = await readHrisDataFile(path.basename(filePath), filePath);
+    if (!found?.text) return fallback;
+    return JSON.parse(found.text) as T;
   } catch {
     return fallback;
   }
 };
 
 const writeJsonFile = async (filePath: string, value: unknown) => {
-  await mkdir(path.dirname(filePath), { recursive: true });
-  await writeFile(filePath, `${JSON.stringify(value, null, 2)}\n`, 'utf8');
+  const contents = `${JSON.stringify(value, null, 2)}\n`;
+  try {
+    await writeHrisDataFile(path.basename(filePath), contents, filePath);
+    return true;
+  } catch (error) {
+    console.warn(
+      `[holidays] Could not persist ${path.basename(filePath)}:`,
+      error instanceof Error ? error.message : error,
+    );
+    return false;
+  }
 };
 
 type HolidayCache = {
@@ -276,14 +287,23 @@ export const nigeriaHolidayDateSet = async (options?: { forceRefresh?: boolean }
 
 /** Holiday dates for timesheet/OT/payroll day typing. Resolves the Nigeria feed when the cache is empty or stale. */
 export const getPayrollPublicHolidayDates = async (options?: { forceRefresh?: boolean }) => {
-  const resolved = await resolveNigeriaPublicHolidays(options);
-  return resolved.dates;
+  try {
+    const resolved = await resolveNigeriaPublicHolidays(options);
+    return resolved.dates;
+  } catch (error) {
+    console.warn('[holidays] Using in-memory fallback dates:', error instanceof Error ? error.message : error);
+    const year = new Date().getFullYear();
+    return [year - 1, year, year + 1].flatMap((item) => nigeriaFallbackHolidaysForYear(item)).map((item) => item.date);
+  }
 };
 
 export const writePayrollPublicHolidayDates = async (dates: string[]) => {
   const normalized = Array.from(
     new Set(dates.map(dateOnly).filter((date) => /^\d{4}-\d{2}-\d{2}$/.test(date))),
   ).sort();
-  await writeJsonFile(PAYROLL_HOLIDAY_PATH, { dates: normalized, updatedAt: new Date().toISOString() });
+  const saved = await writeJsonFile(PAYROLL_HOLIDAY_PATH, { dates: normalized, updatedAt: new Date().toISOString() });
+  if (!saved) {
+    throw new Error('Unable to save public holiday dates. The HRIS data folder is not writable.');
+  }
   return normalized;
 };
