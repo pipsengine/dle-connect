@@ -1249,8 +1249,10 @@
     "employeeId": "P0467",
     "employeeCode": "P0467",
     "nhfApplicable": false,
-    "updatedAt": "2026-09-11T14:40:00.000Z",
-    "updatedBy": "Convert L2770 lumpsum to permanent P0467"
+    "updatedAt": "2026-09-11T14:51:30.913Z",
+    "updatedBy": "Archive L2770 inactive after P0467 conversion",
+    "setupAssignedToPayroll": true,
+    "excludedFromPayrollRun": false
   },
   {
     "employeeId": "L2771",
@@ -1475,5 +1477,14 @@
     "nhfApplicable": false,
     "updatedAt": "2026-06-19T00:00:00.000Z",
     "updatedBy": "Payroll Officer"
+  },
+  {
+    "employeeId": "L2770",
+    "employeeCode": "L2770",
+    "nhfApplicable": false,
+    "updatedAt": "2026-09-11T14:51:30.913Z",
+    "updatedBy": "Archive L2770 inactive after P0467 conversion",
+    "setupAssignedToPayroll": false,
+    "excludedFromPayrollRun": true
   }
 ]
