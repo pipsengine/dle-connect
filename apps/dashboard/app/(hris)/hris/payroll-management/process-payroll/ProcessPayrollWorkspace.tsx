@@ -123,6 +123,7 @@ type Payload = {
     canApproveMdCeo: boolean;
     canApproveAnyStage: boolean;
     canLock: boolean;
+    canRelease?: boolean;
     canExport: boolean;
   };
   run: PayrollRun | null;
@@ -388,6 +389,7 @@ export default function ProcessPayrollWorkspace({
   const canSubmit = Boolean(payload?.permissions.canSubmit);
   const canExport = Boolean(payload?.permissions.canExport);
   const canLock = Boolean(payload?.permissions.canLock);
+  const canRelease = Boolean(payload?.permissions.canRelease ?? (canCalculate || canLock));
 
   const selectedScope =
     PAYROLL_SCHEDULE_SCOPES.find((scope) => scope.id === scheduleId)
@@ -523,7 +525,7 @@ export default function ProcessPayrollWorkspace({
     if (step.action === 'finance-manager-approve') return (perms.canApproveFinanceManager || perms.canApproveAnyStage) && step.current;
     if (step.action === 'cfo-approve') return (perms.canApproveCfo || perms.canApproveAnyStage) && step.current;
     if (step.action === 'md-ceo-approve') return (perms.canApproveMdCeo || perms.canApproveAnyStage) && step.current;
-    if (step.action === 'release-run') return canLock && step.current;
+    if (step.action === 'release-run') return canRelease && step.current;
     if (/generate-/.test(step.action)) return canCalculate && step.current;
     return false;
   };
@@ -892,26 +894,39 @@ export default function ProcessPayrollWorkspace({
                     {step.done ? <Check size={14} /> : index + 1}
                   </div>
                   <b>{step.label}</b>
-                  <span>{step.done ? 'Completed' : step.current ? 'Awaiting approval' : 'Pending'}</span>
+                  <span>
+                    {step.done
+                      ? 'Completed'
+                      : step.current
+                        ? (canFire(step) ? 'Ready to run' : /approve|submit-run/.test(step.action || '') ? 'Awaiting approval' : 'Pending')
+                        : 'Pending'}
+                  </span>
                 </div>
               ))}
             </div>
           </div>
-          <div className={styles.nextCard}>
-            <div className={styles.nextLabel}>Next Step</div>
-            <div className={styles.nextValue}>{nextStep?.label || 'Complete'}</div>
-            <div className={styles.nextMeta}>{nextStep?.detail || 'All processing steps are complete for this schedule.'}</div>
-            {nextStep && canFire(nextStep) ? (
-              <button
-                type="button"
-                className={`${styles.btn} ${styles.btnBlue} ${styles.nextAction}`}
-                disabled={Boolean(posting)}
-                onClick={() => nextStep.action && void action(nextStep.action)}
-              >
+          {nextStep && canFire(nextStep) ? (
+            <button
+              type="button"
+              className={`${styles.nextCard} ${styles.nextCardActive}`}
+              disabled={Boolean(posting)}
+              onClick={() => nextStep.action && void action(nextStep.action)}
+              aria-label={`Run ${nextStep.label}`}
+            >
+              <div className={styles.nextLabel}>Next Step</div>
+              <div className={styles.nextValue}>{nextStep.label}</div>
+              <div className={styles.nextMeta}>{nextStep.detail}</div>
+              <span className={`${styles.btn} ${styles.btnBlue} ${styles.nextAction}`}>
                 {posting === nextStep.action ? 'Working…' : `Run ${nextStep.label}`}
-              </button>
-            ) : null}
-          </div>
+              </span>
+            </button>
+          ) : (
+            <div className={styles.nextCard}>
+              <div className={styles.nextLabel}>Next Step</div>
+              <div className={styles.nextValue}>{nextStep?.label || 'Complete'}</div>
+              <div className={styles.nextMeta}>{nextStep?.detail || 'All processing steps are complete for this schedule.'}</div>
+            </div>
+          )}
         </div>
       </section>
 

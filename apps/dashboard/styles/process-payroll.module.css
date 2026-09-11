@@ -467,6 +467,33 @@
   justify-content: center;
 }
 
+.nextCardActive {
+  width: 100%;
+  text-align: left;
+  cursor: pointer;
+  appearance: none;
+  font: inherit;
+  color: inherit;
+  box-shadow: 0 0 0 1px #c4b5fd;
+  transition: transform 0.12s ease, box-shadow 0.12s ease, border-color 0.12s ease;
+}
+
+.nextCardActive:hover:not(:disabled) {
+  border-color: #7c3aed;
+  box-shadow: 0 10px 22px rgba(112, 65, 216, 0.18);
+  transform: translateY(-1px);
+}
+
+.nextCardActive:focus-visible {
+  outline: 2px solid #7c3aed;
+  outline-offset: 2px;
+}
+
+.nextCardActive:disabled {
+  cursor: wait;
+  opacity: 0.78;
+}
+
 .nextLabel {
   font-size: 10px;
   text-transform: uppercase;
@@ -490,6 +517,7 @@
 .nextAction {
   margin-top: 12px;
   align-self: flex-start;
+  pointer-events: none;
 }
 
 .tabs {

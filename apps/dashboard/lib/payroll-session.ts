@@ -80,9 +80,11 @@ export const payrollSessionContext = async (request: Request) => {
 
 export const processingPermissions = (role: PayrollSessionRole, options?: { isGlobalAdmin?: boolean }) => {
   const stagePerms = payrollApprovalPermissions(role, options);
+  const canCalculate = stagePerms.canSubmit || ['HR Director', 'Finance Controller'].includes(role);
+  const canLock = ['Super Admin', 'System Administrator', 'Finance Controller', 'Finance Manager', 'CFO', 'HR Director'].includes(role) || Boolean(options?.isGlobalAdmin);
   return {
     canViewMoney: ['Super Admin', 'System Administrator', 'HR Director', 'HR Manager', 'Payroll Officer', 'Payroll Supervisor', 'Finance Controller', 'Finance Manager', 'CFO', 'Executive Director', 'Executive Management', 'Auditor'].includes(role) || Boolean(options?.isGlobalAdmin),
-    canCalculate: stagePerms.canSubmit || ['HR Director', 'Finance Controller'].includes(role),
+    canCalculate,
     canSubmit: stagePerms.canSubmit,
     canApproveHrManager: stagePerms.canApproveHrManager,
     canApproveFinanceManager: stagePerms.canApproveFinanceManager,
@@ -92,7 +94,8 @@ export const processingPermissions = (role: PayrollSessionRole, options?: { isGl
     canReject: stagePerms.canReject,
     canApproveFinance: stagePerms.canApproveFinanceManager || stagePerms.canApproveCfo,
     canApproveHr: stagePerms.canApproveHrManager,
-    canLock: ['Super Admin', 'System Administrator', 'Finance Controller', 'Finance Manager', 'CFO', 'HR Director'].includes(role) || Boolean(options?.isGlobalAdmin),
+    canLock,
+    canRelease: canCalculate || canLock,
     canExport: role !== 'Employee',
     canReopen: ['Super Admin', 'System Administrator', 'CFO', 'Executive Director'].includes(role) || Boolean(options?.isGlobalAdmin),
   };
