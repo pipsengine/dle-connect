@@ -22,6 +22,7 @@ import {
   isPendingPaymentApprovalStatus,
 } from '@/lib/finance-intelligence/payment-access';
 import { listDirectReportsForLineManager } from '@/lib/finance-intelligence/payment-team-scope';
+import { AUTH_COOKIE, verifySessionToken } from '@/lib/auth/session';
 import { permissionsForRoles } from '@/lib/auth/rbac';
 import FinanceWorkspaceClient from '../FinanceWorkspaceClient';
 
