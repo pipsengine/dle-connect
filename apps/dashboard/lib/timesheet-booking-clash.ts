@@ -61,14 +61,27 @@ export const isCommittedTimesheetBooking = (
   return !isAutoBookedTimesheetLine(line);
 };
 
-const otherDraftIsDifferentWorkCenter = (
+const headerSupervisorKey = (header?: TimesheetHeaderClashRef | null) =>
+  extractSupervisorEmployeeCode(header?.supervisorId) || extractSupervisorEmployeeCode(header?.supervisorName);
+
+const sameSupervisorHeaders = (left: TimesheetHeaderClashRef, right?: TimesheetHeaderClashRef | null) =>
+  Boolean(right && supervisorCodesMatch(headerSupervisorKey(left), headerSupervisorKey(right)));
+
+const isPayrollReadyHeader = (header?: TimesheetHeaderClashRef | null) => {
+  const key = normalizeTimesheetStatusKey(header?.status);
+  return key === 'hr_acknowledged' || key === 'locked' || key === 'approved';
+};
+
+/** Draft on another section is never a lock. A submitted sheet from a different supervisor also yields. */
+const otherSheetDoesNotLockThisCrew = (
   header: TimesheetHeaderClashRef,
   otherHeader: TimesheetHeaderClashRef | undefined,
-) => Boolean(
-  otherHeader
-  && normalizeTimesheetStatusKey(otherHeader.status) === 'draft'
-  && !timesheetWorkCentersMatch(header.workCenterName, otherHeader.workCenterName),
-);
+) => {
+  if (!otherHeader || isPayrollReadyHeader(otherHeader)) return false;
+  if (timesheetWorkCentersMatch(header.workCenterName, otherHeader.workCenterName)) return false;
+  if (normalizeTimesheetStatusKey(otherHeader.status) === 'draft') return true;
+  return !sameSupervisorHeaders(header, otherHeader);
+};
 
 const clashOnOtherSheet = (
   line: TimesheetLine,
@@ -80,9 +93,7 @@ const clashOnOtherSheet = (
   if (!timesheetLineHasProductiveHours(other)) return false;
   const otherHeader = otherHeaders.find((item) => item.id === other.headerId);
   if (timesheetHeaderShiftKind(otherHeader?.shiftLabel) !== timesheetHeaderShiftKind(header.shiftLabel)) return false;
-  // Draft hours on a different section (Maintenance vs Galvanizing) are not a lock.
-  // The submitting supervisor keeps their crew; the other draft is cleared on submit.
-  if (otherDraftIsDifferentWorkCenter(header, otherHeader)) return false;
+  if (otherSheetDoesNotLockThisCrew(header, otherHeader)) return false;
   if (committedOnly && !isCommittedTimesheetBooking(otherHeader, other)) return false;
   return timesheetEmployeeRecordsMatch(line, other);
 });
@@ -195,7 +206,7 @@ export const omitOtherTimesheetSupervisors = (
   otherHeaders: TimesheetHeaderClashRef[],
 ) => lines.filter((line) => !employeeIsOtherTimesheetSupervisor(line, header, otherHeaders));
 
-/** When this sheet books real hours, take them off other drafts (auto-book or a different work centre). */
+/** When this sheet books real hours, take them off other drafts or a different supervisor's unposted sheet. */
 export const displaceUncommittedBookingsOnOtherDrafts = (
   submittingLines: TimesheetLine[],
   header: TimesheetHeaderClashRef,
@@ -209,8 +220,11 @@ export const displaceUncommittedBookingsOnOtherDrafts = (
   for (const otherHeader of otherHeaders) {
     if (otherHeader.id === header.id || otherHeader.timesheetDate !== header.timesheetDate) continue;
     if (timesheetHeaderShiftKind(otherHeader.shiftLabel) !== headerKind) continue;
-    if (normalizeTimesheetStatusKey(otherHeader.status) !== 'draft') continue;
+    if (isPayrollReadyHeader(otherHeader)) continue;
+    const draft = normalizeTimesheetStatusKey(otherHeader.status) === 'draft';
+    const foreignSupervisor = !sameSupervisorHeaders(header, otherHeader);
     const differentWorkCenter = !timesheetWorkCentersMatch(header.workCenterName, otherHeader.workCenterName);
+    if (!draft && !(foreignSupervisor && differentWorkCenter)) continue;
     const lines = otherLines.filter((line) => line.headerId === otherHeader.id);
     let changed = false;
     const next = lines.map((other) => {

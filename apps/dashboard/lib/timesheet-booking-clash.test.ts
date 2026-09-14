@@ -110,13 +110,49 @@ assert.equal(
   'Every worker with hours here is already on another timesheet today. There is nothing new to submit on this sheet.',
 );
 
-const maintenanceKeepsCrew = findSameDayBookingConflicts(
-  [line({ headerId: 'hdr-maintenance', usedHours: 8 })],
-  maintenance,
-  [maintenance, galvanizing],
-  [line({ headerId: 'hdr-galvanizing' })],
+const fitting = { id: 'hdr-fitting', timesheetDate: '2026-09-07', shiftLabel: '01 (Day)', workCenterName: 'Fitting', supervisorName: 'C1882 - MOMOH MOHAMMED', supervisorId: 'C1882', status: 'Submitted' };
+const galvanizingSubmitted = { ...galvanizing, status: 'Submitted' as const };
+
+const momohKeepsAssignedCrew = findSameDayBookingConflicts(
+  [line({
+    headerId: 'hdr-fitting',
+    employeeId: 'C2422',
+    employeeNo: 'C2422',
+    employeeName: 'DAVID UDEH',
+    usedHours: 8,
+  })],
+  fitting,
+  [fitting, galvanizingSubmitted],
+  [line({
+    headerId: 'hdr-galvanizing',
+    employeeId: 'C2422',
+    employeeNo: 'C2422',
+    employeeName: 'UDEH ANTHONY ANTHONY DAVID',
+  })],
 );
-assert.equal(maintenanceKeepsCrew.length, 0);
+assert.equal(momohKeepsAssignedCrew.length, 0);
+
+const displacedSubmittedForeign = displaceUncommittedBookingsOnOtherDrafts(
+  [line({
+    headerId: 'hdr-fitting',
+    employeeId: 'C2422',
+    employeeNo: 'C2422',
+    employeeName: 'DAVID UDEH',
+    usedHours: 8,
+    projectAllocations: [{ projectId: 'p2', projectCode: 'DL0062', projectName: 'Fitting', hours: 8, remarks: null }],
+  })],
+  fitting,
+  [fitting, galvanizingSubmitted],
+  [line({
+    headerId: 'hdr-galvanizing',
+    employeeId: 'C2422',
+    employeeNo: 'C2422',
+    employeeName: 'UDEH ANTHONY ANTHONY DAVID',
+  })],
+);
+assert.equal(displacedSubmittedForeign.length, 1);
+assert.equal(displacedSubmittedForeign[0]?.header.id, 'hdr-galvanizing');
+assert.equal(displacedSubmittedForeign[0]?.lines[0]?.usedHours, 0);
 
 const displaced = displaceUncommittedBookingsOnOtherDrafts(
   [line({ headerId: 'hdr-maintenance', usedHours: 8, projectAllocations: [{ projectId: 'p2', projectCode: 'DL2423', projectName: 'Maintenance', hours: 8, remarks: null }] })],

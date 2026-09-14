@@ -69,7 +69,7 @@ import {
 } from '@/lib/timesheet-overtime-config';
 import { applyTimesheetLineDefaults, ensureClockedLinesHaveProjectAllocation } from '@/lib/timesheet-line-defaults';
 import { normalizeIdleAllocations, normalizeProjectAllocations, reconcileTimesheetLineHours, resolvePrimaryProjectCode, validateTimesheetLinesForPersist, TIMESHEET_SHIFT_LABELS, resolveTimesheetShift, timesheetHeaderMatchesShift, buildTimesheetHeaderId, selectTimesheetHeaderForLocation, timesheetWorkCentersMatch, isOffshoreWorkCenterName, isManualOffshoreLine, isTimesheetAbsentLine, isTimesheetInApprovalCapture, applyNightPaperClock, timesheetLineHasBookedHours, buildManualOffshoreLine, buildRosterTimesheetLine, projectCodeFromOffshoreWorkCenter, OFFSHORE_LOCATION_NAME, DEFAULT_TIMESHEET_SHIFT_LABEL, supervisorTimesheetMessage, dedupeTimesheetLinesByEmployee, type TimesheetDayContext } from '@/lib/timesheet-entry-shared';
-import { findSameDayBookingConflicts, releaseLinesAlreadyBookedElsewhere, type TimesheetAlreadyBookedSkip } from '@/lib/timesheet-booking-clash';
+import { displaceUncommittedBookingsOnOtherDrafts, findSameDayBookingConflicts, releaseLinesAlreadyBookedElsewhere, type TimesheetAlreadyBookedSkip } from '@/lib/timesheet-booking-clash';
 import { assertTimesheetRecaptureAllowed, reopenTimesheetForRecapture } from '@/lib/timesheet-recapture';
 import { submitTimesheetForApproval } from '@/lib/timesheet-submit';
 import { mobilizationCoversDate, mobilizationMatchesSupervisor, readTimesheetMobilizations, type TimesheetMobilization } from '@/lib/timesheet-mobilization-store';
@@ -2094,7 +2094,18 @@ export async function PATCH(request: Request) {
         return err(400, persistCheck.issues.join(' '));
       }
 
+      const displacedDrafts = displaceUncommittedBookingsOnOtherDrafts(
+        persistCheck.lines,
+        header,
+        headers,
+        allLines,
+      );
       await writeTimesheetHeaderLines(header, persistCheck.lines);
+      for (const update of displacedDrafts) {
+        const otherHeader = headers.find((item) => item.id === update.header.id);
+        if (!otherHeader || !isTimesheetEditableStatus(otherHeader.status)) continue;
+        await writeTimesheetHeaderLines(otherHeader, update.lines);
+      }
       return ok(await buildPayload(request, header.timesheetDate, header.supervisorId, header.workCenterName, locationName, mode));
     }
 
