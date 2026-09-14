@@ -126,6 +126,16 @@ export const timesheetLocationsMatch = (a?: string | null, b?: string | null) =>
 };
 
 /**
+ * Work center on the sheet is the hours bucket, not a crew roster filter.
+ * Assigned people with a different HR trade stay visible — e.g. P0044
+ * (Rolling supervisor) on C1882 Momoh's Fitting sheet.
+ */
+export const timesheetCrewMatchesWorkCenter = (
+  _employeeWorkCenter?: string | null,
+  _targetWorkCenter?: string | null,
+) => true;
+
+/**
  * Location-scoped crew: matching site only.
  * People with a blank HR location stay on the supervisor's home-yard sheet.
  * If the supervisor also has no yard, keep them on the open sheet — hiding the

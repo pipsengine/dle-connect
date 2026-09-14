@@ -15,6 +15,7 @@ import {
   timesheetEmployeeRecordsMatch,
   timesheetLocationsMatch,
   timesheetCrewMatchesLocation,
+  timesheetCrewMatchesWorkCenter,
 } from './timesheet-agege-blasting.ts';
 
 assert.equal(extractSupervisorEmployeeCode('C1001 - JIMOH GBADAMOSI'), 'C1001');
@@ -100,5 +101,8 @@ assert.equal(timesheetCrewMatchesLocation('', 'AGEGE', 'AGEGE'), true);
 assert.equal(timesheetCrewMatchesLocation('', 'IDI-ORO', 'AGEGE'), false);
 assert.equal(timesheetCrewMatchesLocation('', 'IDI_ORO', ''), true, 'blank crew + blank supervisor home stay on the selected sheet');
 assert.equal(timesheetCrewMatchesLocation('', 'IDI_ORO', null), true);
+assert.equal(timesheetCrewMatchesWorkCenter('Rolling & Forming', 'Fitting'), true, 'P0044 remains on C1882 Fitting sheet');
+assert.equal(timesheetCrewMatchesWorkCenter('Rigging', 'Fitting'), true);
+assert.equal(timesheetCrewMatchesWorkCenter('', 'Fitting'), true);
 
 console.log('timesheet-agege-blasting.test.ts: ok');

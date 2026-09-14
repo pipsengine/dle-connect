@@ -81,6 +81,7 @@ import {
   normalizeTimesheetLocationLabel,
   supervisorCodesMatch,
   timesheetCrewMatchesLocation,
+  timesheetCrewMatchesWorkCenter,
   timesheetEmployeeRecordsMatch,
   timesheetLocationsMatch,
 } from '@/lib/timesheet-agege-blasting';
@@ -1162,14 +1163,7 @@ const buildPayload = async (
   const supervisorHomeLocation = selectedSupervisorProfile ? employeeLocation(selectedSupervisorProfile) : '';
   const selectedSupervisorEmployeesFromDirectory = selectedSupervisorAllDirectReports
     .filter((employee) => timesheetCrewMatchesLocation(employeeLocation(employee), targetLocation, supervisorHomeLocation))
-    .filter((employee) => {
-      // Work center on the sheet is the booking bucket. Do not hide assigned crew
-      // just because HR department is "Mechanical" instead of "Fitting".
-      if (!targetWorkCenter) return true;
-      const assignedTrade = clean(employee.workCenter);
-      if (!assignedTrade) return true;
-      return timesheetWorkCentersMatch(assignedTrade, targetWorkCenter);
-    })
+    .filter((employee) => timesheetCrewMatchesWorkCenter(employee.workCenter, targetWorkCenter))
     .map((employee) => ({
       employeeId: clean(employee.employeeId),
       employeeCode: clean(employee.employeeCode),
