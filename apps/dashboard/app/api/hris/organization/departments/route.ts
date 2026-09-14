@@ -4,6 +4,7 @@ import {
   deleteDepartmentFromOrganizationDb,
   readSystemDepartmentsFromOrganizationDb,
   refreshDepartmentsFromSystemEmployees,
+  searchDepartmentHeadEmployees,
   updateDepartmentInOrganizationDb,
 } from '@/lib/organization-departments-store';
 
@@ -14,8 +15,17 @@ const jsonErr = (error: unknown) =>
     { status: 500 },
   );
 
-export async function GET() {
+export async function GET(request: Request) {
   try {
+    const url = new URL(request.url);
+    if (url.searchParams.get('employees') === '1') {
+      const q = url.searchParams.get('q')?.trim() || '';
+      const limit = Number(url.searchParams.get('limit') || 20);
+      return NextResponse.json({
+        status: 'success',
+        data: { employees: await searchDepartmentHeadEmployees(q, Number.isFinite(limit) ? limit : 20) },
+      });
+    }
     return NextResponse.json({ status: 'success', data: await readSystemDepartmentsFromOrganizationDb() });
   } catch (error) {
     console.error('Department load error:', error);

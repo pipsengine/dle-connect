@@ -531,6 +531,47 @@ export async function deleteDepartmentFromOrganizationDb(id: string): Promise<De
   return readSystemDepartmentsFromOrganizationDb();
 }
 
+export async function searchDepartmentHeadEmployees(query: string, limit = 20) {
+  const pool = await ensureDb();
+  const q = clean(query);
+  const take = Math.max(1, Math.min(40, Math.floor(numberValue(limit, 20))));
+  const request = pool.request().input('limit', sql.Int, take);
+  const searchSql = q
+    ? `AND (
+      e.employee_code LIKE @q
+      OR e.full_name LIKE @q
+      OR ISNULL(j.job_title, N'') LIKE @q
+      OR ISNULL(j.department, N'') LIKE @q
+    )`
+    : '';
+  if (q) request.input('q', sql.NVarChar(180), `%${q}%`);
+  const result = await request.query(`
+SELECT TOP (@limit)
+  e.employee_code,
+  e.full_name,
+  e.employment_status,
+  ISNULL(j.job_title, N'') AS job_title,
+  ISNULL(j.department, N'') AS department
+FROM [hris].[Employees] e
+LEFT JOIN [hris].[EmployeeJobInfo] j ON j.employee_id = e.employee_id
+WHERE e.employment_status NOT LIKE N'%Inactive%'
+  AND e.employment_status NOT LIKE N'%Terminated%'
+  AND e.employment_status NOT LIKE N'%Resigned%'
+  AND e.employment_status NOT LIKE N'%Retired%'
+  AND e.employment_status NOT LIKE N'%Deceased%'
+  ${searchSql}
+ORDER BY e.full_name, e.employee_code;
+`);
+  return (result.recordset || []).map((row: any) => ({
+    employeeCode: clean(row.employee_code),
+    fullName: clean(row.full_name),
+    jobTitle: clean(row.job_title),
+    department: clean(row.department),
+    status: clean(row.employment_status),
+    label: `${clean(row.employee_code)} - ${clean(row.full_name)}`,
+  })).filter((row: { employeeCode: string; fullName: string }) => row.employeeCode && row.fullName);
+}
+
 export async function refreshDepartmentsFromSystemEmployees(): Promise<DepartmentPayload> {
   const employees = await readSystemEmployeeDepartmentRows();
   const departments = buildDepartmentsFromSystemEmployees(employees);
