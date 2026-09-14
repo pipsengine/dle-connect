@@ -45,6 +45,7 @@ import {
 } from '@/lib/finance-intelligence/payment-requests-service';
 import { FALLBACK_EXPENSE_CODES, FALLBACK_SITES, listExpenseCodes, listPaymentSites, normalizePaymentSiteCode } from '@/lib/finance-intelligence/payment-request-lookups';
 import { sendPaymentApprovalReminder } from '@/lib/finance-intelligence/payment-approval-reminder-service';
+import { resolveWorkflowLinkOrigin } from '@/lib/public-app-url';
 
 const jsonOk = <T,>(data: T) => NextResponse.json({ status: 'success', data });
 const jsonErr = (status: number, error: string) => NextResponse.json({ status: 'error', error }, { status });

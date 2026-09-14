@@ -80,7 +80,11 @@ export const canAccessPaymentSelfService = (actor: PaymentAccessActor) => {
 /** Own request, assigned approver, prior workflow actor, elevated finance/admin, or a direct report's request. */
 export const canAccessPaymentRequest = (
   actor: PaymentAccessActor,
-  request: Pick<PaymentRequestRow, 'requesterCode' | 'currentApproverCode' | 'beneficiaryCode'>,
+  request: {
+    requesterCode?: string | null;
+    currentApproverCode?: string | null;
+    beneficiaryCode?: string | null;
+  },
   options?: { priorActorCodes?: Array<string | null | undefined>; directReportCodes?: string[] },
 ) => {
   if (canViewAllPaymentRequests(actor)) return true;
