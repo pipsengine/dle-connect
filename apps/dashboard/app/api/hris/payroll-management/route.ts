@@ -31,6 +31,7 @@ import { normalizePayrollCompany, resolvePayrollCompany } from '@/lib/payroll-sc
 
 const jsonOk = <T,>(data: T) => NextResponse.json({ status: 'success', data });
 const jsonErr = (status: number, error: string) => NextResponse.json({ status: 'error', error }, { status });
+const jsonSoftErr = (error: string) => NextResponse.json({ status: 'error', error });
 const nowIso = () => new Date().toISOString();
 const roundMoney = (value: number) => Math.round((Number.isFinite(value) ? value : 0) * 100) / 100;
 const compact = (value: unknown) => String(value || '').trim();
@@ -616,9 +617,19 @@ export async function GET(request: Request) {
   } catch (error) {
     console.error('Payroll Management API Error:', error);
     const url = new URL(request.url);
-    const payload = await emptyPayload(request, error);
-    if (url.searchParams.get('audit') === '1') return jsonOk({ auditTrail: payload.auditTrail, warning: payload.dataSource.warning });
-    return jsonErr(503, payload.dataSource.warning || 'Payroll employee source is unavailable.');
+    const format = compact(url.searchParams.get('format')).toLowerCase();
+    const isExport = Boolean(format) || url.searchParams.get('spool') === '1';
+    try {
+      const payload = await emptyPayload(request, error);
+      const warning = payload.dataSource.warning || 'Payroll employee source is unavailable.';
+      if (url.searchParams.get('audit') === '1') return jsonOk({ auditTrail: payload.auditTrail, warning });
+      if (isExport) return jsonSoftErr(warning);
+      return jsonOk(payload);
+    } catch (fallbackError) {
+      console.error('Payroll Management fallback failed:', fallbackError);
+      const message = error instanceof Error ? error.message : 'Payroll data is temporarily unavailable.';
+      return jsonSoftErr(message);
+    }
   }
 }
 

@@ -15,6 +15,7 @@ import PayrollApprovalClient from '../payroll/payroll-approval/PayrollApprovalCl
 import PayrollMonthOverMonthPanel, { PayrollMomBadge } from '../payroll/PayrollMonthOverMonth';
 import { PayrollCommentsControl } from './PayrollCommentsThread';
 import { FINANCE_ONLY_PAYROLL_SECTION } from '@/lib/access/payroll-access';
+import { humanizeHttpErrorBody } from '@/lib/http-client-error';
 import {
   PAYROLL_SCHEDULE_SCOPES,
   findPayrollScheduleScope,
@@ -378,11 +379,11 @@ type PayrollAction = {
 
 const readApiResponse = async <T,>(res: Response): Promise<ApiResponse<T>> => {
   const text = await res.text();
-  if (!text.trim()) return { status: 'error', error: `Empty response from payroll service (${res.status})` };
+  if (!text.trim()) return { status: 'error', error: humanizeHttpErrorBody('', res.status, 'Payroll Management') };
   try {
     return JSON.parse(text) as ApiResponse<T>;
   } catch {
-    return { status: 'error', error: text.slice(0, 240) || `Invalid response from payroll service (${res.status})` };
+    return { status: 'error', error: humanizeHttpErrorBody(text, res.status, 'Payroll Management') };
   }
 };
 
@@ -4611,12 +4612,17 @@ export default function PayrollManagementClient({
       const res = await fetch(url, { cache: 'no-store' });
       const json = await readApiResponse<PayrollPayload>(res);
       if (seq !== loadSeq.current) return;
-      if (!res.ok || json.status !== 'success' || !json.data) throw new Error(json.error || `Payroll request failed (${res.status})`);
+      if (!res.ok || json.status !== 'success' || !json.data) {
+        throw new Error(humanizeHttpErrorBody(json.error, res.status, 'Payroll Management') || `Payroll request failed (${res.status})`);
+      }
       setPayload(json.data);
       setRole(json.data.role);
       setViewPeriod(json.data.period);
       if (json.data.pack === 'daily-rate' || json.data.pack === 'salaried') setViewPack(json.data.pack);
       if (json.data.company === 'DLE' || json.data.company === 'DLPC') setViewCompany(json.data.company);
+      if (json.data.dataSource?.warning) {
+        setError(humanizeHttpErrorBody(json.data.dataSource.warning, 0, 'Payroll Management'));
+      }
     } catch (e) {
       if (seq !== loadSeq.current) return;
       setError(e instanceof Error ? e.message : 'Unable to load payroll management');
@@ -5132,7 +5138,7 @@ export default function PayrollManagementClient({
   if (section.id === 'reports-analytics') {
     return (
       <div>
-        {error ? <div className="mx-4 mt-4 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm font-bold text-red-800">{error}</div> : null}
+        {error ? <div className="mx-4 mt-4 break-words rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm font-bold text-red-800">{error}</div> : null}
         {toast ? <div className="mx-4 mt-4 rounded-lg border border-blue-200 bg-blue-50 px-4 py-3 text-sm font-bold text-blue-800">{toast}</div> : null}
         <PayrollReportsHub
           key={`${payload?.period || viewPeriod || 'reports'}-${reportsActiveTab}`}
@@ -5198,7 +5204,7 @@ export default function PayrollManagementClient({
   if (section.id === 'finance-integration') {
     return (
       <div>
-        {error ? <div className="mx-4 mt-4 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm font-bold text-red-800">{error}</div> : null}
+        {error ? <div className="mx-4 mt-4 break-words rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm font-bold text-red-800">{error}</div> : null}
         {toast ? <div className="mx-4 mt-4 rounded-lg border border-blue-200 bg-blue-50 px-4 py-3 text-sm font-bold text-blue-800">{toast}</div> : null}
         <BankFinanceHub
           key={`${payload?.period || viewPeriod || 'bank-finance'}-${bankFinanceActiveTab}`}
@@ -5266,7 +5272,7 @@ export default function PayrollManagementClient({
   if (section.id === 'compliance-statutory-management') {
     return (
       <div>
-        {error ? <div className="mx-4 mt-4 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm font-bold text-red-800">{error}</div> : null}
+        {error ? <div className="mx-4 mt-4 break-words rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm font-bold text-red-800">{error}</div> : null}
         {toast ? <div className="mx-4 mt-4 rounded-lg border border-blue-200 bg-blue-50 px-4 py-3 text-sm font-bold text-blue-800">{toast}</div> : null}
         <StatutoryComplianceHub
           key={`${payload?.period || viewPeriod || 'statutory'}-${statutoryActiveTab}`}
@@ -5319,7 +5325,7 @@ export default function PayrollManagementClient({
   if (section.id === 'deductions-management') {
     return (
       <div>
-        {error ? <div className="mx-4 mt-4 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm font-bold text-red-800">{error}</div> : null}
+        {error ? <div className="mx-4 mt-4 break-words rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm font-bold text-red-800">{error}</div> : null}
         {toast ? <div className="mx-4 mt-4 rounded-lg border border-blue-200 bg-blue-50 px-4 py-3 text-sm font-bold text-blue-800">{toast}</div> : null}
         <DeductionsManagementHub
           key={`${payload?.period || viewPeriod || 'deductions'}-${deductionsActiveTab}`}
@@ -5363,7 +5369,7 @@ export default function PayrollManagementClient({
   if (section.id === 'earnings-management') {
     return (
       <div>
-        {error ? <div className="mx-4 mt-4 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm font-bold text-red-800">{error}</div> : null}
+        {error ? <div className="mx-4 mt-4 break-words rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm font-bold text-red-800">{error}</div> : null}
         {toast ? <div className="mx-4 mt-4 rounded-lg border border-blue-200 bg-blue-50 px-4 py-3 text-sm font-bold text-blue-800">{toast}</div> : null}
         <EarningsManagementHub
           key={`${payload?.period || viewPeriod || 'earnings'}-${earningsActiveTab}`}
@@ -5405,7 +5411,7 @@ export default function PayrollManagementClient({
   if (section.id === 'salary-management') {
     return (
       <div>
-        {error ? <div className="mx-4 mt-4 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm font-bold text-red-800">{error}</div> : null}
+        {error ? <div className="mx-4 mt-4 break-words rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm font-bold text-red-800">{error}</div> : null}
         {toast ? <div className="mx-4 mt-4 rounded-lg border border-blue-200 bg-blue-50 px-4 py-3 text-sm font-bold text-blue-800">{toast}</div> : null}
         <PaySetupHub
           key={`${payload?.period || viewPeriod || 'pay-setup'}-${paySetupActiveTab}`}
@@ -5447,7 +5453,7 @@ export default function PayrollManagementClient({
   if (section.id === 'process-payroll') {
     return (
       <div>
-        {error ? <div className="mx-4 mt-4 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm font-bold text-red-800">{error}</div> : null}
+        {error ? <div className="mx-4 mt-4 break-words rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm font-bold text-red-800">{error}</div> : null}
         {toast ? <div className="mx-4 mt-4 rounded-lg border border-blue-200 bg-blue-50 px-4 py-3 text-sm font-bold text-blue-800">{toast}</div> : null}
         <PayrollManagementHub
           key={payload?.period || viewPeriod || 'hub'}
@@ -5467,7 +5473,7 @@ export default function PayrollManagementClient({
   if (section.id === 'dashboard') {
     return (
       <div>
-        {error ? <div className="mx-4 mt-4 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm font-bold text-red-800">{error}</div> : null}
+        {error ? <div className="mx-4 mt-4 break-words rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm font-bold text-red-800">{error}</div> : null}
         {toast ? <div className="mx-4 mt-4 rounded-lg border border-blue-200 bg-blue-50 px-4 py-3 text-sm font-bold text-blue-800">{toast}</div> : null}
         {payload?.toleranceMode ? (
           <div className="mx-4 mt-4 rounded-lg border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-950">
@@ -5587,7 +5593,7 @@ export default function PayrollManagementClient({
         </div>
 
         <div className={`mx-auto max-w-[1600px] px-4 py-6 sm:px-6 ${loading ? 'opacity-70' : ''}`}>
-          {error ? <div className="mb-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-bold text-red-800">{error}</div> : null}
+          {error ? <div className="mb-4 break-words rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-bold text-red-800">{error}</div> : null}
           {toast ? <div className="mb-4 rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm font-bold text-blue-800">{toast}</div> : null}
           {payload?.toleranceMode ? (
             <div className="mb-4 rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-950">
@@ -5766,7 +5772,7 @@ export default function PayrollManagementClient({
         </div>
       </div>
 
-      {error ? <div className="mt-5 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm font-bold text-red-800">{error}</div> : null}
+      {error ? <div className="mt-5 break-words rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm font-bold text-red-800">{error}</div> : null}
       {toast ? <div className="mt-5 rounded-lg border border-blue-200 bg-blue-50 px-4 py-3 text-sm font-bold text-blue-800">{toast}</div> : null}
       {payload?.toleranceMode ? (
         <div className="mt-5 rounded-lg border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-950">
