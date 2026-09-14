@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useId, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import {
   AlertTriangle,
@@ -799,11 +799,11 @@ export default function DepartmentsClient({ initialPayload = null, initialError 
 
       {modalOpen ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/40 px-4 py-6">
-          <div className="w-full max-w-4xl max-h-[92vh] overflow-hidden rounded-2xl bg-white shadow-2xl border border-slate-200">
+          <div className="w-full max-w-2xl max-h-[92vh] overflow-hidden rounded-2xl bg-white shadow-2xl border border-slate-200">
             <div className="px-5 py-4 border-b border-slate-100 flex items-center justify-between gap-3">
               <div>
                 <div className="text-sm font-bold text-slate-900">{formMode === 'create' ? 'New Department' : 'Edit Department'}</div>
-                <div className="text-xs text-slate-500 mt-1">Maintain department ownership, location, controls, and operating indicators.</div>
+                <div className="text-xs text-slate-500 mt-1">Set the department identity, parent unit, location, and head of department.</div>
               </div>
               <button
                 type="button"
@@ -817,41 +817,44 @@ export default function DepartmentsClient({ initialPayload = null, initialError 
 
             <div className="p-5 overflow-y-auto max-h-[calc(92vh-145px)]">
               {actionError ? <div className="mb-4 rounded-xl border border-red-200 bg-red-50 p-3 text-sm font-medium text-red-700">{actionError}</div> : null}
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <FormField label="Department Name" value={form.name} onChange={(value) => setForm((prev) => ({ ...prev, name: value }))} required />
-                <FormField
-                  label="Department Code"
-                  value={form.code}
-                  onChange={(value) => setForm((prev) => ({ ...prev, code: value.toUpperCase() }))}
-                  disabled={formMode === 'edit'}
-                  required
-                />
-                <FormField label="Parent Unit" value={form.parentName} onChange={(value) => setForm((prev) => ({ ...prev, parentName: value }))} />
-                <DepartmentHeadPicker value={form.leader} onChange={(value) => setForm((prev) => ({ ...prev, leader: value }))} />
-                <FormField label="Location" value={form.location} onChange={(value) => setForm((prev) => ({ ...prev, location: value }))} />
-                <FormField label="Cost Center" value={form.costCenter} onChange={(value) => setForm((prev) => ({ ...prev, costCenter: value }))} />
-                <label className="space-y-1">
-                  <span className="text-xs font-semibold text-slate-600">Health Status</span>
-                  <Select
-                    value={form.healthStatus}
-                    onChange={(value) => setForm((prev) => ({ ...prev, healthStatus: value as HealthStatus }))}
-                    options={['Healthy', 'Needs Attention', 'Critical']}
-                  />
-                </label>
-                <NumberField label="Open Roles" value={form.openRoles} onChange={(value) => setForm((prev) => ({ ...prev, openRoles: value }))} />
-                <NumberField label="Budget NGN" value={form.budgetNgn} onChange={(value) => setForm((prev) => ({ ...prev, budgetNgn: value }))} />
-                <NumberField label="Span Of Control" value={form.spanOfControl} onChange={(value) => setForm((prev) => ({ ...prev, spanOfControl: value }))} />
-                <NumberField label="Succession Coverage %" value={form.successionCoveragePct} onChange={(value) => setForm((prev) => ({ ...prev, successionCoveragePct: value }))} min={0} max={100} />
-                <NumberField label="Attrition Risk %" value={form.attritionRiskPct} onChange={(value) => setForm((prev) => ({ ...prev, attritionRiskPct: value }))} min={0} max={100} />
-                <label className="space-y-1 md:col-span-2">
-                  <span className="text-xs font-semibold text-slate-600">Description</span>
-                  <textarea
-                    value={form.description}
-                    onChange={(e) => setForm((prev) => ({ ...prev, description: e.target.value }))}
-                    rows={4}
-                    className="w-full px-3 py-2.5 rounded-xl border border-slate-200 text-sm text-slate-900 resize-none focus:outline-none focus:ring-2 focus:ring-dle-blue/20"
-                  />
-                </label>
+              <div className="space-y-5">
+                <section>
+                  <div className="mb-3 text-[11px] font-semibold uppercase tracking-wide text-slate-500">Identity</div>
+                  <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                    <FormField label="Department Name" value={form.name} onChange={(value) => setForm((prev) => ({ ...prev, name: value }))} required />
+                    <FormField
+                      label="Department Code"
+                      value={form.code}
+                      onChange={(value) => setForm((prev) => ({ ...prev, code: value.toUpperCase() }))}
+                      disabled={formMode === 'edit'}
+                      required
+                    />
+                  </div>
+                </section>
+                <section>
+                  <div className="mb-3 text-[11px] font-semibold uppercase tracking-wide text-slate-500">Structure</div>
+                  <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                    <FormField
+                      label="Parent Unit"
+                      value={form.parentName}
+                      onChange={(value) => setForm((prev) => ({ ...prev, parentName: value }))}
+                      suggestions={payload?.filterOptions.parentUnits}
+                      placeholder="Select or type parent unit"
+                    />
+                    <FormField
+                      label="Location"
+                      value={form.location}
+                      onChange={(value) => setForm((prev) => ({ ...prev, location: value }))}
+                      suggestions={payload?.filterOptions.locations}
+                      placeholder="Select or type location"
+                    />
+                    <FormField label="Cost Center" value={form.costCenter} onChange={(value) => setForm((prev) => ({ ...prev, costCenter: value }))} placeholder="Optional cost center" />
+                  </div>
+                </section>
+                <section>
+                  <div className="mb-3 text-[11px] font-semibold uppercase tracking-wide text-slate-500">Accountability</div>
+                  <DepartmentHeadPicker value={form.leader} onChange={(value) => setForm((prev) => ({ ...prev, leader: value }))} />
+                </section>
               </div>
             </div>
 
@@ -1592,13 +1595,20 @@ function FormField({
   onChange,
   disabled,
   required,
+  placeholder,
+  suggestions,
 }: {
   label: string;
   value: string;
   onChange: (value: string) => void;
   disabled?: boolean;
   required?: boolean;
+  placeholder?: string;
+  suggestions?: string[];
 }) {
+  const listId = useId();
+  const options = (suggestions || []).filter(Boolean);
+
   return (
     <label className="space-y-1">
       <span className="text-xs font-semibold text-slate-600">
@@ -1607,38 +1617,19 @@ function FormField({
       </span>
       <input
         value={value}
+        list={options.length ? listId : undefined}
+        placeholder={placeholder}
         onChange={(e) => onChange(e.target.value)}
         disabled={disabled}
-        className="w-full px-3 py-2.5 rounded-xl border border-slate-200 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-dle-blue/20 disabled:bg-slate-100 disabled:text-slate-500"
+        className="w-full px-3 py-2.5 rounded-xl border border-slate-200 text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-dle-blue/20 disabled:bg-slate-100 disabled:text-slate-500"
       />
-    </label>
-  );
-}
-
-function NumberField({
-  label,
-  value,
-  onChange,
-  min,
-  max,
-}: {
-  label: string;
-  value: string;
-  onChange: (value: string) => void;
-  min?: number;
-  max?: number;
-}) {
-  return (
-    <label className="space-y-1">
-      <span className="text-xs font-semibold text-slate-600">{label}</span>
-      <input
-        type="number"
-        min={min}
-        max={max}
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        className="w-full px-3 py-2.5 rounded-xl border border-slate-200 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-dle-blue/20"
-      />
+      {options.length ? (
+        <datalist id={listId}>
+          {options.map((option) => (
+            <option key={option} value={option} />
+          ))}
+        </datalist>
+      ) : null}
     </label>
   );
 }
