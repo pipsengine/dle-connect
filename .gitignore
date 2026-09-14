@@ -22,3 +22,5 @@ apps/dashboard/scripts/_refresh-*.mts
 scripts/list-payroll-cfo-md*.js
 scripts/lookup-*.js
 scripts/verify-payroll-cfo-md-recipients.ts
+scripts/database/supervisor-assignments/alignment-audit-*.json
+scripts/database/supervisor-assignments/alignment-apply-*.json
