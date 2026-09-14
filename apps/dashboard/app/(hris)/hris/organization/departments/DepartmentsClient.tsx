@@ -135,7 +135,7 @@ export default function DepartmentsClient({ initialPayload = null, initialError 
   const [error, setError] = useState<string | null>(initialError);
   const [query, setQuery] = useState('');
   const [locationFilter, setLocationFilter] = useState<'All' | string>('All');
-  const [healthFilter, setHealthFilter] = useState<'All' | HealthStatus>('All');
+  const [healthFilter, setHealthFilter] = useState<'All' | HealthStatus | 'Requires Attention'>('All');
   const [parentUnitFilter, setParentUnitFilter] = useState<'All' | string>('All');
   const [sortBy, setSortBy] = useState<'headcount' | 'openRoles' | 'successionCoveragePct' | 'attritionRiskPct'>('headcount');
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -144,7 +144,7 @@ export default function DepartmentsClient({ initialPayload = null, initialError 
   const [form, setForm] = useState<DepartmentForm>(emptyForm);
   const [saving, setSaving] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<TabId>('overview');
+  const [activeTab, setActiveTab] = useState<TabId>('explorer');
   const [showMoreActions, setShowMoreActions] = useState(false);
 
   const load = async () => {
@@ -174,9 +174,18 @@ export default function DepartmentsClient({ initialPayload = null, initialError 
 
   const visibleDepartments = useMemo(() => {
     const q = query.trim().toLowerCase();
+    const locationKey = (value: string) => value.trim().toLowerCase().replace(/[^a-z0-9]+/g, '');
     const filtered = departments.filter((department) => {
-      if (locationFilter !== 'All' && department.location !== locationFilter) return false;
-      if (healthFilter !== 'All' && department.healthStatus !== healthFilter) return false;
+      if (locationFilter !== 'All') {
+        const selected = locationKey(locationFilter);
+        const actual = locationKey(department.location);
+        if (selected && actual !== selected && !actual.includes(selected) && !selected.includes(actual)) return false;
+      }
+      if (healthFilter === 'Requires Attention') {
+        if (department.healthStatus === 'Healthy') return false;
+      } else if (healthFilter !== 'All' && department.healthStatus !== healthFilter) {
+        return false;
+      }
       if (parentUnitFilter !== 'All' && department.parentName !== parentUnitFilter) return false;
       if (!q) return true;
 
@@ -279,8 +288,8 @@ export default function DepartmentsClient({ initialPayload = null, initialError 
   );
 
   const reviewAttentionDepartments = () => {
-    setHealthFilter('Needs Attention');
-    setActiveTab('overview');
+    setHealthFilter('Requires Attention');
+    setActiveTab('explorer');
     const first = departments.find(
       (department) => department.healthStatus === 'Needs Attention' || department.healthStatus === 'Critical',
     );
@@ -620,10 +629,26 @@ export default function DepartmentsClient({ initialPayload = null, initialError 
       </div>
 
       <div className="grid grid-cols-1 gap-3 rounded-xl border border-[#E5E7EB] bg-white p-4 md:grid-cols-2 xl:grid-cols-5">
-        <Select value={locationFilter} onChange={(value) => setLocationFilter(value as 'All' | string)} options={['All', ...(payload?.filterOptions.locations || [])]} />
-        <Select value={healthFilter} onChange={(value) => setHealthFilter(value as 'All' | HealthStatus)} options={['All', ...(payload?.filterOptions.healthStatuses || [])]} />
-        <Select value={parentUnitFilter} onChange={(value) => setParentUnitFilter(value as 'All' | string)} options={['All', ...(payload?.filterOptions.parentUnits || [])]} />
         <Select
+          label="Location"
+          value={locationFilter}
+          onChange={(value) => setLocationFilter(value as 'All' | string)}
+          options={['All', ...(payload?.filterOptions.locations || [])]}
+        />
+        <Select
+          label="Health"
+          value={healthFilter}
+          onChange={(value) => setHealthFilter(value as 'All' | HealthStatus | 'Requires Attention')}
+          options={['All', 'Requires Attention', ...(payload?.filterOptions.healthStatuses || [])]}
+        />
+        <Select
+          label="Parent unit"
+          value={parentUnitFilter}
+          onChange={(value) => setParentUnitFilter(value as 'All' | string)}
+          options={['All', ...(payload?.filterOptions.parentUnits || [])]}
+        />
+        <Select
+          label="Sort by"
           value={sortBy}
           onChange={(value) => setSortBy(value as typeof sortBy)}
           options={['headcount', 'openRoles', 'successionCoveragePct', 'attritionRiskPct']}
@@ -634,8 +659,10 @@ export default function DepartmentsClient({ initialPayload = null, initialError 
             attritionRiskPct: 'Attrition Risk',
           }}
         />
-        <div className="flex items-center rounded-lg border border-[#E5E7EB] bg-[#F8FAFC] px-3 py-2 text-xs font-semibold text-[#64748B]">
-          Showing {formatNumber(visibleDepartments.length)} departments
+        <div className="flex items-end">
+          <div className="flex h-[42px] w-full items-center rounded-xl border border-[#E5E7EB] bg-[#F8FAFC] px-3 text-xs font-semibold text-[#64748B]">
+            Showing {formatNumber(visibleDepartments.length)} of {formatNumber(departments.length)} departments
+          </div>
         </div>
       </div>
 
@@ -644,7 +671,7 @@ export default function DepartmentsClient({ initialPayload = null, initialError 
       ) : null}
 
       {activeTab === 'overview' ? (
-        <div className="grid grid-cols-1 gap-5 xl:grid-cols-[minmax(0,320px)_minmax(0,1fr)_minmax(0,340px)]">
+        <div className="grid grid-cols-1 gap-5 xl:grid-cols-[minmax(320px,420px)_minmax(0,1fr)]">
           <DepartmentWorkspaceList
             title="Department Workspaces"
             loading={loading}
@@ -653,41 +680,42 @@ export default function DepartmentsClient({ initialPayload = null, initialError 
             onSelect={setSelectedId}
             onOpenWorkspace={setSelectedId}
             onEdit={openEdit}
+            canEdit={payload?.permissions.canEdit ?? false}
             compact
           />
 
-          <DepartmentSpotlightPanel
-            selectedDepartment={selectedDepartment}
-            spotlightComposition={spotlightComposition}
-            canEdit={payload?.permissions.canEdit ?? false}
-            onEdit={openEdit}
-          />
-
           <div className="space-y-4">
-            <LeadershipSuccessionPanel metrics={leadershipMetrics} />
-            <DepartmentInsightCards cards={departmentInsightCards} />
-            <CriticalDepartmentsPanel
-              departments={criticalDepartmentsList}
-              onSelect={(id) => {
-                setSelectedId(id);
-                setActiveTab('overview');
-              }}
+            <DepartmentSpotlightPanel
+              selectedDepartment={selectedDepartment}
+              spotlightComposition={spotlightComposition}
+              canEdit={payload?.permissions.canEdit ?? false}
+              onEdit={openEdit}
             />
-            <TopHeadcountPanel departments={topDepartmentsByHeadcount} onSelect={setSelectedId} />
+            <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+              <LeadershipSuccessionPanel metrics={leadershipMetrics} />
+              <DepartmentInsightCards cards={departmentInsightCards} />
+              <CriticalDepartmentsPanel
+                departments={criticalDepartmentsList}
+                onSelect={(id) => {
+                  setSelectedId(id);
+                  setActiveTab('explorer');
+                }}
+              />
+              <TopHeadcountPanel departments={topDepartmentsByHeadcount} onSelect={setSelectedId} />
+            </div>
             <QuickActionsPanel onCreate={openCreate} onExport={exportCsv} canExport={payload?.permissions.canExport ?? false} canEdit={payload?.permissions.canEdit ?? false} />
           </div>
         </div>
       ) : null}
 
       {activeTab === 'explorer' ? (
-        <DepartmentWorkspaceList
-          title="Department Explorer"
+        <DepartmentExplorerTable
           loading={loading}
           departments={visibleDepartments}
           selectedId={selectedDepartment?.id || null}
           onSelect={setSelectedId}
-          onOpenWorkspace={setSelectedId}
           onEdit={openEdit}
+          canEdit={payload?.permissions.canEdit ?? false}
         />
       ) : null}
 
@@ -876,6 +904,7 @@ function DepartmentWorkspaceList({
   onSelect,
   onOpenWorkspace,
   onEdit,
+  canEdit = false,
   compact = false,
 }: {
   title: string;
@@ -885,6 +914,7 @@ function DepartmentWorkspaceList({
   onSelect: (id: string) => void;
   onOpenWorkspace: (id: string) => void;
   onEdit: (department: DepartmentRecord) => void;
+  canEdit?: boolean;
   compact?: boolean;
 }) {
   return (
@@ -907,11 +937,11 @@ function DepartmentWorkspaceList({
                 key={department.id}
                 className={`rounded-xl border p-4 transition-colors ${active ? 'border-[#2563EB]/30 bg-blue-50/50' : 'border-[#E5E7EB] hover:bg-slate-50'}`}
               >
-                <button type="button" onClick={() => onSelect(department.id)} onDoubleClick={() => onEdit(department)} className="w-full text-left">
+                <button type="button" onClick={() => onSelect(department.id)} className="w-full text-left">
                   <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0">
-                      <div className="text-sm font-semibold text-slate-900">{department.name}</div>
-                      <div className="mt-1 text-xs text-slate-500">Leader: {department.leader}</div>
+                      <div className="truncate text-sm font-semibold text-slate-900">{department.name}</div>
+                      <div className="mt-1 truncate text-xs text-slate-500">Leader: {department.leader}</div>
                     </div>
                     <span className={`shrink-0 rounded-full border px-2 py-1 text-[11px] font-semibold ${healthTone(department.healthStatus)}`}>
                       {department.healthStatus}
@@ -921,21 +951,123 @@ function DepartmentWorkspaceList({
                     <span>Headcount: {formatNumber(department.headcount)}</span>
                     <span>Teams: {formatNumber(department.teamCount)}</span>
                     <span>Open Roles: {formatNumber(department.openRoles)}</span>
+                    <span className="truncate">Location: {department.location || '—'}</span>
                   </div>
                 </button>
-                <button
-                  type="button"
-                  onClick={() => onOpenWorkspace(department.id)}
-                  className="mt-3 inline-flex items-center gap-1 text-xs font-semibold text-[#2563EB] hover:text-blue-700"
-                >
-                  Open Workspace
-                  <ChevronRight className="h-3.5 w-3.5" />
-                </button>
+                <div className="mt-3 flex flex-wrap items-center gap-3">
+                  <button
+                    type="button"
+                    onClick={() => onOpenWorkspace(department.id)}
+                    className="inline-flex items-center gap-1 text-xs font-semibold text-[#2563EB] hover:text-blue-700"
+                  >
+                    Open Workspace
+                    <ChevronRight className="h-3.5 w-3.5" />
+                  </button>
+                  {canEdit ? (
+                    <button
+                      type="button"
+                      onClick={() => onEdit(department)}
+                      className="inline-flex items-center gap-1 text-xs font-semibold text-slate-700 hover:text-slate-900"
+                    >
+                      <Pencil className="h-3.5 w-3.5" />
+                      Edit
+                    </button>
+                  ) : null}
+                </div>
               </div>
             );
           })
         ) : (
           <div className="text-sm font-medium text-slate-600">No departments match the current filters.</div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function DepartmentExplorerTable({
+  loading,
+  departments,
+  selectedId,
+  onSelect,
+  onEdit,
+  canEdit,
+}: {
+  loading: boolean;
+  departments: DepartmentRecord[];
+  selectedId: string | null;
+  onSelect: (id: string) => void;
+  onEdit: (department: DepartmentRecord) => void;
+  canEdit: boolean;
+}) {
+  return (
+    <div className="overflow-hidden rounded-xl border border-[#E5E7EB] bg-white shadow-sm">
+      <div className="flex items-center justify-between gap-3 border-b border-[#E5E7EB] px-5 py-4">
+        <div>
+          <h2 className="text-lg font-semibold">Department Explorer</h2>
+          <p className="mt-1 text-xs text-[#64748B]">Search, filter, and edit the live department register.</p>
+        </div>
+        <span className="rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-semibold text-slate-700">{formatNumber(departments.length)}</span>
+      </div>
+      <div className="overflow-auto">
+        {loading ? (
+          <div className="p-6 text-sm font-medium text-slate-600">Loading departments...</div>
+        ) : departments.length ? (
+          <table className="w-full min-w-[960px] text-left">
+            <thead className="bg-slate-50">
+              <tr>
+                {['Department', 'Code', 'Leader', 'Location', 'Health', 'Headcount', 'Teams', 'Actions'].map((header) => (
+                  <th key={header} className="px-4 py-3 text-[11px] font-semibold uppercase tracking-wide whitespace-nowrap text-slate-600">
+                    {header}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {departments.map((department) => {
+                const active = selectedId === department.id;
+                return (
+                  <tr
+                    key={department.id}
+                    className={`border-t border-slate-100 ${active ? 'bg-blue-50/70' : 'hover:bg-slate-50'}`}
+                  >
+                    <td className="px-4 py-3">
+                      <button type="button" onClick={() => onSelect(department.id)} className="text-left">
+                        <div className="text-sm font-semibold text-slate-900">{department.name}</div>
+                        <div className="text-xs text-slate-500">{department.parentName || '—'}</div>
+                      </button>
+                    </td>
+                    <td className="px-4 py-3 text-sm font-semibold text-slate-700">{department.code}</td>
+                    <td className="px-4 py-3 text-sm text-slate-700">{department.leader}</td>
+                    <td className="px-4 py-3 text-sm text-slate-700">{department.location || '—'}</td>
+                    <td className="px-4 py-3">
+                      <span className={`rounded-full border px-2.5 py-1 text-[11px] font-semibold ${healthTone(department.healthStatus)}`}>
+                        {department.healthStatus}
+                      </span>
+                    </td>
+                    <td className="px-4 py-3 text-sm text-slate-700">{formatNumber(department.headcount)}</td>
+                    <td className="px-4 py-3 text-sm text-slate-700">{formatNumber(department.teamCount)}</td>
+                    <td className="px-4 py-3">
+                      {canEdit ? (
+                        <button
+                          type="button"
+                          onClick={() => onEdit(department)}
+                          className="inline-flex items-center gap-1 rounded-lg border border-[#E5E7EB] bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+                        >
+                          <Pencil className="h-3.5 w-3.5" />
+                          Edit
+                        </button>
+                      ) : (
+                        <span className="text-xs text-slate-400">View only</span>
+                      )}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        ) : (
+          <div className="p-6 text-sm font-medium text-slate-600">No departments match the current filters.</div>
         )}
       </div>
     </div>
@@ -1396,23 +1528,35 @@ function Select({
   onChange,
   options,
   labels,
+  label,
 }: {
   value: string;
   onChange: (value: string) => void;
   options: string[];
   labels?: Record<string, string>;
+  label?: string;
 }) {
-  return (
+  const control = (
     <select
-      value={value}
+      value={options.includes(value) ? value : options[0] || ''}
       onChange={(e) => onChange(e.target.value)}
-      className="w-full py-2.5 px-3 rounded-xl border border-slate-200 text-sm text-slate-900 bg-white focus:outline-none focus:ring-2 focus:ring-dle-blue/20"
+      aria-label={label}
+      className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-dle-blue/20"
     >
-      {options.map((option) => (
-        <option key={option} value={option}>
+      {options.map((option, index) => (
+        <option key={`${option}-${index}`} value={option}>
           {labels?.[option] || option}
         </option>
       ))}
     </select>
+  );
+
+  if (!label) return control;
+
+  return (
+    <label className="block">
+      <span className="mb-1.5 block text-[11px] font-semibold uppercase tracking-wide text-slate-500">{label}</span>
+      {control}
+    </label>
   );
 }
