@@ -154,14 +154,20 @@ const statusTone = (status?: string) => {
   return 'border-slate-200 bg-slate-50 text-slate-600';
 };
 
+const ESS_PROFILE_HREF = '/workforce-portal?tab=profile';
+const ESS_LEAVE_APPLY_HREF = '/workforce-portal?tab=leave&leaveSection=Apply%20Leave';
+const ESS_PAYSLIP_HREF = '/workforce-portal?tab=payroll';
+
+/** Personal self-service always opens ESS. HRIS admin routes are not used from this menu. */
+const usesEssSelfService = (context: EnterpriseUserProfileContext) => context !== 'hris';
+
 const linksFor = (context: EnterpriseUserProfileContext, user: ProfileUser) => {
-  const ess = context === 'ess';
+  const ess = usesEssSelfService(context);
   const hrisProfile = user.employeeCode && user.employeeCode !== 'UNLINKED' ? `/hris/employees/employee-profile/${encodeURIComponent(user.employeeCode)}` : '/hris/employees/employee-profile';
-  const essProfile = '/workforce-portal?tab=profile';
   return [
-    { label: 'My Profile', href: ess ? essProfile : (user.profileHref || hrisProfile), icon: UserRound },
+    { label: 'My Profile', href: ess ? ESS_PROFILE_HREF : (user.profileHref || hrisProfile), icon: UserRound },
     { label: 'My Documents', href: ess ? '/workforce-portal?tab=documents' : '/hris/employees/employee-documents', icon: FileText },
-    { label: 'My Payslips', href: ess ? '/workforce-portal?tab=payroll' : '/hris/payroll/payslip-generation', icon: ReceiptText },
+    { label: 'My Payslips', href: ess ? ESS_PAYSLIP_HREF : '/hris/payroll/payslip-generation', icon: ReceiptText },
     { label: 'My Leave', href: ess ? '/workforce-portal?tab=leave' : '/hris/leave-management/applications', icon: CalendarDays },
     { label: 'My Requests', href: ess ? '/workforce-portal?tab=services' : '/hris/employees/employee-timeline', icon: CheckSquare },
     { label: 'My Approvals', href: ess ? '/workforce-portal?tab=leave&leaveSection=Approvals' : '/hris/employees/reporting-line', icon: ShieldCheck, count: user.pendingApprovals || 0 },
@@ -169,7 +175,7 @@ const linksFor = (context: EnterpriseUserProfileContext, user: ProfileUser) => {
 };
 
 const utilityLinksFor = (context: EnterpriseUserProfileContext, rbacRole: string) => {
-  if (context === 'ess') {
+  if (usesEssSelfService(context)) {
     return [
       { label: 'Account Settings', href: '/workforce-portal?tab=profile&profileTab=Preferences', icon: Settings, tone: 'text-slate-500' },
       { label: 'Security & MFA', href: '/workforce-portal?tab=security', icon: LockKeyhole, tone: 'text-emerald-600' },
@@ -230,9 +236,6 @@ export function EnterpriseUserProfile({
             onlineStatus: 'Online',
             availabilityStatus: 'Online',
             rbacRole: Array.isArray(session.roles) ? session.roles[0] : '',
-            profileHref: session.employeeCode || session.employeeId
-              ? `/hris/employees/employee-profile/${encodeURIComponent(session.employeeCode || session.employeeId)}`
-              : '/hris/administration/user-management/user-accounts',
           }),
         }));
       })
@@ -265,15 +268,15 @@ export function EnterpriseUserProfile({
   );
   // Live session/HR profile wins over portal shell props so modules cannot
   // replace the assigned role/job title with labels like "IT Support".
-  // ESS must keep portal-local profile links (do not send employees to HRIS admin profile).
+  // Enterprise Home and ESS must keep portal-local profile links (do not send employees to HRIS admin profile).
   const user = {
     ...defaults[context],
     ...explicitUser,
     ...currentUser,
     ...(compact(currentUser.rbacRole) ? { rbacRole: currentUser.rbacRole } : {}),
     ...(compact(currentUser.role) ? { role: currentUser.role } : {}),
-    ...(context === 'ess'
-      ? { profileHref: compact(explicitUser.profileHref) || '/workforce-portal?tab=profile' }
+    ...(usesEssSelfService(context)
+      ? { profileHref: compact(explicitUser.profileHref) || ESS_PROFILE_HREF }
       : {}),
   } as ProfileUser;
   user.role = displayRole(user.role) || user.role;
@@ -285,9 +288,9 @@ export function EnterpriseUserProfile({
   const notificationCount = Number(user.notificationCount || 0);
   const pendingApprovalCount = Number(user.pendingApprovals || 0);
   const isManager = pendingApprovalCount > 0 || Number(user.teamSize || 0) > 0 || compact(user.rbacRole).match(/manager|executive/i);
-  const profileActionHref = context === 'ess' ? '/workforce-portal?tab=profile' : user.profileHref;
-  const leaveActionHref = context === 'ess' ? '/workforce-portal?tab=leave&leaveSection=Apply%20Leave' : '/hris/leave-management/applications';
-  const payslipActionHref = context === 'ess' ? '/workforce-portal?tab=payroll' : '/hris/payroll/payslip-generation';
+  const profileActionHref = ESS_PROFILE_HREF;
+  const leaveActionHref = ESS_LEAVE_APPLY_HREF;
+  const payslipActionHref = ESS_PAYSLIP_HREF;
   const logout = async () => {
     await fetch('/api/auth/logout', { method: 'POST', cache: 'no-store' }).catch(() => undefined);
     window.location.replace('/login');
