@@ -128,6 +128,8 @@ export const timesheetLocationsMatch = (a?: string | null, b?: string | null) =>
 /**
  * Location-scoped crew: matching site only.
  * People with a blank HR location stay on the supervisor's home-yard sheet.
+ * If the supervisor also has no yard, keep them on the open sheet — hiding the
+ * whole crew made Timesheet Entry look empty (0 employees under a supervisor).
  */
 export const timesheetCrewMatchesLocation = (
   employeeLocationValue: string | null | undefined,
@@ -135,7 +137,10 @@ export const timesheetCrewMatchesLocation = (
   supervisorHomeLocation?: string | null,
 ) => {
   if (!clean(targetLocation)) return true;
-  if (!clean(employeeLocationValue)) return timesheetLocationsMatch(targetLocation, supervisorHomeLocation);
+  if (!clean(employeeLocationValue)) {
+    if (!clean(supervisorHomeLocation)) return true;
+    return timesheetLocationsMatch(targetLocation, supervisorHomeLocation);
+  }
   return timesheetLocationsMatch(employeeLocationValue, targetLocation);
 };
 

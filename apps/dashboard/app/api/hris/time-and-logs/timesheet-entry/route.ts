@@ -1163,10 +1163,12 @@ const buildPayload = async (
   const selectedSupervisorEmployeesFromDirectory = selectedSupervisorAllDirectReports
     .filter((employee) => timesheetCrewMatchesLocation(employeeLocation(employee), targetLocation, supervisorHomeLocation))
     .filter((employee) => {
+      // Work center on the sheet is the booking bucket. Do not hide assigned crew
+      // just because HR department is "Mechanical" instead of "Fitting".
       if (!targetWorkCenter) return true;
-      const hasTrade = Boolean(clean(employee.workCenter) || clean(employee.department) || clean(employee.division) || clean(employee.businessUnit));
-      if (!hasTrade) return true;
-      return employeeMatchesWorkCenter(employee, targetWorkCenter);
+      const assignedTrade = clean(employee.workCenter);
+      if (!assignedTrade) return true;
+      return timesheetWorkCentersMatch(assignedTrade, targetWorkCenter);
     })
     .map((employee) => ({
       employeeId: clean(employee.employeeId),
@@ -1184,7 +1186,6 @@ const buildPayload = async (
     .filter((record) => {
       if (!managerMatches({ managerName: record.supervisor }, targetSupervisor)) return false;
       if (targetLocation && !employeeMatchesLocation({ location: record.location, workLocation: record.location, officeLocation: record.site }, targetLocation)) return false;
-      if (targetWorkCenter && !employeeMatchesWorkCenter({ department: record.department, businessUnit: record.businessUnit, projectSite: record.site, workLocation: record.location, officeLocation: record.site, location: record.location }, targetWorkCenter)) return false;
       return true;
     })
     .map(timesheetRecordEmployeeSummary)
@@ -1290,12 +1291,17 @@ const buildPayload = async (
       : !supervisorMode;
   const selectedHeaderId = header?.id ? String(header.id) : '';
   const headerLines = selectedHeaderId ? allLines.filter((line) => String(line.headerId) === selectedHeaderId) : [];
-  approvedOvertimeAuthorizations = (await loadOvertimeAuthorizationsForBooking(
-    header,
-    headerLines,
-    activeProjects,
-    overtimeBooking,
-  )) as OvertimeAuthorizationRequest[];
+  try {
+    approvedOvertimeAuthorizations = (await loadOvertimeAuthorizationsForBooking(
+      header,
+      headerLines,
+      activeProjects,
+      overtimeBooking,
+    )) as OvertimeAuthorizationRequest[];
+  } catch (error) {
+    console.warn('Timesheet overtime authorizations skipped so crew still loads:', error);
+    approvedOvertimeAuthorizations = [];
+  }
   let lines = headerLines
     .map((line) =>
       normalizeLineForGrossDay(
@@ -1404,9 +1410,13 @@ const buildPayload = async (
           ? [...lines, ...headerLines.filter((line) => !lineBelongsToSelectedCrew(line))]
           : lines,
       ).lines;
-      await writeTimesheetHeaderLines(header, persistLines);
-      for (const sibling of siblingWrites) {
-        await writeTimesheetHeaderLines(sibling.header, sibling.lines);
+      try {
+        await writeTimesheetHeaderLines(header, persistLines);
+        for (const sibling of siblingWrites) {
+          await writeTimesheetHeaderLines(sibling.header, sibling.lines);
+        }
+      } catch (error) {
+        console.error('Timesheet roster persist failed; returning in-memory crew so supervisors can still book:', error);
       }
     }
   }
@@ -1456,7 +1466,11 @@ const buildPayload = async (
       }));
     }
     if (persistOffshore && period.status === 'Open' && isTimesheetEditableStatus(header.status)) {
-      await writeTimesheetHeaderLines(header, lines);
+      try {
+        await writeTimesheetHeaderLines(header, lines);
+      } catch (error) {
+        console.error('Offshore timesheet roster persist failed; returning in-memory crew so supervisors can still book:', error);
+      }
     }
   }
 

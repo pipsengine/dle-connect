@@ -98,5 +98,7 @@ assert.equal(timesheetCrewMatchesLocation('Lagos - Idi Oro', 'IDI-ORO', 'AGEGE')
 assert.equal(timesheetCrewMatchesLocation('AGEGE', 'IDI-ORO', 'AGEGE'), false);
 assert.equal(timesheetCrewMatchesLocation('', 'AGEGE', 'AGEGE'), true);
 assert.equal(timesheetCrewMatchesLocation('', 'IDI-ORO', 'AGEGE'), false);
+assert.equal(timesheetCrewMatchesLocation('', 'IDI_ORO', ''), true, 'blank crew + blank supervisor home stay on the selected sheet');
+assert.equal(timesheetCrewMatchesLocation('', 'IDI_ORO', null), true);
 
 console.log('timesheet-agege-blasting.test.ts: ok');
