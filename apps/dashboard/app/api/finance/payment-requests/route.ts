@@ -16,7 +16,7 @@ import {
   isPaymentRequesterOnly,
   isPendingPaymentApprovalStatus,
 } from '@/lib/finance-intelligence/payment-access';
-import { resolveWorkflowLinkOrigin } from '@/lib/public-app-url';
+import { canAccessPaymentRequestWithTeam, listDirectReportsForLineManager } from '@/lib/finance-intelligence/payment-team-scope';
 import {
   ALLOWED_PAYMENT_CURRENCIES,
   buildCashAdvanceControlsWorkspace,
@@ -64,22 +64,25 @@ type PaymentRouteActor = {
   authenticated: boolean;
 };
 
-/** Always scope list payloads: Finance / Global Super Admin → all; others → own (or inbox assignment). */
+/** Always scope list payloads: Finance / Global Super Admin → all; others → own (or inbox assignment / team). */
 const buildViewerPaymentWorkspace = async (
   actor: PaymentRouteActor,
-  options?: { listScope?: string; paymentType?: string; mineOnly?: boolean; inboxOnly?: boolean },
+  options?: { listScope?: string; paymentType?: string; mineOnly?: boolean; inboxOnly?: boolean; teamOnly?: boolean },
 ) => {
   const viewAll = canViewAllPaymentRequests(actor);
   const scope = String(options?.listScope || '').trim().toLowerCase();
   const mineOnly = Boolean(options?.mineOnly) || scope === 'mine';
   const inboxOnly = Boolean(options?.inboxOnly) || scope === 'inbox';
+  const teamOnly = Boolean(options?.teamOnly) || scope === 'team';
   const actorCode = String(actor.actorCode || '').trim();
+  const teamReports = teamOnly ? await listDirectReportsForLineManager(actorCode) : [];
   const workspace = await buildPaymentRequestsWorkspace({
     paymentType: options?.paymentType,
-    mineFor: (mineOnly || (!viewAll && !inboxOnly)) ? actorCode : undefined,
-    awaitingApproverCode: inboxOnly && !mineOnly ? actorCode : undefined,
-    includeMdCeoStage: inboxOnly && !mineOnly && isMdCeoActor(actor),
-    restrictToActor: inboxOnly || !viewAll,
+    mineFor: (!teamOnly && (mineOnly || (!viewAll && !inboxOnly))) ? actorCode : undefined,
+    teamEmployeeCodes: teamOnly ? teamReports.map((row) => row.employeeCode) : undefined,
+    awaitingApproverCode: inboxOnly && !mineOnly && !teamOnly ? actorCode : undefined,
+    includeMdCeoStage: inboxOnly && !mineOnly && !teamOnly && isMdCeoActor(actor),
+    restrictToActor: inboxOnly || teamOnly || !viewAll,
   });
   const pendingOwnedIds = workspace.rows
     .filter((row) => isPendingPaymentApprovalStatus(row.status)
@@ -92,6 +95,8 @@ const buildViewerPaymentWorkspace = async (
     viewer: {
       actorCode: actor.actorCode,
       canViewAll: viewAll,
+      teamMode: teamOnly,
+      teamReportCount: teamOnly ? teamReports.length : undefined,
       approvableRequestIds: workspace.rows
         .filter((row) => isAssignedPaymentApprover(actor, row))
         .map((row) => row.requestId),
@@ -186,7 +191,7 @@ export async function GET(request: Request) {
       paymentRequest = await repairMisroutedProjectPathWithoutProject(paymentRequest);
       const actions = await listPaymentRequestActions(paymentRequest.requestId);
       const comments = await listPaymentRequestComments(paymentRequest.requestId);
-      if (!canAccessPaymentRequest(actor, paymentRequest, {
+      if (!await canAccessPaymentRequestWithTeam(actor, paymentRequest, {
         priorActorCodes: actions.map((item) => item.actorCode),
       })) {
         return jsonErr(403, 'You do not have access to this payment request.');
@@ -241,11 +246,17 @@ export async function GET(request: Request) {
     const paymentType = searchParams.get('paymentType') || undefined;
     const mineOnly = searchParams.get('mine') === '1';
     const inboxOnly = searchParams.get('inbox') === '1';
+    const teamOnly = searchParams.get('team') === '1';
     const workspace = await buildViewerPaymentWorkspace(actor, {
       paymentType,
       mineOnly,
       inboxOnly,
-      listScope: inboxOnly && !mineOnly ? 'inbox' : (mineOnly || !viewAll ? 'mine' : undefined),
+      teamOnly,
+      listScope: teamOnly
+        ? 'team'
+        : inboxOnly && !mineOnly
+          ? 'inbox'
+          : (mineOnly || !viewAll ? 'mine' : undefined),
     });
     return jsonOk(workspace);
   } catch (error) {

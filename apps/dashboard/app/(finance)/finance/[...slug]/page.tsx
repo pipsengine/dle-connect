@@ -21,7 +21,7 @@ import {
   isMdCeoActor,
   isPendingPaymentApprovalStatus,
 } from '@/lib/finance-intelligence/payment-access';
-import { AUTH_COOKIE, verifySessionToken } from '@/lib/auth/session';
+import { listDirectReportsForLineManager } from '@/lib/finance-intelligence/payment-team-scope';
 import { permissionsForRoles } from '@/lib/auth/rbac';
 import FinanceWorkspaceClient from '../FinanceWorkspaceClient';
 
@@ -91,6 +91,7 @@ export default async function FinanceCatchAllPage({ params, searchParams }: Prop
   const mineOnlyPage = pathname.includes('/my-requests');
   const inboxPage = pathname === '/finance/approvals/inbox';
   const paymentsHub = pathname === '/finance/approvals/payments';
+  const teamPaymentsPage = pathname.includes('/team-payments');
 
   const typeRaw = String(Array.isArray(query.type) ? query.type[0] : query.type || '').trim().toLowerCase();
   const initialPaymentType = typeRaw === 'cash-advance' || typeRaw === 'cash'
@@ -109,14 +110,19 @@ export default async function FinanceCatchAllPage({ params, searchParams }: Prop
     ? await buildEmployeePaymentDashboard(actor.actorCode).catch(() => null)
     : null;
 
+  const teamReports = teamPaymentsPage
+    ? await listDirectReportsForLineManager(actor.actorCode).catch(() => [])
+    : [];
+
   const paymentRequestsRaw = page.kind === 'payment-requests'
     ? await buildPaymentRequestsWorkspace({
       paymentType: initialPaymentType === 'All' ? undefined : initialPaymentType,
       // Finance / Global Super Admin → all except Inbox. Inbox is always "awaiting me".
-      mineFor: inboxPage ? undefined : (viewAllPayments ? (mineOnlyPage ? actor.actorCode : undefined) : actor.actorCode),
+      mineFor: inboxPage || teamPaymentsPage ? undefined : (viewAllPayments ? (mineOnlyPage ? actor.actorCode : undefined) : actor.actorCode),
+      teamEmployeeCodes: teamPaymentsPage ? teamReports.map((row) => row.employeeCode) : undefined,
       awaitingApproverCode: inboxPage ? actor.actorCode : undefined,
       includeMdCeoStage: inboxPage && isMdCeoActor(actor),
-      restrictToActor: inboxPage || !viewAllPayments,
+      restrictToActor: inboxPage || teamPaymentsPage || !viewAllPayments,
     }).catch(() => null)
     : null;
   const paymentRequests = paymentRequestsRaw
@@ -132,6 +138,8 @@ export default async function FinanceCatchAllPage({ params, searchParams }: Prop
         viewer: {
           actorCode: actor.actorCode,
           canViewAll: viewAllPayments,
+          teamMode: teamPaymentsPage,
+          teamReportCount: teamPaymentsPage ? teamReports.length : undefined,
           approvableRequestIds: paymentRequestsRaw.rows
             .filter((row) => isAssignedPaymentApprover(actor, row))
             .map((row) => row.requestId),
@@ -154,9 +162,11 @@ export default async function FinanceCatchAllPage({ params, searchParams }: Prop
     ? 'inbox' as const
     : mineOnlyPage
       ? 'mine' as const
-      : paymentsHub
-        ? 'approved' as const
-        : 'default' as const;
+      : teamPaymentsPage
+        ? 'team' as const
+        : paymentsHub
+          ? 'approved' as const
+          : 'default' as const;
 
   const cashAdvanceControls = page.kind === 'cash-advance-controls' && viewAllPayments
     ? await buildCashAdvanceControlsWorkspace().catch(() => null)

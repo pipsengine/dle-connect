@@ -61,7 +61,7 @@ type Props = {
   employeeName?: string;
   paymentSelfService?: boolean;
   paymentRequests?: PaymentRequestsWorkspace | null;
-  paymentListMode?: 'default' | 'inbox' | 'mine' | 'approved';
+  paymentListMode?: 'default' | 'inbox' | 'mine' | 'approved' | 'team';
   initialPaymentType?: 'All' | 'Cash Advance Payment' | 'Supplier Invoice Payment' | 'Expense Payment';
   approvalMatrix?: ApprovalMatrixWorkspace | null;
   approvalDelegations?: ApprovalDelegationWorkspace | null;

@@ -13,6 +13,7 @@ import {
   savePaymentAttachmentFile,
 } from '@/lib/finance-intelligence/payment-requests-service';
 import { canAccessPaymentRequest } from '@/lib/finance-intelligence/payment-access';
+import { canAccessPaymentRequestWithTeam } from '@/lib/finance-intelligence/payment-team-scope';
 
 const jsonOk = <T,>(data: T) => NextResponse.json({ status: 'success', data });
 const jsonErr = (status: number, error: string) => NextResponse.json({ status: 'error', error }, { status });
@@ -67,7 +68,7 @@ export async function GET(request: Request) {
     const paymentRequest = await getPaymentRequestById(requestId);
     if (!paymentRequest) return jsonErr(404, 'Payment request not found.');
     const actions = await listPaymentRequestActions(requestId);
-    if (!canAccessPaymentRequest(actor, paymentRequest, {
+    if (!await canAccessPaymentRequestWithTeam(actor, paymentRequest, {
       priorActorCodes: actions.map((item) => item.actorCode),
     })) {
       return jsonErr(403, 'You do not have access to this payment request attachment.');

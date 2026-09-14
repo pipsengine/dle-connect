@@ -2,10 +2,8 @@ import { NextResponse } from 'next/server';
 import { cookies } from 'next/headers';
 import { AUTH_COOKIE, verifySessionToken } from '@/lib/auth/session';
 import { permissionsForRoles } from '@/lib/auth/rbac';
-import {
-  canAccessPaymentRequest,
-  canDownloadPaymentDocumentPdf,
-} from '@/lib/finance-intelligence/payment-access';
+import { canDownloadPaymentDocumentPdf } from '@/lib/finance-intelligence/payment-access';
+import { canAccessPaymentRequestWithTeam } from '@/lib/finance-intelligence/payment-team-scope';
 import { buildPaymentRequestDocumentPdf } from '@/lib/finance-intelligence/payment-request-pdf';
 import {
   getPaymentRequestById,
@@ -45,7 +43,7 @@ export async function GET(request: Request) {
     paymentRequest = await repairPrematureTreasuryHandoff(paymentRequest);
 
     const actions = await listPaymentRequestActions(paymentRequest.requestId);
-    if (!canAccessPaymentRequest(actor, paymentRequest, {
+    if (!await canAccessPaymentRequestWithTeam(actor, paymentRequest, {
       priorActorCodes: actions.map((item) => item.actorCode),
     })) {
       return jsonErr(403, 'You do not have access to this payment request.');

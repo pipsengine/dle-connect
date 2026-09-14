@@ -27,6 +27,7 @@ import {
   Trash2,
   Upload,
   Wallet,
+  Users,
   X,
   XCircle,
 } from 'lucide-react';
@@ -85,7 +86,7 @@ type Props = {
    * mine — requester-owned items (My Requests)
    * default — full list (legacy type deep-links)
    */
-  listMode?: 'default' | 'inbox' | 'mine' | 'approved';
+  listMode?: 'default' | 'inbox' | 'mine' | 'approved' | 'team';
   /** Prefill Payment Type filter (from ?type= or legacy redirects). */
   initialPaymentType?: 'All' | PaymentRequestType;
 };
@@ -386,6 +387,7 @@ export default function PaymentRequestsClient({
     if (listMode === 'inbox') return 'pending';
     if (listMode === 'approved') return 'approved';
     if (listMode === 'mine') return 'mine';
+    if (listMode === 'team') return 'all';
     return 'all';
   });
   const [detailFocus, setDetailFocus] = useState<KpiId | null>(null);
@@ -566,12 +568,16 @@ export default function PaymentRequestsClient({
       .slice(0, 12);
   }, [lookups?.employees, employeeSearch]);
 
+  const listScopeForPost = listMode === 'inbox' ? 'inbox' : listMode === 'team' ? 'team' : 'mine';
+
   const refresh = async () => {
     setLoading(true);
     setToast('');
     try {
       const params = new URLSearchParams();
-      if (restrictedToOwnPayments) {
+      if (listMode === 'team') {
+        params.set('team', '1');
+      } else if (restrictedToOwnPayments) {
         // Non-finance: Payment Requests = own raised only; Inbox = assigned scope.
         if (listMode === 'inbox') params.set('inbox', '1');
         else params.set('mine', '1');
@@ -625,7 +631,7 @@ export default function PaymentRequestsClient({
     return workspace.rows.filter((row) => {
       // Defense in depth: non–Finance / non–Super-Admin never see other employees' raised payments
       // (Inbox may still include items where they are current approver or beneficiary).
-      if (restrictedToOwnPayments && actor && listMode !== 'inbox') {
+      if (restrictedToOwnPayments && actor && listMode !== 'inbox' && listMode !== 'team') {
         const requester = String(row.requesterCode || '').trim().toLowerCase();
         if (requester !== actor) return false;
       }
@@ -1019,7 +1025,7 @@ export default function PaymentRequestsClient({
         body: JSON.stringify({
           action: 'cancel-own',
           requestId: row.requestId,
-          listScope: listMode === 'inbox' ? 'inbox' : 'mine',
+          listScope: listScopeForPost,
         }),
       });
       const json = await res.json().catch(() => ({ status: 'error', error: 'Unable to cancel request.' }));
@@ -1178,7 +1184,7 @@ export default function PaymentRequestsClient({
           purchaseOrderNo: composerType === 'Expense Payment' ? '' : form.purchaseOrderNo,
           deliveryNoteNo: composerType === 'Expense Payment' ? '' : form.deliveryNoteNo,
           submit: form.submit,
-          listScope: listMode === 'inbox' ? 'inbox' : 'mine',
+          listScope: listScopeForPost,
           attachmentUploads,
           keepAttachmentIds: editingRequestId
             ? existingAttachments.map((file) => file.id || file.fileName).filter(Boolean)
@@ -1286,7 +1292,7 @@ export default function PaymentRequestsClient({
           transition: rowAction.action,
           reason: needsReason ? rowActionReason.trim() : undefined,
           comment: rowActionReason.trim() || undefined,
-          listScope: listMode === 'inbox' ? 'inbox' : 'mine',
+          listScope: listScopeForPost,
         }),
       });
       const json = await res.json().catch(() => ({ status: 'error', error: `Unable to ${rowAction.action}.` }));
@@ -1348,7 +1354,9 @@ export default function PaymentRequestsClient({
   const tabs: Array<{ id: TabId; label: string; count?: number }> = (
     [
       { id: 'all' as TabId, label: listMode === 'approved' ? 'All (excl. pending)' : 'All Requests', count: workspace.tabCounts.all },
-      ...(listMode === 'inbox' ? [] : [
+      ...(listMode === 'inbox' ? [] : listMode === 'team' ? [
+        { id: 'drafts' as TabId, label: 'Drafts', count: workspace.tabCounts.drafts },
+      ] : [
         { id: 'mine' as TabId, label: 'My Requests', count: workspace.tabCounts.mine },
         { id: 'drafts' as TabId, label: 'Drafts', count: workspace.tabCounts.drafts },
       ]),
@@ -1378,34 +1386,51 @@ export default function PaymentRequestsClient({
               ? 'My Approval Inbox'
               : listMode === 'mine'
                 ? 'My Requests'
-                : listMode === 'approved'
-                  ? 'Payment Requests'
-                  : 'Payment Requests'}
+                : listMode === 'team'
+                  ? 'Team Payments'
+                  : listMode === 'approved'
+                    ? 'Payment Requests'
+                    : 'Payment Requests'}
           </h1>
           <p className="mt-1 max-w-3xl text-xs text-slate-500 lg:text-sm">
             {listMode === 'inbox'
               ? 'Only payments waiting for your approval. Click a card or row to open the request.'
               : listMode === 'mine'
                 ? 'Payment requests you raised — drafts, pending, returned, approved and completed.'
-                : listMode === 'approved'
-                  ? 'Approved and in-progress payments. Use Payment Type to filter Cash Advance, Supplier Invoice, or Expense.'
-                  : 'Create, submit, track and manage payment requests through the full approval lifecycle.'}
+                : listMode === 'team'
+                  ? 'Payment status for employees who report to you. View only — you cannot pay or process these requests here.'
+                  : listMode === 'approved'
+                    ? 'Approved and in-progress payments. Use Payment Type to filter Cash Advance, Supplier Invoice, or Expense.'
+                    : 'Create, submit, track and manage payment requests through the full approval lifecycle.'}
           </p>
-          {listMode !== 'inbox' ? (
+          {listMode !== 'inbox' && listMode !== 'team' ? (
             <p className="mt-1 hidden text-xs font-medium text-slate-400 xl:block">
               Enabled types: Cash Advance Payment · Supplier Invoice Payment · Expense Payment
             </p>
+          ) : listMode === 'team' && typeof workspace.viewer?.teamReportCount === 'number' ? (
+            <p className="mt-1 text-xs font-medium text-slate-500">
+              {workspace.viewer.teamReportCount
+                ? `${workspace.viewer.teamReportCount} employee${workspace.viewer.teamReportCount === 1 ? '' : 's'} report to you.`
+                : 'No employees currently report to you in HRIS.'}
+            </p>
           ) : null}
         </div>
-        {listMode === 'inbox' ? (
+        {listMode === 'inbox' || listMode === 'team' ? (
           <ActionToolbar>
-            <Link
-              href="/finance/approvals/payments"
-              className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3.5 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
-            >
-              View approved payments
-              <ArrowRight className="h-4 w-4" />
-            </Link>
+            {listMode === 'team' ? (
+              <span className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-semibold text-slate-600">
+                <Users className="h-3.5 w-3.5" />
+                View only
+              </span>
+            ) : (
+              <Link
+                href="/finance/approvals/payments"
+                className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3.5 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+              >
+                View approved payments
+                <ArrowRight className="h-4 w-4" />
+              </Link>
+            )}
             <button type="button" onClick={() => void refresh()} disabled={loading} className="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-slate-200 text-slate-600 hover:bg-slate-50 disabled:opacity-60">
               <RefreshCcw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
             </button>
@@ -1741,7 +1766,12 @@ export default function PaymentRequestsClient({
                   </div>
                   <span className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-semibold ${statusTone(row.status)}`}>{row.status}</span>
                 </div>
-                <p className="mt-2 truncate text-sm font-medium text-slate-800">{row.beneficiaryName || '—'}</p>
+                    <p className="mt-2 truncate text-sm font-medium text-slate-800">{row.beneficiaryName || '—'}</p>
+                    {listMode === 'team' ? (
+                      <p className="mt-0.5 truncate text-xs text-slate-500">
+                        {row.requesterName || row.requesterCode}{row.department ? ` · ${row.department}` : ''}
+                      </p>
+                    ) : null}
                 <p className="mt-0.5 line-clamp-2 text-xs text-slate-500">{row.description || row.title}</p>
                 <div className="mt-3 flex flex-wrap items-center justify-between gap-2 border-t border-slate-100 pt-2">
                   <div>
@@ -1786,7 +1816,18 @@ export default function PaymentRequestsClient({
           }) : (
             <div className="rounded-xl border border-dashed border-slate-200 px-4 py-10 text-center">
               <Inbox className="mx-auto h-8 w-8 text-slate-300" />
-              <p className="mt-2 text-sm font-semibold text-slate-800">No payment requests yet</p>
+              <p className="mt-2 text-sm font-semibold text-slate-800">
+                {listMode === 'team'
+                  ? (workspace.viewer?.teamReportCount ? 'No team payment requests yet' : 'No direct reports')
+                  : 'No payment requests yet'}
+              </p>
+              {listMode === 'team' ? (
+                <p className="mt-1 text-sm text-slate-500">
+                  {workspace.viewer?.teamReportCount
+                    ? 'When your employees raise cash advances or supplier payments, their status will appear here.'
+                    : 'Team Payments lists employees who report to you in HRIS. Ask HR to confirm reporting lines if this looks wrong.'}
+                </p>
+              ) : null}
             </div>
           )}
         </MobileCardList>
@@ -1998,17 +2039,27 @@ export default function PaymentRequestsClient({
                 <tr>
                   <td colSpan={showFxColumn ? 15 : 14} className="px-3 py-16 text-center">
                     <Inbox className="mx-auto h-10 w-10 text-slate-300" />
-                    <p className="mt-3 text-sm font-semibold text-slate-800">No payment requests yet</p>
-                    <p className="mt-1 text-sm text-slate-500">
-                      Create a Cash Advance or Supplier Invoice payment request to begin the approval lifecycle.
+                    <p className="mt-3 text-sm font-semibold text-slate-800">
+                      {listMode === 'team'
+                        ? (workspace.viewer?.teamReportCount ? 'No team payment requests yet' : 'No direct reports')
+                        : 'No payment requests yet'}
                     </p>
-                    <button
-                      type="button"
-                      onClick={() => openComposer('Cash Advance Payment')}
-                      className="mt-4 inline-flex items-center gap-1.5 rounded-xl bg-[#008FD5] px-3.5 py-2 text-xs font-semibold text-white"
-                    >
-                      New Payment Request <ArrowRight className="h-3.5 w-3.5" />
-                    </button>
+                    <p className="mt-1 text-sm text-slate-500">
+                      {listMode === 'team'
+                        ? (workspace.viewer?.teamReportCount
+                          ? 'When your employees raise cash advances or supplier payments, their status will appear here.'
+                          : 'Team Payments lists employees who report to you in HRIS. Ask HR to confirm reporting lines if this looks wrong.')
+                        : 'Create a Cash Advance or Supplier Invoice payment request to begin the approval lifecycle.'}
+                    </p>
+                    {listMode === 'team' ? null : (
+                      <button
+                        type="button"
+                        onClick={() => openComposer('Cash Advance Payment')}
+                        className="mt-4 inline-flex items-center gap-1.5 rounded-xl bg-[#008FD5] px-3.5 py-2 text-xs font-semibold text-white"
+                      >
+                        New Payment Request <ArrowRight className="h-3.5 w-3.5" />
+                      </button>
+                    )}
                   </td>
                 </tr>
               )}
@@ -2034,6 +2085,9 @@ export default function PaymentRequestsClient({
         </Link>
         <Link href="/finance/approvals/my-requests" className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 font-medium text-slate-600 hover:border-[#008FD5]/40">
           My Requests
+        </Link>
+        <Link href="/finance/approvals/team-payments" className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 font-medium text-slate-600 hover:border-[#008FD5]/40">
+          Team Payments
         </Link>
         {!selfServiceMode ? (
           <Link href="/finance/approvals/treasury" className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-3 py-1.5 font-medium text-slate-600 hover:border-[#008FD5]/40">

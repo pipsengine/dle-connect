@@ -11,6 +11,7 @@ import {
   Inbox,
   Plus,
   RotateCcw,
+  Users,
   Wallet,
 } from 'lucide-react';
 import type { EmployeePaymentDashboard } from '@/lib/finance-intelligence/payment-requests-service';
@@ -62,6 +63,7 @@ export default function EmployeePaymentsDashboardClient({ dashboard, employeeNam
     { label: 'Returned', value: String(dashboard.summary.returned), detail: 'Needs your update', icon: RotateCcw, wrap: 'bg-violet-50', color: 'text-violet-600', href: '/finance/approvals/my-requests?tab=returned' },
     { label: 'Awaiting my approval', value: String(dashboard.summary.awaitingMyApproval), detail: 'In your inbox', icon: Inbox, wrap: 'bg-amber-50', color: 'text-amber-600', href: '/finance/approvals/inbox' },
     { label: 'Paid this month', value: String(dashboard.summary.paidThisMonth), detail: 'Completed', icon: CheckCircle2, wrap: 'bg-emerald-50', color: 'text-emerald-600', href: '/finance/approvals/my-requests?tab=paid' },
+    { label: 'Team payments', value: String(dashboard.summary.teamPayments ?? 0), detail: dashboard.summary.teamSize ? `${dashboard.summary.teamSize} direct report${dashboard.summary.teamSize === 1 ? '' : 's'}` : 'No direct reports', icon: Users, wrap: 'bg-sky-50', color: 'text-sky-700', href: '/finance/approvals/team-payments' },
     { label: 'Outstanding advances', value: String(dashboard.summary.outstandingAdvances), detail: dashboard.eligibility?.blocked ? 'New advance blocked' : 'Retirement open', icon: Wallet, wrap: 'bg-rose-50', color: 'text-rose-600', href: '/finance/approvals/my-requests?tab=retirement' },
   ];
 
@@ -131,7 +133,7 @@ export default function EmployeePaymentsDashboardClient({ dashboard, employeeNam
         ))}
       </div>
 
-      <div className="grid gap-4 lg:grid-cols-2">
+      <div className="grid gap-4 lg:grid-cols-2 xl:grid-cols-3">
         <section className="overflow-hidden rounded-2xl border border-slate-200/80 bg-white shadow-sm">
           <div className="flex items-center justify-between border-b border-slate-100 px-4 py-3">
             <h2 className="text-sm font-semibold text-slate-900">Awaiting my approval</h2>
@@ -192,6 +194,43 @@ export default function EmployeePaymentsDashboardClient({ dashboard, employeeNam
               </Link>
             )) : (
               <p className="px-4 py-8 text-center text-sm text-slate-500">You have not raised a payment request yet.</p>
+            )}
+          </div>
+        </section>
+
+        <section className="overflow-hidden rounded-2xl border border-slate-200/80 bg-white shadow-sm">
+          <div className="flex items-center justify-between border-b border-slate-100 px-4 py-3">
+            <h2 className="text-sm font-semibold text-slate-900">Team payment status</h2>
+            <Link href="/finance/approvals/team-payments" className="inline-flex items-center gap-1 text-xs font-semibold text-[#008FD5]">
+              View all <ArrowRight className="h-3.5 w-3.5" />
+            </Link>
+          </div>
+          <div className="divide-y divide-slate-100">
+            {(dashboard.recentTeam || []).length ? dashboard.recentTeam.map((row) => (
+              <Link
+                key={row.requestId}
+                href={`/finance/approvals/request/${encodeURIComponent(row.requestId)}`}
+                className="flex cursor-pointer items-start justify-between gap-3 px-4 py-3 hover:bg-[#EAF6FF]"
+              >
+                <div className="min-w-0">
+                  <p className="truncate text-sm font-semibold text-slate-800">{row.requesterName || row.requesterCode}</p>
+                  <p className="truncate text-xs text-slate-500">
+                    {row.requestNumber}
+                    {' · '}
+                    {row.paymentType.replace(/ Payment$/i, '')}
+                  </p>
+                </div>
+                <div className="shrink-0 text-right">
+                  <p className="text-sm font-semibold tabular-nums text-slate-800">{money(row.netAmount, row.currencyCode)}</p>
+                  <p className="text-[11px] text-slate-500">{row.status}</p>
+                </div>
+              </Link>
+            )) : (
+              <p className="px-4 py-8 text-center text-sm text-slate-500">
+                {dashboard.summary.teamSize
+                  ? 'Your team has not raised a payment request yet.'
+                  : 'Employees who report to you will appear here.'}
+              </p>
             )}
           </div>
         </section>

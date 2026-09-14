@@ -53,7 +53,7 @@ export const FINANCE_PAYMENTS_SELF_PERMISSION = 'finance.payments.self';
 /**
  * Who may browse all payment requests in the system.
  * Only Global Super Admin and Finance department (or core Finance roles).
- * Managers / other departments must only see payments they raised.
+ * Line managers may also view payments raised by their direct reports (Team Payments), view only.
  */
 export const canViewAllPaymentRequests = (actor: PaymentAccessActor) => {
   if (isGlobalSuperAdminActor(actor)) return true;
@@ -77,11 +77,11 @@ export const canAccessPaymentSelfService = (actor: PaymentAccessActor) => {
     /^(employee|manager|supervisor|department head|project manager|project cost controller|lead)$/i.test(String(role || '').trim()));
 };
 
-/** Own request, assigned approver, prior workflow actor, or elevated finance/admin. */
+/** Own request, assigned approver, prior workflow actor, elevated finance/admin, or a direct report's request. */
 export const canAccessPaymentRequest = (
   actor: PaymentAccessActor,
   request: Pick<PaymentRequestRow, 'requesterCode' | 'currentApproverCode' | 'beneficiaryCode'>,
-  options?: { priorActorCodes?: Array<string | null | undefined> },
+  options?: { priorActorCodes?: Array<string | null | undefined>; directReportCodes?: string[] },
 ) => {
   if (canViewAllPaymentRequests(actor)) return true;
   const code = String(actor.actorCode || '').trim().toLowerCase();
@@ -92,6 +92,13 @@ export const canAccessPaymentRequest = (
     || String(request.beneficiaryCode || '').trim().toLowerCase() === code
   ) {
     return true;
+  }
+  const reports = new Set(
+    (options?.directReportCodes || []).map((item) => String(item || '').trim().toLowerCase()).filter(Boolean),
+  );
+  if (reports.size) {
+    if (reports.has(String(request.requesterCode || '').trim().toLowerCase())) return true;
+    if (reports.has(String(request.beneficiaryCode || '').trim().toLowerCase())) return true;
   }
   // After final approval, currentApprover is cleared — still allow anyone who already acted.
   return (options?.priorActorCodes || []).some((actorCode) =>
@@ -257,6 +264,7 @@ export const EMPLOYEE_PAYMENT_NAV_IDS = new Set([
   'inbox',
   'payment-requests',
   'my-requests',
+  'team-payments',
 ]);
 
 const EMPLOYEE_PAYMENT_PATH_PREFIXES = [
@@ -264,6 +272,7 @@ const EMPLOYEE_PAYMENT_PATH_PREFIXES = [
   '/finance/approvals/inbox',
   '/finance/approvals/payments',
   '/finance/approvals/my-requests',
+  '/finance/approvals/team-payments',
   '/finance/approvals/cash-advances',
   '/finance/approvals/supplier-payments',
   '/finance/approvals/expense-payments',

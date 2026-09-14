@@ -257,6 +257,9 @@ export type PaymentRequestsWorkspace = {
     actorCode: string;
     /** True only for Finance department / Global Super Admin. */
     canViewAll?: boolean;
+    /** Line-manager team view (direct reports only). */
+    teamMode?: boolean;
+    teamReportCount?: number;
     approvableRequestIds: string[];
     editableReturnedRequestIds?: string[];
     cancellableRequestIds?: string[];
@@ -547,6 +550,8 @@ const listRows = async (input?: {
   mineFor?: string;
   /** When set without view-all rights, restrict to requester / approver / beneficiary. */
   scopedToActorCode?: string;
+  /** Line manager: payments raised by or for these employee codes. Empty array means no rows. */
+  teamEmployeeCodes?: string[];
   /** Inbox: only pending items assigned to this approver. */
   awaitingApproverCode?: string;
   /** Inbox for MD/CEO: also include the MD/CEO stage even if the seat code differs. */
@@ -570,6 +575,9 @@ const listRows = async (input?: {
     const awaitingApprover = compact(input?.awaitingApproverCode);
     const mineFor = compact(input?.requesterCode || input?.mineFor);
     const scopedActor = compact(input?.scopedToActorCode);
+    const teamCodes = Array.isArray(input?.teamEmployeeCodes)
+      ? [...new Set(input.teamEmployeeCodes.map(compact).filter(Boolean))].slice(0, 80)
+      : null;
     if (awaitingApprover) {
       request.input('approver', sql.NVarChar(60), awaitingApprover);
       where += ` AND [Status] IN (N'Pending Approval', N'Submitted', N'Finance Review') AND (
@@ -579,6 +587,11 @@ const listRows = async (input?: {
     } else if (mineFor) {
       request.input('requester', sql.NVarChar(60), mineFor);
       where += ' AND [RequesterCode] = @requester';
+    } else if (teamCodes) {
+      if (!teamCodes.length) return [];
+      const placeholders = teamCodes.map((_, index) => `@team${index}`);
+      teamCodes.forEach((code, index) => request.input(`team${index}`, sql.NVarChar(60), code));
+      where += ` AND ([RequesterCode] IN (${placeholders.join(', ')}) OR [BeneficiaryCode] IN (${placeholders.join(', ')}))`;
     } else if (scopedActor) {
       request.input('scopedActor', sql.NVarChar(60), scopedActor);
       where += ` AND (
@@ -1737,6 +1750,7 @@ export const buildPaymentRequestsWorkspace = async (input?: {
   mineFor?: string;
   /** Non-elevated users: only own / assigned / beneficiary rows. */
   scopedToActorCode?: string;
+  teamEmployeeCodes?: string[];
   awaitingApproverCode?: string;
   includeMdCeoStage?: boolean;
   /** When true, never return the unscoped enterprise queue (missing actor code → empty). */
@@ -1750,6 +1764,7 @@ export const buildPaymentRequestsWorkspace = async (input?: {
     paymentType: input?.paymentType,
     mineFor: mineFor || undefined,
     scopedToActorCode: scopedToActorCode || undefined,
+    teamEmployeeCodes: Array.isArray(input?.teamEmployeeCodes) ? input.teamEmployeeCodes : undefined,
     awaitingApproverCode: awaitingApproverCode || undefined,
     includeMdCeoStage: Boolean(input?.includeMdCeoStage),
     requireActorScope: Boolean(input?.restrictToActor),
@@ -1916,19 +1931,31 @@ export type EmployeePaymentDashboard = {
     awaitingMyApproval: number;
     paidThisMonth: number;
     outstandingAdvances: number;
+    teamPayments: number;
+    teamPending: number;
+    teamSize: number;
   };
   recentMine: PaymentRequestRow[];
   awaitingMyApproval: PaymentRequestRow[];
   outstandingAdvances: PaymentRequestRow[];
+  recentTeam: PaymentRequestRow[];
   eligibility: CashAdvanceEligibility | null;
 };
 
 export const buildEmployeePaymentDashboard = async (employeeCode: string): Promise<EmployeePaymentDashboard> => {
   const code = compact(employeeCode);
-  const [mineWorkspace, scopedWorkspace, eligibility] = await Promise.all([
+  const { listDirectReportsForLineManager } = await import('@/lib/finance-intelligence/payment-team-scope');
+  const reports = code ? await listDirectReportsForLineManager(code).catch(() => []) : [];
+  const [mineWorkspace, scopedWorkspace, eligibility, teamWorkspace] = await Promise.all([
     buildPaymentRequestsWorkspace({ mineFor: code || undefined, restrictToActor: true }),
     buildPaymentRequestsWorkspace({ scopedToActorCode: code || undefined, restrictToActor: true }),
     code ? getCashAdvanceEligibility(code).catch(() => null) : Promise.resolve(null),
+    reports.length
+      ? buildPaymentRequestsWorkspace({
+        teamEmployeeCodes: reports.map((row) => row.employeeCode),
+        restrictToActor: true,
+      })
+      : Promise.resolve(emptyWorkspace()),
   ]);
 
   const mine = mineWorkspace.rows;
@@ -1948,6 +1975,9 @@ export const buildEmployeePaymentDashboard = async (employeeCode: string): Promi
     return Boolean(paidAt && paidAt.getMonth() === now.getMonth() && paidAt.getFullYear() === now.getFullYear());
   });
 
+  const teamRows = teamWorkspace.rows;
+  const teamPending = teamRows.filter((row) => /pending|submitted|finance review/i.test(row.status));
+
   return {
     generatedAt: nowIso(),
     employeeCode: code,
@@ -1959,10 +1989,14 @@ export const buildEmployeePaymentDashboard = async (employeeCode: string): Promi
       awaitingMyApproval: awaitingMyApproval.length,
       paidThisMonth: paidThisMonth.length,
       outstandingAdvances: eligibility?.outstandingCount || outstandingAdvances.length,
+      teamPayments: teamRows.length,
+      teamPending: teamPending.length,
+      teamSize: reports.length,
     },
     recentMine: mine.slice(0, 8),
     awaitingMyApproval: awaitingMyApproval.slice(0, 8),
     outstandingAdvances,
+    recentTeam: teamRows.slice(0, 8),
     eligibility,
   };
 };
