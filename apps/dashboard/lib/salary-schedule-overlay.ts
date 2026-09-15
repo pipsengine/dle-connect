@@ -284,6 +284,10 @@ export const attachCompanionNgnPay = (
   }
   return records.map((record) => {
     if (!isDleUsdPayrollEmployee(record)) return record;
+    if (!isDleUsdMdEmployee(record) && !isDleUsdExpatriateEmployee(record)) {
+      if (!record.companionNgnPay && !record.hasDualCurrencyPayroll) return record;
+      return { ...record, companionNgnPay: undefined, hasDualCurrencyPayroll: false };
+    }
     const keys = recordKeys(record);
     const excel = keys.map((key) => excelByKey.get(key)).find(Boolean)
       || excelCompanions.find((row) => (

@@ -862,6 +862,106 @@ const buildSalariedSheet = (
   };
 };
 
+const usdSalaryRegisterCode = (record: Pick<PayrollCalculationRecord, 'employeeCode' | 'employeeId'>) =>
+  compact(record.employeeCode || record.employeeId);
+
+const buildUsdSalaryRegisterSheet = (records: PayrollCalculationRecord[], periodLabel: string): ExcelWorksheetInput => {
+  const columns = [
+    'Section',
+    'Employee Code',
+    'Employee Name',
+    'Department',
+    'USD Gross',
+    'USD Deductions',
+    'USD Net',
+    'USD Employer Cost',
+    'NGN Gross',
+    'NGN Deductions',
+    'NGN Net',
+    'NGN Share',
+  ];
+  const sections = groupDleUsdRecords(records, { includeEmpty: false });
+  const dataRows: ExcelCell[][] = [];
+  const moneyRow = (record: PayrollCalculationRecord, sectionLabel: string): ExcelCell[] => [
+    sectionLabel,
+    usdSalaryRegisterCode(record),
+    compact(record.fullName),
+    compact(record.department),
+    roundMoney(Number(record.grossPay || 0)),
+    roundMoney(Number(record.totalDeductions || record.deductions || 0)),
+    roundMoney(Number(record.netPay || 0)),
+    roundMoney(Number(record.employerCost || 0)),
+    roundMoney(Number(record.companionNgnPay?.grossPay || 0)),
+    roundMoney(Number(record.companionNgnPay?.totalDeductions || 0)),
+    roundMoney(Number(record.companionNgnPay?.netPay || 0)),
+    compact(record.companionNgnPay?.shareLabel),
+  ];
+  for (const section of sections) {
+    dataRows.push(padRow([section.label, section.summaryLabel], columns.length));
+    for (const record of section.rows) {
+      dataRows.push(moneyRow(record, section.label));
+    }
+    const totals = section.rows.reduce((sum, record) => ({
+      usdGross: sum.usdGross + Number(record.grossPay || 0),
+      usdDeductions: sum.usdDeductions + Number(record.totalDeductions || record.deductions || 0),
+      usdNet: sum.usdNet + Number(record.netPay || 0),
+      usdEmployer: sum.usdEmployer + Number(record.employerCost || 0),
+      ngnGross: sum.ngnGross + Number(record.companionNgnPay?.grossPay || 0),
+      ngnDeductions: sum.ngnDeductions + Number(record.companionNgnPay?.totalDeductions || 0),
+      ngnNet: sum.ngnNet + Number(record.companionNgnPay?.netPay || 0),
+    }), {
+      usdGross: 0, usdDeductions: 0, usdNet: 0, usdEmployer: 0, ngnGross: 0, ngnDeductions: 0, ngnNet: 0,
+    });
+    dataRows.push([
+      `${section.label} total`,
+      section.rows.length,
+      '',
+      '',
+      roundMoney(totals.usdGross),
+      roundMoney(totals.usdDeductions),
+      roundMoney(totals.usdNet),
+      roundMoney(totals.usdEmployer),
+      roundMoney(totals.ngnGross),
+      roundMoney(totals.ngnDeductions),
+      roundMoney(totals.ngnNet),
+      '',
+    ] as ExcelCell[]);
+    dataRows.push(padRow([], columns.length));
+  }
+  const grand = records.reduce((sum, record) => ({
+    usdGross: sum.usdGross + Number(record.grossPay || 0),
+    usdDeductions: sum.usdDeductions + Number(record.totalDeductions || record.deductions || 0),
+    usdNet: sum.usdNet + Number(record.netPay || 0),
+    usdEmployer: sum.usdEmployer + Number(record.employerCost || 0),
+    ngnGross: sum.ngnGross + Number(record.companionNgnPay?.grossPay || 0),
+    ngnDeductions: sum.ngnDeductions + Number(record.companionNgnPay?.totalDeductions || 0),
+    ngnNet: sum.ngnNet + Number(record.companionNgnPay?.netPay || 0),
+  }), {
+    usdGross: 0, usdDeductions: 0, usdNet: 0, usdEmployer: 0, ngnGross: 0, ngnDeductions: 0, ngnNet: 0,
+  });
+  dataRows.push([
+    'DLE USD total',
+    records.length,
+    '',
+    '',
+    roundMoney(grand.usdGross),
+    roundMoney(grand.usdDeductions),
+    roundMoney(grand.usdNet),
+    roundMoney(grand.usdEmployer),
+    roundMoney(grand.ngnGross),
+    roundMoney(grand.ngnDeductions),
+    roundMoney(grand.ngnNet),
+    '',
+  ] as ExcelCell[]);
+  return {
+    title: `DLE USD Salary Register - ${periodLabel}`,
+    sheetName: 'USD REPORT',
+    columns,
+    rows: dataRows,
+    exactReferenceDayrateMode: true,
+  };
+};
+
 const usdEarningValue = (record: Enriched, label: string) => {
   if (label === 'BASIC SALARY (Earning)') {
     return lineAmount(record.earningLines, /^(BASIC|BASIC SALARY|BASICPAY)$/i);
@@ -1124,10 +1224,10 @@ export const buildOfficialSalariedDetailWorksheets = (
   const contract = ngn.filter((record) => isContractOrStipend(record)).slice().sort(compareContSchedule);
   const usdSorted = usd.slice().sort(compareOfficialCode);
   const includeSummary = options?.includeSummary !== false;
-  const includeBankSheets = options?.includeBankSheets !== false;
+  const includeBankSheets = options?.includeBankSheets ?? currencyScope !== 'usd';
 
   if (currencyScope === 'usd') {
-    const sheets: ExcelWorksheetInput[] = usdSorted.length ? [buildUsdReportSheet(usdSorted, periodLabel)] : [];
+    const sheets: ExcelWorksheetInput[] = usdSorted.length ? [buildUsdSalaryRegisterSheet(usdSorted, periodLabel)] : [];
     if (includeBankSheets) {
       sheets.push(...buildOfficialBankScheduleWorksheets(salaried, {
         periodLabel,
@@ -1707,9 +1807,10 @@ export const buildOfficialPayrollExcelWorksheets = async (input: {
     buildOfficialSalariedDetailWorksheets(input.salariedRecords, {
       period: input.period,
       periodLabel: input.periodLabel,
-      directoryEmployees: input.directoryEmployees,
+      directoryEmployees: scope === 'usd' ? undefined : input.directoryEmployees,
       currencyScope: scope,
       company,
+      includeBankSheets: scope !== 'usd',
     });
 
   if (report === 'bank-schedule' || report === 'bank-payment-report') {

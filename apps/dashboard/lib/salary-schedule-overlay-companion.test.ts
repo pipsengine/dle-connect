@@ -133,6 +133,28 @@ const [permanent] = attachCompanionNgnPay(
 );
 assert.equal(permanent.companionNgnPay, undefined);
 
+const [permanentTwin] = attachCompanionNgnPay(
+  [
+    usdRecord({
+      employeeId: 'P0442',
+      employeeCode: 'P0442',
+      fullName: 'TEMITOPE ABIODUN ODULATE',
+      jobTitle: 'GENERAL MANAGER, OPERATIONS',
+      grossPay: 3423.25,
+    }),
+    usdRecord({
+      employeeId: 'P0442',
+      employeeCode: 'P0442',
+      fullName: 'TEMITOPE ABIODUN ODULATE',
+      payCurrency: 'NGN',
+      payrollGroup: 'DLE',
+      grossPay: 5_484_707,
+    }),
+  ],
+  [],
+);
+assert.equal(permanentTwin.companionNgnPay, undefined);
+
 const [mdByName] = attachCompanionNgnPay(
   [usdRecord({
     employeeId: 'GUID-MD',
