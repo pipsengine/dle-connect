@@ -314,10 +314,11 @@ export async function submitTimesheetForApproval(input: {
   projects?: Project[];
   holidayDates?: string[];
   skipAlreadyBookedEmployees?: boolean;
+  allowClosedPeriod?: boolean;
 }): Promise<SubmitTimesheetResult> {
   const header = input.header;
   const persist = input.persist !== false;
-  await requireOpenPeriod(header.timesheetDate);
+  if (!input.allowClosedPeriod) await requireOpenPeriod(header.timesheetDate);
   requireEditableTimesheet(header);
   if (isTimesheetInApprovalCapture(header.status)) {
     header.workflowHistory = [
@@ -503,9 +504,11 @@ export async function submitAllBookedDraftTimesheets(options?: {
   apply?: boolean;
   actor?: string;
   notify?: boolean;
+  allowClosedPeriod?: boolean;
 }) {
   const apply = Boolean(options?.apply);
   const actor = options?.actor || 'HR (bulk submit booked drafts)';
+  const allowClosedPeriod = Boolean(options?.allowClosedPeriod);
   const { headers: drafts } = await readTimesheetDraftBookedHeaders({ limit: null });
   const dates = [...new Set(drafts.map((header) => header.timesheetDate))];
   const { headers: dateHeaders, lines: dateLines } = await readTimesheetHeadersForWorkDates(dates);
@@ -523,7 +526,7 @@ export async function submitAllBookedDraftTimesheets(options?: {
       const live = dateHeaders.find((header) => header.id === draft.id);
       if (!live) continue;
       try {
-        await requireOpenPeriod(live.timesheetDate);
+        if (!allowClosedPeriod) await requireOpenPeriod(live.timesheetDate);
         await writeTimesheetHeaderLines(
           live,
           dateLines.filter((line) => line.headerId === live.id),
@@ -574,13 +577,15 @@ export async function submitAllBookedDraftTimesheets(options?: {
             reviewerNote: 'Bulk submitted booked draft for supervisor review.',
             projects,
             holidayDates,
+            allowClosedPeriod,
           });
           lastError = null;
           break;
         } catch (error) {
           lastError = error;
           const message = error instanceof Error ? error.message : String(error);
-          const clashName = /^(.+?) is already booked on /i.exec(message)?.[1]?.trim();
+          const clashName = /^(.+?) is already booked on /i.exec(message)?.[1]?.trim()
+            || /^Absent employee (.+?) cannot receive project\/productive hours/i.exec(message)?.[1]?.trim();
           if (!clashName) break;
           const clashKeys = matchKeys(clashName);
           const clashNameKey = clashName.toLowerCase().replace(/\s+/g, ' ').trim();
