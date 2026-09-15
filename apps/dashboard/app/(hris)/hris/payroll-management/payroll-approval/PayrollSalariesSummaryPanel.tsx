@@ -328,7 +328,9 @@ export default function PayrollSalariesSummaryPanel({
                         <td className={styles.rowLabel}>
                           {row.label}
                           {row.nativeCurrency === 'USD' && canViewMoney
-                            ? ` (${usdFmt.format(row.nativeGrossPay)})`
+                            ? ` (${usdFmt.format(row.nativeGrossPay)}${row.companionNgnGross
+                              ? `; NGN ${moneyFmt.format(row.companionNgnGross)}`
+                              : ''})`
                             : ''}
                         </td>
                         <td>{count(row.headcount)}</td>

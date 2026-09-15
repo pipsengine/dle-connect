@@ -1,5 +1,5 @@
 import type { PayrollCalculationRecord } from '@/lib/payroll-calculation-service';
-import { isDleUsdPayrollEmployee } from '@/lib/payroll-bank-schedule-packs';
+import { isDleUsdMdEmployee, isDleUsdPayrollEmployee } from '@/lib/payroll-bank-schedule-packs';
 import { canonicalContractEmployeeCode } from '@/lib/dayrate-schedule-xlsx';
 import { readAppliedDayrateScheduleOverride } from '@/lib/dayrate-schedule-override-read';
 import { resolvePayCurrency } from '@/lib/payroll-currency';
@@ -190,8 +190,18 @@ export const applySalaryScheduleOverrideToRecords = (
 
   const dayrateCodes = dayrateScheduleCodes(period);
   const overlaid: PayrollCalculationRecord[] = [];
+  const companionExcel: SalaryScheduleRow[] = [];
   for (const row of applied.parsed.rows) {
     if (salaryRowOnDayrateSchedule(row, dayrateCodes)) continue;
+    // MD / Expatriate naira stays on the USD row as companion pay. Overlay onto an
+    // existing NGN person if they already sit in DLE Salaries — never insert them as
+    // a new Permanent / Contract lumpsum employee.
+    if (isSplitSheetNgnCompanion(row)) {
+      companionExcel.push(row);
+      const match = salaryScheduleEmployeeKeys(row.employeeCode).map((key) => byCurrency.NGN.get(key)).find(Boolean) || null;
+      if (match) overlaid.push(overlaySalaryRow(match, row));
+      continue;
+    }
     // HR Summary counts DLE Staff / DLE Contract from Company (HA). A blank COMPANY
     // cell is not DLENG — do not default those rows onto DLE Salaries (P0440 net 0).
     if (row.kind !== 'usd' && !normalizePayrollCompany(row.company)) continue;
@@ -203,16 +213,86 @@ export const applySalaryScheduleOverrideToRecords = (
   // USD REPORT only lists permanent senior staff. MD / Expatriate live on separate workbook
   // tabs (MD (2) = 40% NGN + 60% USD). Prefer those Excel rows; only fall back to HRIS USD
   // for people still missing after the upload overlay.
-  const overlaidKeys = new Set<string>();
+  const overlaidUsdKeys = new Set<string>();
   for (const record of overlaid) {
-    for (const key of recordKeys(record)) overlaidKeys.add(key);
+    if (!isDleUsdPayrollEmployee(record)) continue;
+    for (const key of recordKeys(record)) overlaidUsdKeys.add(key);
   }
   const missingUsdFromHris = salaried.filter((record) => {
     if (!isDleUsdPayrollEmployee(record)) return false;
-    return recordKeys(record).every((key) => !overlaidKeys.has(key));
+    return recordKeys(record).every((key) => !overlaidUsdKeys.has(key));
   });
 
-  return [...dailyRate, ...overlaid, ...missingUsdFromHris];
+  return [...dailyRate, ...attachCompanionNgnPay([...overlaid, ...missingUsdFromHris], companionExcel)];
+};
+
+const isSplitSheetNgnCompanion = (row: SalaryScheduleRow) =>
+  excelRowCurrency(row) === 'NGN' && (
+    /MD NGN|EXPATRIATE NGN/i.test(compact(row.contType))
+    || (/^(MD|EXPATRIATE)\b/i.test(compact(row.sheet)) && /Managing Director|Expatriate/i.test(compact(row.employmentType)))
+  );
+
+const companionFromExcel = (row: SalaryScheduleRow, usdRecord: PayrollCalculationRecord) => {
+  const shareLabel = isDleUsdMdEmployee(usdRecord) || /MD NGN|40%/i.test(compact(row.contType))
+    ? '40% NGN'
+    : 'NGN package';
+  const grossPay = roundMoney(Number(row.grossPay || 0));
+  const totalDeductions = roundMoney(Number(row.deductionTotal || 0));
+  const netPay = roundMoney(Number(row.netPay || (grossPay - totalDeductions)));
+  return {
+    grossPay,
+    totalDeductions,
+    netPay,
+    employerCost: grossPay,
+    shareLabel,
+  };
+};
+
+export const attachCompanionNgnPay = (
+  records: PayrollCalculationRecord[],
+  excelCompanions: SalaryScheduleRow[] = [],
+): PayrollCalculationRecord[] => {
+  const excelByKey = new Map<string, SalaryScheduleRow>();
+  for (const row of excelCompanions) {
+    for (const key of salaryScheduleEmployeeKeys(row.employeeCode)) {
+      if (!excelByKey.has(key)) excelByKey.set(key, row);
+    }
+    const name = compact(row.employeeName).toUpperCase();
+    if (name && !excelByKey.has(name)) excelByKey.set(name, row);
+  }
+  const ngnByKey = new Map<string, PayrollCalculationRecord>();
+  for (const record of records) {
+    if (record.isDailyRate || isDleUsdPayrollEmployee(record)) continue;
+    for (const key of recordKeys(record)) {
+      if (!ngnByKey.has(key)) ngnByKey.set(key, record);
+    }
+  }
+  return records.map((record) => {
+    if (!isDleUsdPayrollEmployee(record)) return record;
+    const keys = recordKeys(record);
+    const excel = keys.map((key) => excelByKey.get(key)).find(Boolean);
+    if (excel) {
+      return {
+        ...record,
+        hasDualCurrencyPayroll: true,
+        companionNgnPay: companionFromExcel(excel, record),
+      };
+    }
+    const companion = keys.map((key) => ngnByKey.get(key)).find(Boolean);
+    if (!companion) return record;
+    const shareLabel = isDleUsdMdEmployee(record) ? '40% NGN' : 'NGN package';
+    return {
+      ...record,
+      hasDualCurrencyPayroll: true,
+      companionNgnPay: {
+        grossPay: roundMoney(Number(companion.grossPay || 0)),
+        totalDeductions: roundMoney(Number(companion.totalDeductions || companion.deductions || 0)),
+        netPay: roundMoney(Number(companion.netPay || 0)),
+        employerCost: roundMoney(Number(companion.employerCost || 0)),
+        shareLabel,
+      },
+    };
+  });
 };
 
 export const ngnSalaryScheduleKpi = (period: string, company: PayrollCompany) => {

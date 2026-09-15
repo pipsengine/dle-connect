@@ -40,8 +40,22 @@ const packs = [
       employerCost: 1000,
     },
     records: [
-      { employeeId: 'P0413', employeeCode: 'P0413', fullName: 'MD Ijeli', jobTitle: 'Managing Director', grossPay: 700 },
-      { employeeId: 'PEX001', employeeCode: 'PEX001', fullName: 'NAYAK/SUSHIL', expatriate: true, grossPay: 300 },
+      {
+        employeeId: 'P0413',
+        employeeCode: 'P0413',
+        fullName: 'MD Ijeli',
+        jobTitle: 'Managing Director',
+        grossPay: 700,
+        companionNgnPay: { grossPay: 8_146_000 },
+      },
+      {
+        employeeId: 'PEX001',
+        employeeCode: 'PEX001',
+        fullName: 'NAYAK/SUSHIL',
+        expatriate: true,
+        grossPay: 300,
+        companionNgnPay: { grossPay: 1_200_000 },
+      },
     ],
   },
   {
@@ -103,6 +117,7 @@ const usdRow = summary.schedules.find((row) => row.id === 'dle-usd');
 assert.ok(usdRow);
 assert.equal(usdRow.grossPayNgn, 1_620_000);
 assert.equal(usdRow.nativeCurrency, 'USD');
+assert.equal(usdRow.companionNgnGross, 9_346_000);
 
 const contract = summary.categories.find((row) => row.id === 'contract');
 const expatriate = summary.categories.find((row) => row.id === 'expatriate');

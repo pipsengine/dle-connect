@@ -101,6 +101,13 @@ type PayrollRecord = {
   employerCost: number | null;
   status: RecordStatus;
   issues: string[];
+  companionNgnPay?: {
+    grossPay: number;
+    totalDeductions: number;
+    netPay: number;
+    employerCost: number;
+    shareLabel: string;
+  } | null;
 };
 
 type Payload = {
@@ -204,6 +211,30 @@ const money = (value: number | null | undefined, allowed = true, currency = 'NGN
   const code = currencyCode(currency);
   return formatPayrollMoney(value, code, { maximumFractionDigits: code === 'USD' ? 2 : 0 });
 };
+
+const DualMoney = ({
+  amount,
+  companion,
+  allowed,
+  currency,
+  shareLabel,
+}: {
+  amount: number | null | undefined;
+  companion?: number | null;
+  allowed: boolean;
+  currency: string;
+  shareLabel?: string;
+}) => (
+  <>
+    <div>{money(amount, allowed, currency)}</div>
+    {companion != null && companion > 0 ? (
+      <div className={styles.muted}>
+        {money(companion, allowed, 'NGN')}
+        {shareLabel ? ` · ${shareLabel}` : ''}
+      </div>
+    ) : null}
+  </>
+);
 
 const number = (value: number | null | undefined) => numberFmt.format(Number(value || 0));
 
@@ -539,6 +570,7 @@ export default function ProcessPayrollWorkspace({
   const gross = payload?.summary.grossPay;
   const net = payload?.summary.netPay;
   const deductions = payload?.summary.totalDeductions ?? payload?.summary.deductions;
+  const summaryCurrency = selectedScope.currencySlice === 'usd' ? 'USD' : 'NGN';
   const deductionRatio = gross && Number(gross) > 0 && deductions != null
     ? `${new Intl.NumberFormat('en-GB', { maximumFractionDigits: 1 }).format((Number(deductions) / Number(gross)) * 100)}% of gross pay`
     : '—';
@@ -615,6 +647,9 @@ export default function ProcessPayrollWorkspace({
   const visiblePages = Array.from({ length: Math.min(5, pageCount) }, (_, i) => pageWindowStart + i);
 
   const artifacts = payload?.artifacts || run?.artifacts || [];
+  const companionNgnGross = employeeRows.reduce((sum, record) => sum + Number(record.companionNgnPay?.grossPay || 0), 0);
+  const companionNgnNet = employeeRows.reduce((sum, record) => sum + Number(record.companionNgnPay?.netPay || 0), 0);
+  const companionNgnDeductions = employeeRows.reduce((sum, record) => sum + Number(record.companionNgnPay?.totalDeductions || 0), 0);
   const audit = run?.audit || [];
   const isActive = Boolean(run && !['Draft', 'Open', 'Reopened'].includes(run.status));
 
@@ -689,8 +724,9 @@ export default function ProcessPayrollWorkspace({
     setToast('');
     try {
       const report = pack === 'daily-rate' ? 'dayrate-schedule' : 'payroll-register';
+      const currency = selectedScope.currencySlice === 'usd' ? 'usd' : 'ngn';
       const res = await fetch(
-        `/api/hris/payroll-management?format=xls&report=${encodeURIComponent(report)}&period=${encodeURIComponent(period)}&pack=${encodeURIComponent(pack)}&company=${encodeURIComponent(company)}&currency=ngn`,
+        `/api/hris/payroll-management?format=xls&report=${encodeURIComponent(report)}&period=${encodeURIComponent(period)}&pack=${encodeURIComponent(pack)}&company=${encodeURIComponent(company)}&currency=${encodeURIComponent(currency)}`,
         { cache: 'no-store' },
       );
       if (!res.ok) {
@@ -859,15 +895,22 @@ export default function ProcessPayrollWorkspace({
           <div className={`${styles.metric} ${styles.metricGreen}`}>
             <span className={styles.metricIcon}><WalletCards size={20} /></span>
             <div className={styles.metricLabel}>Gross Pay</div>
-            <div className={styles.metricValue}>{money(gross, canViewMoney)}</div>
-            <div className={styles.metricMeta}>Net Pay: {money(net, canViewMoney)}</div>
+            <div className={styles.metricValue}>{money(gross, canViewMoney, summaryCurrency)}</div>
+            <div className={styles.metricMeta}>
+              Net Pay: {money(net, canViewMoney, summaryCurrency)}
+              {companionNgnGross > 0 ? ` · NGN gross ${money(companionNgnGross, canViewMoney, 'NGN')}` : ''}
+              {companionNgnNet > 0 ? ` · NGN net ${money(companionNgnNet, canViewMoney, 'NGN')}` : ''}
+            </div>
             <MomDelta mom={payload?.monthOverMonth} metricKey="grossPay" canViewMoney={canViewMoney} />
           </div>
           <div className={`${styles.metric} ${styles.metricRed}`}>
             <span className={styles.metricIcon}><PieChart size={20} /></span>
             <div className={styles.metricLabel}>Total Deductions</div>
-            <div className={styles.metricValue}>{money(deductions, canViewMoney)}</div>
-            <div className={styles.metricMeta}>{deductionRatio}</div>
+            <div className={styles.metricValue}>{money(deductions, canViewMoney, summaryCurrency)}</div>
+            <div className={styles.metricMeta}>
+              {deductionRatio}
+              {companionNgnDeductions > 0 ? ` · NGN ${money(companionNgnDeductions, canViewMoney, 'NGN')}` : ''}
+            </div>
             <MomDelta mom={payload?.monthOverMonth} metricKey="deductions" canViewMoney={canViewMoney} />
           </div>
           <div className={`${styles.metric} ${styles.metricPurple}`}>
@@ -1062,10 +1105,10 @@ export default function ProcessPayrollWorkspace({
                             <td>{record.employeeId}</td>
                             <td>{record.department || '—'}</td>
                             <td>{item.sectionLabel}</td>
-                            <td className={styles.money}>{money(record.grossPay, canViewMoney, cc)}</td>
-                            <td className={styles.deduct}>{money(record.totalDeductions, canViewMoney, cc)}</td>
-                            <td className={styles.net}>{money(record.netPay, canViewMoney, cc)}</td>
-                            <td className={styles.employer}>{money(record.employerCost, canViewMoney, cc)}</td>
+                            <td className={styles.money}><DualMoney amount={record.grossPay} companion={record.companionNgnPay?.grossPay} allowed={canViewMoney} currency={cc} shareLabel={record.companionNgnPay?.shareLabel} /></td>
+                            <td className={styles.deduct}><DualMoney amount={record.totalDeductions} companion={record.companionNgnPay?.totalDeductions} allowed={canViewMoney} currency={cc} /></td>
+                            <td className={styles.net}><DualMoney amount={record.netPay} companion={record.companionNgnPay?.netPay} allowed={canViewMoney} currency={cc} /></td>
+                            <td className={styles.employer}><DualMoney amount={record.employerCost} companion={record.companionNgnPay?.employerCost} allowed={canViewMoney} currency={cc} /></td>
                             <td><span className={statusBadgeClass(record.status)}>{record.status}</span></td>
                             <td>
                               <button
@@ -1098,10 +1141,10 @@ export default function ProcessPayrollWorkspace({
                         <td>{record.employeeId}</td>
                         <td>{record.department || '—'}</td>
                         <td>{record.employmentType || record.payrollGroup || '—'}</td>
-                        <td className={styles.money}>{money(record.grossPay, canViewMoney, cc)}</td>
-                        <td className={styles.deduct}>{money(record.totalDeductions, canViewMoney, cc)}</td>
-                        <td className={styles.net}>{money(record.netPay, canViewMoney, cc)}</td>
-                        <td className={styles.employer}>{money(record.employerCost, canViewMoney, cc)}</td>
+                        <td className={styles.money}><DualMoney amount={record.grossPay} companion={record.companionNgnPay?.grossPay} allowed={canViewMoney} currency={cc} shareLabel={record.companionNgnPay?.shareLabel} /></td>
+                        <td className={styles.deduct}><DualMoney amount={record.totalDeductions} companion={record.companionNgnPay?.totalDeductions} allowed={canViewMoney} currency={cc} /></td>
+                        <td className={styles.net}><DualMoney amount={record.netPay} companion={record.companionNgnPay?.netPay} allowed={canViewMoney} currency={cc} /></td>
+                        <td className={styles.employer}><DualMoney amount={record.employerCost} companion={record.companionNgnPay?.employerCost} allowed={canViewMoney} currency={cc} /></td>
                         <td><span className={statusBadgeClass(record.status)}>{record.status}</span></td>
                         <td>
                           <button

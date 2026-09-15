@@ -50,6 +50,13 @@ export type PayrollCalculationRecord = {
   payCurrency: string;
   hasDualCurrencyPayroll?: boolean;
   usdPackageGross?: number | null;
+  companionNgnPay?: {
+    grossPay: number;
+    totalDeductions: number;
+    netPay: number;
+    employerCost: number;
+    shareLabel: string;
+  } | null;
   paymentRun: string;
   basePay: number;
   allowances: number;
@@ -1299,4 +1306,13 @@ export const maskPayrollCalculationRecords = (records: PayrollCalculationRecord[
     earningLines: record.earningLines.map((line) => ({ ...line, amount: null })),
     annualBenefitLines: record.annualBenefitLines.map((line) => ({ ...line, amount: null })),
     deductionLines: record.deductionLines.map((line) => ({ ...line, amount: null })),
+    companionNgnPay: record.companionNgnPay
+      ? {
+          ...record.companionNgnPay,
+          grossPay: null as unknown as number,
+          totalDeductions: null as unknown as number,
+          netPay: null as unknown as number,
+          employerCost: null as unknown as number,
+        }
+      : record.companionNgnPay,
   }));

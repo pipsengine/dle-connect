@@ -5,7 +5,7 @@
  */
 import { inflateRawSync } from 'node:zlib';
 
-export type SalaryScheduleSheetKind = 'perm' | 'cont' | 'usd' | 'summary' | 'md' | 'other';
+export type SalaryScheduleSheetKind = 'perm' | 'cont' | 'usd' | 'summary' | 'md' | 'expatriate' | 'other';
 
 export type SalaryScheduleEarningLine = {
   code: string;
@@ -343,6 +343,7 @@ const sheetKind = (name: string): SalaryScheduleSheetKind => {
   if (key === 'SUMMARY') return 'summary';
   // MD (2) detail tab — not MD SCHD bank schedule.
   if (/^MD\b/.test(key) && !/SCHD|BANK|SCHEDULE/.test(key)) return 'md';
+  if (/^EXPATRIATE\b/.test(key) && !/SCHD|BANK|SCHEDULE/.test(key)) return 'expatriate';
   if (/EXCHANGE\s*RATE/.test(key)) return 'other';
   return 'other';
 };
@@ -354,7 +355,7 @@ const normalizeEmployeeCode = (raw: string, kind: SalaryScheduleSheetKind) => {
   if (/^[PLCNI]\d+$/i.test(code)) return code.toUpperCase();
   if (/^\d+$/.test(code)) {
     // Permanent numeric codes in this workbook are P-prefixed HRIS codes.
-    if (kind === 'perm' || kind === 'usd' || kind === 'md') return `P${code.padStart(4, '0')}`;
+    if (kind === 'perm' || kind === 'usd' || kind === 'md' || kind === 'expatriate') return `P${code.padStart(4, '0')}`;
     return code;
   }
   return code;
@@ -364,10 +365,12 @@ const canonicalizeEmployeeCode = (code: string, kind: SalaryScheduleSheetKind) =
   const normalized = normalizeEmployeeCode(code, kind === 'other' ? 'perm' : kind);
   const bare = compact(normalized).toUpperCase().replace(/[^A-Z0-9]/g, '');
   if (/^(00)?MD01$/.test(bare) || bare === 'MD') return 'P0413';
+  if (/^(00)?EX001$/.test(bare) || bare === 'PEX001') return 'PEX001';
   return normalized;
 };
 
-const isEmployeeCode = (code: string) => /^(?:[PLCNI]\d+|NYSC\d+|IT\d+)$/i.test(compact(code));
+const isEmployeeCode = (code: string) =>
+  /^(?:[PLCNI]\d+|PEX\d+|EX\d+|NYSC\d+|IT\d+)$/i.test(compact(code));
 
 const headerKey = (value: string) =>
   compact(value)
@@ -422,7 +425,7 @@ const earningCodeFromHeader = (header: string) => {
 const deductionCodeFromHeader = (header: string) => {
   const key = headerKey(header);
   if (key.includes('NHF')) return 'NHF';
-  if (key.includes('PAYE')) return 'PAYE';
+  if (key.includes('PAYE') || key === 'TAX') return 'PAYE';
   if (key.includes('PENSION EE2')) return 'PENSION_EE2';
   if (key === 'PENSION' || key.includes('PENSION')) return 'PENSION_EE';
   if (key.includes('UNION')) return 'UNION';
@@ -449,6 +452,22 @@ const buildHeaderMap = (headerRow: Map<string, string>) => {
     if (/^Employee Code$/i.test(name)) byKey.set('EMPLOYEE CODE', col);
   }
   return { byKey, earnings, deductions };
+};
+
+const inferSplitPackageColumns = (byKey: Map<string, string>) => {
+  const earnings: Array<{ col: string; name: string; code: string }> = [];
+  const deductions: Array<{ col: string; name: string; code: string }> = [];
+  const earningKeys = ['BASIC', 'TELEPHONE', 'AREARS LEAVE', 'ARREARS', 'GENERAL INCREASE', 'APPRAISAL INCREASE'];
+  const deductionKeys = ['TAX', 'LOAN', 'OTHER DED', 'OTHER DEDUCTION', 'PAYE', 'PENSION'];
+  for (const key of earningKeys) {
+    const col = byKey.get(key);
+    if (col) earnings.push({ col, name: key, code: earningCodeFromHeader(key) });
+  }
+  for (const key of deductionKeys) {
+    const col = byKey.get(key);
+    if (col) deductions.push({ col, name: key, code: deductionCodeFromHeader(key) });
+  }
+  return { earnings, deductions };
 };
 
 const findCol = (map: Map<string, string>, ...keys: string[]) => {
@@ -545,14 +564,22 @@ const parseEmployeeSheet = (
 };
 
 /**
- * MD (2) tab: Managing Director package split — typically 40% NGN + 60% USD.
- * Emits one NGN row (PERM-like / DLE) and one USD row for the same employee.
+ * MD (2) / Expatriate tabs: split package with NAIRA PAYMENT and DOLLAR PAYMENT sections.
  */
-const parseMdSplitSheet = (
+const parseCurrencySplitSheet = (
   sheetName: string,
   grid: Map<number, Map<string, string>>,
   skipped: SalaryScheduleParseResult['skipped'],
+  kind: Extract<SalaryScheduleSheetKind, 'md' | 'expatriate'>,
+  options: {
+    defaultName: string;
+    defaultTitle: string;
+    employmentType: string;
+    ngnContType: string;
+    usdContType: string;
+  },
 ) => {
+  const sheetKind = kind;
   const sorted = [...grid.entries()].sort((a, b) => a[0] - b[0]);
   const sectionStarts: Array<{ rowNo: number; currency: 'NGN' | 'USD' }> = [];
   for (const [rowNo, row] of sorted) {
@@ -561,35 +588,68 @@ const parseMdSplitSheet = (
     if (/DOLLAR\s+PAYMENT/.test(label)) sectionStarts.push({ rowNo, currency: 'USD' });
   }
   if (!sectionStarts.length) {
-    skipped.push({ sheet: sheetName, reason: 'MD sheet missing NAIRA/DOLLAR PAYMENT sections' });
+    skipped.push({ sheet: sheetName, reason: 'Split sheet missing NAIRA/DOLLAR PAYMENT sections' });
     return [] as SalaryScheduleRow[];
   }
 
   const rows: SalaryScheduleRow[] = [];
+  let lastHeader: {
+    headerRowNo: number;
+    byKey: Map<string, string>;
+    earningCols: Array<{ col: string; name: string; code: string }>;
+    deductionCols: Array<{ col: string; name: string; code: string }>;
+  } | null = null;
+  const seenCurrency = new Set<'NGN' | 'USD'>();
   for (let i = 0; i < sectionStarts.length; i += 1) {
     const section = sectionStarts[i];
+    if (seenCurrency.has(section.currency)) continue;
     const nextStart = sectionStarts[i + 1]?.rowNo ?? Number.POSITIVE_INFINITY;
+    const sectionRow = grid.get(section.rowNo);
+    const sectionLooksLikeHeader = [...(sectionRow?.values() || [])].some((value) =>
+      /net\s*pay|total\s*ded|employee\s*code|\bbasic\b/i.test(value),
+    );
     const headerEntry = sorted.find(([rowNo]) => rowNo > section.rowNo && rowNo < nextStart
-      && [...(grid.get(rowNo)?.values() || [])].some((value) => /employee\s*code/i.test(value)));
-    if (!headerEntry) {
-      skipped.push({ sheet: sheetName, reason: `MD ${section.currency} header missing` });
+      && [...(grid.get(rowNo)?.values() || [])].some((value) => /employee\s*code/i.test(value)))
+      || (sectionLooksLikeHeader && sectionRow ? [section.rowNo, sectionRow] as const : null);
+    let headerRowNo: number;
+    let byKey: Map<string, string>;
+    let earningCols: Array<{ col: string; name: string; code: string }>;
+    let deductionCols: Array<{ col: string; name: string; code: string }>;
+    if (headerEntry) {
+      headerRowNo = headerEntry[0];
+      ({ byKey, earnings: earningCols, deductions: deductionCols } = buildHeaderMap(headerEntry[1]));
+      if (!earningCols.length || !deductionCols.length) {
+        const inferred = inferSplitPackageColumns(byKey);
+        if (!earningCols.length) earningCols = inferred.earnings;
+        if (!deductionCols.length) deductionCols = inferred.deductions;
+      }
+      lastHeader = { headerRowNo, byKey, earningCols, deductionCols };
+    } else if (lastHeader) {
+      ({ headerRowNo, byKey, earningCols, deductionCols } = lastHeader);
+      headerRowNo = section.rowNo;
+    } else {
+      skipped.push({ sheet: sheetName, reason: `${section.currency} header missing` });
       continue;
     }
-    const [headerRowNo, header] = headerEntry;
-    const { byKey, earnings: earningCols, deductions: deductionCols } = buildHeaderMap(header);
+    seenCurrency.add(section.currency);
     const codeCol = findCol(byKey, 'EMPLOYEE CODE');
+    const firstCol = [...byKey.values()].sort((a, b) => colToIndex(a) - colToIndex(b))[0];
     for (const [rowNo, row] of sorted) {
       if (rowNo <= headerRowNo || rowNo >= nextStart) continue;
       const rawCode = cell(row, codeCol);
-      if (!rawCode || /^total$/i.test(rawCode)) continue;
-      const employeeCode = canonicalizeEmployeeCode(rawCode, 'md');
-      if (!isEmployeeCode(employeeCode) && employeeCode !== 'P0413') {
-        skipped.push({ sheet: sheetName, reason: 'MD non-employee code', value: rawCode });
-        continue;
-      }
       const surname = cell(row, findCol(byKey, 'EMPLOYEESURNAME'));
       const first = cell(row, findCol(byKey, 'EMPLOYEEFIRSTNAME'));
-      const employeeName = compact([first, surname].filter(Boolean).join(' ')) || 'CHRIS IJELI';
+      const named = compact([first, surname].filter(Boolean).join(' ')) || cell(row, firstCol);
+      if (!rawCode && !named) continue;
+      if (/^(total|naira payment|dollar payment)$/i.test(named) || /^total$/i.test(rawCode)) continue;
+      const employeeCode = canonicalizeEmployeeCode(rawCode, sheetKind)
+        || (/NAYAK|SUSHIL/i.test(named) ? 'PEX001' : '')
+        || (/IJELI/i.test(named) ? 'P0413' : '');
+      if (!isEmployeeCode(employeeCode) && employeeCode !== 'P0413' && employeeCode !== 'PEX001') {
+        skipped.push({ sheet: sheetName, reason: 'Split-sheet non-employee code', value: rawCode || named });
+        continue;
+      }
+      const employeeName = named || options.defaultName;
       const earnings = earningCols
         .map((item) => ({
           code: item.code,
@@ -605,25 +665,28 @@ const parseMdSplitSheet = (
         }))
         .filter((line) => line.amount !== 0);
       const earningTotal = roundMoney(
-        cellNum(row, findCol(byKey, 'EARNING TOTAL')) || earnings.reduce((sum, line) => sum + line.amount, 0),
+        cellNum(row, findCol(byKey, 'EARNING TOTAL', 'TOTAL'))
+        || earnings.reduce((sum, line) => sum + line.amount, 0),
       );
       const deductionTotal = roundMoney(
-        cellNum(row, findCol(byKey, 'DEDUCTION TOTAL')) || deductions.reduce((sum, line) => sum + line.amount, 0),
+        cellNum(row, findCol(byKey, 'DEDUCTION TOTAL', 'TOTAL DED', 'TOTAL DEDUCTION'))
+        || deductions.reduce((sum, line) => sum + line.amount, 0),
       );
       const grossPay = roundMoney(cellNum(row, findCol(byKey, 'GROSS EARNINGS')) || earningTotal);
       const netPay = roundMoney(cellNum(row, findCol(byKey, 'NET PAY')) || (grossPay - deductionTotal));
-      const kind: 'perm' | 'usd' = section.currency === 'USD' ? 'usd' : 'perm';
+      if (!grossPay && !netPay) continue;
+      const rowKind: 'perm' | 'usd' = section.currency === 'USD' ? 'usd' : 'perm';
       rows.push({
         sheet: sheetName,
-        kind,
+        kind: rowKind,
         employeeCode,
         employeeName,
-        jobTitle: cell(row, findCol(byKey, 'JOB TITLE LONG DESCRIPTION')) || 'MANAGING DIRECTOR',
+        jobTitle: cell(row, findCol(byKey, 'JOB TITLE LONG DESCRIPTION')) || options.defaultTitle,
         company: cell(row, findCol(byKey, 'COMPANY')) || 'DLENG - DLENG',
         department: cell(row, findCol(byKey, 'DEPARTMENT')) || 'CORPORATE OFFICE',
         location: cell(row, findCol(byKey, 'LOCATION')) || '',
-        employmentType: 'Managing Director',
-        contType: section.currency === 'USD' ? 'MD USD 60%' : 'MD NGN 40%',
+        employmentType: options.employmentType,
+        contType: section.currency === 'USD' ? options.usdContType : options.ngnContType,
         periodSalary: grossPay,
         annualSalary: roundMoney(grossPay * 12),
         earningTotal,
@@ -727,8 +790,22 @@ export const parseSalaryScheduleWorkbook = (workbook: Buffer): SalarySchedulePar
           pivotTotals.dlpcContractGross = pivot.dlpcGross;
         }
       }
-    } else if (kind === 'md') {
-      const parsed = parseMdSplitSheet(sheet.name, grid, skipped);
+    } else if (kind === 'md' || kind === 'expatriate') {
+      const parsed = parseCurrencySplitSheet(sheet.name, grid, skipped, kind, kind === 'md'
+        ? {
+            defaultName: 'CHRIS IJELI',
+            defaultTitle: 'MANAGING DIRECTOR',
+            employmentType: 'Managing Director',
+            ngnContType: 'MD NGN 40%',
+            usdContType: 'MD USD 60%',
+          }
+        : {
+            defaultName: 'SUSHILKUMAR NAYAK',
+            defaultTitle: 'EXPATRIATE',
+            employmentType: 'Expatriate',
+            ngnContType: 'Expatriate NGN',
+            usdContType: 'Expatriate USD',
+          });
       for (const row of parsed) {
         byKind[row.kind === 'usd' ? 'usd' : 'perm'].push(row);
         rows.push(row);

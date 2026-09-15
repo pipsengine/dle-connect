@@ -154,6 +154,44 @@ const mixedLabels = labelsOf(mixedSummary?.rows);
 assert(mixedLabels.includes('DLE Staff') && mixedLabels.includes('Dlpc Staff'), 'Combined salary Summary keeps both companies that have figures');
 assert(!mixedLabels.includes('Mubass (Outsourced)'), 'Combined salary Summary still drops empty Mubass');
 
+const usdMd = {
+  ...usd,
+  employeeId: 'P0413',
+  employeeCode: 'P0413',
+  fullName: 'CHRIS IJELI',
+  jobTitle: 'MANAGING DIRECTOR',
+  grossPay: 9000,
+  netPay: 6831.24,
+  companionNgnPay: { grossPay: 8146000, totalDeductions: 2053333.33, netPay: 6092666.67, employerCost: 8146000, shareLabel: '40% NGN' },
+};
+const usdNayak = {
+  ...usd,
+  employeeId: 'PEX001',
+  employeeCode: 'PEX001',
+  fullName: 'SUSHILKUMAR NAYAK',
+  jobTitle: 'EXPATRIATE',
+  grossPay: 3000,
+  netPay: 2383.09,
+  companionNgnPay: { grossPay: 1200000, totalDeductions: 100000, netPay: 1100000, employerCost: 1200000, shareLabel: 'NGN package' },
+};
+const usdExport = buildOfficialSalariedDetailWorksheets(
+  [usd as any, usdMd as any, usdNayak as any],
+  { periodLabel: 'August 2026', currencyScope: 'usd', company: 'DLE' },
+);
+const usdReport = usdExport.find((sheet) => sheet.sheetName === 'USD REPORT');
+assert(Boolean(usdReport), 'DLE USD export includes USD REPORT');
+assert(usdReport?.columns.includes('NGN Gross'), 'USD REPORT includes NGN Gross');
+assert(usdReport?.columns.includes('NGN Net'), 'USD REPORT includes NGN Net');
+const usdReportLabels = labelsOf(usdReport?.rows);
+assert(usdReportLabels.includes('Permanent'), 'DLE USD export includes Permanent staff');
+assert(usdReportLabels.includes('Contract — MD'), 'DLE USD export includes Contract MD');
+assert(usdReportLabels.includes('Expatriate — Nayak'), 'DLE USD export includes Expatriate Nayak');
+const mdRow = (usdReport?.rows || []).find((row) => String(row[0] ?? '').includes('P0413') || String(row[0] ?? '').includes('0413'));
+const nayakRow = (usdReport?.rows || []).find((row) => String(row[0] ?? '').includes('PEX001') || String(row[0] ?? '').includes('EX001'));
+const ngnGrossIdx = usdReport?.columns.indexOf('NGN Gross') ?? -1;
+assert(ngnGrossIdx >= 0 && Number(mdRow?.[ngnGrossIdx] || 0) === 8146000, 'MD NGN gross is exported');
+assert(ngnGrossIdx >= 0 && Number(nayakRow?.[ngnGrossIdx] || 0) === 1200000, 'Nayak NGN gross is exported');
+
 const dleDaySheets = await buildOfficialDayrateScheduleWorksheets([dleDay as any], {
   period: '',
   periodLabel: 'August 2026',

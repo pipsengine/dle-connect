@@ -892,6 +892,9 @@ const buildUsdReportSheet = (records: Enriched[], periodLabel: string): ExcelWor
     'Annual Salary',
     'Gross Earnings',
     'Net Pay',
+    'NGN Gross',
+    'NGN Deductions',
+    'NGN Net',
     'Taxable Earnings',
     'Company (HA)',
     'Department (HA)',
@@ -932,6 +935,9 @@ const buildUsdReportSheet = (records: Enriched[], periodLabel: string): ExcelWor
         roundMoney(periodSalary * 12),
         roundMoney(Number(record.grossPay || 0)),
         roundMoney(Number(record.netPay || 0)),
+        roundMoney(Number(record.companionNgnPay?.grossPay || 0)),
+        roundMoney(Number(record.companionNgnPay?.totalDeductions || 0)),
+        roundMoney(Number(record.companionNgnPay?.netPay || 0)),
         roundMoney(Number(record.taxablePay || record.grossPay || 0)),
         record._companyHa,
         record._departmentHa,
@@ -942,22 +948,40 @@ const buildUsdReportSheet = (records: Enriched[], periodLabel: string): ExcelWor
     }
     const sectionNet = roundMoney(section.rows.reduce((sum, record) => sum + Number(record.netPay || 0), 0));
     const sectionGross = roundMoney(section.rows.reduce((sum, record) => sum + Number(record.grossPay || 0), 0));
+    const sectionNgnGross = roundMoney(section.rows.reduce((sum, record) => sum + Number(record.companionNgnPay?.grossPay || 0), 0));
+    const sectionNgnDeductions = roundMoney(section.rows.reduce((sum, record) => sum + Number(record.companionNgnPay?.totalDeductions || 0), 0));
+    const sectionNgnNet = roundMoney(section.rows.reduce((sum, record) => sum + Number(record.companionNgnPay?.netPay || 0), 0));
     const sectionTotal = padRow([section.rows.length, `${section.label} total`], columns.length);
     const sectionEarningIdx = columns.indexOf('Earning Total');
     const sectionNetIdx = columns.indexOf('Net Pay');
+    const sectionNgnGrossIdx = columns.indexOf('NGN Gross');
+    const sectionNgnDeductionIdx = columns.indexOf('NGN Deductions');
+    const sectionNgnNetIdx = columns.indexOf('NGN Net');
     if (sectionEarningIdx >= 0) sectionTotal[sectionEarningIdx] = sectionGross;
     if (sectionNetIdx >= 0) sectionTotal[sectionNetIdx] = sectionNet;
+    if (sectionNgnGrossIdx >= 0) sectionTotal[sectionNgnGrossIdx] = sectionNgnGross;
+    if (sectionNgnDeductionIdx >= 0) sectionTotal[sectionNgnDeductionIdx] = sectionNgnDeductions;
+    if (sectionNgnNetIdx >= 0) sectionTotal[sectionNgnNetIdx] = sectionNgnNet;
     dataRows.push(sectionTotal);
     dataRows.push(padRow([], columns.length));
   }
 
   const totalGross = roundMoney(records.reduce((sum, record) => sum + Number(record.grossPay || 0), 0));
   const totalNet = roundMoney(records.reduce((sum, record) => sum + Number(record.netPay || 0), 0));
+  const totalNgnGross = roundMoney(records.reduce((sum, record) => sum + Number(record.companionNgnPay?.grossPay || 0), 0));
+  const totalNgnDeductions = roundMoney(records.reduce((sum, record) => sum + Number(record.companionNgnPay?.totalDeductions || 0), 0));
+  const totalNgnNet = roundMoney(records.reduce((sum, record) => sum + Number(record.companionNgnPay?.netPay || 0), 0));
   const totalRow = padRow([records.length, 'DLE USD total'], columns.length);
   const earningTotalIdx = columns.indexOf('Earning Total');
   const netIdx = columns.indexOf('Net Pay');
+  const ngnGrossIdx = columns.indexOf('NGN Gross');
+  const ngnDeductionIdx = columns.indexOf('NGN Deductions');
+  const ngnNetIdx = columns.indexOf('NGN Net');
   if (earningTotalIdx >= 0) totalRow[earningTotalIdx] = totalGross;
   if (netIdx >= 0) totalRow[netIdx] = totalNet;
+  if (ngnGrossIdx >= 0) totalRow[ngnGrossIdx] = totalNgnGross;
+  if (ngnDeductionIdx >= 0) totalRow[ngnDeductionIdx] = totalNgnDeductions;
+  if (ngnNetIdx >= 0) totalRow[ngnNetIdx] = totalNgnNet;
 
   return {
     title: `DLE USD Payroll Detail - ${periodLabel}`,

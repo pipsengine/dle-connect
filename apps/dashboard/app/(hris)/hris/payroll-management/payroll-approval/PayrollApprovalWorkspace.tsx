@@ -127,6 +127,13 @@ type PayrollRecord = {
   employerCost: number | null;
   status: RecordStatus;
   issues: string[];
+  companionNgnPay?: {
+    grossPay: number;
+    totalDeductions: number;
+    netPay: number;
+    employerCost: number;
+    shareLabel: string;
+  } | null;
 };
 
 type StageState = {
@@ -237,6 +244,30 @@ const money = (value: number | null | undefined, allowed = true, currency = 'NGN
   const code = currencyCode(currency);
   return formatPayrollMoney(value, code, { maximumFractionDigits: code === 'USD' ? 2 : 0 });
 };
+
+const DualMoney = ({
+  amount,
+  companion,
+  allowed,
+  currency,
+  shareLabel,
+}: {
+  amount: number | null | undefined;
+  companion?: number | null;
+  allowed: boolean;
+  currency: string;
+  shareLabel?: string;
+}) => (
+  <>
+    <div>{money(amount, allowed, currency)}</div>
+    {companion != null && companion > 0 ? (
+      <div style={{ color: '#7a8da8', fontSize: 11, marginTop: 2 }}>
+        {money(companion, allowed, 'NGN')}
+        {shareLabel ? ` · ${shareLabel}` : ''}
+      </div>
+    ) : null}
+  </>
+);
 
 const sumRecordPay = (
   records:
@@ -680,8 +711,9 @@ export default function PayrollApprovalWorkspace({
     setToast('');
     try {
       const report = pack === 'daily-rate' ? 'dayrate-schedule' : 'payroll-register';
+      const currency = selectedScope.currencySlice === 'usd' ? 'usd' : 'ngn';
       const res = await fetch(
-        `/api/hris/payroll-management?format=xls&report=${encodeURIComponent(report)}&period=${encodeURIComponent(period)}&pack=${encodeURIComponent(pack)}&company=${encodeURIComponent(company)}&currency=ngn`,
+        `/api/hris/payroll-management?format=xls&report=${encodeURIComponent(report)}&period=${encodeURIComponent(period)}&pack=${encodeURIComponent(pack)}&company=${encodeURIComponent(company)}&currency=${encodeURIComponent(currency)}`,
         { cache: 'no-store' },
       );
       if (!res.ok) {
@@ -1196,10 +1228,10 @@ export default function PayrollApprovalWorkspace({
                                 {item.sectionLabel} · {recordCurrency(record)}
                               </div>
                             </td>
-                            <td>{money(record.grossPay, canViewMoney, recordCurrency(record))}</td>
-                            <td>{money(record.totalDeductions, canViewMoney, recordCurrency(record))}</td>
-                            <td>{money(record.netPay, canViewMoney, recordCurrency(record))}</td>
-                            <td>{money(record.employerCost, canViewMoney, recordCurrency(record))}</td>
+                            <td><DualMoney amount={record.grossPay} companion={record.companionNgnPay?.grossPay} allowed={canViewMoney} currency={recordCurrency(record)} shareLabel={record.companionNgnPay?.shareLabel} /></td>
+                            <td><DualMoney amount={record.totalDeductions} companion={record.companionNgnPay?.totalDeductions} allowed={canViewMoney} currency={recordCurrency(record)} /></td>
+                            <td><DualMoney amount={record.netPay} companion={record.companionNgnPay?.netPay} allowed={canViewMoney} currency={recordCurrency(record)} /></td>
+                            <td><DualMoney amount={record.employerCost} companion={record.companionNgnPay?.employerCost} allowed={canViewMoney} currency={recordCurrency(record)} /></td>
                             <td>
                               <span className={styles.ready}>{record.status}</span>
                             </td>
@@ -1223,10 +1255,10 @@ export default function PayrollApprovalWorkspace({
                           {record.payrollGroup || '—'} · {recordCurrency(record)}
                         </div>
                       </td>
-                      <td>{money(record.grossPay, canViewMoney, recordCurrency(record))}</td>
-                      <td>{money(record.totalDeductions, canViewMoney, recordCurrency(record))}</td>
-                      <td>{money(record.netPay, canViewMoney, recordCurrency(record))}</td>
-                      <td>{money(record.employerCost, canViewMoney, recordCurrency(record))}</td>
+                      <td><DualMoney amount={record.grossPay} companion={record.companionNgnPay?.grossPay} allowed={canViewMoney} currency={recordCurrency(record)} shareLabel={record.companionNgnPay?.shareLabel} /></td>
+                      <td><DualMoney amount={record.totalDeductions} companion={record.companionNgnPay?.totalDeductions} allowed={canViewMoney} currency={recordCurrency(record)} /></td>
+                      <td><DualMoney amount={record.netPay} companion={record.companionNgnPay?.netPay} allowed={canViewMoney} currency={recordCurrency(record)} /></td>
+                      <td><DualMoney amount={record.employerCost} companion={record.companionNgnPay?.employerCost} allowed={canViewMoney} currency={recordCurrency(record)} /></td>
                       <td>
                         <span className={styles.ready}>{record.status}</span>
                       </td>

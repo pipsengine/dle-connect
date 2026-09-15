@@ -23,13 +23,13 @@ export const DLE_USD_SECTIONS = [
     id: 'contract-md' as const,
     label: 'Contract — MD',
     summaryLabel: 'MD',
-    detail: 'Managing Director USD contract package',
+    detail: 'Managing Director package — 40% NGN / 60% USD',
   },
   {
     id: 'expatriate' as const,
     label: 'Expatriate — Nayak',
     summaryLabel: 'Nayak',
-    detail: 'Expatriate USD package',
+    detail: 'Expatriate USD + NGN package',
   },
 ] as const;
 
@@ -221,8 +221,8 @@ export const PAYROLL_REGISTER_SECTIONS = [
   { id: 'ngn-contract-lumpsum' as const, label: 'Contract / Lumpsum', detail: 'NGN contract and lumpsum', chip: 'Contract' },
   { id: 'ngn-it-nysc' as const, label: 'IT / NYSC', detail: 'Industrial trainees and NYSC', chip: 'IT / NYSC' },
   { id: 'dle-usd-permanent' as const, label: 'DLE USD — Permanent', detail: 'USD senior management (GM Ops, Mgr SP & CFO)', chip: 'DLE USD' },
-  { id: 'dle-usd-contract-md' as const, label: 'DLE USD — Contract (MD)', detail: 'Managing Director USD contract package', chip: 'DLE USD' },
-  { id: 'dle-usd-expatriate' as const, label: 'DLE USD — Expatriate (Nayak)', detail: 'Expatriate USD package', chip: 'DLE USD' },
+  { id: 'dle-usd-contract-md' as const, label: 'DLE USD — Contract (MD)', detail: 'Managing Director package — 40% NGN / 60% USD', chip: 'DLE USD' },
+  { id: 'dle-usd-expatriate' as const, label: 'DLE USD — Expatriate (Nayak)', detail: 'Expatriate USD + NGN package', chip: 'DLE USD' },
 ] as const;
 
 export const resolvePayrollRegisterSection = (employee: BankScheduleEmployeeLike): PayrollRegisterSectionId => {

@@ -30,6 +30,7 @@ export type PayrollSalariesSummaryScheduleRow = {
   status: string;
   nativeCurrency: 'NGN' | 'USD';
   nativeGrossPay: number;
+  companionNgnGross?: number;
 };
 
 export type PayrollSalariesSummaryCategoryRow = {
@@ -126,6 +127,12 @@ type SummaryPackLike = {
     deductions?: number | null;
     netPay?: number | null;
     employerCost?: number | null;
+    companionNgnPay?: {
+      grossPay?: number | null;
+      totalDeductions?: number | null;
+      netPay?: number | null;
+      employerCost?: number | null;
+    } | null;
   }> | null;
 };
 
@@ -213,6 +220,9 @@ export const buildPayrollSalariesSummary = (input: {
       status: pack?.run?.status || (pack?.payrollComputed ? 'Computed' : 'Draft'),
       nativeCurrency,
       nativeGrossPay: totals.grossPay,
+      companionNgnGross: nativeCurrency === 'USD'
+        ? roundMoney((pack?.records || []).reduce((sum, record) => sum + moneyOf(record.companionNgnPay?.grossPay), 0))
+        : undefined,
     };
   });
 
