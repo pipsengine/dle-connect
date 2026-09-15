@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { countDirectReportsFromEmployees, readPayrollEmployees } from '@/lib/payroll-employee-source';
+import { resolveDirectoryEmployeeForSession, successorCodesFromIdentities } from '@/lib/directory-employee-resolve';
 import { employeeReportsToManager, resolveReportingManagerDisplay } from '@/lib/reporting-manager-match';
 import type { DleEmployeeDirectoryRow } from '@/lib/dle-enterprise-db';
 import { AUTH_COOKIE, verifySessionToken, type SessionPayload } from '@/lib/auth/session';
@@ -495,14 +496,16 @@ const tokenFrom = (request: Request) => request.headers.get('cookie')?.split(';'
 const getSession = (request: Request) => verifySessionToken(tokenFrom(request) ? decodeURIComponent(tokenFrom(request) || '') : '');
 const employeeKeys = (employee: Awaited<ReturnType<typeof readPayrollEmployees>>['employees'][number]) =>
   buildEssEmployeeLookupKeys(employee).map((key) => normalizePayrollMatchKey(key)).filter(Boolean);
-const resolveEssEmployee = (employees: Awaited<ReturnType<typeof readPayrollEmployees>>['employees'], session: SessionPayload) => {
-  const identities = [session.employeeCode, session.employeeId, session.username].map((value) => normalizePayrollMatchKey(value)).filter(Boolean);
-  if (!identities.length) return null;
-  return employees.find((employee) => {
-    const keys = employeeKeys(employee);
-    return identities.some((identity) => keys.includes(identity));
-  }) || null;
-};
+const resolveEssEmployee = (
+  employees: Awaited<ReturnType<typeof readPayrollEmployees>>['employees'],
+  session: SessionPayload,
+  successorCodes?: Map<string, string>,
+) =>
+  resolveDirectoryEmployeeForSession(employees, {
+    employeeCode: session.employeeCode,
+    employeeId: session.employeeId,
+    username: session.username,
+  }, { successorCodes });
 const employeeRequestMatches = (employee: Awaited<ReturnType<typeof readPayrollEmployees>>['employees'][number], requestEmployeeId: string) => {
   const lookup = new Set(employeeKeys(employee));
   return lookup.has(normalizePayrollMatchKey(requestEmployeeId));
@@ -626,7 +629,11 @@ export async function GET(request: Request) {
       // Payslip identities are maintained in HRIS only.
     }
     const allRequests = await expireStaleLeaveRequests(rawRequests);
-    const employee = resolveEssEmployee(employeeSource.employees, session);
+    const employee = resolveEssEmployee(
+      employeeSource.employees,
+      session,
+      successorCodesFromIdentities(identityByKey.values()),
+    );
     if (!employee) return err(403, 'Employee identity is not linked to the logged-in account.');
     void repairPendingLeaveManagerNotifications({
       baseUrl: resolveWorkflowLinkOriginFromRequest(request),
@@ -1569,7 +1576,12 @@ export async function POST(request: Request) {
     const action = compact(body.action);
 
     const employeeSource = await readPayrollEmployees();
-    const employee = resolveEssEmployee(employeeSource.employees, session);
+    const identityByKey = await payslipIdentityMap().catch(() => new Map());
+    const employee = resolveEssEmployee(
+      employeeSource.employees,
+      session,
+      successorCodesFromIdentities(identityByKey.values()),
+    );
     if (!employee) return err(403, 'Employee identity is not linked to the logged-in account.');
 
     if (action === 'retry-leave-notification') {

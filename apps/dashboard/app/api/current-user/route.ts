@@ -1,10 +1,12 @@
 import { NextResponse } from 'next/server';
 import type { DleEmployeeDirectoryRow } from '@/lib/dle-enterprise-db';
+import { resolveDirectoryEmployeeForSession, successorCodesFromIdentities } from '@/lib/directory-employee-resolve';
 import { countDirectReportsFromEmployees, payrollDataSourceInfo, readDirectoryEmployees } from '@/lib/payroll-employee-source';
 import { pendingLeaveApprovalsForActor, loadWorkflowLeaveRequests } from '@/lib/leave-workflow-service';
 import { AUTH_COOKIE, verifySessionToken } from '@/lib/auth/session';
 import { isEmergencyUnlinkedGlobalAdmin } from '@/lib/auth/protected-global-admin';
 import { unreadNotificationCountForSession } from '@/lib/enterprise-notifications-feed';
+import { payslipIdentityMap } from '@/lib/payroll-payslip-identity-store';
 import { resolveReportingManagerDisplay } from '@/lib/reporting-manager-match';
 
 type CurrentUserContext = 'enterprise' | 'hris' | 'ess';
@@ -49,23 +51,12 @@ const cookieFirst = (request: Request, ...keys: string[]) => {
 
 const normalize = (value: unknown) => compact(value).toLowerCase();
 
-const employeeKeys = (employee: DleEmployeeDirectoryRow) => [
-  employee.employeeId,
-  employee.employeeCode,
-  employee.sourceEmployeeId,
-  String(employee.employeeDbId || ''),
-  employee.officialEmail,
-  employee.email,
-  employee.personalEmail,
-].map(normalize).filter(Boolean);
-
-const findEmployee = (employees: DleEmployeeDirectoryRow[], identities: string[]) => {
-  const targets = identities.map(normalize).filter(Boolean);
-  if (!targets.length) return null;
-  return employees.find((employee) => {
-    const keys = employeeKeys(employee);
-    return targets.some((target) => keys.includes(target));
-  }) || null;
+const successorCodesFromPayslipMap = async () => {
+  try {
+    return successorCodesFromIdentities((await payslipIdentityMap()).values());
+  } catch {
+    return new Map<string, string>();
+  }
 };
 
 const configuredEmployeeIdentities = (request: Request, context: CurrentUserContext) => {
@@ -127,11 +118,23 @@ export async function GET(request: Request) {
   const session = await verifySessionToken(token);
   const notificationCount = session ? await unreadNotificationCountForSession(session).catch(() => 0) : 0;
 
-  const sessionIdentities = [session?.employeeCode, session?.employeeId, session?.username, session?.fullName].filter(Boolean) as string[];
-  const configuredIdentities = session ? sessionIdentities : configuredEmployeeIdentities(request, context);
+  const configuredIdentities = session
+    ? []
+    : configuredEmployeeIdentities(request, context);
 
-  const employeeSource = await readDirectoryEmployees();
-  const employee = findEmployee(employeeSource.employees, configuredIdentities.length ? configuredIdentities : sessionIdentities);
+  const [employeeSource, successorCodes] = await Promise.all([readDirectoryEmployees(), successorCodesFromPayslipMap()]);
+  const employee = resolveDirectoryEmployeeForSession(employeeSource.employees, session ? {
+    employeeCode: session.employeeCode,
+    employeeId: session.employeeId,
+    username: session.username,
+  } : {
+    employeeCode: configuredIdentities[0],
+    employeeId: configuredIdentities[1],
+    username: configuredIdentities[0],
+  }, { successorCodes }) || (!session ? employeeSource.employees.find((row) => {
+    const emails = [row.officialEmail, row.email, row.personalEmail].map((value) => compact(value).toLowerCase()).filter(Boolean);
+    return configuredIdentities.some((identity) => emails.includes(compact(identity).toLowerCase()));
+  }) || null : null);
 
   if (session && isEmergencyUnlinkedGlobalAdmin(session) && !employee) {
     return NextResponse.json({
