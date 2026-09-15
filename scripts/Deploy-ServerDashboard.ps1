@@ -7,6 +7,19 @@ $ErrorActionPreference = "Stop"
 $RepoRoot = Split-Path -Parent $PSScriptRoot
 Set-Location $RepoRoot
 
+function Remove-UntrackedIncomingFiles {
+  $incoming = git diff --name-only HEAD origin/main
+  if ($LASTEXITCODE -ne 0 -or -not $incoming) { return }
+  foreach ($path in $incoming) {
+    if (-not $path) { continue }
+    if (-not (Test-Path -LiteralPath $path)) { continue }
+    $tracked = git ls-files -- $path
+    if ($tracked) { continue }
+    Write-Host "Removing untracked file that origin/main will add: $path"
+    Remove-Item -LiteralPath $path -Force
+  }
+}
+
 function Sync-OriginMain {
   $env:GIT_TERMINAL_PROMPT = "0"
   $maxAttempts = 4
@@ -20,6 +33,7 @@ function Sync-OriginMain {
     # Disable auto-gc during fetch to reduce pack file churn on Windows.
     git -c gc.auto=0 fetch origin 2>&1 | ForEach-Object { Write-Host $_ }
     if ($LASTEXITCODE -eq 0) {
+      Remove-UntrackedIncomingFiles
       git reset --hard origin/main
       if ($LASTEXITCODE -eq 0) { return }
     }
@@ -38,6 +52,7 @@ Windows often blocks .git\objects\pack\*.idx while Cursor, npm, or another git p
 On the server, run:
   Get-Process git* | Stop-Process -Force
   cd F:\Dorman-Long\dle-connect
+  Remove-Item -Force data\hris\leave-calendar-config.json, data\hris\nigeria-public-holidays-cache.json, data\hris\payroll-public-holidays.json -ErrorAction SilentlyContinue
   git -c gc.auto=0 fetch origin
   git reset --hard origin/main
 

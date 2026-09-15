@@ -18,7 +18,19 @@ git config gc.auto 0
 
 Write-Host "Fetching origin/main..."
 git -c gc.auto=0 fetch origin
-if ($LASTEXITCODE -ne 0) {
+$fetchExit = $LASTEXITCODE
+if ($fetchExit -eq 0) {
+  $incoming = git diff --name-only HEAD origin/main
+  foreach ($path in $incoming) {
+    if (-not $path) { continue }
+    if (-not (Test-Path -LiteralPath $path)) { continue }
+    $tracked = git ls-files -- $path
+    if ($tracked) { continue }
+    Write-Host "Removing untracked file that origin/main will add: $path"
+    Remove-Item -LiteralPath $path -Force
+  }
+}
+if ($fetchExit -ne 0) {
   Write-Host ""
   Write-Host "Fetch still failed. Common fixes:" -ForegroundColor Yellow
   Write-Host "  1. Close Cursor/VS Code on this repo"
