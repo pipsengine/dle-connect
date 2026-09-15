@@ -34,6 +34,10 @@ import {
   payrollRunPackShortLabel,
 } from '@/lib/payroll-employee-classification';
 import {
+  payrollPeriodCloseError,
+  payrollRunSatisfiesPeriodClose,
+} from '@/lib/payroll-period-close';
+import {
   PAYROLL_SCHEDULE_SCOPES,
   normalizePayrollCompany,
   type PayrollCompany,
@@ -84,30 +88,6 @@ type WorkflowInput = {
 };
 
 const nowIso = () => new Date().toISOString();
-
-/** Journal posting is optional until GL mapping is ready — close on payslips, bank, and statutory outputs. */
-const payrollRunReadyToClose = (run: Pick<UnifiedPayrollRun, 'status' | 'releasedAt' | 'payslipsGeneratedAt' | 'bankScheduleGeneratedAt' | 'statutorySchedulesGeneratedAt'>) => {
-  const released = Boolean(run.releasedAt) || ['Released', 'Locked', 'Published', 'Posted'].includes(String(run.status || ''));
-  return released
-    && Boolean(run.payslipsGeneratedAt)
-    && Boolean(run.bankScheduleGeneratedAt)
-    && Boolean(run.statutorySchedulesGeneratedAt)
-    && run.status !== 'Closed';
-};
-
-/** A pack that was never submitted/released does not block period close (e.g. Daily Rate computed but not processed). */
-const payrollRunIdleForPeriodClose = (run: Pick<UnifiedPayrollRun, 'status' | 'releasedAt' | 'submittedAt' | 'payslipsGeneratedAt' | 'bankScheduleGeneratedAt' | 'statutorySchedulesGeneratedAt' | 'employeeCount'>) => {
-  const status = String(run.status || '');
-  if (status === 'Closed') return true;
-  if (run.releasedAt || run.submittedAt || run.payslipsGeneratedAt || run.bankScheduleGeneratedAt || run.statutorySchedulesGeneratedAt) return false;
-  if (['Submitted', 'Under Review', 'HR Approved', 'Finance Approved', 'CFO Approved', 'Approved', 'Released', 'Published', 'Posted', 'Locked', 'Revision Requested'].includes(status)) {
-    return false;
-  }
-  return true;
-};
-
-const payrollRunSatisfiesPeriodClose = (run: Parameters<typeof payrollRunReadyToClose>[0] & Parameters<typeof payrollRunIdleForPeriodClose>[0]) =>
-  String(run.status || '') === 'Closed' || payrollRunReadyToClose(run) || payrollRunIdleForPeriodClose(run);
 
 const syncRunTotals = (run: UnifiedPayrollRun, summary: Awaited<ReturnType<typeof calculatePayrollForPeriod>>['summary']) => {
   run.employeeCount = summary.payrollEligible || summary.employees || 0;
@@ -425,9 +405,7 @@ export const executePayrollWorkflowAction = async (input: WorkflowInput) => {
     const targets = periodRuns.length ? periodRuns : await ensurePayrollRunsForPeriod(period, periodLabel, actor);
     const blockers = targets.filter((item) => !payrollRunSatisfiesPeriodClose(item));
     if (blockers.length) {
-      throw new Error(
-        `Cannot close ${period}. Finish payslips, bank schedule, and statutory schedules for ${blockers.map((item) => `${payrollRunPackShortLabel(resolvePayrollRunPack(item))} (${item.status})`).join(', ')}. Journal posting can follow later.`,
-      );
+      throw new Error(payrollPeriodCloseError(period, blockers));
     }
     for (const item of targets) {
       if (item.status === 'Closed') {
@@ -737,7 +715,7 @@ export const executePayrollWorkflowAction = async (input: WorkflowInput) => {
       return { run, calculation, periodRecord, payrollCutoverBackup: { skipped: true, payrollPeriod: period, reason: 'Period already closed.' } };
     }
     if (!payrollRunSatisfiesPeriodClose(run)) {
-      throw new Error('Publish payslips and generate bank/statutory schedules before closing the payroll period. Journal posting is optional until accounts mapping is ready.');
+      throw new Error(payrollPeriodCloseError(period, [run]));
     }
     const before = run.status;
     run.status = 'Closed';

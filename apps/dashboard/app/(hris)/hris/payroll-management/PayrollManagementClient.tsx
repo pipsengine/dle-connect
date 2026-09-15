@@ -16,6 +16,7 @@ import PayrollMonthOverMonthPanel, { PayrollMomBadge } from '../payroll/PayrollM
 import { PayrollCommentsControl } from './PayrollCommentsThread';
 import { FINANCE_ONLY_PAYROLL_SECTION } from '@/lib/access/payroll-access';
 import { humanizeHttpErrorBody } from '@/lib/http-client-error';
+import { payrollRunSatisfiesPeriodClose } from '@/lib/payroll-period-close';
 import {
   PAYROLL_SCHEDULE_SCOPES,
   findPayrollScheduleScope,
@@ -955,9 +956,20 @@ const canRunAction = (actionItem: PayrollAction, role: Role, payload: PayrollPay
   if (actionItem.id === 'generate-payslips' && !run?.bankScheduleGeneratedAt) return { allowed: false, reason: 'Generate the bank schedule before publishing payslips.' };
   if (actionItem.id === 'post-run' && (!run?.bankScheduleGeneratedAt || !run?.statutorySchedulesGeneratedAt)) return { allowed: false, reason: 'Generate bank and statutory schedules before posting.' };
   if (actionItem.id === 'close-period') {
-    const outputsReady = Boolean(run?.payslipsGeneratedAt && run?.bankScheduleGeneratedAt && run?.statutorySchedulesGeneratedAt);
-    if (!releasedStatuses.includes(status) || !outputsReady) {
-      return { allowed: false, reason: 'Close is blocked until payslips, bank schedule, and statutory schedules are complete. Journal posting can follow later.' };
+    if (!payrollRunSatisfiesPeriodClose({
+      id: run?.id,
+      pack: run?.pack || payload?.pack,
+      company: run?.company || payload?.company,
+      status,
+      releasedAt: run?.releasedAt,
+      submittedAt: run?.submittedAt,
+      financeReviewedAt: run?.financeReviewedAt,
+      payslipsGeneratedAt: run?.payslipsGeneratedAt,
+      bankScheduleGeneratedAt: run?.bankScheduleGeneratedAt,
+      statutorySchedulesGeneratedAt: run?.statutorySchedulesGeneratedAt,
+      employeeCount: run?.employeeCount,
+    })) {
+      return { allowed: false, reason: 'Salaried packs close after payslips, bank schedule, and statutory schedules. Daily-rate wages close after Finance Approved. Journal posting can follow later.' };
     }
   }
   if (status === 'Closed' && !['approve-entire-workflow', 'reopen-period', 'view-audit', 'generate-report', 'export-csv', 'export-excel', 'export-pdf'].includes(actionItem.id)) return { allowed: false, reason: 'Closed periods are locked until approved reopening.' };

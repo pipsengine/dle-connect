@@ -679,7 +679,7 @@ export default function ProcessPayrollWorkspace({
   const action = async (actionName: string) => {
     if (actionName === 'close-period') {
       const label = payload?.periodLabel || period;
-      if (!window.confirm(`Close payroll period ${label}? This locks every schedule for the month after payslips, bank schedule, and statutory reports are complete. Journal posting can follow later.`)) {
+      if (!window.confirm(`Close payroll period ${label}? This locks every schedule for the month. Salaried packs need payslips, bank, and statutory reports; daily-rate wages close after Finance Approved. Journal posting can follow later.`)) {
         return;
       }
     }
@@ -850,7 +850,7 @@ export default function ProcessPayrollWorkspace({
               className={`${styles.btn} ${styles.btnViolet}`}
               onClick={() => void action('close-period')}
               disabled={Boolean(posting) || loading}
-              title="Close this payroll month after payslips, bank schedule, and statutory reports are complete"
+              title="Close this payroll month. Daily-rate wages close after Finance Approved; salaried packs need payslips, bank, and statutory reports. Journal posting can follow later."
             >
               <Lock size={16} />
               {posting === 'close-period' ? 'Closing…' : 'Close Period'}
