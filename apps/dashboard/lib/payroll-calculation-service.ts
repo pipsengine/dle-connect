@@ -13,7 +13,7 @@ import { activeLoansVersion, calculateLoanRecovery, loanInputsFromApplications, 
 import { normalizePayrollPeriod, syncLeaveAllowanceEventsForPayroll } from '@/lib/payroll-leave-allowance-store';
 import { ensureDayrateScheduleOverrideLoaded } from '@/lib/dayrate-schedule-upload-sql';
 import { ensureSalaryScheduleOverrideLoaded } from '@/lib/salary-schedule-upload-sql';
-import { applySalaryScheduleOverrideToRecords, ngnSalaryScheduleKpi } from '@/lib/salary-schedule-overlay';
+import { applySalaryScheduleCompanionPay, applySalaryScheduleOverrideToRecords, ngnSalaryScheduleKpi } from '@/lib/salary-schedule-overlay';
 import { persistAppliedPayrollSchedulesToHris } from '@/lib/payroll-schedule-hris-persist';
 import { applyDayrateScheduleOverrideToRecords } from '@/lib/dayrate-schedule-overlay';
 import { normalizePayrollMatchKey } from '@/lib/sage-people-payroll-store';
@@ -708,9 +708,13 @@ const buildPayrollCalculationShell = async (period: string): Promise<PayrollCalc
 export const buildPayrollCalculationFromSnapshot = async (period: string, snapshot: PayrollRunSnapshot): Promise<PayrollCalculationResult> => {
   const shell = await buildPayrollCalculationShell(period);
   const toleranceMode = shell.toleranceMode;
-  const records = reapplyPayrollValidationPolicy(
-    enrichCalculationRecordsWithReadiness(snapshot.records),
-    toleranceMode,
+  await ensureSalaryScheduleOverrideLoaded(normalizePayrollPeriod(period) || period);
+  const records = applySalaryScheduleCompanionPay(
+    reapplyPayrollValidationPolicy(
+      enrichCalculationRecordsWithReadiness(snapshot.records),
+      toleranceMode,
+    ),
+    period,
   );
   const summary = snapshotSummaryFromRecords(snapshot, records);
   const readiness = summarizePayrollReadiness(records);

@@ -133,4 +133,17 @@ const [permanent] = attachCompanionNgnPay(
 );
 assert.equal(permanent.companionNgnPay, undefined);
 
+const [mdByName] = attachCompanionNgnPay(
+  [usdRecord({
+    employeeId: 'GUID-MD',
+    employeeCode: '',
+    fullName: 'CHRIS IJELI',
+    jobTitle: 'MANAGING DIRECTOR',
+    grossPay: 9000,
+    netPay: 6831.24,
+  })],
+  [excelRow({ employeeCode: 'P0413' })],
+);
+assert.equal(mdByName.companionNgnPay?.grossPay, 8146000);
+
 console.log('salary-schedule-overlay-companion.test.ts: ok');

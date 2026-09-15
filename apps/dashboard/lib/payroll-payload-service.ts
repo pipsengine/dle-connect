@@ -6,6 +6,7 @@ import {
   summaryPayrollRecords,
   type PayrollCalculationRecord,
 } from '@/lib/payroll-calculation-service';
+import { applySalaryScheduleCompanionPay } from '@/lib/salary-schedule-overlay';
 import { buildPayrollJournalWorkspace } from '@/lib/payroll-journal-service';
 import { getActivePayrollPeriod, listPayrollPeriods, payrollPeriodLabel } from '@/lib/payroll-period-store';
 import {
@@ -262,19 +263,26 @@ const resolvePeriodCalculation = async (
     if (shouldUseSnapshot(run, periodRecord, snapshot) && snapshot) {
       let calculation = await buildPayrollCalculationFromSnapshot(period, snapshot);
       if (pack) calculation = filterPayrollCalculationByPack(calculation, pack, company);
+      calculation = refreshCalculationFromRecords(
+        calculation,
+        applySalaryScheduleCompanionPay(calculation.records, period),
+      );
       return { calculation, dataMode: 'snapshot' as const, payrollComputed: true };
     }
   }
 
   const live = await calculatePayrollForPeriod(period, pack ? { pack, company } : undefined);
-  const normalizedLive = refreshCalculationFromRecords(live, reapplyPayrollValidationPolicy(live.records, live.toleranceMode));
+  const liveWithCompanion = refreshCalculationFromRecords(
+    live,
+    applySalaryScheduleCompanionPay(reapplyPayrollValidationPolicy(live.records, live.toleranceMode), period),
+  );
 
   if (!payrollComputed) {
-    return { calculation: stripPendingPayrollAmounts(normalizedLive), dataMode: 'pending' as const, payrollComputed: false };
+    return { calculation: stripPendingPayrollAmounts(liveWithCompanion), dataMode: 'pending' as const, payrollComputed: false };
   }
 
   // Always return LIVE records for any Open / mutable period status. Only snapshot for Closed/Posted/Locked/Published.
-  return { calculation: normalizedLive, dataMode: 'live' as const, payrollComputed: true };
+  return { calculation: liveWithCompanion, dataMode: 'live' as const, payrollComputed: true };
 };
 
 const totalsFromSummaryAndRecords = (

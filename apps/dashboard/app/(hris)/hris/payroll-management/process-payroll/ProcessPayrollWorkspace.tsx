@@ -229,7 +229,7 @@ const DualMoney = ({
   <>
     <div>{money(amount, allowed, currency)}</div>
     {companion != null && companion > 0 ? (
-      <div className={styles.muted}>
+      <div className={styles.companionNgn}>
         {money(companion, allowed, 'NGN')}
         {shareLabel ? ` · ${shareLabel}` : ''}
       </div>

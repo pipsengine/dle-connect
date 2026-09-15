@@ -1,5 +1,5 @@
 import type { PayrollCalculationRecord } from '@/lib/payroll-calculation-service';
-import { isDleUsdMdEmployee, isDleUsdPayrollEmployee } from '@/lib/payroll-bank-schedule-packs';
+import { isDleUsdExpatriateEmployee, isDleUsdMdEmployee, isDleUsdPayrollEmployee } from '@/lib/payroll-bank-schedule-packs';
 import { canonicalContractEmployeeCode } from '@/lib/dayrate-schedule-xlsx';
 import { readAppliedDayrateScheduleOverride } from '@/lib/dayrate-schedule-override-read';
 import { resolvePayCurrency } from '@/lib/payroll-currency';
@@ -226,11 +226,26 @@ export const applySalaryScheduleOverrideToRecords = (
   return [...dailyRate, ...attachCompanionNgnPay([...overlaid, ...missingUsdFromHris], companionExcel)];
 };
 
-const isSplitSheetNgnCompanion = (row: SalaryScheduleRow) =>
-  excelRowCurrency(row) === 'NGN' && (
-    /MD NGN|EXPATRIATE NGN/i.test(compact(row.contType))
-    || (/^(MD|EXPATRIATE)\b/i.test(compact(row.sheet)) && /Managing Director|Expatriate/i.test(compact(row.employmentType)))
-  );
+const excelAsEmployee = (row: SalaryScheduleRow) => ({
+  employeeCode: row.employeeCode,
+  employeeId: row.employeeCode,
+  fullName: row.employeeName,
+  jobTitle: row.jobTitle,
+  employmentType: row.employmentType,
+  payrollGroup: row.contType,
+});
+
+const isSplitSheetNgnCompanion = (row: SalaryScheduleRow) => {
+  if (excelRowCurrency(row) !== 'NGN') return false;
+  const sheet = compact(row.sheet);
+  const type = compact(row.contType);
+  const employment = compact(row.employmentType);
+  if (/MD NGN|EXPATRIATE NGN/i.test(type)) return true;
+  if (/md\s*\(/i.test(sheet) || /^md\b/i.test(sheet)) return true;
+  if (/expatriate/i.test(sheet)) return true;
+  if (/Managing Director|Expatriate/i.test(employment) && /^(MD|EXPATRIATE)\b/i.test(sheet)) return true;
+  return isDleUsdMdEmployee(excelAsEmployee(row)) || isDleUsdExpatriateEmployee(excelAsEmployee(row));
+};
 
 const companionFromExcel = (row: SalaryScheduleRow, usdRecord: PayrollCalculationRecord) => {
   const shareLabel = isDleUsdMdEmployee(usdRecord) || /MD NGN|40%/i.test(compact(row.contType))
@@ -270,7 +285,11 @@ export const attachCompanionNgnPay = (
   return records.map((record) => {
     if (!isDleUsdPayrollEmployee(record)) return record;
     const keys = recordKeys(record);
-    const excel = keys.map((key) => excelByKey.get(key)).find(Boolean);
+    const excel = keys.map((key) => excelByKey.get(key)).find(Boolean)
+      || excelCompanions.find((row) => (
+        (isDleUsdMdEmployee(record) && isDleUsdMdEmployee(excelAsEmployee(row)))
+        || (isDleUsdExpatriateEmployee(record) && isDleUsdExpatriateEmployee(excelAsEmployee(row)))
+      ));
     if (excel) {
       return {
         ...record,
@@ -293,6 +312,17 @@ export const attachCompanionNgnPay = (
       },
     };
   });
+};
+
+/** Re-attach Excel NGN legs onto USD rows without changing locked USD amounts. */
+export const applySalaryScheduleCompanionPay = (
+  records: PayrollCalculationRecord[],
+  period: string,
+): PayrollCalculationRecord[] => {
+  const applied = readAppliedSalaryScheduleOverride(period);
+  const companions = (applied?.parsed?.rows || []).filter(isSplitSheetNgnCompanion);
+  if (!companions.length && !records.some((record) => isDleUsdPayrollEmployee(record))) return records;
+  return attachCompanionNgnPay(records, companions);
 };
 
 export const ngnSalaryScheduleKpi = (period: string, company: PayrollCompany) => {

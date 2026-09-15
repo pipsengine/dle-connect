@@ -261,7 +261,7 @@ const DualMoney = ({
   <>
     <div>{money(amount, allowed, currency)}</div>
     {companion != null && companion > 0 ? (
-      <div style={{ color: '#7a8da8', fontSize: 11, marginTop: 2 }}>
+      <div style={{ color: '#0f172a', fontSize: 11, fontWeight: 800, marginTop: 3 }}>
         {money(companion, allowed, 'NGN')}
         {shareLabel ? ` · ${shareLabel}` : ''}
       </div>
@@ -601,6 +601,11 @@ export default function PayrollApprovalWorkspace({
     return rows;
   }, [payload?.records, salaryQuery, activeTab]);
 
+  const companionNgnGross = employeeRows.reduce((sum, record) => sum + Number(record.companionNgnPay?.grossPay || 0), 0);
+  const companionNgnNet = employeeRows.reduce((sum, record) => sum + Number(record.companionNgnPay?.netPay || 0), 0);
+  const companionNgnDeductions = employeeRows.reduce((sum, record) => sum + Number(record.companionNgnPay?.totalDeductions || 0), 0);
+  const summaryCurrency = selectedScope.currencySlice === 'usd' ? 'USD' : 'NGN';
+
   const registerSections = useMemo(() => {
     if (pack !== 'salaried') return [];
     if (selectedScope.currencySlice === 'usd') {
@@ -896,8 +901,13 @@ export default function PayrollApprovalWorkspace({
               <div>
                 <div className={styles.moneyLabel}>Gross Pay</div>
                 <div className={styles.moneyValue}>
-                  {money(payrollAmount(payload?.summary.grossPay, previewGross, payrollComputed), canViewMoney)}
+                  {money(payrollAmount(payload?.summary.grossPay, previewGross, payrollComputed), canViewMoney, summaryCurrency)}
                 </div>
+                {companionNgnGross > 0 ? (
+                  <div style={{ fontSize: 11, fontWeight: 800, color: '#0f172a', marginTop: 4 }}>
+                    NGN {money(companionNgnGross, canViewMoney, 'NGN')}
+                  </div>
+                ) : null}
                 <MomLine mom={payload?.monthOverMonth} metricKey="grossPay" canViewMoney={canViewMoney} />
               </div>
             </div>
@@ -906,8 +916,13 @@ export default function PayrollApprovalWorkspace({
               <div>
                 <div className={styles.moneyLabel}>Deductions</div>
                 <div className={styles.moneyValue}>
-                  {money(payrollAmount(payload?.summary.totalDeductions, previewDeductions, payrollComputed), canViewMoney)}
+                  {money(payrollAmount(payload?.summary.totalDeductions, previewDeductions, payrollComputed), canViewMoney, summaryCurrency)}
                 </div>
+                {companionNgnDeductions > 0 ? (
+                  <div style={{ fontSize: 11, fontWeight: 800, color: '#0f172a', marginTop: 4 }}>
+                    NGN {money(companionNgnDeductions, canViewMoney, 'NGN')}
+                  </div>
+                ) : null}
                 <MomLine mom={payload?.monthOverMonth} metricKey="deductions" canViewMoney={canViewMoney} />
               </div>
             </div>
@@ -916,8 +931,13 @@ export default function PayrollApprovalWorkspace({
               <div>
                 <div className={styles.moneyLabel}>Net Pay</div>
                 <div className={styles.moneyValue}>
-                  {money(payrollAmount(payload?.summary.netPay, previewNet, payrollComputed), canViewMoney)}
+                  {money(payrollAmount(payload?.summary.netPay, previewNet, payrollComputed), canViewMoney, summaryCurrency)}
                 </div>
+                {companionNgnNet > 0 ? (
+                  <div style={{ fontSize: 11, fontWeight: 800, color: '#0f172a', marginTop: 4 }}>
+                    NGN {money(companionNgnNet, canViewMoney, 'NGN')}
+                  </div>
+                ) : null}
                 <MomLine mom={payload?.monthOverMonth} metricKey="netPay" canViewMoney={canViewMoney} />
               </div>
             </div>
@@ -926,7 +946,7 @@ export default function PayrollApprovalWorkspace({
               <div>
                 <div className={styles.moneyLabel}>Employer Cost</div>
                 <div className={styles.moneyValue}>
-                  {money(payrollAmount(payload?.summary.employerCost, previewPay.employerCost, payrollComputed), canViewMoney)}
+                  {money(payrollAmount(payload?.summary.employerCost, previewPay.employerCost, payrollComputed), canViewMoney, summaryCurrency)}
                 </div>
                 <MomLine mom={payload?.monthOverMonth} metricKey="employerCost" canViewMoney={canViewMoney} />
               </div>
