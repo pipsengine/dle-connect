@@ -10,7 +10,7 @@ import { approvedPaidLeaveForDate } from '@/lib/leave-management-store';
 import { assignmentMatchesSupervisor, readSupervisorAssignments } from '@/lib/supervisor-assignment-store';
 import { extractSupervisorEmployeeCode, normalizeTimesheetLocationLabel, supervisorCodesMatch, timesheetCrewMatchesLocation, timesheetLocationsMatch } from '@/lib/timesheet-agege-blasting';
 import { timesheetAttendanceMatchKeys } from '@/lib/timesheet-attendance-match';
-import { clearEmployeeFromDraftHeaders, employeeIsOtherTimesheetSupervisor } from '@/lib/timesheet-booking-clash';
+import { clearEmployeeFromDraftHeaders, employeeAlreadyCommittedOnOtherTimesheet, employeeIsOtherTimesheetSupervisor } from '@/lib/timesheet-booking-clash';
 import { canonicalProjectManagerForCode, withCanonicalProjectManager } from '@/lib/timesheet-canonical-project-managers';
 import {
   DAILY_BREAK_HOURS,
@@ -724,6 +724,48 @@ export const calculateTimesheetPeriod = (date: Date | string = new Date()): Time
     endDate: formatDate(endDate),
     status: 'Open',
   };
+};
+
+export const isTimesheetDateInCurrentPeriod = (date: Date | string, today: Date | string = new Date()) =>
+  calculateTimesheetPeriod(date).id === calculateTimesheetPeriod(today).id;
+
+export const assertTimesheetDateInCurrentPeriod = (date: Date | string, today: Date | string = new Date()) => {
+  const current = calculateTimesheetPeriod(today);
+  const target = calculateTimesheetPeriod(date);
+  if (target.id !== current.id) {
+    throw new Error(
+      `Timesheets can only be booked in the current period (${current.name}, ${current.startDate} to ${current.endDate}). ${target.name} is not the current period.`,
+    );
+  }
+  return current;
+};
+
+const padIsoDay = (value: number) => String(value).padStart(2, '0');
+
+export const shiftIsoDateByMonths = (isoDate: string, months: number) => {
+  const match = String(isoDate || '').slice(0, 10).match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!match) return String(isoDate || '').slice(0, 10);
+  const year = Number(match[1]);
+  const monthIndex = Number(match[2]) - 1;
+  const day = Number(match[3]);
+  const cursor = new Date(year, monthIndex + months, 1);
+  const lastDay = new Date(cursor.getFullYear(), cursor.getMonth() + 1, 0).getDate();
+  const resolved = new Date(cursor.getFullYear(), cursor.getMonth(), Math.min(day, lastDay));
+  return `${resolved.getFullYear()}-${padIsoDay(resolved.getMonth() + 1)}-${padIsoDay(resolved.getDate())}`;
+};
+
+export const mapTimesheetDateIntoPeriod = (
+  sourceDate: string,
+  target: { startDate: string; endDate: string },
+) => {
+  let date = String(sourceDate || '').slice(0, 10);
+  let guard = 0;
+  while (date > target.endDate && guard++ < 36) date = shiftIsoDateByMonths(date, -1);
+  guard = 0;
+  while (date < target.startDate && guard++ < 36) date = shiftIsoDateByMonths(date, 1);
+  if (date < target.startDate) return target.startDate;
+  if (date > target.endDate) return target.endDate;
+  return date;
 };
 
 export const calculateTimesheetPeriodForMonth = (year: number, month: number): TimesheetPeriod => {
@@ -2273,6 +2315,31 @@ VALUES (@Id,@HeaderId,@EmployeeId,@EmployeeNo,@EmployeeName,@BiometricId,@Attend
   }
 }
 
+export async function deleteTimesheetHeader(headerId: string) {
+  const pool = await db();
+  const tx = new sql.Transaction(pool);
+  await tx.begin();
+  try {
+    const lines = await new sql.Request(tx)
+      .input('HeaderId', sql.NVarChar(160), headerId)
+      .query(`SELECT [Id] FROM [hris].[TimesheetLines] WHERE [HeaderId]=@HeaderId`);
+    for (const row of lines.recordset) {
+      await new sql.Request(tx)
+        .input('LineId', sql.NVarChar(220), row.Id)
+        .query(`DELETE FROM [hris].[TimesheetProjectAllocations] WHERE [LineId]=@LineId; DELETE FROM [hris].[TimesheetIdleAllocations] WHERE [LineId]=@LineId;`);
+    }
+    await new sql.Request(tx).input('HeaderId', sql.NVarChar(160), headerId).query(`DELETE FROM [hris].[TimesheetWorkflowEvents] WHERE [HeaderId]=@HeaderId`);
+    await new sql.Request(tx).input('HeaderId', sql.NVarChar(160), headerId).query(`DELETE FROM [hris].[TimesheetLines] WHERE [HeaderId]=@HeaderId`);
+    await new sql.Request(tx).input('Id', sql.NVarChar(160), headerId).query(`DELETE FROM [hris].[TimesheetHeaders] WHERE [Id]=@Id`);
+    await tx.commit();
+    invalidateTimesheetDataCache();
+    invalidateTimesheetApprovalWorkspaceCache();
+  } catch (error) {
+    await tx.rollback();
+    throw error;
+  }
+}
+
 export async function readTimesheetDraftBookedHeaders(options?: { softFail?: boolean; limit?: number | null }) {
   let pool: sql.ConnectionPool;
   try {
@@ -3558,6 +3625,7 @@ export async function syncAttendanceForTimesheet(
   options: { persist?: boolean; shiftLabel?: string | null } = {},
 ) {
   const persist = options.persist !== false;
+  if (persist) assertTimesheetDateInCurrentPeriod(date);
   if (isOffshoreWorkCenterName(workCenterName)) {
     throw new Error('Offshore timesheets are booked from the HR mobilization roster. Attendance sync is not used because there is no clocking machine.');
   }
@@ -3801,6 +3869,11 @@ export async function syncAttendanceForTimesheet(
       { employeeNo: employeeCode, employeeId: employeeCode, employeeName },
       syncHeaderRef,
       headers,
+    ) && !employeeAlreadyCommittedOnOtherTimesheet(
+      { employeeNo: employeeCode, employeeId: employeeCode, employeeName },
+      syncHeaderRef,
+      headers,
+      lines,
     );
   });
 
@@ -3880,9 +3953,10 @@ export async function syncAttendanceForTimesheet(
     ...preservedNightLines.map((line) => ({ ...line, headerId: header!.id })),
   ];
   const syncedKeys = new Set(newLines.flatMap((line) => attendanceMatchKeys(line.employeeId, line.employeeNo, line.employeeName)));
-  const parkedOtherLocationLines = existingHeaderLines.filter((line) =>
-    !attendanceMatchKeys(line.employeeId, line.employeeNo, line.employeeName).some((key) => syncedKeys.has(key))
-  );
+  const parkedOtherLocationLines = existingHeaderLines.filter((line) => {
+    if (attendanceMatchKeys(line.employeeId, line.employeeNo, line.employeeName).some((key) => syncedKeys.has(key))) return false;
+    return !employeeAlreadyCommittedOnOtherTimesheet(line, syncHeaderRef, headers, lines);
+  });
   const persistLines = [...newLines, ...parkedOtherLocationLines];
 
   if (persist) {

@@ -4,6 +4,7 @@ import { NextResponse } from 'next/server';
 import { getPayrollPublicHolidayDates } from '@/lib/nigeria-public-holidays';
 import { getUiPermissions, hasPermission, resolveAccessContext } from '@/lib/hris-access';
 import {
+  assertTimesheetDateInCurrentPeriod,
   calculateTimesheetPeriod,
   parseTimesheetCalendarDate,
   advanceTimesheetWorkflow,
@@ -107,6 +108,7 @@ type TimesheetPayload = {
   timesheetDate: string;
   holidayDates: string[];
   period: TimesheetPeriod;
+  currentPeriod: TimesheetPeriod;
   header: TimesheetHeader | null;
   lines: TimesheetLine[];
   idleReasons: IdleReason[];
@@ -1510,6 +1512,7 @@ const buildPayload = async (
     timesheetDate: targetDate,
     holidayDates,
     period,
+    currentPeriod: calculateTimesheetPeriod(new Date()),
     header,
     lines,
     idleReasons,
@@ -1603,6 +1606,7 @@ const buildPayload = async (
 };
 
 const requireOpenPeriod = async (date: string) => {
+  assertTimesheetDateInCurrentPeriod(date);
   const period = await readTimesheetPeriod(new Date(date));
   if (period.status !== 'Open') {
     throw new Error(`Timesheet period ${period.name} is ${period.status}. Reopen the period before changing timesheets.`);

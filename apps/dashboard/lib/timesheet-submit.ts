@@ -19,6 +19,7 @@ import {
   type TimesheetLine,
 } from '@/lib/timesheet-entry-shared';
 import {
+  assertTimesheetDateInCurrentPeriod,
   isTimesheetEditableStatus,
   isTimesheetPayrollReadyStatus,
   normalizeTimesheetStatus,
@@ -271,9 +272,10 @@ export const resolveProjectManagerForSubmission = (lines: TimesheetLine[], proje
   };
 };
 
-const requireOpenPeriod = async (date: string) => {
+const requireOpenPeriod = async (date: string, options?: { requireOpen?: boolean }) => {
+  assertTimesheetDateInCurrentPeriod(date);
   const period = await readTimesheetPeriod(date);
-  if (period.status !== 'Open') {
+  if (options?.requireOpen !== false && period.status !== 'Open') {
     throw new Error(`Timesheet period ${period.name} is ${period.status}. Reopen the period before changing timesheets.`);
   }
   await assertTimesheetRecaptureAllowed(period.id);
@@ -318,7 +320,7 @@ export async function submitTimesheetForApproval(input: {
 }): Promise<SubmitTimesheetResult> {
   const header = input.header;
   const persist = input.persist !== false;
-  if (!input.allowClosedPeriod) await requireOpenPeriod(header.timesheetDate);
+  await requireOpenPeriod(header.timesheetDate, { requireOpen: !input.allowClosedPeriod });
   requireEditableTimesheet(header);
   if (isTimesheetInApprovalCapture(header.status)) {
     header.workflowHistory = [
@@ -526,7 +528,7 @@ export async function submitAllBookedDraftTimesheets(options?: {
       const live = dateHeaders.find((header) => header.id === draft.id);
       if (!live) continue;
       try {
-        if (!allowClosedPeriod) await requireOpenPeriod(live.timesheetDate);
+        await requireOpenPeriod(live.timesheetDate, { requireOpen: !allowClosedPeriod });
         await writeTimesheetHeaderLines(
           live,
           dateLines.filter((line) => line.headerId === live.id),

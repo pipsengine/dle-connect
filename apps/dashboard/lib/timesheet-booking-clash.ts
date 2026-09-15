@@ -128,7 +128,7 @@ export const releaseLinesAlreadyBookedElsewhere = (
   return { lines: nextLines, skipped };
 };
 
-/** Clocked or booked people on this sheet who already have a committed booking elsewhere. */
+/** Productive hours on this sheet that are already committed on another same-day timesheet. Clock-only roster rows are not a second booking. */
 export const findSameDayBookingConflicts = (
   lines: TimesheetLine[],
   header: TimesheetHeaderClashRef,
@@ -138,9 +138,7 @@ export const findSameDayBookingConflicts = (
   const otherDateLines = otherDateLinesForHeader(header, otherHeaders, otherLines);
   const skipped: TimesheetAlreadyBookedSkip[] = [];
   for (const line of lines) {
-    const clocked = Boolean(String(line.clockIn || '').trim());
-    const hoursHere = bookedHours(line) > 0.001;
-    if (!clocked && !hoursHere) continue;
+    if (bookedHours(line) <= 0.001) continue;
     const clash = clashOnOtherSheet(line, header, otherDateLines, otherHeaders, true);
     if (!clash) continue;
     const otherHeader = otherHeaders.find((item) => item.id === clash.headerId);
@@ -148,6 +146,21 @@ export const findSameDayBookingConflicts = (
   }
   return skipped;
 };
+
+export const employeeAlreadyCommittedOnOtherTimesheet = (
+  employee: { employeeNo?: string | null; employeeId?: string | null; employeeName?: string | null },
+  header: TimesheetHeaderClashRef,
+  otherHeaders: TimesheetHeaderClashRef[],
+  otherLines: TimesheetLine[],
+) => otherLines.some((other) => {
+  if (!timesheetLineHasProductiveHours(other) && bookedHours(other) <= 0.001) return false;
+  const otherHeader = otherHeaders.find((item) => item.id === other.headerId);
+  if (!otherHeader || otherHeader.id === header.id || otherHeader.timesheetDate !== header.timesheetDate) return false;
+  if (timesheetHeaderShiftKind(otherHeader.shiftLabel) !== timesheetHeaderShiftKind(header.shiftLabel)) return false;
+  if (otherSheetDoesNotLockThisCrew(header, otherHeader)) return false;
+  if (!isCommittedTimesheetBooking(otherHeader, other)) return false;
+  return timesheetEmployeeRecordsMatch(employee, other);
+});
 
 export const timesheetLineMatchesBookingConflict = (
   line: Pick<TimesheetLine, 'id' | 'employeeNo' | 'employeeId'>,

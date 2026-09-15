@@ -170,6 +170,7 @@ type Payload = {
   timesheetDate: string;
   holidayDates: string[];
   period: TimesheetPeriod;
+  currentPeriod?: TimesheetPeriod;
   header: TimesheetHeader | null;
   lines: TimesheetLine[];
   idleReasons: IdleReason[];
@@ -680,6 +681,8 @@ export default function TimesheetEntryClient({ variant = 'admin' }: { variant?: 
       const postedTimesheet = !isEditableTimesheetStatus(headerStatus);
     if (payload.overtimeBooking?.retroCorrection && postedTimesheet) return;
     if (payload.period.status !== 'Open') return;
+    const bookingPeriod = payload.currentPeriod ?? payload.period;
+    if (selectedDate < bookingPeriod.startDate || selectedDate > bookingPeriod.endDate) return;
     if (!selectedDate || !selectedSupervisor || !selectedLocation || !selectedWorkCenter) return;
 
     const syncKey = [selectedDate, selectedSupervisor, selectedLocation, selectedWorkCenter, selectedShift].join('|');
@@ -1510,7 +1513,9 @@ export default function TimesheetEntryClient({ variant = 'admin' }: { variant?: 
   const isPayrollReady = payrollReadyStatuses.includes(headerStatus);
   const overtimeBooking = payload?.overtimeBooking ?? { enabled: false, devRelaxed: false, retroCorrection: false, openBooking: false };
   const approvedOvertimeAuthorizations = overtimeBooking.enabled ? (payload?.approvedOvertimeAuthorizations ?? []) : [];
-  const canEditTimesheet = periodIsOpen && isEditableTimesheetStatus(headerStatus);
+  const bookingPeriod = payload?.currentPeriod ?? fallbackPeriodForDate(todayDateInputValue());
+  const dateInCurrentPeriod = selectedDate >= bookingPeriod.startDate && selectedDate <= bookingPeriod.endDate;
+  const canEditTimesheet = periodIsOpen && dateInCurrentPeriod && isEditableTimesheetStatus(headerStatus);
   const canBookOvertime =
     payload?.canBookOvertime ??
     canBookOvertimeOnTimesheet(payload?.header, payload?.period, overtimeBooking);
@@ -1528,7 +1533,7 @@ export default function TimesheetEntryClient({ variant = 'admin' }: { variant?: 
   const mappedError = supervisorTimesheetMessage(error);
   const displayError = mappedError && canBookOvertime && payrollLockMessage.test(error || '')
     ? null
-    : (mappedError || bookingConflictMessage);
+    : (mappedError || (bookingConflicts.length > 0 && uniqueSubmittableCount === 0 ? bookingConflictMessage : null));
   const displayNotice =
     notice ||
     (dayRules.kind === 'PublicHoliday'
@@ -1536,6 +1541,8 @@ export default function TimesheetEntryClient({ variant = 'admin' }: { variant?: 
       : null) ||
     (isTimesheetInApprovalCapture(headerStatus) && canEditTimesheet
       ? 'This timesheet is not payroll-approved yet. You can still book hours. Saving recalls it to Draft — use Review & Submit when it is complete.'
+      : !dateInCurrentPeriod
+        ? `Timesheets can only be booked in the current period (${bookingPeriod.name}, ${formatPeriodDate(bookingPeriod.startDate)} to ${formatPeriodDate(bookingPeriod.endDate)}).`
       : error && canBookOvertime && payrollLockMessage.test(error)
         ? 'Timesheet is posted to payroll. Use the overtime booking bar below to add 1h, 2h, 3h corrections, then re-run payroll.'
         : null);
@@ -1631,6 +1638,8 @@ export default function TimesheetEntryClient({ variant = 'admin' }: { variant?: 
           periodIsOpen={periodIsOpen}
           headerStatus={payload?.header?.status || 'Draft'}
           selectedDate={selectedDate}
+          dateMin={bookingPeriod.startDate}
+          dateMax={bookingPeriod.endDate}
           isPublicHoliday={dayRules.kind === 'PublicHoliday'}
           selectedShift={selectedShift}
           shiftOptions={payload?.filterOptions.shifts ?? []}
@@ -1912,7 +1921,7 @@ export default function TimesheetEntryClient({ variant = 'admin' }: { variant?: 
               </div>
               <div className="text-right">
                 <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Working Date</p>
-                <input type="date" value={selectedDate} onChange={(e) => { setRequestedHeaderId(''); setSelectedDate(e.target.value); }} className="bg-transparent text-sm font-black text-slate-900 focus:outline-none" />
+                <input type="date" min={bookingPeriod.startDate} max={bookingPeriod.endDate} value={selectedDate} onChange={(e) => { setRequestedHeaderId(''); setSelectedDate(e.target.value); }} className="bg-transparent text-sm font-black text-slate-900 focus:outline-none" />
                 {dayRules.kind === 'PublicHoliday' ? (
                   <p className="text-[10px] font-black uppercase tracking-widest text-amber-600">Public Holiday · 2× hours worked</p>
                 ) : null}
@@ -1960,7 +1969,19 @@ export default function TimesheetEntryClient({ variant = 'admin' }: { variant?: 
           </div>
         ) : null}
 
-        {!periodIsOpen && (
+        {!dateInCurrentPeriod ? (
+          <div className="rounded-2xl border border-amber-200 bg-amber-50 p-5">
+            <div className="flex items-start gap-3">
+              <div className="rounded-xl bg-amber-600 p-2 text-white"><Info className="h-4 w-4" /></div>
+              <div>
+                <h3 className="text-sm font-black uppercase tracking-widest text-amber-950">Current period only</h3>
+                <p className="mt-1 text-xs font-semibold text-amber-800">
+                  Booking and submit are limited to {bookingPeriod.name} ({formatPeriodDate(bookingPeriod.startDate)} to {formatPeriodDate(bookingPeriod.endDate)}). Choose a working date in that window.
+                </p>
+              </div>
+            </div>
+          </div>
+        ) : !periodIsOpen && (
           <div className="rounded-2xl border border-slate-200 bg-slate-50 p-5">
             <div className="flex flex-wrap items-center justify-between gap-4">
               <div className="flex items-start gap-3">

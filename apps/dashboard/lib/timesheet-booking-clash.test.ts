@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import {
   displaceUncommittedBookingsOnOtherDrafts,
+  employeeAlreadyCommittedOnOtherTimesheet,
   findSameDayBookingConflicts,
   formatSupervisorBookingConflictMessage,
   releaseLinesAlreadyBookedElsewhere,
@@ -93,8 +94,25 @@ const preview = findSameDayBookingConflicts(
 );
 assert.equal(preview.length, 0);
 
-const submittedGalvanizingPreview = findSameDayBookingConflicts(
+const clockOnlyOnSubmittedClash = findSameDayBookingConflicts(
   [line({ usedHours: 0, projectAllocations: [] })],
+  blasting,
+  [blasting, { ...galvanizing, status: 'Submitted' }],
+  [line({ headerId: 'hdr-galvanizing' })],
+);
+assert.equal(clockOnlyOnSubmittedClash.length, 0, 'clock-only rows are not a second booking');
+assert.equal(
+  employeeAlreadyCommittedOnOtherTimesheet(
+    line({ usedHours: 0, projectAllocations: [] }),
+    blasting,
+    [blasting, { ...galvanizing, status: 'Submitted' }],
+    [line({ headerId: 'hdr-galvanizing' })],
+  ),
+  true,
+);
+
+const submittedGalvanizingPreview = findSameDayBookingConflicts(
+  [line({})],
   blasting,
   [blasting, { ...galvanizing, status: 'Submitted' }],
   [line({ headerId: 'hdr-galvanizing' })],
