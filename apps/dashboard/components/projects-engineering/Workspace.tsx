@@ -1,6 +1,8 @@
 ﻿import Link from 'next/link';
 import { Bell, ChevronDown, FileText, HardHat, Pencil } from 'lucide-react';
 import { money, dmy } from '@/lib/projects-engineering/format';
+import { deriveProjectCostSnapshot } from '@/lib/projects-engineering/cost-control';
+import { deriveProjectHealth } from '@/lib/projects-engineering/project-health';
 import { workspaceTabs } from '@/lib/projects-engineering/data';
 import { getProjectById, listAllProjects } from '@/lib/projects-engineering/project-store';
 
@@ -19,7 +21,12 @@ export async function ProjectHeader({ id, active }: { id: string; active: string
   }
 
   const progress = Math.min(100, Math.max(0, Number(project.actual || 0)));
-  const healthLabel = project.health === 'Watch' ? 'At Risk' : project.health;
+  const liveHealth = deriveProjectHealth({
+    project,
+    eac: deriveProjectCostSnapshot(project).eac,
+  });
+  const healthLabel = liveHealth.health === 'Watch' ? 'At Risk' : liveHealth.health;
+  const healthClass = liveHealth.health === 'Healthy' ? 'green' : liveHealth.health === 'Watch' ? 'amber' : 'red';
 
   return (
     <>
@@ -62,7 +69,7 @@ export async function ProjectHeader({ id, active }: { id: string; active: string
             </div>
             <div className="apo-met">
               <small>Health</small>
-              <b className={project.health === 'Healthy' ? 'green' : project.health === 'Watch' ? 'amber' : 'red'}>
+              <b className={healthClass}>
                 ● {healthLabel}
               </b>
             </div>

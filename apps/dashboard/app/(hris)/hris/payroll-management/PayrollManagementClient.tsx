@@ -2038,7 +2038,7 @@ function ProcessPayrollWorkspace({
 
   const displayWorkflowSteps = useMemo(
     () => workflowSteps
-      .filter((step) => !['post-run', 'close-period'].includes(step.id))
+      .filter((step) => step.id !== 'post-run')
       .map((step) => ({
         ...step,
         label: step.id === 'generate-statutory-schedules' ? 'Statutory Reports' : step.label,
@@ -2240,7 +2240,18 @@ function ProcessPayrollWorkspace({
                   {rerunLabel}
                 </button>
               ) : null}
-              {nextStep ? (
+              {status !== 'Closed' ? (
+                <button
+                  type="button"
+                  onClick={() => fire('close-period')}
+                  disabled={!workflowSteps.find((step) => step.id === 'close-period')?.enabled || busyAction === 'close-period'}
+                  title={workflowSteps.find((step) => step.id === 'close-period')?.blockedReason || 'Close this payroll month after payslips, bank schedule, and statutory reports are complete'}
+                  className="inline-flex min-h-10 items-center justify-center gap-2 rounded-lg bg-violet-700 px-5 text-sm font-bold text-white hover:bg-violet-800 disabled:opacity-60"
+                >
+                  {busyAction === 'close-period' ? 'Closing...' : 'Close Period'}
+                </button>
+              ) : null}
+              {nextStep && nextStep.id !== 'close-period' ? (
                 <button
                   type="button"
                   onClick={() => fire(nextStep.id)}
@@ -5055,7 +5066,7 @@ export default function PayrollManagementClient({
       'approval-center': { section: 'payroll-approval', tab: 'approval-workspace' },
       'payslip-publishing': { section: 'payroll-processing', tab: 'payslip-generation' },
       'audit-trail': { section: 'payroll-computation-workflow', tab: 'workflow-status' },
-      'period-lock': { section: 'payroll-processing', tab: 'payroll-closing' },
+      'period-lock': { section: 'payroll-processing', tab: 'payroll-period-management' },
       settings: { section: 'salary-management', tab: 'employee-salary-setup' },
     };
     const target = targets[link];
@@ -5695,7 +5706,7 @@ export default function PayrollManagementClient({
           )}
 
           <div>
-            {activeTab.id === 'payroll-period-management' ? (
+            {activeTab.id === 'payroll-period-management' || activeTab.id === 'payroll-closing' ? (
               <PayrollPeriodManagementPanel
                 payload={payload}
                 activeTabId={periodTab}
@@ -5861,7 +5872,7 @@ export default function PayrollManagementClient({
             ) : section.id === 'payroll-computation-workflow' ? (
               <PayrollComputationWorkflowPage payload={payload} canViewMoney={canViewMoney} role={role} runAction={runAction} busyAction={busyAction} onAudit={() => setAuditOpen(true)} exportCsv={exportCsv} exportExcel={exportExcel} />
             ) : section.id === 'payroll-processing' ? (
-              activeTab.id === 'payroll-period-management' ? (
+              activeTab.id === 'payroll-period-management' || activeTab.id === 'payroll-closing' ? (
                 <PayrollPeriodManagementPanel
                   payload={payload}
                   activeTabId={periodTab}
@@ -7155,11 +7166,11 @@ function PayrollPeriodManagementPanel({
 
   const completionChecks = [
     ['Employees processed', `${number(payload?.summary.payrollEligible)} eligible employees`, (payload?.summary.blockedEmployees || 0) === 0],
-    ['Payslips generated', 'Generation queue available', Boolean(currentRun && ['Approved', 'Locked', 'Posted'].includes(currentRun.status))],
+    ['Payslips generated', currentRun?.payslipsGeneratedAt ? new Date(currentRun.payslipsGeneratedAt).toLocaleString('en-GB') : 'Generate payslips before close', Boolean(currentRun?.payslipsGeneratedAt)],
     ['Approvals completed', currentRun?.approvedBy || 'Awaiting approval', Boolean(currentRun?.approvedAt)],
-    ['Bank schedule generated', 'Finance integration ready', Boolean(currentRun && ['Locked', 'Posted'].includes(currentRun.status))],
-    ['Payroll journal posted', currentRun?.postedAt ? new Date(currentRun.postedAt).toLocaleString('en-GB') : 'Awaiting posting', Boolean(currentRun?.postedAt)],
-    ['Statutory schedules generated', 'PAYE, pension, NHF, NSITF, ITF mapped', Boolean(payload?.summary.deductions)],
+    ['Bank schedule generated', currentRun?.bankScheduleGeneratedAt ? new Date(currentRun.bankScheduleGeneratedAt).toLocaleString('en-GB') : 'Generate bank schedule before close', Boolean(currentRun?.bankScheduleGeneratedAt)],
+    ['Statutory schedules generated', currentRun?.statutorySchedulesGeneratedAt ? new Date(currentRun.statutorySchedulesGeneratedAt).toLocaleString('en-GB') : 'Generate statutory reports before close', Boolean(currentRun?.statutorySchedulesGeneratedAt)],
+    ['Payroll journal posted', currentRun?.postedAt ? new Date(currentRun.postedAt).toLocaleString('en-GB') : 'Optional — can follow after close', Boolean(currentRun?.postedAt)],
   ];
 
   return (
@@ -7189,11 +7200,23 @@ function PayrollPeriodManagementPanel({
             <h3 className="text-sm font-black text-slate-950">Payroll periods (DLE_Enterprise)</h3>
             <p className="mt-1 text-xs font-semibold text-slate-600">Open, close, or reopen any month. Changes are saved to <code>[hris].[PayrollPeriods]</code> and <code>[hris].[PayrollSettings]</code>.</p>
           </div>
-          {canManage ? (
-            <button type="button" onClick={addPeriod} className="inline-flex min-h-10 items-center justify-center rounded-lg bg-slate-900 px-4 text-xs font-black text-white hover:bg-slate-800">
-              Create period
-            </button>
-          ) : null}
+          <div className="flex flex-wrap gap-2">
+            {canManage && payload?.period && payload?.periodRecord?.status !== 'Closed' ? (
+              <button
+                type="button"
+                disabled={Boolean(busyAction)}
+                onClick={() => periodAction(payload.period, 'close-period')}
+                className="inline-flex min-h-10 items-center justify-center rounded-lg bg-violet-700 px-4 text-xs font-black text-white hover:bg-violet-800 disabled:opacity-60"
+              >
+                Close {payload.periodLabel || payload.period}
+              </button>
+            ) : null}
+            {canManage ? (
+              <button type="button" onClick={addPeriod} className="inline-flex min-h-10 items-center justify-center rounded-lg bg-slate-900 px-4 text-xs font-black text-white hover:bg-slate-800">
+                Create period
+              </button>
+            ) : null}
+          </div>
         </div>
         <div className="mt-4 overflow-x-auto">
           <table className="min-w-full text-left text-sm">
@@ -7224,7 +7247,7 @@ function PayrollPeriodManagementPanel({
                       {canManage && row.status !== 'Open' && row.status !== 'Reopened' ? (
                         <button type="button" disabled={Boolean(busyAction)} onClick={() => periodAction(row.period, 'open-period')} className="rounded-lg border border-emerald-200 bg-emerald-50 px-2.5 py-1.5 text-[11px] font-black text-emerald-800 hover:bg-emerald-100 disabled:opacity-60">Open</button>
                       ) : null}
-                      {canManage && row.runStatus === 'Posted' ? (
+                      {canManage && row.status !== 'Closed' ? (
                         <button type="button" disabled={Boolean(busyAction)} onClick={() => periodAction(row.period, 'close-period')} className="rounded-lg border border-violet-200 bg-violet-50 px-2.5 py-1.5 text-[11px] font-black text-violet-800 hover:bg-violet-100 disabled:opacity-60">Close</button>
                       ) : null}
                       {canReopen && row.status === 'Closed' ? (
@@ -7281,6 +7304,16 @@ function PayrollPeriodManagementPanel({
             <InfoTile label="Payment Date" value="Configured per calendar" detail="Bank schedule ready" tone="violet" />
             <InfoTile label="Payroll Type" value="Monthly / Weekly / Daily" detail="Frequency aware" tone="amber" />
           </div>
+          {canManage && payload?.period && payload?.periodRecord?.status !== 'Closed' ? (
+            <button
+              type="button"
+              disabled={Boolean(busyAction)}
+              onClick={() => periodAction(payload.period, 'close-period')}
+              className="mt-4 inline-flex min-h-10 w-full items-center justify-center rounded-lg bg-violet-700 px-4 text-xs font-black text-white hover:bg-violet-800 disabled:opacity-60"
+            >
+              Close {payload.periodLabel || payload.period}
+            </button>
+          ) : null}
           <div className="mt-4">
             <p className="text-xs font-black uppercase text-slate-500">Eligible Categories</p>
             <div className="mt-2 flex flex-wrap gap-2">

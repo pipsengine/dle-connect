@@ -110,6 +110,12 @@
   border-color: #050b22;
 }
 
+.btnViolet {
+  background: #6f2cff;
+  color: #fff;
+  border-color: #6f2cff;
+}
+
 .periodBtn {
   min-width: 160px;
   justify-content: space-between;

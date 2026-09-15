@@ -26,6 +26,7 @@ import {
 import { deriveProjectCostSnapshot } from '@/lib/projects-engineering/cost-control';
 import { compactNaira, dmy, hours, money, pct } from '@/lib/projects-engineering/format';
 import type { ProjectManHourUtilization } from '@/lib/projects-engineering/man-hour-types';
+import { deriveProjectHealth } from '@/lib/projects-engineering/project-health';
 import type { Project } from '@/lib/projects-engineering/types';
 
 type Props = { project: Project };
@@ -92,8 +93,19 @@ export function ActiveProjectOverviewFigma({ project }: Props) {
   const actual = Number(project.actual || 0);
   const spi = Number(project.schedulePerformance || 0);
   const cpi = Number(project.costPerformance || 0);
-  const healthScore = project.health === 'Healthy' ? 88 : project.health === 'Watch' ? 72 : 48;
   const hasBudget = Number(summary?.budgetedHours || 0) > 0;
+  const health = useMemo(
+    () => deriveProjectHealth({
+      project,
+      budgetedHours: Number(summary?.budgetedHours || 0),
+      utilizationPct: Number(summary?.utilizationPct || 0),
+      eac: snap.eac,
+    }),
+    [project, summary?.budgetedHours, summary?.utilizationPct, snap.eac],
+  );
+  const healthScore = health.score;
+  const healthLabel = health.health === 'Watch' ? 'At Risk' : health.health;
+  const healthTone = health.health === 'Healthy' ? '#12ba79' : health.health === 'Watch' ? '#f59e0b' : '#ef4444';
   const utilLabel = hasBudget ? pct(Number(summary?.utilizationPct || 0)) : 'N/A';
   const mhPrimary = hasBudget
     ? hours(Number(summary?.pmApprovedHours || 0))
@@ -122,7 +134,6 @@ export function ActiveProjectOverviewFigma({ project }: Props) {
       if (!span) return project.finish || project.start;
       return new Date(start + span * ratio).toISOString();
     };
-    const now = Date.now();
     const rows = [
       { title: 'Project Kick-off', date: project.start, ratio: 0 },
       { title: 'Engineering Start', date: at(0.08), ratio: 0.08 },
@@ -132,21 +143,18 @@ export function ActiveProjectOverviewFigma({ project }: Props) {
       { title: 'Project Handover', date: project.finish, ratio: 1 },
     ];
     return rows.map((row) => {
-      const ts = Date.parse(row.date);
-      const status = Number.isFinite(ts) && ts < now ? 'Complete' : Number.isFinite(ts) && ts - now < 1000 * 60 * 60 * 24 * 45 ? 'Upcoming' : 'Planned';
+      const progressed = actual >= row.ratio * 100;
+      const kickedOff = row.ratio === 0 && Number.isFinite(start) && Date.now() >= start;
+      const status = progressed || kickedOff
+        ? 'Complete'
+        : row.ratio * 100 - actual <= 15
+          ? 'Upcoming'
+          : 'Planned';
       return { ...row, status, label: dmy(row.date) };
     });
-  }, [project.start, project.finish]);
+  }, [project.start, project.finish, actual]);
 
-  const healthScores = [
-    { label: 'Schedule', value: Math.round(Math.min(100, Math.max(0, spi * 90))) },
-    { label: 'Cost', value: Math.round(Math.min(100, Math.max(0, cpi * 85))) },
-    { label: 'Man-Hours', value: hasBudget ? Math.round(Math.min(100, Number(summary?.utilizationPct || 0))) : 'N/A' },
-    { label: 'Quality', value: project.health === 'Critical' ? 62 : 90 },
-    { label: 'HSE', value: project.health === 'Critical' ? 70 : 92 },
-    { label: 'Commercial', value: snap.eac > snap.bac ? 70 : 83 },
-    { label: 'Risks', value: project.health === 'Healthy' ? 80 : project.health === 'Watch' ? 65 : 45 },
-  ];
+  const healthScores = health.dimensions;
 
   const mhBars = [
     { label: 'PM Approved Hours', hours: Number(summary?.pmApprovedHours || 0), max: Math.max(Number(summary?.budgetedHours || 0), Number(summary?.pmApprovedHours || 0), 1) },
@@ -167,7 +175,7 @@ export function ActiveProjectOverviewFigma({ project }: Props) {
     { title: 'Project profile loaded from DLE_Enterprise', by: 'System', when: project.createdAt ? dmy(project.createdAt) : dmy(project.start) },
     { title: `Project Manager: ${project.manager || 'Unassigned'}`, by: 'Directory', when: dmy(project.start) },
     { title: `Status · ${project.status}`, by: 'Controls', when: dmy(project.start) },
-    { title: `Health · ${project.health}`, by: 'PMO', when: dmy(project.start) },
+    { title: `Health · ${healthLabel}`, by: 'Live score', when: dmy(project.start) },
   ];
 
   return (
@@ -254,19 +262,23 @@ export function ActiveProjectOverviewFigma({ project }: Props) {
 
         <ApoCard title="Project Health">
           <div className="apo-health">
-            <div className="apo-donut" style={{ background: `conic-gradient(#12ba79 0 ${healthScore}%, #e6edf4 ${healthScore}%)` }}>
+            <div className="apo-donut" style={{ background: `conic-gradient(${healthTone} 0 ${healthScore}%, #e6edf4 ${healthScore}%)` }}>
               <div>
-                <small>{project.health === 'Watch' ? 'At Risk' : project.health}</small>
+                <small>{healthLabel}</small>
                 <b>{healthScore}</b>
                 <span>Health Score</span>
               </div>
             </div>
             <div className="apo-scores">
-              {healthScores.map((row) => (
-                <p key={row.label}>
-                  <i /> {row.label} <b>{row.value}</b>
-                </p>
-              ))}
+              {healthScores.map((row) => {
+                const numeric = typeof row.value === 'number' ? row.value : null;
+                const tone = numeric == null ? 'na' : numeric >= 80 ? 'ok' : numeric >= 60 ? 'watch' : 'critical';
+                return (
+                  <p key={row.label}>
+                    <i className={tone} /> {row.label} <b>{row.value}</b>
+                  </p>
+                );
+              })}
             </div>
           </div>
         </ApoCard>

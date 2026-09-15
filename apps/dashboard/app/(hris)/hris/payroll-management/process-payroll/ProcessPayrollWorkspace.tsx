@@ -8,6 +8,7 @@ import {
   Check,
   Download,
   FileSpreadsheet,
+  Lock,
   PieChart,
   Play,
   RefreshCw,
@@ -421,6 +422,7 @@ export default function ProcessPayrollWorkspace({
   const canExport = Boolean(payload?.permissions.canExport);
   const canLock = Boolean(payload?.permissions.canLock);
   const canRelease = Boolean(payload?.permissions.canRelease ?? (canCalculate || canLock));
+  const canClosePeriod = canLock || canCalculate;
 
   const selectedScope =
     PAYROLL_SCHEDULE_SCOPES.find((scope) => scope.id === scheduleId)
@@ -535,6 +537,13 @@ export default function ProcessPayrollWorkspace({
         done: Boolean(run?.statutorySchedulesGeneratedAt),
         action: 'generate-statutory-schedules',
       },
+      {
+        id: 'close-period',
+        label: 'Close Period',
+        detail: `Lock ${payload?.periodLabel || period} after payslips, bank and statutory outputs`,
+        done: status === 'Closed',
+        action: 'close-period',
+      },
     ];
 
     const firstOpen = steps.findIndex((step) => !step.done);
@@ -557,6 +566,7 @@ export default function ProcessPayrollWorkspace({
     if (step.action === 'cfo-approve') return (perms.canApproveCfo || perms.canApproveAnyStage) && step.current;
     if (step.action === 'md-ceo-approve') return (perms.canApproveMdCeo || perms.canApproveAnyStage) && step.current;
     if (step.action === 'release-run') return canRelease && step.current;
+    if (step.action === 'close-period') return canClosePeriod && !step.done;
     if (/generate-/.test(step.action)) return canCalculate && step.current;
     return false;
   };
@@ -667,6 +677,12 @@ export default function ProcessPayrollWorkspace({
   };
 
   const action = async (actionName: string) => {
+    if (actionName === 'close-period') {
+      const label = payload?.periodLabel || period;
+      if (!window.confirm(`Close payroll period ${label}? This locks every schedule for the month after payslips, bank schedule, and statutory reports are complete. Journal posting can follow later.`)) {
+        return;
+      }
+    }
     setPosting(actionName);
     setToast('');
     try {
@@ -826,6 +842,18 @@ export default function ProcessPayrollWorkspace({
             >
               <Play size={16} />
               {posting === 'create-run' ? 'Processing…' : processPrimaryAction}
+            </button>
+          ) : null}
+          {canClosePeriod && status !== 'Closed' ? (
+            <button
+              type="button"
+              className={`${styles.btn} ${styles.btnViolet}`}
+              onClick={() => void action('close-period')}
+              disabled={Boolean(posting) || loading}
+              title="Close this payroll month after payslips, bank schedule, and statutory reports are complete"
+            >
+              <Lock size={16} />
+              {posting === 'close-period' ? 'Closing…' : 'Close Period'}
             </button>
           ) : null}
         </div>

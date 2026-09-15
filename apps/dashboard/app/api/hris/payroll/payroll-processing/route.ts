@@ -217,7 +217,8 @@ export async function POST(request: Request) {
     if (action === 'finance-manager-approve' && !perms.canApproveFinanceManager) return err(403, 'Finance Manager approval permission denied');
     if (action === 'cfo-approve' && !perms.canApproveCfo) return err(403, 'CFO approval permission denied');
     if (action === 'md-ceo-approve' && !perms.canApproveMdCeo) return err(403, 'MD / CEO approval permission denied');
-    if (['lock', 'post', 'reopen', 'close-period'].includes(action) && !perms.canLock) return err(403, 'Lock/post permission denied');
+    if (['lock', 'post', 'reopen'].includes(action) && !perms.canLock) return err(403, 'Lock/post permission denied');
+    if (action === 'close-period' && !perms.canLock && !perms.canCalculate) return err(403, 'Close period permission denied');
     if (action === 'release-run' && !perms.canRelease) return err(403, 'Release permission denied');
     if (action === 'reopen-period' && !perms.canReopen) return err(403, 'Reopen permission denied');
     if (['reject-run', 'request-revision'].includes(action) && !perms.canReject) {

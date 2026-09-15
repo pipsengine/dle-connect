@@ -378,6 +378,9 @@
 .pm-portal .apo-scores{width:150px}
 .pm-portal .apo-scores p{min-height:22px;font-size:11px;color:#31485f}
 .pm-portal .apo-scores i{width:8px;height:8px;background:#11b878;border-radius:50%;margin-right:7px}
+.pm-portal .apo-scores i.watch{background:#f59e0b}
+.pm-portal .apo-scores i.critical{background:#ef4444}
+.pm-portal .apo-scores i.na{background:#cbd5e1}
 .pm-portal .apo-scores b{margin-left:auto}
 .pm-portal .apo-bars p{min-height:32px;display:flex;align-items:center;margin:0;gap:8px;font-size:11px}
 .pm-portal .apo-bars span{width:130px;color:#31485f}
