@@ -368,7 +368,10 @@ export type SagePayrollEmployeeImportRow = {
 };
 
 let poolPromise: Promise<sql.ConnectionPool> | null = null;
+let lastPoolError: string | null = null;
 let workspaceEnvLoaded = false;
+
+export const dleEnterpriseLastPoolError = () => lastPoolError;
 
 const bool = (v: string | undefined, fallback: boolean) => {
   if (v == null || v === '') return fallback;
@@ -383,17 +386,18 @@ export const loadWorkspaceEnv = () => {
     path.join(process.cwd(), 'apps', 'dashboard', '.env'),
     path.join(process.cwd(), '.env.local'),
     path.join(process.cwd(), '.env'),
+    path.join(process.cwd(), '..', '.env'),
     path.join(process.cwd(), '..', '..', '.env'),
   ];
   for (const file of candidates) {
     try {
-      const raw = readFileSync(file, 'utf8');
+      const raw = readFileSync(file, 'utf8').replace(/^\uFEFF/, '');
       for (const line of raw.split(/\r?\n/)) {
-        const trimmed = line.trim();
+        const trimmed = line.trim().replace(/^\uFEFF/, '');
         if (!trimmed || trimmed.startsWith('#')) continue;
         const idx = trimmed.indexOf('=');
         if (idx < 0) continue;
-        const key = trimmed.slice(0, idx).trim();
+        const key = trimmed.slice(0, idx).trim().replace(/^\uFEFF/, '');
         if (process.env[key]) continue;
         let value = trimmed.slice(idx + 1).trim();
         if ((value.startsWith('"') && value.endsWith('"')) || (value.startsWith("'") && value.endsWith("'"))) value = value.slice(1, -1);
@@ -431,7 +435,7 @@ const config = (): sql.config | null => {
       idleTimeoutMillis: Number(process.env.DLE_ENTERPRISE_DB_POOL_IDLE_TIMEOUT_MS || 120000),
     },
     requestTimeout: Number(process.env.DLE_ENTERPRISE_DB_REQUEST_TIMEOUT_MS || 60000),
-    connectionTimeout: Number(process.env.DLE_ENTERPRISE_DB_CONNECTION_TIMEOUT_MS || 20000),
+    connectionTimeout: Number(process.env.DLE_ENTERPRISE_DB_CONNECTION_TIMEOUT_MS || 45000),
   };
 };
 
@@ -448,22 +452,29 @@ const connectionConfigs = () => {
 
 const pool = async () => {
   const configs = connectionConfigs();
-  if (!configs.length) return null;
+  if (!configs.length) {
+    lastPoolError = 'DLE_ENTERPRISE_DB_HOST / USER / PASSWORD are not set in the IIS runtime environment.';
+    return null;
+  }
   if (!poolPromise) {
     poolPromise = (async () => {
       let lastError: unknown = null;
       for (const cfg of configs) {
         try {
-          return await new sql.ConnectionPool(cfg).connect();
+          const connected = await new sql.ConnectionPool(cfg).connect();
+          lastPoolError = null;
+          return connected;
         } catch (error) {
           lastError = error;
-          console.warn(`[DLE Enterprise DB] Connection attempt failed for ${cfg.server}:${cfg.port}:`, error instanceof Error ? error.message : error);
+          lastPoolError = error instanceof Error ? error.message : String(error);
+          console.warn(`[DLE Enterprise DB] Connection attempt failed for ${cfg.server}:${cfg.port}:`, lastPoolError);
         }
       }
       throw lastError instanceof Error ? lastError : new Error('Unable to connect to DLE Enterprise database.');
     })().catch((error) => {
       poolPromise = null;
-      console.warn('[DLE Enterprise DB] SQL persistence unavailable; will retry on the next request:', error instanceof Error ? error.message : error);
+      lastPoolError = error instanceof Error ? error.message : String(error);
+      console.warn('[DLE Enterprise DB] SQL persistence unavailable; will retry on the next request:', lastPoolError);
       throw error;
     });
   }
@@ -471,7 +482,8 @@ const pool = async () => {
     const connected = await poolPromise;
     if (connected) await ensureEmployeeJobInfoSchema(connected);
     return connected;
-  } catch {
+  } catch (error) {
+    lastPoolError = error instanceof Error ? error.message : String(error);
     return null;
   }
 };

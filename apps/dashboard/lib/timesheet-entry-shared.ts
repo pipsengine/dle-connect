@@ -1314,7 +1314,7 @@ export const supervisorTimesheetMessage = (raw?: string | null) => {
   const text = String(raw || '').trim();
   if (!text) return '';
 
-  if (/EPERM|EACCES|ENOENT|ECONN|ETIMEOUT|timed out|holiday cache|writeHrisDataFile|permission denied/i.test(text)
+  if (/EPERM|EACCES|ENOENT|ECONN|ETIMEOUT|timed out|timeout|connection failed|login failed|holiday cache|writeHrisDataFile|permission denied/i.test(text)
     || /[A-Za-z]:\\|\\\\[A-Za-z]|\/var\/|\/tmp\/|\bnode_modules\b/.test(text)) {
     return SUPERVISOR_LOAD_FAILURE;
   }

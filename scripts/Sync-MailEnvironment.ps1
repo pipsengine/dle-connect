@@ -60,7 +60,8 @@ function Write-DotEnvMap {
       $lines.Add("$($entry.Key)=$value")
     }
   }
-  Set-Content -LiteralPath $Path -Value $lines -Encoding UTF8
+  $utf8NoBom = New-Object System.Text.UTF8Encoding $false
+  [System.IO.File]::WriteAllLines($Path, $lines.ToArray(), $utf8NoBom)
 }
 
 function Merge-MailEnvironment {

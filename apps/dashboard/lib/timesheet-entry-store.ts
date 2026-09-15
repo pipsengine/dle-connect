@@ -3,7 +3,7 @@ import path from 'node:path';
 import sql from 'mssql';
 import { buildBaseAttendanceRecords } from '@/lib/attendance-data';
 import { readLiveClockingActivity } from '@/lib/biometric-live-attendance-store';
-import { getDleEnterpriseDbPool } from '@/lib/dle-enterprise-db';
+import { dleEnterpriseLastPoolError, getDleEnterpriseDbPool } from '@/lib/dle-enterprise-db';
 import { readPayrollEmployees } from '@/lib/payroll-employee-source';
 import { normalizePayrollMatchKey, readActiveSagePayrollEmployeeKeys, type SagePayrollEmployee } from '@/lib/sage-people-payroll-store';
 import { approvedPaidLeaveForDate } from '@/lib/leave-management-store';
@@ -794,7 +794,10 @@ const toDateOnly = (value: unknown) => {
 const db = async () => {
   const pool = await getDleEnterpriseDbPool();
   if (!pool) {
-    throw new Error('DLE Enterprise database is not configured. Timesheet entry data must be stored in the database before this page can be used.');
+    const detail = dleEnterpriseLastPoolError();
+    throw new Error(detail
+      ? `Timesheet database connection failed (${detail}).`
+      : 'DLE Enterprise database is not configured. Timesheet entry data must be stored in the database before this page can be used.');
   }
   if (!dbEnsureState.promise) {
     dbEnsureState.promise = (async () => {
@@ -990,51 +993,6 @@ CREATE TABLE [hris].[TimesheetPayrollUpdateEmployees] (
 );
 `);
     await pool.request().query(`
-;WITH rankedPayrollUpdates AS (
-  SELECT [Id], [PeriodId], ROW_NUMBER() OVER (PARTITION BY [PeriodId] ORDER BY [AcknowledgedAt] DESC, [Id] DESC) AS rn
-  FROM [hris].[TimesheetPayrollUpdates]
-)
-DELETE e
-FROM [hris].[TimesheetPayrollUpdateEmployees] e
-INNER JOIN rankedPayrollUpdates u ON u.[Id] = e.[PayrollUpdateId]
-WHERE u.rn > 1;
-
-;WITH rankedPayrollUpdates AS (
-  SELECT [Id], [PeriodId], ROW_NUMBER() OVER (PARTITION BY [PeriodId] ORDER BY [AcknowledgedAt] DESC, [Id] DESC) AS rn
-  FROM [hris].[TimesheetPayrollUpdates]
-)
-DELETE h
-FROM [hris].[TimesheetPayrollUpdateHeaders] h
-INNER JOIN rankedPayrollUpdates u ON u.[Id] = h.[PayrollUpdateId]
-WHERE u.rn > 1;
-
-;WITH rankedPayrollUpdates AS (
-  SELECT [Id], [PeriodId], ROW_NUMBER() OVER (PARTITION BY [PeriodId] ORDER BY [AcknowledgedAt] DESC, [Id] DESC) AS rn
-  FROM [hris].[TimesheetPayrollUpdates]
-)
-DELETE u
-FROM [hris].[TimesheetPayrollUpdates] u
-INNER JOIN rankedPayrollUpdates r ON r.[Id] = u.[Id]
-WHERE r.rn > 1;
-
-;WITH rankedLines AS (
-  SELECT
-    l.[Id],
-    ROW_NUMBER() OVER (
-      PARTITION BY l.[HeaderId], UPPER(LTRIM(RTRIM(l.[EmployeeId])))
-      ORDER BY CASE WHEN NULLIF(LTRIM(RTRIM(l.[ClockIn])), '') IS NULL THEN 0 ELSE 1 END DESC,
-               ISNULL(l.[TotalHours], 0) DESC,
-               ISNULL(l.[AttendanceDuration], 0) DESC,
-               l.[Id] DESC
-    ) AS rn
-  FROM [hris].[TimesheetLines] l
-  WHERE NULLIF(LTRIM(RTRIM(l.[EmployeeId])), '') IS NOT NULL
-)
-DELETE l
-FROM [hris].[TimesheetLines] l
-INNER JOIN rankedLines r ON r.[Id] = l.[Id]
-WHERE r.rn > 1;
-
 IF NOT EXISTS (
   SELECT 1
   FROM sys.indexes i
@@ -1049,7 +1007,7 @@ BEGIN
     CREATE UNIQUE INDEX [UX_TimesheetPayrollUpdates_PeriodId] ON [hris].[TimesheetPayrollUpdates]([PeriodId]);
   END TRY
   BEGIN CATCH
-    IF ERROR_NUMBER() NOT IN (1913, 2714) THROW;
+    IF ERROR_NUMBER() NOT IN (1913, 2714, 1505, 1750) THROW;
   END CATCH
 END
 
@@ -1067,7 +1025,7 @@ BEGIN
     CREATE UNIQUE INDEX [UX_TimesheetLines_HeaderEmployee] ON [hris].[TimesheetLines]([HeaderId], [EmployeeId]);
   END TRY
   BEGIN CATCH
-    IF ERROR_NUMBER() NOT IN (1913, 2714) THROW;
+    IF ERROR_NUMBER() NOT IN (1913, 2714, 1505, 1750) THROW;
   END CATCH
 END
 `);
@@ -1517,8 +1475,7 @@ async function readTimesheetDataUncached(options?: { softFail?: boolean }) {
     pool = await db();
   } catch (error) {
     if (options?.softFail) return { headers: [] as TimesheetHeader[], lines: [] as TimesheetLine[] };
-    const detail = error instanceof Error ? error.message : 'connection failed';
-    throw new Error(`Timesheet data requires DLE_Enterprise (${detail}). Verify DLE_ENTERPRISE_DB_HOST, DLE_ENTERPRISE_DB_NAME, and credentials on this server.`);
+    throw error;
   }
   const [headersResult, eventsResult, linesResult, projectAllocationsResult, idleAllocationsResult] = await Promise.all([
     pool.request().query(`SELECT * FROM [hris].[TimesheetHeaders] ORDER BY [TimesheetDate] DESC, [SupervisorName], [WorkCenterName]`),
@@ -1914,8 +1871,7 @@ export async function readTimesheetApprovalPage(options?: {
     pool = await db();
   } catch (error) {
     if (options?.softFail) return { headers: [] as TimesheetHeader[], lines: [] as TimesheetLine[], total: 0, page, pageSize, mode };
-    const detail = error instanceof Error ? error.message : 'connection failed';
-    throw new Error(`Timesheet data requires DLE_Enterprise (${detail}). Verify DLE_ENTERPRISE_DB_HOST, DLE_ENTERPRISE_DB_NAME, and credentials on this server.`);
+    throw error;
   }
 
   const countRequest = pool.request();
@@ -1958,8 +1914,7 @@ export async function readTimesheetApprovalData(options?: { softFail?: boolean }
     pool = await db();
   } catch (error) {
     if (options?.softFail) return { headers: [] as TimesheetHeader[], lines: [] as TimesheetLine[] };
-    const detail = error instanceof Error ? error.message : 'connection failed';
-    throw new Error(`Timesheet data requires DLE_Enterprise (${detail}). Verify DLE_ENTERPRISE_DB_HOST, DLE_ENTERPRISE_DB_NAME, and credentials on this server.`);
+    throw error;
   }
 
   const nonDraftFilter = `[Status] <> N'Draft'`;

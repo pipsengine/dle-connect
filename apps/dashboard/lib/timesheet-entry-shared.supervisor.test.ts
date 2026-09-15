@@ -21,7 +21,17 @@ assert.equal(
 
 assert.equal(
   supervisorTimesheetMessage('Timesheet data requires DLE_Enterprise (login failed). Verify DLE_ENTERPRISE_DB_HOST, DLE_ENTERPRISE_DB_NAME, and credentials on this server.'),
+  'Timesheets could not load completely. Refresh the page. If this continues, contact IT.',
+);
+
+assert.equal(
+  supervisorTimesheetMessage('DLE Enterprise database is not configured. Timesheet entry data must be stored in the database before this page can be used.'),
   'Timesheets are temporarily unavailable. Contact IT.',
+);
+
+assert.equal(
+  supervisorTimesheetMessage('Timesheet database connection failed (Timeout: Request failed to complete in 60000ms).'),
+  'Timesheets could not load completely. Refresh the page. If this continues, contact IT.',
 );
 
 assert.equal(
