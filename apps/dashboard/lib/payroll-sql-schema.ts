@@ -74,6 +74,20 @@ CREATE TABLE [hris].[PayrollRunComments] (
 );
 IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'IX_PayrollRunComments_Period' AND object_id = OBJECT_ID(N'[hris].[PayrollRunComments]'))
   CREATE INDEX [IX_PayrollRunComments_Period] ON [hris].[PayrollRunComments] ([period_code], [created_at] ASC);
+IF OBJECT_ID(N'[hris].[FinalPayrollSettlements]', N'U') IS NULL
+CREATE TABLE [hris].[FinalPayrollSettlements] (
+  [SettlementId] NVARCHAR(80) NOT NULL CONSTRAINT [PK_FinalPayrollSettlements] PRIMARY KEY,
+  [Period] NVARCHAR(20) NOT NULL,
+  [EmployeeCode] NVARCHAR(80) NOT NULL,
+  [EmployeeName] NVARCHAR(220) NOT NULL,
+  [Status] NVARCHAR(60) NOT NULL,
+  [SettlementJson] NVARCHAR(MAX) NOT NULL,
+  [CreatedAt] DATETIME2(3) NOT NULL CONSTRAINT [DF_FinalPayrollSettlements_CreatedAt] DEFAULT SYSUTCDATETIME(),
+  [UpdatedAt] DATETIME2(3) NOT NULL CONSTRAINT [DF_FinalPayrollSettlements_UpdatedAt] DEFAULT SYSUTCDATETIME(),
+  [UpdatedBy] NVARCHAR(160) NULL
+);
+IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'IX_FinalPayrollSettlements_Period' AND object_id = OBJECT_ID(N'[hris].[FinalPayrollSettlements]'))
+  CREATE INDEX [IX_FinalPayrollSettlements_Period] ON [hris].[FinalPayrollSettlements] ([Period], [UpdatedAt] DESC);
 IF OBJECT_ID(N'[hris].[DayrateScheduleUploads]', N'U') IS NULL
 CREATE TABLE [hris].[DayrateScheduleUploads] (
   [upload_id] NVARCHAR(80) NOT NULL PRIMARY KEY,

@@ -120,8 +120,42 @@ const defaultApprovals = (input: {
 ];
 
 const HR_MANAGER_ROLE_PATTERN = /\bHR Manager\b|\bHead of HR\b|\bHR Director\b|\bHR Officer\b|\bHuman Resource(s)? Manager\b/i;
-const MD_ROLE_PATTERN = /\bManaging Director\b|\bChief Executive\b|\bMD\b|\bCEO\b/i;
+/** Do not use a bare `\bMD\b` — it matches titles like "MD'S DRIVER". Canonical MD is P0413 Chris Ijeli. */
+const MD_ROLE_PATTERN = /\bManaging Director\b|\bChief Executive(?:\s+Officer)?\b|\bMD\s*[\/-]\s*CEO\b/i;
 const HOD_ROLE_PATTERN = /\bHead of Department\b|\bDepartment Head\b|\bHOD\b|\bFunctional Manager\b/i;
+const CANONICAL_MD_CODE = 'P0413';
+const CANONICAL_MD_NAME = 'Mr CHRIS IJELI';
+
+const codesEqual = (left?: string | null, right?: string | null) => {
+  const a = compact(left).toUpperCase().replace(/[^A-Z0-9]/g, '');
+  const b = compact(right).toUpperCase().replace(/[^A-Z0-9]/g, '');
+  if (!a || !b) return false;
+  return a === b || a.replace(/^P/, '') === b.replace(/^P/, '');
+};
+
+const isActiveDirectoryEmployee = (employee: DleEmployeeDirectoryRow) => {
+  const status = compact(employee.status).toLowerCase();
+  return !['resigned', 'terminated', 'retired', 'inactive'].includes(status);
+};
+
+const resolveManagingDirector = (employees: DleEmployeeDirectoryRow[]) => {
+  const active = employees.filter(isActiveDirectoryEmployee);
+  const byCode = active.find((item) => codesEqual(item.employeeCode, CANONICAL_MD_CODE) || codesEqual(item.employeeId, CANONICAL_MD_CODE));
+  if (byCode) return byCode;
+  const byName = active.find((item) => /\bIJELI\b/i.test(compact(item.fullName)));
+  if (byName) return byName;
+  return findRoleHolders(active, MD_ROLE_PATTERN)[0] || null;
+};
+
+const applyCanonicalMd = (review: InternshipReview) => {
+  const mdStep = review.approvals.find((item) => item.role === 'MD');
+  if (!mdStep) return false;
+  const alreadyCanonical = codesEqual(mdStep.approverCode, CANONICAL_MD_CODE) && /\bIJELI\b/i.test(mdStep.approver || '');
+  if (alreadyCanonical) return false;
+  mdStep.approver = CANONICAL_MD_NAME;
+  mdStep.approverCode = CANONICAL_MD_CODE;
+  return true;
+};
 
 const fallbackRolesForStatus = (status: string) => {
   if (status === 'Pending HOD') return ['HOD', 'Head of Department', 'Department Head'];
@@ -135,7 +169,7 @@ const directoryPatternsForRoles = (roles: string[]) => {
   const patterns: RegExp[] = [];
   if (/\bhod\b|head of department|department head|functional manager/.test(blob)) patterns.push(HOD_ROLE_PATTERN);
   if (/hr manager|head of hr|hr director|hr officer|human resource/.test(blob)) patterns.push(HR_MANAGER_ROLE_PATTERN);
-  if (/managing director|chief executive|\bmd\b|\bceo\b/.test(blob)) patterns.push(MD_ROLE_PATTERN);
+  if (/managing director|chief executive|md\s*[\/-]\s*ceo/.test(blob)) patterns.push(MD_ROLE_PATTERN);
   return patterns;
 };
 
@@ -335,9 +369,15 @@ export const listInternshipReviews = async (): Promise<InternshipReview[]> => {
     FROM [hris].[InternshipReviews]
     ORDER BY CreatedAt DESC
   `);
-  return (result.recordset || [])
+  const reviews = (result.recordset || [])
     .map((row: { ReviewJson?: string }) => parseReview(row.ReviewJson))
     .filter((item): item is InternshipReview => Boolean(item));
+  for (const review of reviews) {
+    if (applyCanonicalMd(review)) {
+      await persistReview(review).catch(() => null);
+    }
+  }
+  return reviews;
 };
 
 export const getInternshipReview = async (id: string) =>
@@ -548,9 +588,8 @@ export const initiateInternshipReview = async (
     }
     const employees = await directoryEmployees();
     const hrManagers = findRoleHolders(employees, HR_MANAGER_ROLE_PATTERN);
-    const managingDirectors = findRoleHolders(employees, MD_ROLE_PATTERN);
+    const md = resolveManagingDirector(employees);
     const hrManager = hrManagers[0] || null;
-    const md = managingDirectors[0] || null;
     const hod = intern.hod || input.hod || '';
     const review: InternshipReview = {
       id: await nextReviewId(reviews),
@@ -573,8 +612,8 @@ export const initiateInternshipReview = async (
         hodCode: intern.hodCode,
         hrManager: personLabel(hrManager, 'HR Manager'),
         hrManagerCode: personCode(hrManager),
-        md: personLabel(md, 'Managing Director'),
-        mdCode: personCode(md),
+        md: personLabel(md, CANONICAL_MD_NAME),
+        mdCode: personCode(md) || CANONICAL_MD_CODE,
       }),
       instructions: input.instructions || '',
       notifyManager: input.notifyManager !== false,

@@ -1,15 +1,17 @@
 /**
  * Final Payroll Processing — offboarding settlement register + calculation store.
- * Persistence: JSON under data/hris (durable enough for draft/approval workflow).
+ * Persistence: DLE_Enterprise [hris].[FinalPayrollSettlements], with a JSON fallback
+ * via writable HRIS data dirs (never fail the workflow on a locked IIS file).
  * Server-only — do not value-import from client components (use final-payroll-settlement-shared).
  */
-import { mkdir, readFile, writeFile } from 'node:fs/promises';
-import path from 'node:path';
+import sql from 'mssql';
 import { readEmployeeExitStatusFromDb, type EmployeeExitStatusRecord } from '@/lib/employee-exit-status-store';
-import { getDleEnterpriseDbPool } from '@/lib/dle-enterprise-db';
+import { getDleEnterpriseDbPool, markEmployeeInactiveInDb } from '@/lib/dle-enterprise-db';
 import type { DleEmployeeDirectoryRow } from '@/lib/dle-enterprise-db';
 import { calculatePayrollEarnings } from '@/lib/payroll-earnings-engine';
-import { readPayrollEmployees } from '@/lib/payroll-employee-source';
+import { invalidatePayrollEmployeeCache, readPayrollEmployees } from '@/lib/payroll-employee-source';
+import { ensurePayrollSqlSchema } from '@/lib/payroll-sql-schema';
+import { readHrisDataFile, writeHrisDataFile } from '@/lib/hris-data-paths';
 import { activePensionVersion, calculatePension, pensionInputFromEmployee, readPayrollPensionConfig } from '@/lib/payroll-pension-engine';
 import {
   activeStatutoryFundsVersion,
@@ -25,6 +27,13 @@ import {
   resignationFinalPayrollHref,
   resignationReadyForFinalPayroll,
 } from '@/lib/resignation-management-shared';
+import { readUsers } from '@/lib/auth/auth-store';
+import type { SessionPayload } from '@/lib/auth/session';
+import { createEnterpriseNotification } from '@/lib/enterprise-notifications-store';
+import { resolveEmployeeMailbox, sendFinalSettlementApprovalEmail } from '@/lib/mail-service';
+import { toAbsoluteWorkflowHref } from '@/lib/public-app-url';
+import { setPayrollRunExclusion } from '@/lib/payroll-run-exclusion-service';
+import { invalidateHrisEmployeeCaches } from '@/lib/hris-employee-cache';
 import {
   type ApprovalStageStatus,
   type FinalPayrollApprovalStage,
@@ -69,15 +78,7 @@ export {
   settlementTotals,
 } from '@/lib/final-payroll-settlement-shared';
 
-const resolveDashboardRoot = () => {
-  const cwd = process.cwd();
-  const dashboardSuffix = path.join('apps', 'dashboard');
-  return cwd.endsWith(dashboardSuffix) ? cwd : path.join(cwd, dashboardSuffix);
-};
-
-const DATA_DIR = path.join(process.env.DLE_HRIS_DATA_DIR || path.join(resolveDashboardRoot(), 'data', 'hris'));
-const FILE_PATH = path.join(DATA_DIR, 'final-payroll-settlements.json');
-
+const SETTLEMENTS_FILE = 'final-payroll-settlements.json';
 const compact = (value: unknown) => String(value || '').trim();
 const roundMoney = roundFinalPayrollMoney;
 const nowIso = () => new Date().toISOString();
@@ -95,10 +96,8 @@ const defaultClearance = (): FinalPayrollClearanceItem[] => [
 const defaultApprovalStages = (status: FinalPayrollStatus): FinalPayrollApprovalStage[] => {
   const stages: FinalPayrollApprovalStage[] = [
     { id: 'prep', label: 'Payroll Preparation', status: 'Pending' },
-    { id: 'hr', label: 'HR Manager Review', status: 'Pending' },
-    { id: 'finance', label: 'Finance Review', status: 'Pending' },
-    { id: 'cfo', label: 'CFO Authorization', status: 'Pending' },
-    { id: 'payment', label: 'Final Payment', status: 'Pending' },
+    { id: 'hr', label: 'HR Manager Approval', status: 'Pending' },
+    { id: 'applied', label: 'Payroll Applied & Employee Exited', status: 'Pending' },
   ];
   const mark = (index: number, value: ApprovalStageStatus) => {
     for (let i = 0; i < stages.length; i += 1) {
@@ -111,18 +110,13 @@ const defaultApprovalStages = (status: FinalPayrollStatus): FinalPayrollApproval
     case 'Draft':
     case 'Awaiting Clearance':
     case 'Ready for Calculation':
+    case 'In Review':
       mark(0, 'In Review');
       break;
-    case 'In Review':
+    case 'Awaiting Approval':
       mark(1, 'In Review');
       break;
-    case 'Awaiting Approval':
-      mark(2, 'In Review');
-      break;
     case 'Approved':
-      mark(3, 'Completed');
-      stages[4].status = 'Pending';
-      break;
     case 'Paid':
       stages.forEach((stage) => {
         stage.status = 'Completed';
@@ -132,6 +126,159 @@ const defaultApprovalStages = (status: FinalPayrollStatus): FinalPayrollApproval
       mark(0, 'In Review');
   }
   return stages;
+};
+
+const settlementSystemSession = (actorName: string, session?: SessionPayload | null): SessionPayload =>
+  session || {
+    sub: 'final-payroll-workflow',
+    username: 'final-payroll-workflow',
+    fullName: actorName || 'Final Payroll',
+    employeeCode: 'final-payroll-workflow',
+    roles: ['System'],
+    permissions: [],
+    status: 'Active',
+    firstLoginRequired: false,
+    passwordResetRequired: false,
+    iat: Math.floor(Date.now() / 1000),
+    exp: Math.floor(Date.now() / 1000) + 3600,
+  };
+
+export const isFinalPayrollHrApprover = (session?: SessionPayload | null) => {
+  if (!session) return false;
+  if (session.isGlobalAdmin) return true;
+  const roles = (session.roles || []).map((role) => String(role || '').trim().toLowerCase());
+  return roles.includes('hr manager')
+    || roles.includes('super administrator')
+    || roles.includes('super admin')
+    || roles.includes('system administrator');
+};
+
+const resolveHrManagers = async () => {
+  const [users, source] = await Promise.all([
+    readUsers().catch(() => []),
+    readPayrollEmployees().catch(() => ({ employees: [] as DleEmployeeDirectoryRow[] })),
+  ]);
+  const employees = source.employees || [];
+  const recipients: Array<{ code: string; name: string; email: string }> = [];
+  const push = async (code: string, name: string, email: string, directory?: DleEmployeeDirectoryRow | null) => {
+    const mailbox = compact(email) || (directory ? compact(await resolveEmployeeMailbox(directory)) : '');
+    const key = compact(code).toUpperCase() || mailbox.toLowerCase();
+    if (!key || recipients.some((item) => item.code.toUpperCase() === key || (mailbox && item.email === mailbox))) return;
+    recipients.push({
+      code: compact(code) || name,
+      name: compact(name) || code,
+      email: mailbox,
+    });
+  };
+
+  for (const user of users) {
+    if (user.deleted || ['Inactive', 'Disabled'].includes(String(user.status || ''))) continue;
+    const isHrManager = (user.roles || []).some((role) => /^hr manager$/i.test(String(role || '').trim()));
+    if (!isHrManager) continue;
+    const code = compact(user.employeeCode || user.employeeId || user.username);
+    const directory = employees.find((employee) =>
+      [employee.employeeCode, employee.employeeId, employee.sourceEmployeeId]
+        .some((value) => compact(value).toUpperCase() === code.toUpperCase()),
+    ) || null;
+    await push(code, user.fullName, user.email, directory);
+  }
+
+  if (!recipients.length) {
+    for (const employee of employees) {
+      const title = `${employee.jobTitle || ''} ${employee.designation || ''}`;
+      if (!/\bHR Manager\b/i.test(title) || /officer|driver|assistant/i.test(title)) continue;
+      await push(employee.employeeCode || employee.employeeId, employee.fullName, employee.officialEmail || employee.email, employee);
+    }
+  }
+  return recipients;
+};
+
+const notifyHrManagersOfSettlement = async (input: {
+  settlement: FinalPayrollSettlement;
+  actor: string;
+  session?: SessionPayload | null;
+}) => {
+  const href = `/hris/offboarding/final-payroll-processing?id=${encodeURIComponent(input.settlement.id)}&period=${encodeURIComponent(input.settlement.period)}`;
+  const workspaceLink = toAbsoluteWorkflowHref(href);
+  const totals = settlementTotals(input.settlement);
+  const session = settlementSystemSession(input.actor, input.session);
+  const recipients = await resolveHrManagers();
+  const periodLabel = periodLabelFromCode(input.settlement.period);
+  const netPayLabel = formatFinalPayrollMoney(totals.net, input.settlement.currency || 'NGN');
+  const sentTo: string[] = [];
+  const reasons: string[] = [];
+
+  await createEnterpriseNotification(session, {
+    kind: 'Approval',
+    module: 'Offboarding',
+    title: `Final settlement awaiting HR Manager approval — ${input.settlement.employeeName}`,
+    body: `${input.settlement.employeeName} (${input.settlement.employeeCode}) · ${periodLabel} · ${netPayLabel}. Approve to post this as the employee’s payroll for the month and deactivate them going forward.`,
+    severity: 'warning',
+    href,
+    actor: input.actor,
+    channels: ['In-App'],
+    recipientRoles: ['HR Manager'],
+    metadata: { settlementId: input.settlement.id, module: 'final-payroll-settlement' },
+  }).catch(() => undefined);
+
+  for (const recipient of recipients.slice(0, 8)) {
+    await createEnterpriseNotification(session, {
+      kind: 'Approval',
+      module: 'Offboarding',
+      title: `Final settlement awaiting your approval — ${input.settlement.employeeName}`,
+      body: `${periodLabel} net ${netPayLabel}. Only the HR Manager can approve.`,
+      severity: 'warning',
+      href,
+      actor: input.actor,
+      channels: recipient.email ? ['In-App', 'Email'] : ['In-App'],
+      recipientEmployeeCode: recipient.code,
+      recipientRoles: ['HR Manager'],
+      metadata: { settlementId: input.settlement.id, module: 'final-payroll-settlement' },
+    }).catch(() => undefined);
+
+    if (!recipient.email) {
+      reasons.push(`${recipient.name}: no mailbox`);
+      continue;
+    }
+    const result = await sendFinalSettlementApprovalEmail({
+      recipientName: recipient.name,
+      recipientEmail: recipient.email,
+      employeeName: input.settlement.employeeName,
+      employeeCode: input.settlement.employeeCode,
+      department: input.settlement.department,
+      periodLabel,
+      exitType: input.settlement.exitType,
+      lastWorkingDay: input.settlement.lastWorkingDay,
+      netPayLabel,
+      actorName: input.actor,
+      workspaceLink,
+    }).catch((error) => ({ sent: false as const, reason: error instanceof Error ? error.message : 'Email send failed.' }));
+    if (result.sent) sentTo.push(recipient.email);
+    else reasons.push(`${recipient.name}: ${result.reason || 'not sent'}`);
+  }
+
+  if (sentTo.length) return `Email sent to ${sentTo.join(', ')}.`;
+  if (recipients.length) return `HR Manager notified in-app. Email not delivered (${reasons.join('; ') || 'no mailbox'}).`;
+  return 'No HR Manager mailbox was resolved. The settlement is waiting on the Final Payroll register.';
+};
+
+const applyApprovedSettlementToPayroll = async (settlement: FinalPayrollSettlement, actor: string) => {
+  const code = compact(settlement.employeeCode) || compact(settlement.employeeId);
+  await setPayrollRunExclusion({
+    employeeId: code,
+    excluded: true,
+    updatedBy: actor,
+    reason: `Final settlement ${settlement.id} approved for ${settlement.period}`,
+  }).catch(() => undefined);
+  await markEmployeeInactiveInDb({
+    employeeCode: settlement.employeeCode,
+    employeeId: settlement.employeeId,
+    reason: `Final settlement ${settlement.id}`,
+  }).catch(() => undefined);
+  invalidatePayrollEmployeeCache();
+  invalidateHrisEmployeeCaches();
+  const { invalidatePayrollCalculationCache } = await import('@/lib/payroll-calculation-service');
+  invalidatePayrollCalculationCache(settlement.period);
 };
 
 const daysInMonth = (period: string) => {
@@ -713,24 +860,167 @@ const mapStatusFromExit = (row: EmployeeExitStatusRecord): FinalPayrollStatus =>
   return 'Draft';
 };
 
+const parseSettlement = (raw: unknown): FinalPayrollSettlement | null => {
+  if (!raw) return null;
+  try {
+    const parsed = (typeof raw === 'string' ? JSON.parse(raw) : raw) as FinalPayrollSettlement;
+    if (!parsed?.id || !parsed?.employeeCode) return null;
+    return {
+      ...parsed,
+      earnings: mergeGrossSalaryEarnings(parsed.earnings || []),
+    };
+  } catch {
+    return null;
+  }
+};
+
 const readJsonSettlements = async (): Promise<FinalPayrollSettlement[]> => {
   try {
-    const parsed = JSON.parse(await readFile(FILE_PATH, 'utf8'));
+    const found = await readHrisDataFile(SETTLEMENTS_FILE);
+    if (!found?.text) return [];
+    const parsed = JSON.parse(found.text);
     const rows = Array.isArray(parsed) ? parsed : Array.isArray(parsed?.settlements) ? parsed.settlements : [];
-    return rows
-      .filter((row: FinalPayrollSettlement) => row?.id && row?.employeeCode)
-      .map((row: FinalPayrollSettlement) => ({
-        ...row,
-        earnings: mergeGrossSalaryEarnings(row.earnings || []),
-      }));
+    return rows.map(parseSettlement).filter((row: FinalPayrollSettlement | null): row is FinalPayrollSettlement => Boolean(row));
   } catch {
     return [];
   }
 };
 
 const writeJsonSettlements = async (settlements: FinalPayrollSettlement[]) => {
-  await mkdir(DATA_DIR, { recursive: true });
-  await writeFile(FILE_PATH, JSON.stringify({ settlements, updatedAt: nowIso() }, null, 2), 'utf8');
+  await writeHrisDataFile(
+    SETTLEMENTS_FILE,
+    JSON.stringify({ settlements, updatedAt: nowIso() }, null, 2),
+  );
+};
+
+const ENSURE_FINAL_PAYROLL_SQL = `
+IF SCHEMA_ID(N'hris') IS NULL EXEC(N'CREATE SCHEMA [hris]');
+IF OBJECT_ID(N'[hris].[FinalPayrollSettlements]', N'U') IS NULL
+CREATE TABLE [hris].[FinalPayrollSettlements] (
+  [SettlementId] NVARCHAR(80) NOT NULL CONSTRAINT [PK_FinalPayrollSettlements] PRIMARY KEY,
+  [Period] NVARCHAR(20) NOT NULL,
+  [EmployeeCode] NVARCHAR(80) NOT NULL,
+  [EmployeeName] NVARCHAR(220) NOT NULL,
+  [Status] NVARCHAR(60) NOT NULL,
+  [SettlementJson] NVARCHAR(MAX) NOT NULL,
+  [CreatedAt] DATETIME2(3) NOT NULL CONSTRAINT [DF_FinalPayrollSettlements_CreatedAt] DEFAULT SYSUTCDATETIME(),
+  [UpdatedAt] DATETIME2(3) NOT NULL CONSTRAINT [DF_FinalPayrollSettlements_UpdatedAt] DEFAULT SYSUTCDATETIME(),
+  [UpdatedBy] NVARCHAR(160) NULL
+);
+`;
+
+let sqlReadOk = false;
+let fpSchemaReady = false;
+
+const getFinalPayrollSqlPool = async () => {
+  const pool = await getDleEnterpriseDbPool();
+  if (!pool) return null;
+  if (!fpSchemaReady) {
+    try {
+      await ensurePayrollSqlSchema(pool);
+    } catch {
+      // Dedicated table ensure below still runs.
+    }
+    await pool.request().query(ENSURE_FINAL_PAYROLL_SQL);
+    fpSchemaReady = true;
+  }
+  return pool;
+};
+
+const readSqlSettlements = async (): Promise<FinalPayrollSettlement[]> => {
+  try {
+    const pool = await getFinalPayrollSqlPool();
+    if (!pool) {
+      sqlReadOk = false;
+      return [];
+    }
+    const result = await pool.request().query(`
+      SELECT [SettlementJson] FROM [hris].[FinalPayrollSettlements]
+    `);
+    sqlReadOk = true;
+    return (result.recordset || [])
+      .map((row: { SettlementJson?: string }) => parseSettlement(row.SettlementJson))
+      .filter((row: FinalPayrollSettlement | null): row is FinalPayrollSettlement => Boolean(row));
+  } catch {
+    sqlReadOk = false;
+    return [];
+  }
+};
+
+const writeSqlSettlements = async (settlements: FinalPayrollSettlement[]) => {
+  const pool = await getFinalPayrollSqlPool();
+  if (!pool) throw new Error('DLE Enterprise is not configured.');
+  const keepIds = new Set(settlements.map((row) => row.id));
+  for (const row of settlements) {
+    await pool.request()
+      .input('SettlementId', sql.NVarChar(80), row.id)
+      .input('Period', sql.NVarChar(20), row.period || '')
+      .input('EmployeeCode', sql.NVarChar(80), row.employeeCode)
+      .input('EmployeeName', sql.NVarChar(220), row.employeeName || row.employeeCode)
+      .input('Status', sql.NVarChar(60), row.status)
+      .input('SettlementJson', sql.NVarChar(sql.MAX), JSON.stringify(row))
+      .input('UpdatedBy', sql.NVarChar(160), row.updatedBy || row.createdBy || 'system')
+      .query(`
+        MERGE [hris].[FinalPayrollSettlements] AS target
+        USING (SELECT @SettlementId AS SettlementId) AS source
+        ON target.SettlementId = source.SettlementId
+        WHEN MATCHED THEN UPDATE SET
+          [Period]=@Period,
+          [EmployeeCode]=@EmployeeCode,
+          [EmployeeName]=@EmployeeName,
+          [Status]=@Status,
+          [SettlementJson]=@SettlementJson,
+          [UpdatedAt]=SYSUTCDATETIME(),
+          [UpdatedBy]=@UpdatedBy
+        WHEN NOT MATCHED THEN INSERT
+          ([SettlementId], [Period], [EmployeeCode], [EmployeeName], [Status], [SettlementJson], [UpdatedBy])
+        VALUES
+          (@SettlementId, @Period, @EmployeeCode, @EmployeeName, @Status, @SettlementJson, @UpdatedBy);
+      `);
+  }
+  if (sqlReadOk) {
+    const existing = await pool.request().query(`SELECT [SettlementId] FROM [hris].[FinalPayrollSettlements]`);
+    for (const row of existing.recordset || []) {
+      const id = String(row.SettlementId || '');
+      if (!id || keepIds.has(id)) continue;
+      await pool.request().input('SettlementId', sql.NVarChar(80), id)
+        .query(`DELETE FROM [hris].[FinalPayrollSettlements] WHERE [SettlementId]=@SettlementId`);
+    }
+  }
+};
+
+const readAllSettlements = async (): Promise<FinalPayrollSettlement[]> => {
+  const [sqlRows, jsonRows] = await Promise.all([readSqlSettlements(), readJsonSettlements()]);
+  const byId = new Map<string, FinalPayrollSettlement>();
+  for (const row of jsonRows) byId.set(row.id, row);
+  for (const row of sqlRows) {
+    const existing = byId.get(row.id);
+    if (!existing || String(row.updatedAt || '') >= String(existing.updatedAt || '')) {
+      byId.set(row.id, row);
+    }
+  }
+  return [...byId.values()];
+};
+
+const writeAllSettlements = async (settlements: FinalPayrollSettlement[]) => {
+  let sqlError: unknown = null;
+  try {
+    await writeSqlSettlements(settlements);
+  } catch (error) {
+    sqlError = error;
+  }
+  let jsonError: unknown = null;
+  try {
+    await writeJsonSettlements(settlements);
+  } catch (error) {
+    jsonError = error;
+  }
+  if (!sqlError) return;
+  if (!jsonError) return;
+  const sqlDetail = sqlError instanceof Error ? sqlError.message : 'database write failed';
+  throw new Error(
+    `Unable to save the final payroll settlement. DLE Enterprise is unavailable (${sqlDetail}) and the HRIS data folder is not writable on this server.`,
+  );
 };
 
 const statusToneClass = (status: FinalPayrollStatus) =>
@@ -967,7 +1257,7 @@ const settlementFromExit = (
 
 /** Previously auto-created drafts from exit register; disabled so settlements are only saved explicitly. */
 const loadSettlementsForPeriod = async (period: string) => {
-  const existing = await readJsonSettlements();
+  const existing = await readAllSettlements();
   return existing.filter((row) => row.period === period);
 };
 
@@ -976,8 +1266,15 @@ export const listFinalPayrollSettlements = async (period?: string) => {
   return loadSettlementsForPeriod(periodCode);
 };
 
+export const listApprovedFinalSettlementsForPeriod = async (period: string) => {
+  const rows = await readAllSettlements();
+  return rows.filter((row) =>
+    row.period === period && (row.status === 'Approved' || row.status === 'Paid'),
+  );
+};
+
 export const getFinalPayrollSettlement = async (id: string) => {
-  const rows = await readJsonSettlements();
+  const rows = await readAllSettlements();
   return rows.find((row) => row.id === id) || null;
 };
 
@@ -999,7 +1296,7 @@ export const resolveFinalPayrollForEmployee = async (input: {
   if (!code && !employeeId) return null;
 
   const period = compact(input.period) || null;
-  const all = await readJsonSettlements();
+  const all = await readAllSettlements();
   const matches = all
     .filter((row) => {
       if (period && row.period !== period) return false;
@@ -1046,9 +1343,10 @@ export const buildFinalPayrollPayload = async (input?: {
   employeeCode?: string | null;
   employeeId?: string | null;
   actor?: string;
+  session?: SessionPayload | null;
 }): Promise<FinalPayrollPayload> => {
   const period = input?.period || currentFinalPayrollPeriod();
-  const all = await readJsonSettlements();
+  const all = await readAllSettlements();
   const settlements = all
     .filter((row) => row.period === period)
     .sort((a, b) => a.employeeName.localeCompare(b.employeeName));
@@ -1077,6 +1375,7 @@ export const buildFinalPayrollPayload = async (input?: {
     tabCounts: tabCountsFor(settlements),
     selectedId,
     selected,
+    canApprove: isFinalPayrollHrApprover(input?.session),
     filterOptions: {
       departments: [...new Set(settlements.map((row) => row.department).filter(Boolean))].sort(),
       exitTypes: [...new Set(settlements.map((row) => row.exitType).filter(Boolean))].sort(),
@@ -1103,7 +1402,7 @@ export const createFinalPayrollSettlement = async (input: {
   if (!code) throw new Error('Employee code is required.');
   const persist = input.persist !== false;
 
-  const all = await readJsonSettlements();
+  const all = await readAllSettlements();
   const existing = all.find((row) => row.period === period && compact(row.employeeCode).toUpperCase() === code);
   // Never reuse a premature Draft when caller asked for a non-persisted preview.
   if (existing && persist && existing.status !== 'Draft') return existing;
@@ -1233,7 +1532,7 @@ export const createFinalPayrollSettlement = async (input: {
     id: `FPS-${period.replace('-', '')}-${code}`,
   };
   next.push(settlement);
-  await writeJsonSettlements(next);
+  await writeAllSettlements(next);
   return settlement;
 };
 
@@ -1255,25 +1554,26 @@ export const discardDraftFinalPayrollSettlement = async (input: {
   period?: string;
 }) => {
   const period = input.period || currentFinalPayrollPeriod();
-  const all = await readJsonSettlements();
+  const all = await readAllSettlements();
   const code = compact(input.employeeCode).toUpperCase();
   const next = all.filter((row) => {
     if (input.id && row.id === input.id && row.status === 'Draft') return false;
     if (code && row.period === period && compact(row.employeeCode).toUpperCase() === code && row.status === 'Draft') return false;
     return true;
   });
-  if (next.length !== all.length) await writeJsonSettlements(next);
+  if (next.length !== all.length) await writeAllSettlements(next);
   return { removed: all.length - next.length };
 };
 
 export const updateFinalPayrollSettlement = async (input: {
   id: string;
   actor: string;
+  session?: SessionPayload | null;
   patch?: Partial<FinalPayrollSettlement>;
   action?: 'save' | 'recalculate' | 'submit' | 'approve' | 'return' | 'clarify' | 'mark-paid';
   comment?: string;
 }) => {
-  const all = await readJsonSettlements();
+  const all = await readAllSettlements();
   const index = all.findIndex((row) => row.id === input.id);
   if (index < 0) throw new Error('Settlement not found.');
   let row = { ...all[index], ...(input.patch || {}) };
@@ -1281,17 +1581,32 @@ export const updateFinalPayrollSettlement = async (input: {
 
   if (input.action === 'recalculate') row = await recalculateSettlement(row);
   if (input.action === 'submit') {
-    row.status = row.clearance.some((item) => item.status === 'Pending') ? 'Awaiting Clearance' : 'In Review';
+    row.status = 'Awaiting Approval';
     row.approvalStages = defaultApprovalStages(row.status);
+    const managers = await resolveHrManagers();
+    row.hrManagerName = managers[0]?.name || 'HR Manager';
+    row.hrManagerCode = managers[0]?.code || '';
+    row.notifyDetail = await notifyHrManagersOfSettlement({
+      settlement: row,
+      actor: input.actor,
+      session: input.session,
+    });
   }
   if (input.action === 'approve') {
-    if (row.status === 'In Review') row.status = 'Awaiting Approval';
-    else if (row.status === 'Awaiting Approval') row.status = 'Approved';
-    else row.status = 'Approved';
+    if (!isFinalPayrollHrApprover(input.session)) {
+      throw new Error('Only the HR Manager can approve a final payroll settlement.');
+    }
+    if (!['Awaiting Approval', 'In Review', 'Awaiting Clearance'].includes(row.status)) {
+      throw new Error('This settlement is not waiting for HR Manager approval.');
+    }
+    row.status = 'Approved';
+    row.approvedAt = nowIso();
+    row.approvedBy = input.actor;
+    row.nextPayrollExcluded = true;
     row.approvalStages = defaultApprovalStages(row.status);
   }
   if (input.action === 'return') {
-    row.status = 'Ready for Calculation';
+    row.status = 'Draft';
     row.approvalStages = defaultApprovalStages(row.status);
   }
   if (input.action === 'clarify') {
@@ -1303,22 +1618,38 @@ export const updateFinalPayrollSettlement = async (input: {
     row.approvalStages = defaultApprovalStages('Paid');
   }
 
-  if (compact(input.comment)) {
+  const systemNotes: string[] = [];
+  if (input.action === 'submit') {
+    systemNotes.push(`Submitted for HR Manager approval.${row.notifyDetail ? ` ${row.notifyDetail}` : ''}`);
+  }
+  if (input.action === 'approve') {
+    systemNotes.push(`Approved. Posted as ${periodLabelFromCode(row.period)} payroll and employee marked Inactive.`);
+  }
+  const notes = [compact(input.comment), ...systemNotes].filter(Boolean);
+  if (notes.length) {
     row.comments = [
       ...row.comments,
-      {
-        id: `cmt-${Date.now()}`,
-        body: compact(input.comment),
+      ...notes.map((body, index) => ({
+        id: `cmt-${Date.now()}-${index}`,
+        body,
         actor: input.actor,
         createdAt: nowIso(),
-      },
+      })),
     ];
   }
 
   row.updatedAt = nowIso();
   row.updatedBy = input.actor;
   all[index] = row;
-  await writeJsonSettlements(all);
+  await writeAllSettlements(all);
+
+  if (input.action === 'approve') {
+    await applyApprovedSettlementToPayroll(row, input.actor);
+    row.payrollAppliedAt = nowIso();
+    row.deactivatedAt = nowIso();
+    all[index] = row;
+    await writeAllSettlements(all).catch(() => undefined);
+  }
   return row;
 };
 

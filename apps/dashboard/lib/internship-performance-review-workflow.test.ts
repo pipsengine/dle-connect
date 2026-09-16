@@ -55,5 +55,7 @@ assert.equal(internshipCanApprove(hodReview, { fullName: 'Head IT', employeeCode
 assert.equal(internshipCanApprove(hodReview, { fullName: 'Chris Ogbaisi', employeeCode: 'P100' }), false);
 assert.equal(internshipCanApprove({ ...hodReview, status: 'Pending HR Manager' }, { roles: ['HR Manager'] }), true);
 assert.equal(internshipCanApprove({ ...hodReview, status: 'Pending MD' }, { roles: ['Managing Director'] }), true);
+assert.equal(internshipCanApprove({ ...hodReview, status: 'Pending MD' }, { employeeCode: 'P0413', fullName: 'Mr CHRIS IJELI' }), true);
+assert.equal(internshipCanApprove({ ...hodReview, status: 'Pending MD' }, { employeeCode: 'L2374', fullName: 'SAMUEL GBEMISOLA AJAYI', roles: ['Employee'] }), false);
 
 console.log('internship-performance-review-workflow.test.ts ok');

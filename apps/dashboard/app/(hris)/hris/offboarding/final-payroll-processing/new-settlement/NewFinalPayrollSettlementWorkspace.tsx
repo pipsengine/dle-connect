@@ -324,7 +324,11 @@ export default function NewFinalPayrollSettlementWorkspace({
       if (!res.ok || !data.ok) throw new Error(data.error || 'Unable to update settlement.');
       applySettlement(data.settlement, true);
       if (action === 'submit') {
-        setMessage('Submitted for approval.');
+        setMessage(
+          data.settlement?.notifyDetail
+            ? `Submitted to the HR Manager. ${data.settlement.notifyDetail}`
+            : 'Submitted to the HR Manager for approval.',
+        );
         router.push(`/hris/offboarding/final-payroll-processing?period=${encodeURIComponent(data.settlement.period)}`);
         return;
       }
@@ -431,8 +435,8 @@ export default function NewFinalPayrollSettlementWorkspace({
             <h1>New Final Payroll Settlement</h1>
             <p>
               {fromResignation || initialResignationId
-                ? 'Settlement opened from a resignation case — review calculation, then save or submit.'
-                : 'Calculate and submit final settlement now. Resignation, notice, and clearance can be completed later.'}
+                ? 'Settlement opened from a resignation case — review calculation, then submit to the HR Manager.'
+                : 'Calculate and submit to the HR Manager. Approval posts this as that month’s payroll and deactivates the employee afterwards.'}
             </p>
           </div>
         </div>
@@ -629,7 +633,7 @@ export default function NewFinalPayrollSettlementWorkspace({
             <Info />
             <div>
               <b>Important</b>
-              <p>This employee will be automatically excluded from subsequent regular payrolls after final settlement is processed.</p>
+              <p>After the HR Manager approves, this amount is posted as the employee’s payroll for the settlement month. They are then marked Inactive and excluded from later payroll runs.</p>
             </div>
           </div>
           <div className={styles.miniFlow}>

@@ -59,10 +59,11 @@ export const internshipIsHrManagerActor = (actor: InternshipActor) => {
 };
 
 export const internshipIsMdActor = (actor: InternshipActor) => {
+  const code = normalizeKey(actor.employeeCode || actor.employeeId || actor.username);
+  if (code === 'P0413' || code === '0413' || code.replace(/^P/, '') === '0413') return true;
+  if (/\bIJELI\b/i.test(compact(actor.fullName))) return true;
   const roles = (actor.roles || []).join(' ');
-  return /^(MD|CEO)$/i.test(compact(actor.roles?.[0]))
-    || /\b(MD|CEO)\b/i.test(roles)
-    || /Managing Director|Chief Executive|Executive Management|Executive Director/i.test(roles);
+  return /Managing Director|Chief Executive|MD\s*[\/-]\s*CEO/i.test(roles);
 };
 
 const namesOverlap = (left: string, right: string) => {

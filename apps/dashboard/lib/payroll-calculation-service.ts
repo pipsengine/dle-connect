@@ -16,6 +16,7 @@ import { ensureSalaryScheduleOverrideLoaded } from '@/lib/salary-schedule-upload
 import { applySalaryScheduleCompanionPay, applySalaryScheduleOverrideToRecords, ngnSalaryScheduleKpi } from '@/lib/salary-schedule-overlay';
 import { persistAppliedPayrollSchedulesToHris } from '@/lib/payroll-schedule-hris-persist';
 import { applyDayrateScheduleOverrideToRecords } from '@/lib/dayrate-schedule-overlay';
+import { applyApprovedFinalSettlementsToRecords } from '@/lib/final-payroll-settlement-overlay';
 import { normalizePayrollMatchKey } from '@/lib/sage-people-payroll-store';
 import { buildTimesheetHoursMapForPayrollPeriod } from '@/lib/timesheet-entry-store';
 import { dayrateBookedHours } from '@/lib/dayrate-schedule-xlsx';
@@ -1146,8 +1147,11 @@ const computePayrollForPeriod = async (requestedPeriod: string): Promise<Payroll
     });
   });
 
-  const records = applyDayrateScheduleOverrideToRecords(
-    applySalaryScheduleOverrideToRecords(builtRecords, requestedPeriod),
+  const records = await applyApprovedFinalSettlementsToRecords(
+    applyDayrateScheduleOverrideToRecords(
+      applySalaryScheduleOverrideToRecords(builtRecords, requestedPeriod),
+      requestedPeriod,
+    ),
     requestedPeriod,
   );
 

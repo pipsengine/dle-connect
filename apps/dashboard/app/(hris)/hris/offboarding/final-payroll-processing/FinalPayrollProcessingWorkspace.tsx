@@ -230,7 +230,7 @@ export default function FinalPayrollProcessingWorkspace({
       <div className={styles.titleRow}>
         <div>
           <h1>Final Payroll Processing</h1>
-          <p>Settlement calculation after resignation clearance, including terminal benefits (gratuity, leave encashment, and related exit pay).</p>
+          <p>Submit to the HR Manager only. Approval posts this as the employee’s payroll for the month, then marks them Inactive and excludes them from later runs.</p>
         </div>
         <div className={styles.actions}>
           <button type="button" onClick={() => void load(period || undefined, selectedId)}>
@@ -426,6 +426,7 @@ export default function FinalPayrollProcessingWorkspace({
                 ['Service Length', selected.serviceLength],
                 ['Payroll Currency', selected.currency],
                 ['Current Basic Salary', formatFinalPayrollMoney(selected.basicSalary, selected.currency)],
+                ['HR Manager', selected.hrManagerName || 'HR Manager'],
                 ['Last Regular Payroll', selected.lastRegularPayroll],
                 ['Next Payroll', selected.nextPayrollExcluded ? 'Excluded' : 'Included'],
               ].map(([label, value]) => (
@@ -491,12 +492,16 @@ export default function FinalPayrollProcessingWorkspace({
               {detailTab === 'Approval' ? (
                 <>
                   <h3>Approval Workflow</h3>
+                  <p style={{ margin: '0 0 12px', fontSize: 13 }}>
+                    Only the HR Manager can approve. Approval posts this settlement as {payload?.periodLabel || selected.period} payroll and deactivates the employee afterwards.
+                  </p>
                   {(selected.approvalStages || []).map((stage, index) => (
                     <div className={`${styles.flow} ${stage.status !== 'Pending' ? styles.flowActive : ''}`} key={stage.id}>
                       <i>{index + 1}</i>
                       {stage.label} — {stage.status}
                     </div>
                   ))}
+                  {selected.notifyDetail ? <small>{selected.notifyDetail}</small> : null}
                 </>
               ) : null}
 
@@ -542,13 +547,31 @@ export default function FinalPayrollProcessingWorkspace({
                 onChange={(event) => setComment(event.target.value)}
                 placeholder="Add a comment or note..."
               />
+              {selected.notifyDetail && selected.status === 'Awaiting Approval' ? (
+                <small>{selected.notifyDetail}</small>
+              ) : null}
+              {selected.payrollAppliedAt ? (
+                <small>Posted to Process Payroll for {payload?.periodLabel || selected.period}. Employee is Inactive and excluded from later runs.</small>
+              ) : null}
               <div className={styles.footerActions}>
-                <button type="button" disabled={busy} onClick={() => void runAction('return')}>Return</button>
+                <button type="button" disabled={busy || ['Approved', 'Paid'].includes(selected.status)} onClick={() => void runAction('return')}>Return</button>
                 <button type="button" disabled={busy} onClick={() => void runAction('clarify')}>Request Clarification</button>
-                <button type="button" className={styles.primary} disabled={busy} onClick={() => void runAction('approve')}>
-                  Approve & Send to Finance
+                <button
+                  type="button"
+                  className={styles.primary}
+                  disabled={
+                    busy
+                    || !payload?.canApprove
+                    || !['Awaiting Approval', 'In Review', 'Awaiting Clearance'].includes(selected.status)
+                  }
+                  onClick={() => void runAction('approve')}
+                >
+                  Approve (apply to payroll)
                 </button>
               </div>
+              {!payload?.canApprove && ['Awaiting Approval', 'In Review', 'Awaiting Clearance'].includes(selected.status) ? (
+                <small>Only the HR Manager can approve this settlement.</small>
+              ) : null}
             </div>
           </div>
         </section>

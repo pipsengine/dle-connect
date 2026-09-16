@@ -74,6 +74,13 @@ export type FinalPayrollSettlement = {
   lastRegularPayroll: string;
   nextPayrollExcluded: boolean;
   status: FinalPayrollStatus;
+  hrManagerName?: string | null;
+  hrManagerCode?: string | null;
+  approvedAt?: string | null;
+  approvedBy?: string | null;
+  payrollAppliedAt?: string | null;
+  deactivatedAt?: string | null;
+  notifyDetail?: string | null;
   clearance: FinalPayrollClearanceItem[];
   approvalStages: FinalPayrollApprovalStage[];
   earnings: FinalPayrollLine[];
@@ -104,6 +111,8 @@ export type FinalPayrollPayload = {
   tabCounts: Record<string, number>;
   selectedId: string | null;
   selected: FinalPayrollSettlement | null;
+  /** True when the current user is the HR Manager (or Super Admin unblock). */
+  canApprove?: boolean;
   filterOptions: {
     departments: string[];
     exitTypes: string[];

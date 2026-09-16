@@ -30,7 +30,7 @@ const resolveActor = async () => {
 
 export async function GET(request: Request) {
   try {
-    await resolveActor();
+    const { session } = await resolveActor();
     const { searchParams } = new URL(request.url);
     const period = searchParams.get('period') || currentFinalPayrollPeriod();
     const selectedId = searchParams.get('id');
@@ -73,6 +73,7 @@ export async function GET(request: Request) {
       selectedId,
       employeeCode,
       employeeId,
+      session,
     });
     if (format === 'csv') {
       const csv = settlementsToCsv(payload.settlements);
@@ -97,7 +98,7 @@ export async function GET(request: Request) {
 
 export async function POST(request: Request) {
   try {
-    const { actor } = await resolveActor();
+    const { actor, session } = await resolveActor();
     const body = await request.json().catch(() => ({}));
     const persist = body.persist !== false && body.preview !== true;
     const settlement = persist
@@ -133,6 +134,7 @@ export async function POST(request: Request) {
       period: settlement.period,
       selectedId: settlement.id,
       actor,
+      session,
     });
     return NextResponse.json({ ok: true, persisted: true, settlement, ...payload });
   } catch (error: any) {
@@ -145,7 +147,7 @@ export async function POST(request: Request) {
 
 export async function PATCH(request: Request) {
   try {
-    const { actor } = await resolveActor();
+    const { actor, session } = await resolveActor();
     const body = await request.json().catch(() => ({}));
     const id = String(body.id || '').trim();
 
@@ -186,6 +188,7 @@ export async function PATCH(request: Request) {
     const settlement = await updateFinalPayrollSettlement({
       id,
       actor,
+      session,
       action: body.action || 'save',
       comment: body.comment,
       patch: body.patch,
@@ -194,12 +197,14 @@ export async function PATCH(request: Request) {
       period: settlement.period,
       selectedId: settlement.id,
       actor,
+      session,
     });
     return NextResponse.json({ ok: true, persisted: true, settlement, ...payload });
   } catch (error: any) {
+    const message = error?.message || 'Unable to update final payroll settlement.';
     return NextResponse.json(
-      { ok: false, error: error?.message || 'Unable to update final payroll settlement.' },
-      { status: 400 },
+      { ok: false, error: message },
+      { status: /Only the HR Manager/i.test(message) ? 403 : 400 },
     );
   }
 }

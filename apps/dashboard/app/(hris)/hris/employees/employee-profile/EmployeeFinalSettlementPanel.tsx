@@ -95,7 +95,9 @@ export default function EmployeeFinalSettlementPanel({
           <div className="mt-1 text-sm font-extrabold text-slate-900">
             {loading
               ? 'Loading…'
-              : settlement?.status
+              : settlement?.status === 'Awaiting Approval'
+                ? 'Awaiting HR Manager approval'
+                : settlement?.status
                 || (data?.resignation
                   ? `Resignation: ${data.resignation.status}`
                   : 'Not started')}

@@ -422,6 +422,37 @@ export const buildTimesheetApprovalRequestEmail = (input: {
   actions: [{ href: input.workspaceLink, label: 'Open Timesheet Approval', tone: 'primary' }],
 }, input.baseUrl);
 
+export const buildFinalSettlementApprovalEmail = (input: {
+  recipientName: string;
+  employeeName: string;
+  employeeCode: string;
+  department?: string;
+  periodLabel: string;
+  exitType?: string;
+  lastWorkingDay?: string | null;
+  netPayLabel: string;
+  actorName?: string;
+  workspaceLink: string;
+  baseUrl?: string | null;
+}) => withBrand({
+  recipientName: input.recipientName,
+  subject: `Final payroll settlement awaiting your approval — ${input.employeeName}`,
+  module: 'Final Payroll Settlement',
+  headline: 'HR Manager approval required',
+  intro: `${input.actorName || 'Payroll'} submitted a final payroll settlement for ${input.employeeName}. Approve it to post this as the employee’s salary for ${input.periodLabel} and deactivate them from later payroll runs.`,
+  tone: 'warning',
+  details: [
+    { label: 'Employee', value: `${input.employeeName} (${input.employeeCode})` },
+    ...(input.department ? [{ label: 'Department', value: input.department }] : []),
+    { label: 'Settlement period', value: input.periodLabel },
+    ...(input.exitType ? [{ label: 'Exit type', value: input.exitType }] : []),
+    ...(input.lastWorkingDay ? [{ label: 'Last working day', value: formatEmailDate(input.lastWorkingDay) }] : []),
+    { label: 'Net settlement', value: input.netPayLabel },
+  ],
+  actions: [{ href: input.workspaceLink, label: 'Open settlement for approval', tone: 'primary' }],
+  footerNote: 'Only the HR Manager can approve. Approval posts this amount as the employee’s payroll for the settlement month and marks them inactive for later periods.',
+}, input.baseUrl);
+
 export const buildInternshipReviewTaskEmail = (input: {
   recipientName: string;
   internName: string;

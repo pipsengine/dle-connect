@@ -2653,6 +2653,33 @@ export const upsertEmployeePayrollPackageFromScheduleInDb = async (input: {
   return true;
 };
 
+export const markEmployeeInactiveInDb = async (input: {
+  employeeCode: string;
+  employeeId?: string | null;
+  reason?: string | null;
+}) => {
+  const p = await pool();
+  if (!p) return false;
+  const code = str(input.employeeCode);
+  const altId = str(input.employeeId);
+  if (!code && !altId) return false;
+  const result = await p.request()
+    .input('employee_code', sql.NVarChar(50), code)
+    .input('employee_id_text', sql.NVarChar(50), altId || code)
+    .input('employment_status', sql.VarChar(40), 'Inactive')
+    .query(`
+      UPDATE [hris].[Employees]
+      SET employment_status = @employment_status,
+          modified_at = SYSUTCDATETIME(),
+          modified_by = SUSER_SNAME()
+      WHERE employee_code = @employee_code
+         OR employee_code = @employee_id_text
+         OR CAST(employee_id AS NVARCHAR(50)) = @employee_id_text
+         OR REPLACE(UPPER(employee_code), N'P', N'') = REPLACE(UPPER(@employee_code), N'P', N'');
+    `);
+  return Number(result.rowsAffected?.[0] || 0) > 0;
+};
+
 export const updateEmployeeContractPayrollClassificationInDb = async (input: {
   employeeDbId: number;
   action: 'deactivate-non-daily' | 'activate-daily-rate';
