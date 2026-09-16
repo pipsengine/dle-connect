@@ -25,6 +25,22 @@ CREATE TABLE [procurement].[Suppliers] (
 
 IF COL_LENGTH(N'[procurement].[Suppliers]', N'IsBlacklisted') IS NULL
   ALTER TABLE [procurement].[Suppliers] ADD [IsBlacklisted] BIT NOT NULL CONSTRAINT [DF_ProcSuppliers_IsBlacklisted] DEFAULT 0;
+IF COL_LENGTH(N'[procurement].[Suppliers]', N'Source') IS NULL
+  ALTER TABLE [procurement].[Suppliers] ADD [Source] NVARCHAR(20) NOT NULL CONSTRAINT [DF_ProcSuppliers_Source] DEFAULT N'LOCAL';
+IF COL_LENGTH(N'[procurement].[Suppliers]', N'SageCode') IS NULL
+  ALTER TABLE [procurement].[Suppliers] ADD [SageCode] NVARCHAR(80) NULL;
+BEGIN TRY
+  IF NOT EXISTS (
+    SELECT 1 FROM sys.indexes WHERE name = N'UX_ProcSuppliers_Code' AND object_id = OBJECT_ID(N'[procurement].[Suppliers]')
+  )
+    EXEC(N'CREATE UNIQUE INDEX [UX_ProcSuppliers_Code] ON [procurement].[Suppliers]([Code]) WHERE [Code] IS NOT NULL AND LTRIM(RTRIM([Code])) <> N''''');
+END TRY BEGIN CATCH END CATCH;
+BEGIN TRY
+  IF NOT EXISTS (
+    SELECT 1 FROM sys.indexes WHERE name = N'UX_ProcSuppliers_SageCode' AND object_id = OBJECT_ID(N'[procurement].[Suppliers]')
+  )
+    EXEC(N'CREATE UNIQUE INDEX [UX_ProcSuppliers_SageCode] ON [procurement].[Suppliers]([SageCode]) WHERE [SageCode] IS NOT NULL AND LTRIM(RTRIM([SageCode])) <> N''''');
+END TRY BEGIN CATCH END CATCH;
 
 IF OBJECT_ID(N'[procurement].[PurchaseRequisitions]', N'U') IS NULL
 CREATE TABLE [procurement].[PurchaseRequisitions] (

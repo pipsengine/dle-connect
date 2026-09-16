@@ -26,6 +26,7 @@ import {
   listRfqs,
   listSettings,
   listSuppliers,
+  nextSupplierCode,
   saveCbeBidMatrix,
   saveCbeTechnical,
   submitRecommendation,
@@ -37,6 +38,7 @@ import {
   upsertRfq,
   upsertSetting,
   upsertSupplier,
+  syncSageSuppliersFromX3,
 } from '@/lib/procurement-store';
 
 const ok = (data: unknown) => NextResponse.json({ status: 'success', data });
@@ -67,6 +69,8 @@ export async function GET(request: NextRequest) {
         return ok(await buildProcurementDashboard());
       case 'suppliers':
         return ok(await listSuppliers());
+      case 'next-supplier-code':
+        return ok({ code: await nextSupplierCode() });
       case 'purchase-requisitions':
         return ok(await listPurchaseRequisitions());
       case 'rfqs':
@@ -124,6 +128,8 @@ export async function POST(request: NextRequest) {
     switch (action) {
       case 'upsert-supplier':
         return ok(await upsertSupplier(body.payload || body, actor));
+      case 'sync-sage-suppliers':
+        return ok(await syncSageSuppliersFromX3(actor));
       case 'upsert-pr':
         return ok(await upsertPurchaseRequisition(body.payload || body, actor));
       case 'upsert-rfq':

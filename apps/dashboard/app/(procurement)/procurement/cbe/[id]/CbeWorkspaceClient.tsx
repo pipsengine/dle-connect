@@ -20,10 +20,12 @@ import {
   Save,
   Scale,
   Send,
+  Trash2,
   Trophy,
   Users,
 } from 'lucide-react';
 import { moneyNgn, procurementGet, procurementPost } from '../../lib/procurement-api';
+import { SearchableSelect } from '../../_components/proc-lookups';
 import '../cbe-styles.css';
 
 type BidPrice = { original: number; negotiated?: number | null };
@@ -35,8 +37,22 @@ type BidItem = {
   qty: number;
   prices: Record<string, BidPrice>;
 };
+type SupplierRow = {
+  supplierId: string;
+  name: string;
+  code: string | null;
+  isApproved: boolean;
+  currency: string | null;
+  paymentTerms: string | null;
+  deliveryPeriod: string | null;
+  deliveryLocation: string | null;
+  outstanding: number;
+  isActive: boolean;
+  isBlacklisted: boolean;
+};
 type Bidder = {
   bidderId: string;
+  supplierId: string | null;
   name: string;
   code: string | null;
   approved: boolean;
@@ -117,12 +133,14 @@ type Evaluation = {
   cbeId: string;
   title: string;
   rfqNumber: string | null;
+  prId: string | null;
   project: string | null;
   department: string | null;
   buyerName: string | null;
   currency: string;
   evaluationMethod: string | null;
   status: string;
+  bidsLocked?: boolean;
   createdAt: string;
   updatedAt: string;
 };
@@ -206,6 +224,14 @@ function technicalAccepted(criteria: TechCriteria[], bidderId: string) {
   return !criteria.some((c) => c.mandatory && c.supplierStatus?.[bidderId] === 'Non-Compliant');
 }
 
+function newBidderId() {
+  return `BID-${Date.now().toString(36)}-${Math.random().toString(16).slice(2, 8)}`;
+}
+
+function toDateInput(value: string | null | undefined) {
+  return (value || '').slice(0, 10);
+}
+
 function formatWhen(iso: string | null | undefined) {
   if (!iso) return '—';
   const d = new Date(iso);
@@ -272,6 +298,10 @@ export default function CbeWorkspaceClient({ cbeId }: Props) {
   const [statusDraft, setStatusDraft] = useState('Draft');
   const [techDraft, setTechDraft] = useState<TechCriteria[]>([]);
   const [onlyAccepted, setOnlyAccepted] = useState(true);
+  const [suppliers, setSuppliers] = useState<SupplierRow[]>([]);
+  const [draftBidders, setDraftBidders] = useState<Bidder[]>([]);
+  const [draftItems, setDraftItems] = useState<BidItem[]>([]);
+  const [pendingSupplierId, setPendingSupplierId] = useState('');
 
   const [negForm, setNegForm] = useState({
     bidderId: '',
@@ -295,10 +325,17 @@ export default function CbeWorkspaceClient({ cbeId }: Props) {
     setLoading(true);
     setError('');
     try {
-      const data = await procurementGet<CbeDetail>('cbe', { id: cbeId });
+      const [data, catalog] = await Promise.all([
+        procurementGet<CbeDetail>('cbe', { id: cbeId }),
+        procurementGet<SupplierRow[]>('suppliers'),
+      ]);
       setDetail(data);
       setStatusDraft(data.evaluation.status);
       setTechDraft(data.technicalCriteria.map((c) => ({ ...c, supplierStatus: { ...c.supplierStatus } })));
+      setDraftBidders(data.bidders.map((b) => ({ ...b })));
+      setDraftItems(data.items.map((item) => ({ ...item, prices: { ...item.prices } })));
+      setSuppliers(catalog);
+      setPendingSupplierId('');
       setNegForm((f) => ({
         ...f,
         bidderId: f.bidderId || data.bidders[0]?.bidderId || '',
@@ -316,8 +353,8 @@ export default function CbeWorkspaceClient({ cbeId }: Props) {
   }, [load]);
 
   const evaluation = detail?.evaluation;
-  const bidders = detail?.bidders || [];
-  const items = detail?.items || [];
+  const bidders = draftBidders;
+  const items = draftItems;
   const criteria = techDraft.length ? techDraft : detail?.technicalCriteria || [];
   const rounds = detail?.negotiationRounds || [];
   const approvals = detail?.approvals || [];
@@ -341,6 +378,104 @@ export default function CbeWorkspaceClient({ cbeId }: Props) {
 
   const rankedAccepted = useMemo(() => rankedAll.filter((b) => b.accepted), [rankedAll]);
   const best = rankedAccepted[0] || null;
+  const bidsLocked =
+    Boolean(evaluation?.bidsLocked) || evaluation?.status === 'Awarded' || evaluation?.status === 'Cancelled';
+  const selectableSuppliers = useMemo(() => {
+    const used = new Set(draftBidders.map((b) => b.supplierId).filter(Boolean));
+    return suppliers.filter((s) => s.isActive && !s.isBlacklisted && !used.has(s.supplierId));
+  }, [suppliers, draftBidders]);
+  const supplierOptions = useMemo(
+    () =>
+      selectableSuppliers.map((s) => ({
+        value: s.supplierId,
+        label: s.name,
+        sub: `${s.code || s.supplierId}${s.isApproved ? ' · Approved' : ''}`,
+      })),
+    [selectableSuppliers],
+  );
+
+  const addSupplierToCbe = (supplierId: string) => {
+    if (!supplierId || bidsLocked) return;
+    const supplier = suppliers.find((s) => s.supplierId === supplierId);
+    if (!supplier) {
+      setError('Select a supplier from the register.');
+      return;
+    }
+    if (draftBidders.some((b) => b.supplierId === supplierId)) {
+      setError(`${supplier.name} is already on this CBE.`);
+      return;
+    }
+    const bidderId = newBidderId();
+    setDraftBidders((rows) => [
+      ...rows,
+      {
+        bidderId,
+        supplierId: supplier.supplierId,
+        name: supplier.name,
+        code: supplier.code,
+        approved: supplier.isApproved,
+        quoteNo: '',
+        quoteDate: '',
+        validUntil: '',
+        currency: supplier.currency || evaluation?.currency || 'NGN',
+        paymentTerms: supplier.paymentTerms,
+        deliveryPeriod: supplier.deliveryPeriod,
+        deliveryLocation: supplier.deliveryLocation,
+        outstanding: supplier.outstanding || 0,
+        discount: 0,
+        transportation: 0,
+        otherCharges: 0,
+        vatRate: 7.5,
+        sortOrder: rows.length,
+      },
+    ]);
+    setPendingSupplierId('');
+    setError('');
+  };
+
+  const removeBidder = (bidderId: string) => {
+    if (bidsLocked) return;
+    setDraftBidders((rows) => rows.filter((b) => b.bidderId !== bidderId));
+    setDraftItems((rows) =>
+      rows.map((item) => {
+        const prices = { ...item.prices };
+        delete prices[bidderId];
+        return { ...item, prices };
+      }),
+    );
+  };
+
+  const patchBidder = (bidderId: string, patch: Partial<Bidder>) => {
+    if (bidsLocked) return;
+    setDraftBidders((rows) => rows.map((b) => (b.bidderId === bidderId ? { ...b, ...patch } : b)));
+  };
+
+  const patchUnitPrice = (
+    itemId: string,
+    bidderId: string,
+    field: 'original' | 'negotiated',
+    raw: string,
+  ) => {
+    if (bidsLocked) return;
+    const parsed = raw === '' ? null : Number(raw);
+    const safe = parsed == null || Number.isFinite(parsed) ? parsed : 0;
+    setDraftItems((rows) =>
+      rows.map((item) => {
+        if (item.itemId !== itemId) return item;
+        const current = item.prices?.[bidderId] || { original: 0, negotiated: null };
+        return {
+          ...item,
+          prices: {
+            ...item.prices,
+            [bidderId]: {
+              original: field === 'original' ? Number(safe ?? 0) : Number(current.original || 0),
+              negotiated: field === 'negotiated' ? safe : current.negotiated,
+            },
+          },
+        };
+      }),
+    );
+  };
 
   const run = async (fn: () => Promise<void>) => {
     setBusy(true);
@@ -363,8 +498,37 @@ export default function CbeWorkspaceClient({ cbeId }: Props) {
       });
     });
 
+  const saveBidMatrix = () =>
+    run(async () => {
+      if (!draftBidders.length) throw new Error('Add at least one supplier quotation.');
+      if (draftBidders.some((b) => !b.supplierId)) {
+        throw new Error('Each quotation must be linked to a supplier from the register.');
+      }
+      await procurementPost('save-bid-matrix', {
+        id: cbeId,
+        payload: {
+          bidders: draftBidders,
+          items: draftItems,
+        },
+      });
+      if (evaluation?.status === 'Draft') {
+        await procurementPost('update-cbe', {
+          id: cbeId,
+          payload: { status: 'Bid Comparison' },
+        });
+      }
+    });
+
   const markBidComparisonComplete = () =>
     run(async () => {
+      if (!draftBidders.length) throw new Error('Add at least one supplier quotation before completing Bid Comparison.');
+      await procurementPost('save-bid-matrix', {
+        id: cbeId,
+        payload: {
+          bidders: draftBidders,
+          items: draftItems,
+        },
+      });
       await procurementPost('update-cbe', {
         id: cbeId,
         payload: { status: 'Technical Evaluation' },
@@ -373,7 +537,7 @@ export default function CbeWorkspaceClient({ cbeId }: Props) {
         id: cbeId,
         actionLabel: 'Bid comparison completed',
         section: 'Bid Comparison',
-        details: 'Original bid values reviewed and comparison marked complete',
+        details: 'Supplier quotations saved and comparison marked complete',
       });
       setActive('Technical Evaluation');
     });
@@ -551,7 +715,7 @@ export default function CbeWorkspaceClient({ cbeId }: Props) {
             <span className="statusChip">Status: {evaluation.status}</span>
           </div>
           <div className="metaLine">
-            <b>RFQ No.:</b> {evaluation.rfqNumber || '—'}
+            <b>PR No.:</b> {evaluation.prId || '—'}
             <span />
             <b>Project:</b> {evaluation.project || '—'}
             <span />
@@ -635,7 +799,7 @@ export default function CbeWorkspaceClient({ cbeId }: Props) {
                   {[
                     ['CBE Number', evaluation.cbeId],
                     ['Description', evaluation.title],
-                    ['RFQ Number', evaluation.rfqNumber || '—'],
+                    ['Purchase Requisition', evaluation.prId || '—'],
                     ['Project', evaluation.project || '—'],
                     ['Department', evaluation.department || '—'],
                     ['Buyer', evaluation.buyerName || '—'],
@@ -695,7 +859,7 @@ export default function CbeWorkspaceClient({ cbeId }: Props) {
                 <tbody>
                   {rankedAll.length === 0 ? (
                     <tr>
-                      <td colSpan={4}>No bidders loaded.</td>
+                      <td colSpan={4}>No supplier quotations entered yet.</td>
                     </tr>
                   ) : (
                     rankedAll.map((s, i) => (
@@ -788,13 +952,13 @@ export default function CbeWorkspaceClient({ cbeId }: Props) {
       {active === 'Bid Comparison' ? (
         <div className="content">
           <div className="kpiRow six">
-            <Kpi icon={Boxes} label="Items" value={String(items.length)} sub="Total requirements" />
-            <Kpi icon={Users} label="Bidders" value={String(bidders.length)} sub="Participating" />
+            <Kpi icon={Boxes} label="Items" value={String(items.length)} sub="From purchase requisition" />
+            <Kpi icon={Users} label="Suppliers" value={String(bidders.length)} sub="Selected for quotation" />
             <Kpi
               icon={CheckCircle2}
-              label="Quotations"
-              value={`${bidders.length} / ${bidders.length || 0}`}
-              sub="Loaded"
+              label="Quoted"
+              value={`${bidders.filter((s) => items.some((item) => Number(item.prices?.[s.bidderId]?.original || 0) > 0)).length} / ${bidders.length || 0}`}
+              sub="With unit prices"
             />
             <Kpi
               icon={BadgeDollarSign}
@@ -812,83 +976,269 @@ export default function CbeWorkspaceClient({ cbeId }: Props) {
             <Kpi icon={ClipboardCheck} label="Status" value={evaluation.status} sub="Header status" tone="cyan" />
           </div>
 
-          <section className="card matrixCard">
-            <div className="tableScroll">
-              <table className="matrix">
-                <thead>
-                  <tr>
-                    <th rowSpan={2}>#</th>
-                    <th rowSpan={2}>Description</th>
-                    <th rowSpan={2}>UOM</th>
-                    <th rowSpan={2}>Qty</th>
-                    {bidders.map((s) => (
-                      <th colSpan={4} key={s.bidderId} className="supplierHead">
-                        {s.name}
-                        <small>
-                          {s.quoteNo || '—'} • {s.quoteDate || '—'}
-                        </small>
-                      </th>
-                    ))}
-                  </tr>
-                  <tr>
-                    {bidders.flatMap((s) => [
-                      <th key={`${s.bidderId}-o`}>
-                        Unit
-                        <br />
-                        <small>Original</small>
-                      </th>,
-                      <th key={`${s.bidderId}-oe`}>
-                        Ext.
-                        <br />
-                        <small>Original</small>
-                      </th>,
-                      <th key={`${s.bidderId}-n`}>
-                        Unit
-                        <br />
-                        <small>Negotiated</small>
-                      </th>,
-                      <th key={`${s.bidderId}-ne`}>
-                        Ext.
-                        <br />
-                        <small>Negotiated</small>
-                      </th>,
-                    ])}
-                  </tr>
-                </thead>
-                <tbody>
-                  {items.map((item) => (
-                    <tr key={item.itemId}>
-                      <td>{item.lineNo}</td>
-                      <td className="wrap">{item.description}</td>
-                      <td>{item.uom || '—'}</td>
-                      <td>{item.qty}</td>
-                      {bidders.flatMap((s) => {
-                        const p = item.prices?.[s.bidderId];
-                        const original = Number(p?.original || 0);
-                        const negotiated = Number(p?.negotiated ?? p?.original ?? 0);
-                        return [
-                          <td key={`${item.itemId}-${s.bidderId}-o`}>{moneyNgn(original)}</td>,
-                          <td key={`${item.itemId}-${s.bidderId}-oe`}>{moneyNgn(original * item.qty)}</td>,
-                          <td key={`${item.itemId}-${s.bidderId}-n`}>{moneyNgn(negotiated)}</td>,
-                          <td key={`${item.itemId}-${s.bidderId}-ne`}>{moneyNgn(negotiated * item.qty)}</td>,
-                        ];
-                      })}
-                    </tr>
-                  ))}
-                  <tr className="totalRow">
-                    <td colSpan={4}>Subtotal (Material Value)</td>
-                    {bidders.flatMap((s) => [
-                      <td key={`${s.bidderId}-so`} colSpan={2}>
-                        {moneyNgn(supplierSubtotal(items, s.bidderId, false))}
-                      </td>,
-                      <td key={`${s.bidderId}-sn`} colSpan={2}>
-                        {moneyNgn(supplierSubtotal(items, s.bidderId, true))}
-                      </td>,
-                    ])}
-                  </tr>
-                </tbody>
-              </table>
+          <section className="card quotePicker">
+            <div className="cardTitleRow">
+              <h3>SELECT SUPPLIERS &amp; ENTER QUOTATIONS</h3>
             </div>
+            <p className="muted" style={{ marginTop: 0 }}>
+              Search the supplier register and add each vendor that submitted a quote. Use Procurement → Suppliers to
+              sync Sage vendors or create a local supplier.
+            </p>
+            {suppliers.length === 0 ? (
+              <div className="infoBanner">
+                No suppliers are seated in this system yet. After Sage suppliers are fetched into the register, they can
+                be searched and selected here.
+              </div>
+            ) : null}
+            <div className="supplierAddBar">
+              <div className="searchWrap">
+                <SearchableSelect
+                  label="Supplier"
+                  value={pendingSupplierId}
+                  options={supplierOptions}
+                  placeholder="Search suppliers by name or code…"
+                  disabled={bidsLocked || selectableSuppliers.length === 0}
+                  onChange={(v) => setPendingSupplierId(v)}
+                />
+              </div>
+              <button
+                type="button"
+                className="btn primary"
+                disabled={bidsLocked || busy || !pendingSupplierId}
+                onClick={() => addSupplierToCbe(pendingSupplierId)}
+              >
+                <Plus size={16} /> Add supplier
+              </button>
+            </div>
+            {bidders.length === 0 ? (
+              <div className="infoBanner">Add at least one supplier, then enter quotation unit prices against each requisition line.</div>
+            ) : (
+              <div className="quoteGrid">
+                {bidders.map((s) => (
+                  <article key={s.bidderId} className="quoteCard">
+                    <header>
+                      <div>
+                        <strong>{s.name}</strong>
+                        <small>
+                          {s.code || s.supplierId || '—'}
+                          {s.approved ? ' · Approved' : ''}
+                        </small>
+                      </div>
+                      <button
+                        type="button"
+                        className="iconBtn"
+                        title="Remove supplier"
+                        disabled={bidsLocked}
+                        onClick={() => removeBidder(s.bidderId)}
+                      >
+                        <Trash2 size={14} />
+                      </button>
+                    </header>
+                    <div className="quoteFields">
+                      <label>
+                        <span>Quote No.</span>
+                        <input
+                          className="quoteInput"
+                          disabled={bidsLocked}
+                          value={s.quoteNo || ''}
+                          onChange={(e) => patchBidder(s.bidderId, { quoteNo: e.target.value })}
+                        />
+                      </label>
+                      <label>
+                        <span>Quote date</span>
+                        <input
+                          type="date"
+                          className="quoteInput"
+                          disabled={bidsLocked}
+                          value={toDateInput(s.quoteDate)}
+                          onChange={(e) => patchBidder(s.bidderId, { quoteDate: e.target.value })}
+                        />
+                      </label>
+                      <label>
+                        <span>Valid until</span>
+                        <input
+                          type="date"
+                          className="quoteInput"
+                          disabled={bidsLocked}
+                          value={toDateInput(s.validUntil)}
+                          onChange={(e) => patchBidder(s.bidderId, { validUntil: e.target.value })}
+                        />
+                      </label>
+                      <label>
+                        <span>Payment terms</span>
+                        <input
+                          className="quoteInput"
+                          disabled={bidsLocked}
+                          value={s.paymentTerms || ''}
+                          onChange={(e) => patchBidder(s.bidderId, { paymentTerms: e.target.value })}
+                        />
+                      </label>
+                      <label>
+                        <span>Delivery period</span>
+                        <input
+                          className="quoteInput"
+                          disabled={bidsLocked}
+                          value={s.deliveryPeriod || ''}
+                          onChange={(e) => patchBidder(s.bidderId, { deliveryPeriod: e.target.value })}
+                        />
+                      </label>
+                      <label>
+                        <span>Delivery location</span>
+                        <input
+                          className="quoteInput"
+                          disabled={bidsLocked}
+                          value={s.deliveryLocation || ''}
+                          onChange={(e) => patchBidder(s.bidderId, { deliveryLocation: e.target.value })}
+                        />
+                      </label>
+                      <label>
+                        <span>Discount</span>
+                        <input
+                          type="number"
+                          className="quoteInput"
+                          disabled={bidsLocked}
+                          value={s.discount || 0}
+                          onChange={(e) => patchBidder(s.bidderId, { discount: Number(e.target.value) || 0 })}
+                        />
+                      </label>
+                      <label>
+                        <span>Transportation</span>
+                        <input
+                          type="number"
+                          className="quoteInput"
+                          disabled={bidsLocked}
+                          value={s.transportation || 0}
+                          onChange={(e) => patchBidder(s.bidderId, { transportation: Number(e.target.value) || 0 })}
+                        />
+                      </label>
+                      <label>
+                        <span>Other charges</span>
+                        <input
+                          type="number"
+                          className="quoteInput"
+                          disabled={bidsLocked}
+                          value={s.otherCharges || 0}
+                          onChange={(e) => patchBidder(s.bidderId, { otherCharges: Number(e.target.value) || 0 })}
+                        />
+                      </label>
+                      <label>
+                        <span>VAT %</span>
+                        <input
+                          type="number"
+                          className="quoteInput"
+                          disabled={bidsLocked}
+                          value={s.vatRate || 0}
+                          onChange={(e) => patchBidder(s.bidderId, { vatRate: Number(e.target.value) || 0 })}
+                        />
+                      </label>
+                    </div>
+                  </article>
+                ))}
+              </div>
+            )}
+          </section>
+
+          <section className="card matrixCard">
+            {!items.length ? (
+              <div className="infoBanner" style={{ margin: 12 }}>
+                This CBE has no line items. Recreate it from a purchase requisition that includes requirements.
+              </div>
+            ) : (
+              <div className="tableScroll">
+                <table className="matrix" style={{ minWidth: 520 + Math.max(bidders.length, 1) * 360 }}>
+                  <thead>
+                    <tr>
+                      <th rowSpan={2}>#</th>
+                      <th rowSpan={2}>Description</th>
+                      <th rowSpan={2}>UOM</th>
+                      <th rowSpan={2}>Qty</th>
+                      {bidders.map((s) => (
+                        <th colSpan={4} key={s.bidderId} className="supplierHead">
+                          {s.name}
+                          <small>
+                            {s.quoteNo || '—'} • {s.quoteDate || '—'}
+                          </small>
+                        </th>
+                      ))}
+                    </tr>
+                    <tr>
+                      {bidders.flatMap((s) => [
+                        <th key={`${s.bidderId}-o`}>
+                          Unit
+                          <br />
+                          <small>Original</small>
+                        </th>,
+                        <th key={`${s.bidderId}-oe`}>
+                          Ext.
+                          <br />
+                          <small>Original</small>
+                        </th>,
+                        <th key={`${s.bidderId}-n`}>
+                          Unit
+                          <br />
+                          <small>Negotiated</small>
+                        </th>,
+                        <th key={`${s.bidderId}-ne`}>
+                          Ext.
+                          <br />
+                          <small>Negotiated</small>
+                        </th>,
+                      ])}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {items.map((item) => (
+                      <tr key={item.itemId}>
+                        <td>{item.lineNo}</td>
+                        <td className="wrap">{item.description}</td>
+                        <td>{item.uom || '—'}</td>
+                        <td>{item.qty}</td>
+                        {bidders.flatMap((s) => {
+                          const p = item.prices?.[s.bidderId];
+                          const original = Number(p?.original || 0);
+                          const negotiated = Number(p?.negotiated ?? 0);
+                          return [
+                            <td key={`${item.itemId}-${s.bidderId}-o`}>
+                              <input
+                                type="number"
+                                className="unitInput"
+                                disabled={bidsLocked}
+                                value={original}
+                                onChange={(e) => patchUnitPrice(item.itemId, s.bidderId, 'original', e.target.value)}
+                              />
+                            </td>,
+                            <td key={`${item.itemId}-${s.bidderId}-oe`}>{moneyNgn(original * item.qty)}</td>,
+                            <td key={`${item.itemId}-${s.bidderId}-n`}>
+                              <input
+                                type="number"
+                                className="unitInput"
+                                disabled={bidsLocked}
+                                value={p?.negotiated == null ? '' : negotiated}
+                                onChange={(e) => patchUnitPrice(item.itemId, s.bidderId, 'negotiated', e.target.value)}
+                              />
+                            </td>,
+                            <td key={`${item.itemId}-${s.bidderId}-ne`}>
+                              {moneyNgn((p?.negotiated == null ? original : negotiated) * item.qty)}
+                            </td>,
+                          ];
+                        })}
+                      </tr>
+                    ))}
+                    <tr className="totalRow">
+                      <td colSpan={4}>Subtotal (Material Value)</td>
+                      {bidders.flatMap((s) => [
+                        <td key={`${s.bidderId}-so`} colSpan={2}>
+                          {moneyNgn(supplierSubtotal(items, s.bidderId, false))}
+                        </td>,
+                        <td key={`${s.bidderId}-sn`} colSpan={2}>
+                          {moneyNgn(supplierSubtotal(items, s.bidderId, true))}
+                        </td>,
+                      ])}
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            )}
           </section>
 
           <section className="card">
@@ -913,39 +1263,45 @@ export default function CbeWorkspaceClient({ cbeId }: Props) {
                   </tr>
                 </thead>
                 <tbody>
-                  {(
-                    [
-                      ['Discount', (s: Bidder) => moneyNgn(s.discount)],
-                      ['Transportation / Delivery Charges', (s: Bidder) => moneyNgn(s.transportation)],
-                      ['Other Charges', (s: Bidder) => moneyNgn(s.otherCharges)],
-                      [
-                        'VAT',
-                        (s: Bidder, negotiated: boolean) => {
-                          const sub = supplierSubtotal(items, s.bidderId, negotiated);
-                          const taxable = sub - s.discount + s.transportation + s.otherCharges;
-                          return moneyNgn(taxable * (Number(s.vatRate || 0) / 100));
-                        },
-                      ],
-                      [
-                        'Total Order Value (Incl. VAT)',
-                        (s: Bidder, negotiated: boolean) => moneyNgn(supplierTotal(s, items, negotiated)),
-                      ],
-                      ['Delivery Location', (s: Bidder) => s.deliveryLocation || '—'],
-                      ['Delivery Period', (s: Bidder) => s.deliveryPeriod || '—'],
-                      ['Payment Terms', (s: Bidder) => s.paymentTerms || '—'],
-                      ['Quote Valid Until', (s: Bidder) => s.validUntil || '—'],
-                    ] as Array<[string, (s: Bidder, negotiated: boolean) => string]>
-                  ).map(([label, fn]) => (
-                    <tr key={label}>
-                      <td>
-                        <b>{label}</b>
-                      </td>
-                      {bidders.flatMap((s) => [
-                        <td key={`${s.bidderId}-${label}-o`}>{fn(s, false)}</td>,
-                        <td key={`${s.bidderId}-${label}-n`}>{fn(s, true)}</td>,
-                      ])}
+                  {bidders.length === 0 ? (
+                    <tr>
+                      <td colSpan={1}>No suppliers selected.</td>
                     </tr>
-                  ))}
+                  ) : (
+                    (
+                      [
+                        ['Discount', (s: Bidder) => moneyNgn(s.discount)],
+                        ['Transportation / Delivery Charges', (s: Bidder) => moneyNgn(s.transportation)],
+                        ['Other Charges', (s: Bidder) => moneyNgn(s.otherCharges)],
+                        [
+                          'VAT',
+                          (s: Bidder, negotiated: boolean) => {
+                            const sub = supplierSubtotal(items, s.bidderId, negotiated);
+                            const taxable = sub - s.discount + s.transportation + s.otherCharges;
+                            return moneyNgn(taxable * (Number(s.vatRate || 0) / 100));
+                          },
+                        ],
+                        [
+                          'Total Order Value (Incl. VAT)',
+                          (s: Bidder, negotiated: boolean) => moneyNgn(supplierTotal(s, items, negotiated)),
+                        ],
+                        ['Delivery Location', (s: Bidder) => s.deliveryLocation || '—'],
+                        ['Delivery Period', (s: Bidder) => s.deliveryPeriod || '—'],
+                        ['Payment Terms', (s: Bidder) => s.paymentTerms || '—'],
+                        ['Quote Valid Until', (s: Bidder) => s.validUntil || '—'],
+                      ] as Array<[string, (s: Bidder, negotiated: boolean) => string]>
+                    ).map(([label, fn]) => (
+                      <tr key={label}>
+                        <td>
+                          <b>{label}</b>
+                        </td>
+                        {bidders.flatMap((s) => [
+                          <td key={`${s.bidderId}-${label}-o`}>{fn(s, false)}</td>,
+                          <td key={`${s.bidderId}-${label}-n`}>{fn(s, true)}</td>,
+                        ])}
+                      </tr>
+                    ))
+                  )}
                 </tbody>
               </table>
             </div>
@@ -955,10 +1311,13 @@ export default function CbeWorkspaceClient({ cbeId }: Props) {
             <button type="button" className="btn secondary" onClick={() => setActive('Overview')}>
               Cancel
             </button>
+            <button type="button" className="btn secondary" disabled={busy || bidsLocked} onClick={() => void saveBidMatrix()}>
+              {busy ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />} Save quotations
+            </button>
             <button
               type="button"
               className="btn primary"
-              disabled={busy}
+              disabled={busy || bidsLocked}
               onClick={() => void markBidComparisonComplete()}
             >
               Mark Bid Comparison Complete <ArrowRight size={16} />

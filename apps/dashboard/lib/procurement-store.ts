@@ -191,6 +191,8 @@ const mapSupplier = (row: Record<string, unknown>) => ({
   supplierId: String(row.SupplierId),
   name: String(row.Name),
   code: row.Code == null ? null : String(row.Code),
+  sageCode: row.SageCode == null ? null : String(row.SageCode),
+  source: String(row.Source || 'LOCAL'),
   isApproved: toBool(row.IsApproved),
   currency: row.Currency == null ? null : String(row.Currency),
   paymentTerms: row.PaymentTerms == null ? null : String(row.PaymentTerms),
@@ -347,6 +349,33 @@ const mapBidder = (row: Record<string, unknown>): ProcBidder => ({
   sortOrder: toNum(row.SortOrder),
 });
 
+export const nextSupplierCode = async (pool?: sql.ConnectionPool) => {
+  const db = pool || (await ensureProcurementDb());
+  const result = await db.request().query(`
+    SELECT [Code] FROM [procurement].[Suppliers]
+    WHERE [Code] IS NOT NULL AND LTRIM(RTRIM([Code])) <> N''
+  `);
+  let bestPrefix = 'SUP-';
+  let bestWidth = 4;
+  let bestNum = 0;
+  for (const row of result.recordset) {
+    const code = String(row.Code || '').trim();
+    const match = code.match(/^(.*?)(\d+)$/);
+    if (!match) continue;
+    const prefix = match[1];
+    const digits = match[2] || '';
+    const num = Number(digits);
+    if (!Number.isFinite(num)) continue;
+    if (num > bestNum || (num === bestNum && digits.length >= bestWidth)) {
+      bestNum = num;
+      bestPrefix = prefix;
+      bestWidth = Math.max(digits.length, String(num).length);
+    }
+  }
+  const next = bestNum + 1;
+  return `${bestPrefix}${String(next).padStart(Math.max(bestWidth, String(next).length), '0')}`;
+};
+
 export const listSuppliers = async () => {
   const pool = await ensureProcurementDb();
   const result = await pool.request().query(`
@@ -358,12 +387,38 @@ export const listSuppliers = async () => {
 
 export const upsertSupplier = async (input: Record<string, unknown>, actor = 'system') => {
   const pool = await ensureProcurementDb();
-  const supplierId = clean(input.supplierId, 40) || (await nextSequentialId(pool, 'Suppliers', 'SupplierId', 'SUP'));
+  const name = clean(input.name, 220);
+  if (!name) throw new Error('Supplier name is required.');
+  const existingId = clean(input.supplierId, 40);
+  let supplierId = existingId;
+  let code = clean(input.code, 80);
+  if (!existingId) {
+    code = code || (await nextSupplierCode(pool));
+    supplierId = code.slice(0, 40);
+  } else if (!code) {
+    code = (await nextSupplierCode(pool));
+  }
+
+  const duplicate = await pool
+    .request()
+    .input('Code', sql.NVarChar(80), code)
+    .input('SupplierId', sql.NVarChar(40), supplierId)
+    .query(`
+      SELECT TOP 1 [SupplierId], [Name]
+      FROM [procurement].[Suppliers]
+      WHERE [Code]=@Code AND [SupplierId]<>@SupplierId
+    `);
+  if (duplicate.recordset[0]) {
+    throw new Error(`Supplier code ${code} is already assigned to ${duplicate.recordset[0].Name}.`);
+  }
+
   await pool
     .request()
     .input('SupplierId', sql.NVarChar(40), supplierId)
-    .input('Name', sql.NVarChar(220), clean(input.name, 220))
-    .input('Code', sql.NVarChar(80), cleanNullable(input.code, 80))
+    .input('Name', sql.NVarChar(220), name)
+    .input('Code', sql.NVarChar(80), code)
+    .input('SageCode', sql.NVarChar(80), cleanNullable(input.sageCode, 80))
+    .input('Source', sql.NVarChar(20), clean(input.source || (existingId ? 'LOCAL' : 'LOCAL'), 20) || 'LOCAL')
     .input('IsApproved', sql.Bit, input.isApproved == null ? 1 : toBool(input.isApproved) ? 1 : 0)
     .input('Currency', sql.NVarChar(10), cleanNullable(input.currency, 10) || 'NGN')
     .input('PaymentTerms', sql.NVarChar(200), cleanNullable(input.paymentTerms, 200))
@@ -380,7 +435,9 @@ export const upsertSupplier = async (input: Record<string, unknown>, actor = 'sy
     .query(`
       IF EXISTS (SELECT 1 FROM [procurement].[Suppliers] WHERE [SupplierId]=@SupplierId)
         UPDATE [procurement].[Suppliers] SET
-          [Name]=@Name, [Code]=@Code, [IsApproved]=@IsApproved, [Currency]=@Currency,
+          [Name]=@Name, [Code]=@Code, [SageCode]=COALESCE(@SageCode, [SageCode]),
+          [Source]=CASE WHEN [Source]=N'SAGE' THEN [Source] ELSE @Source END,
+          [IsApproved]=@IsApproved, [Currency]=@Currency,
           [PaymentTerms]=@PaymentTerms, [DeliveryPeriod]=@DeliveryPeriod, [DeliveryLocation]=@DeliveryLocation,
           [Outstanding]=@Outstanding, [Email]=@Email, [Phone]=@Phone, [Notes]=@Notes, [IsActive]=@IsActive,
           [IsBlacklisted]=@IsBlacklisted,
@@ -388,14 +445,77 @@ export const upsertSupplier = async (input: Record<string, unknown>, actor = 'sy
         WHERE [SupplierId]=@SupplierId
       ELSE
         INSERT INTO [procurement].[Suppliers] (
-          [SupplierId], [Name], [Code], [IsApproved], [Currency], [PaymentTerms], [DeliveryPeriod],
+          [SupplierId], [Name], [Code], [SageCode], [Source], [IsApproved], [Currency], [PaymentTerms], [DeliveryPeriod],
           [DeliveryLocation], [Outstanding], [Email], [Phone], [Notes], [IsActive], [IsBlacklisted], [CreatedBy], [UpdatedBy]
         ) VALUES (
-          @SupplierId, @Name, @Code, @IsApproved, @Currency, @PaymentTerms, @DeliveryPeriod,
+          @SupplierId, @Name, @Code, @SageCode, @Source, @IsApproved, @Currency, @PaymentTerms, @DeliveryPeriod,
           @DeliveryLocation, @Outstanding, @Email, @Phone, @Notes, @IsActive, @IsBlacklisted, @CreatedBy, @UpdatedBy
         )
     `);
   return (await listSuppliers()).find((s) => s.supplierId === supplierId) || null;
+};
+
+export const syncSageSuppliersFromX3 = async (actor = 'system') => {
+  const { fetchDistinctSageX3Suppliers } = await import('@/lib/sage-x3-suppliers');
+  const fetched = await fetchDistinctSageX3Suppliers();
+  const pool = await ensureProcurementDb();
+  let inserted = 0;
+  let updated = 0;
+  for (const supplier of fetched.suppliers) {
+    const existing = await pool
+      .request()
+      .input('SageCode', sql.NVarChar(80), supplier.sageCode)
+      .input('Code', sql.NVarChar(80), supplier.sageCode)
+      .query(`
+        SELECT TOP 1 [SupplierId]
+        FROM [procurement].[Suppliers]
+        WHERE [SageCode]=@SageCode OR [Code]=@Code OR [SupplierId]=@SageCode
+      `);
+    const supplierId = String(existing.recordset[0]?.SupplierId || supplier.sageCode).slice(0, 40);
+    const wasExisting = Boolean(existing.recordset[0]);
+    await pool
+      .request()
+      .input('SupplierId', sql.NVarChar(40), supplierId)
+      .input('Name', sql.NVarChar(220), clean(supplier.name, 220))
+      .input('Code', sql.NVarChar(80), supplier.sageCode.slice(0, 80))
+      .input('SageCode', sql.NVarChar(80), supplier.sageCode.slice(0, 80))
+      .input('Source', sql.NVarChar(20), 'SAGE')
+      .input('IsApproved', sql.Bit, 1)
+      .input('Currency', sql.NVarChar(10), cleanNullable(supplier.currency, 10) || 'NGN')
+      .input('PaymentTerms', sql.NVarChar(200), cleanNullable(supplier.paymentTerms, 200))
+      .input('DeliveryLocation', sql.NVarChar(200), cleanNullable(supplier.deliveryLocation, 200))
+      .input('Email', sql.NVarChar(200), cleanNullable(supplier.email, 200))
+      .input('Phone', sql.NVarChar(80), cleanNullable(supplier.phone, 80))
+      .input('IsActive', sql.Bit, supplier.isActive ? 1 : 0)
+      .input('CreatedBy', sql.NVarChar(120), clean(actor, 120))
+      .input('UpdatedBy', sql.NVarChar(120), clean(actor, 120))
+      .query(`
+        IF EXISTS (SELECT 1 FROM [procurement].[Suppliers] WHERE [SupplierId]=@SupplierId)
+          UPDATE [procurement].[Suppliers] SET
+            [Name]=@Name, [Code]=@Code, [SageCode]=@SageCode, [Source]=@Source,
+            [Currency]=@Currency, [PaymentTerms]=@PaymentTerms, [DeliveryLocation]=@DeliveryLocation,
+            [Email]=@Email, [Phone]=@Phone, [IsActive]=@IsActive, [IsApproved]=@IsApproved,
+            [UpdatedAt]=SYSUTCDATETIME(), [UpdatedBy]=@UpdatedBy
+          WHERE [SupplierId]=@SupplierId
+        ELSE
+          INSERT INTO [procurement].[Suppliers] (
+            [SupplierId], [Name], [Code], [SageCode], [Source], [IsApproved], [Currency], [PaymentTerms],
+            [DeliveryLocation], [Email], [Phone], [IsActive], [CreatedBy], [UpdatedBy]
+          ) VALUES (
+            @SupplierId, @Name, @Code, @SageCode, @Source, @IsApproved, @Currency, @PaymentTerms,
+            @DeliveryLocation, @Email, @Phone, @IsActive, @CreatedBy, @UpdatedBy
+          )
+      `);
+    if (wasExisting) updated += 1;
+    else inserted += 1;
+  }
+  return {
+    table: fetched.table,
+    fetched: fetched.suppliers.length,
+    inserted,
+    updated,
+    skippedDuplicates: 0,
+  };
 };
 
 export const listPurchaseRequisitions = async () => {
@@ -874,19 +994,26 @@ export const getCbeDetail = async (cbeId: string) => {
 
 export const createCbe = async (input: Record<string, unknown>, actor: string) => {
   const pool = await ensureProcurementDb();
+  const prId = clean(input.prId, 40);
+  if (!prId) throw new Error('Select a purchase requisition to create this CBE.');
+  const requisitions = await listPurchaseRequisitions();
+  const pr = requisitions.find((row) => row.prId === prId);
+  if (!pr) throw new Error('The selected purchase requisition was not found.');
+
   const cbeId =
     clean(input.cbeId, 40) || (await nextSequentialId(pool, 'CbeEvaluations', 'CbeId', yearPrefix('CBE')));
+  const title = clean(input.title || pr.title || 'Competitive Bid Evaluation', 300);
   await pool
     .request()
     .input('CbeId', sql.NVarChar(40), cbeId)
-    .input('Title', sql.NVarChar(300), clean(input.title || 'New Competitive Bid Evaluation', 300))
+    .input('Title', sql.NVarChar(300), title)
     .input('RfqId', sql.NVarChar(40), cleanNullable(input.rfqId, 40))
     .input('RfqNumber', sql.NVarChar(80), cleanNullable(input.rfqNumber ?? input.rfqId, 80))
-    .input('PrId', sql.NVarChar(40), cleanNullable(input.prId, 40))
-    .input('Project', sql.NVarChar(180), cleanNullable(input.project, 180))
-    .input('Department', sql.NVarChar(180), cleanNullable(input.department, 180))
+    .input('PrId', sql.NVarChar(40), prId)
+    .input('Project', sql.NVarChar(180), cleanNullable(input.project ?? pr.project, 180))
+    .input('Department', sql.NVarChar(180), cleanNullable(input.department ?? pr.department, 180))
     .input('BuyerName', sql.NVarChar(220), cleanNullable(input.buyerName, 220) || actor)
-    .input('Currency', sql.NVarChar(10), clean(input.currency || 'NGN', 10))
+    .input('Currency', sql.NVarChar(10), clean(input.currency || pr.currency || 'NGN', 10))
     .input('EvaluationMethod', sql.NVarChar(120), cleanNullable(input.evaluationMethod, 120))
     .input('Status', sql.NVarChar(60), clean(input.status || 'Draft', 60))
     .input('BidsLocked', sql.Bit, toBool(input.bidsLocked) ? 1 : 0)
@@ -902,7 +1029,61 @@ export const createCbe = async (input: Record<string, unknown>, actor: string) =
         @Currency, @EvaluationMethod, @Status, @BidsLocked, @RecommendedSupplierId, @CreatedBy, @UpdatedBy
       )
     `);
-  await addCbeAudit(cbeId, 'CBE created', 'Overview', `${cbeId} created`, actor, 'Procurement Officer');
+
+  let lineNo = 1;
+  for (const line of pr.lines || []) {
+    await pool
+      .request()
+      .input('ItemId', sql.NVarChar(40), newId('ITM'))
+      .input('CbeId', sql.NVarChar(40), cbeId)
+      .input('LineNo', sql.Int, lineNo)
+      .input('Description', sql.NVarChar(500), clean(line.description, 500))
+      .input('Uom', sql.NVarChar(40), cleanNullable(line.uom, 40))
+      .input('Qty', sql.Decimal(19, 4), toNum(line.qty, 1))
+      .query(`
+        INSERT INTO [procurement].[CbeBidItems] ([ItemId], [CbeId], [LineNo], [Description], [Uom], [Qty])
+        VALUES (@ItemId, @CbeId, @LineNo, @Description, @Uom, @Qty)
+      `);
+    lineNo += 1;
+  }
+
+  const defaultCriteria = [
+    { section: 'A. GENERAL REQUIREMENTS', requirement: 'Compliance with the requisition / technical specification', mandatory: true },
+    { section: 'A. GENERAL REQUIREMENTS', requirement: 'Material / quality documentation provided with the quotation', mandatory: true },
+    { section: 'A. GENERAL REQUIREMENTS', requirement: 'Ability to meet the required delivery period', mandatory: false },
+    { section: 'B. COMMERCIAL FITNESS', requirement: 'Quotation is complete, signed and currently valid', mandatory: true },
+    { section: 'B. COMMERCIAL FITNESS', requirement: 'Payment terms are acceptable to DLE', mandatory: false },
+    { section: 'C. QUALITY & COMPLIANCE', requirement: 'Traceability / batch identification available', mandatory: false },
+  ];
+  let criteriaNo = 1;
+  for (const row of defaultCriteria) {
+    await pool
+      .request()
+      .input('CriteriaId', sql.NVarChar(40), newId('TEC'))
+      .input('CbeId', sql.NVarChar(40), cbeId)
+      .input('LineNo', sql.Int, criteriaNo)
+      .input('Section', sql.NVarChar(200), row.section)
+      .input('Requirement', sql.NVarChar(500), row.requirement)
+      .input('Mandatory', sql.Bit, row.mandatory ? 1 : 0)
+      .input('SupplierStatusJson', sql.NVarChar(sql.MAX), '{}')
+      .query(`
+        INSERT INTO [procurement].[CbeTechnicalCriteria] (
+          [CriteriaId], [CbeId], [LineNo], [Section], [Requirement], [Mandatory], [SupplierStatusJson]
+        ) VALUES (
+          @CriteriaId, @CbeId, @LineNo, @Section, @Requirement, @Mandatory, @SupplierStatusJson
+        )
+      `);
+    criteriaNo += 1;
+  }
+
+  await addCbeAudit(
+    cbeId,
+    'CBE created',
+    'Overview',
+    `${cbeId} created from purchase requisition ${prId}. Supplier quotations are entered manually on Bid Comparison.`,
+    actor,
+    'Procurement Officer',
+  );
   return getCbeDetail(cbeId);
 };
 
@@ -1018,9 +1199,31 @@ export const saveCbeBidMatrix = async (
   if (!existing) throw new Error('CBE not found');
 
   if (Array.isArray(payload.bidders)) {
+    const catalog = await listSuppliers();
+    const byId = new Map(catalog.map((s) => [s.supplierId, s]));
+    const seen = new Set<string>();
+    const bidders = payload.bidders.map((bidder) => {
+      const supplierId = clean(bidder.supplierId, 40);
+      if (!supplierId) throw new Error('Each quotation must be linked to a supplier from the register.');
+      if (seen.has(supplierId)) throw new Error('The same supplier cannot be added twice on this CBE.');
+      seen.add(supplierId);
+      const supplier = byId.get(supplierId);
+      const alreadyOnCbe = existing.bidders.some((row) => row.supplierId === supplierId);
+      if (!supplier && !alreadyOnCbe) throw new Error('A selected supplier was not found in the register.');
+      if (supplier && (!supplier.isActive || supplier.isBlacklisted) && !alreadyOnCbe) {
+        throw new Error(`${supplier.name} is not available for bidding.`);
+      }
+      return {
+        ...bidder,
+        supplierId,
+        name: clean(bidder.name, 220) || supplier?.name || 'Supplier',
+        code: cleanNullable(bidder.code, 80) || supplier?.code || null,
+        approved: bidder.approved == null ? Boolean(supplier?.isApproved ?? true) : bidder.approved,
+      };
+    });
     const keepIds: string[] = [];
     let sort = 0;
-    for (const bidder of payload.bidders) {
+    for (const bidder of bidders) {
       keepIds.push(await upsertBidderRow(pool, id, bidder, sort++));
     }
     if (keepIds.length) {

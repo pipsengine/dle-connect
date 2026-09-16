@@ -134,36 +134,46 @@ export function KpiCard({
 export function ProcModal({
   open,
   title,
+  subtitle,
   onClose,
   children,
   footer,
   wide,
+  extraWide,
 }: {
   open: boolean;
   title: string;
+  subtitle?: string;
   onClose: () => void;
   children: ReactNode;
   footer?: ReactNode;
   wide?: boolean;
+  extraWide?: boolean;
 }) {
   if (!open) return null;
+  const width = extraWide ? 'max-w-4xl' : wide ? 'max-w-3xl' : 'max-w-xl';
   return (
     <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-slate-900/50 p-4 sm:p-8">
       <button type="button" className="absolute inset-0 cursor-default" aria-label="Close dialog" onClick={onClose} />
       <div
-        className={`relative z-10 w-full rounded-xl border border-slate-200 bg-white shadow-xl ${wide ? 'max-w-3xl' : 'max-w-xl'}`}
+        className={`relative z-10 w-full overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl ${width}`}
         role="dialog"
         aria-modal="true"
         aria-label={title}
       >
-        <div className="flex items-center justify-between border-b border-slate-100 px-5 py-4">
-          <h2 className="text-base font-black text-slate-900">{title}</h2>
-          <button type="button" onClick={onClose} className="rounded-md p-1.5 text-slate-500 hover:bg-slate-100" aria-label="Close">
+        <div className="flex items-start justify-between gap-4 border-b border-slate-100 bg-gradient-to-r from-slate-50 to-white px-6 py-5">
+          <div>
+            <h2 className="text-lg font-black tracking-tight text-slate-900">{title}</h2>
+            {subtitle ? <p className="mt-1 text-sm leading-5 text-slate-500">{subtitle}</p> : null}
+          </div>
+          <button type="button" onClick={onClose} className="rounded-lg p-1.5 text-slate-500 hover:bg-slate-100" aria-label="Close">
             <X className="h-4 w-4" />
           </button>
         </div>
-        <div className="max-h-[70vh] overflow-y-auto px-5 py-4">{children}</div>
-        {footer ? <div className="flex flex-wrap items-center justify-end gap-2 border-t border-slate-100 px-5 py-3">{footer}</div> : null}
+        <div className="max-h-[70vh] overflow-y-auto px-6 py-5">{children}</div>
+        {footer ? (
+          <div className="flex flex-wrap items-center justify-end gap-2 border-t border-slate-100 bg-slate-50/80 px-6 py-4">{footer}</div>
+        ) : null}
       </div>
     </div>
   );

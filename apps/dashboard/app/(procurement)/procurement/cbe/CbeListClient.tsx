@@ -29,12 +29,13 @@ import {
   secondaryBtnClass,
   selectClass,
 } from '../_components/proc-ui';
-import type { RfqRow } from '../_components/RfqsClient';
+import type { PurchaseRequisitionRow } from '../_components/PurchaseRequisitionsClient';
 
 type CbeListRow = {
   cbeId: string;
   title: string;
   rfqNumber: string | null;
+  prId: string | null;
   status: string;
   buyerName: string | null;
   project: string | null;
@@ -67,7 +68,7 @@ const CBE_STATUSES = [
 
 type CbeForm = {
   title: string;
-  rfqNumber: string;
+  prId: string;
   project: string;
   department: string;
   buyerName: string;
@@ -78,7 +79,7 @@ type CbeForm = {
 
 const emptyForm = (): CbeForm => ({
   title: '',
-  rfqNumber: '',
+  prId: '',
   project: '',
   department: '',
   buyerName: '',
@@ -104,7 +105,7 @@ function isInEvaluation(s: string) {
 
 export default function CbeListClient() {
   const [rows, setRows] = useState<CbeListRow[]>([]);
-  const [rfqs, setRfqs] = useState<RfqRow[]>([]);
+  const [prs, setPrs] = useState<PurchaseRequisitionRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
@@ -119,12 +120,12 @@ export default function CbeListClient() {
     setLoading(true);
     setError('');
     try {
-      const [cbes, rfqList] = await Promise.all([
+      const [cbes, prList] = await Promise.all([
         procurementGet<CbeListRow[]>('cbes'),
-        procurementGet<RfqRow[]>('rfqs'),
+        procurementGet<PurchaseRequisitionRow[]>('purchase-requisitions'),
       ]);
       setRows(cbes);
-      setRfqs(rfqList);
+      setPrs(prList);
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed to load CBEs');
     } finally {
@@ -150,14 +151,14 @@ export default function CbeListClient() {
     };
   }, [rows]);
 
-  const rfqOptions = useMemo(
+  const prOptions = useMemo(
     () =>
-      rfqs.map((r) => ({
-        value: r.rfqId,
-        label: `${r.rfqId} — ${r.title}`,
-        sub: r.status,
+      prs.map((r) => ({
+        value: r.prId,
+        label: `${r.prId} — ${r.title}`,
+        sub: `${r.status}${r.project ? ` · ${r.project}` : ''}`,
       })),
-    [rfqs],
+    [prs],
   );
 
   const filtered = useMemo(() => {
@@ -165,7 +166,7 @@ export default function CbeListClient() {
     return rows.filter((r) => {
       if (statusFilter && statusNorm(r.status) !== statusNorm(statusFilter)) return false;
       if (!q) return true;
-      return [r.cbeId, r.title, r.rfqNumber, r.project, r.department, r.buyerName, r.status]
+      return [r.cbeId, r.title, r.prId, r.rfqNumber, r.project, r.department, r.buyerName, r.status]
         .filter(Boolean)
         .some((v) => String(v).toLowerCase().includes(q));
     });
@@ -183,7 +184,23 @@ export default function CbeListClient() {
     setModalOpen(true);
   };
 
+  const applyPr = (prId: string) => {
+    const pr = prs.find((row) => row.prId === prId);
+    setForm((f) => ({
+      ...f,
+      prId,
+      title: pr?.title || f.title,
+      project: pr?.project || '',
+      department: pr?.department || '',
+      currency: pr?.currency || f.currency || 'NGN',
+    }));
+  };
+
   const save = async () => {
+    if (!form.prId.trim()) {
+      setError('Select a purchase requisition');
+      return;
+    }
     if (!form.title.trim()) {
       setError('Title is required');
       return;
@@ -194,8 +211,7 @@ export default function CbeListClient() {
       await procurementPost('create-cbe', {
         payload: {
           title: form.title.trim(),
-          rfqId: form.rfqNumber.trim() || null,
-          rfqNumber: form.rfqNumber.trim() || null,
+          prId: form.prId.trim(),
           project: form.project.trim() || null,
           department: form.department.trim() || null,
           buyerName: form.buyerName.trim() || null,
@@ -222,7 +238,7 @@ export default function CbeListClient() {
             <h1 className="text-2xl font-black text-slate-900">Competitive Bid Evaluation</h1>
           </div>
           <p className="mt-1 text-sm text-slate-600">
-            Create and manage CBEs linked to RFQs across the procurement lifecycle.
+            Create and manage CBEs from internal purchase requisitions. Procurement enters supplier quotations manually.
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
@@ -250,7 +266,7 @@ export default function CbeListClient() {
       <FilterBar>
         <div className="min-w-[200px] flex-1">
           <label className={labelClass}>Search</label>
-          <input className={inputClass} placeholder="CBE ID, title, RFQ, buyer…" value={search} onChange={(e) => setSearch(e.target.value)} />
+          <input className={inputClass} placeholder="CBE ID, title, PR, buyer…" value={search} onChange={(e) => setSearch(e.target.value)} />
         </div>
         <div className="w-52">
           <label className={labelClass}>Status</label>
@@ -269,11 +285,11 @@ export default function CbeListClient() {
         onExport={() =>
           exportCsv(
             'cbes.csv',
-            ['CBE ID', 'Title', 'RFQ', 'Project', 'Department', 'Buyer', 'Status', 'Created', 'Updated'],
+            ['CBE ID', 'Title', 'PR', 'Project', 'Department', 'Buyer', 'Status', 'Created', 'Updated'],
             filtered.map((r) => [
               r.cbeId,
               r.title,
-              r.rfqNumber,
+              r.prId,
               r.project,
               r.department,
               r.buyerName,
@@ -296,7 +312,7 @@ export default function CbeListClient() {
                   <tr>
                     <th className="px-3 py-3 text-left">CBE ID</th>
                     <th className="px-3 py-3 text-left">Title</th>
-                    <th className="px-3 py-3 text-left">RFQ</th>
+                    <th className="px-3 py-3 text-left">PR</th>
                     <th className="px-3 py-3 text-left">Project</th>
                     <th className="px-3 py-3 text-left">Department</th>
                     <th className="px-3 py-3 text-left">Buyer</th>
@@ -315,7 +331,7 @@ export default function CbeListClient() {
                         </Link>
                       </td>
                       <td className="px-3 py-3 font-semibold text-slate-900">{row.title}</td>
-                      <td className="px-3 py-3 text-slate-700">{row.rfqNumber || '—'}</td>
+                      <td className="px-3 py-3 text-slate-700">{row.prId || '—'}</td>
                       <td className="px-3 py-3 text-slate-700">{row.project || '—'}</td>
                       <td className="px-3 py-3 text-slate-700">{row.department || '—'}</td>
                       <td className="px-3 py-3"><PersonCell name={row.buyerName} /></td>
@@ -341,7 +357,11 @@ export default function CbeListClient() {
                 </tbody>
               </table>
             </div>
-            {!pageRows.length ? <div className="py-12 text-center text-sm text-slate-500">No CBEs yet. Create one to get started.</div> : null}
+            {!pageRows.length ? (
+              <div className="py-12 text-center text-sm text-slate-500">
+                No CBEs yet. Create one from a purchase requisition to get started.
+              </div>
+            ) : null}
             <PaginationFooter page={page} pageSize={pageSize} total={filtered.length} onPageChange={setPage} onPageSizeChange={setPageSize} />
           </>
         )}
@@ -365,17 +385,22 @@ export default function CbeListClient() {
         {error && modalOpen ? (
           <div className="mb-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{error}</div>
         ) : null}
+        <p className="mb-3 text-xs leading-5 text-slate-500">
+          Select an internal purchase requisition. Its line items become the Bid Comparison requirements. Procurement
+          then searches existing suppliers and enters quotations on the CBE workspace.
+        </p>
         <div className="grid gap-3 md:grid-cols-2">
           <div className="md:col-span-2">
             <label className={labelClass}>Title *</label>
             <input className={inputClass} value={form.title} onChange={(e) => setForm((f) => ({ ...f, title: e.target.value }))} />
           </div>
           <SearchableSelect
-            label="RFQ Number"
-            value={form.rfqNumber}
-            options={rfqOptions}
-            placeholder="Select RFQ…"
-            onChange={(v) => setForm((f) => ({ ...f, rfqNumber: v }))}
+            label="Purchase requisition"
+            required
+            value={form.prId}
+            options={prOptions}
+            placeholder="Search purchase requisitions…"
+            onChange={(v) => applyPr(v)}
           />
           <div>
             <label className={labelClass}>Project</label>
