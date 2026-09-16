@@ -10,6 +10,7 @@ export type DleEmailModule =
   | 'Leave Management'
   | 'Overtime Management'
   | 'Timesheet Approval'
+  | 'Internship Performance Review'
   | 'Logistics & Fleet'
   | 'Employee Self-Service'
   | 'HRIS'

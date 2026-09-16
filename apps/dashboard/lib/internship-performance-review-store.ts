@@ -1,10 +1,13 @@
 import sql from 'mssql';
 import { readPayrollEmployees } from '@/lib/payroll-employee-source';
 import { isStipendPayrollEmployeeCode } from '@/lib/payroll-employee-classification';
+import { readUsers } from '@/lib/auth/auth-store';
 import { createEnterpriseNotification } from '@/lib/enterprise-notifications-store';
 import type { SessionPayload } from '@/lib/auth/session';
 import type { DleEmployeeDirectoryRow } from '@/lib/dle-enterprise-db';
 import { employeeCodeFromReference } from '@/lib/reporting-manager-match';
+import { resolveEmployeeMailbox, sendInternshipReviewTaskEmail, type MailSendResult } from '@/lib/mail-service';
+import { toAbsoluteWorkflowHref } from '@/lib/public-app-url';
 import {
   INTERNSHIP_REVIEW_CRITERIA,
   INTERNSHIP_REVIEW_CYCLE,
@@ -116,7 +119,51 @@ const defaultApprovals = (input: {
   { step: 'MD Final Approval', approver: input.md, approverCode: input.mdCode || '', role: 'MD', status: 'Pending' },
 ];
 
-type NotifyTarget = { employeeCode?: string; roles?: string[] };
+type NotifyTarget = { employeeCode?: string; name?: string; roles?: string[] };
+
+type NotifyDelivery = { sent: boolean; to?: string; reason?: string };
+
+const resolveNotifyRecipients = async (target?: NotifyTarget) => {
+  const employees = await directoryEmployees();
+  const users = await readUsers().catch(() => []);
+  const recipients: Array<{ code: string; name: string; email: string }> = [];
+  const push = async (code: string, name: string, employee?: DleEmployeeDirectoryRow | null) => {
+    const mailbox = employee
+      ? await resolveEmployeeMailbox(employee)
+      : '';
+    const user = users.find((item) =>
+      [item.employeeCode, item.employeeId, item.username]
+        .map((value) => compact(value).toUpperCase())
+        .includes(compact(code).toUpperCase())
+      || (name && compact(item.fullName).toLowerCase() === compact(name).toLowerCase()),
+    );
+    const email = mailbox || compact(user?.email).toLowerCase();
+    if (!email) return;
+    if (recipients.some((item) => item.email === email)) return;
+    recipients.push({
+      code: compact(code) || compact(user?.employeeCode),
+      name: compact(name) || compact(user?.fullName) || compact(employee?.fullName) || 'Colleague',
+      email,
+    });
+  };
+
+  const person = findPerson(employees, compact(target?.employeeCode)) || findPerson(employees, compact(target?.name));
+  if (person) {
+    await push(personCode(person) || compact(target?.employeeCode), personLabel(person, compact(target?.name)), person);
+  } else if (compact(target?.employeeCode) || compact(target?.name)) {
+    await push(compact(target?.employeeCode), compact(target?.name), null);
+  }
+
+  if (!recipients.length && target?.roles?.length) {
+    const needed = target.roles.map((role) => role.toLowerCase());
+    for (const user of users) {
+      const haystack = (user.roles || []).map((role) => String(role).toLowerCase());
+      if (!needed.some((role) => haystack.includes(role) || haystack.some((item) => item.includes(role)))) continue;
+      await push(compact(user.employeeCode || user.employeeId || user.username), compact(user.fullName), findPerson(employees, compact(user.employeeCode)));
+    }
+  }
+  return recipients;
+};
 
 const notify = async (
   session: SessionPayload | null,
@@ -124,23 +171,56 @@ const notify = async (
   body: string,
   href: string,
   target?: NotifyTarget,
-) => {
-  if (!session) return;
-  try {
-    await createEnterpriseNotification(session, {
-      title,
-      body,
-      module: 'Performance Management',
-      kind: 'Workflow',
-      href,
-      recipientEmployeeCode: compact(target?.employeeCode) || 'ROLE-INTERNSHIP-REVIEW',
-      recipientRoles: target?.roles || [],
-      actor: session.fullName,
-      channels: ['In-App'],
-    });
-  } catch {
-    // Notifications are best-effort; the review record still persists.
+  review?: InternshipReview | null,
+): Promise<NotifyDelivery> => {
+  if (!session) return { sent: false, reason: 'No session.' };
+  const recipients = await resolveNotifyRecipients(target);
+  const workspaceLink = toAbsoluteWorkflowHref(href);
+  let last: NotifyDelivery = { sent: false, reason: recipients.length ? undefined : 'No recipient mailbox resolved for the line manager.' };
+
+  for (const recipient of recipients.length ? recipients : [{
+    code: compact(target?.employeeCode) || 'ROLE-INTERNSHIP-REVIEW',
+    name: compact(target?.name) || 'Assigned approver',
+    email: '',
+  }]) {
+    try {
+      await createEnterpriseNotification(session, {
+        title,
+        body,
+        module: 'Performance Management',
+        kind: 'Workflow',
+        href,
+        recipientEmployeeCode: recipient.code || 'ROLE-INTERNSHIP-REVIEW',
+        recipientRoles: target?.roles || [],
+        actor: session.fullName,
+        channels: recipient.email ? ['In-App', 'Email'] : ['In-App'],
+      });
+    } catch {
+      // Notifications are best-effort; the review record still persists.
+    }
+    if (!recipient.email) continue;
+    try {
+      const result = await sendInternshipReviewTaskEmail({
+        recipientName: recipient.name,
+        recipientEmail: recipient.email,
+        internName: review?.employee.name || title,
+        internCode: review?.employee.code || '',
+        internDepartment: review?.employee.department,
+        reviewId: review?.id || '',
+        dueDate: review?.dueDate,
+        stage: review?.status,
+        intro: body,
+        workspaceLink,
+        actionLabel: /evaluat/i.test(href) ? 'Open ESS evaluation' : /approve/i.test(href) ? 'Open ESS approval' : 'Open ESS Internship Review',
+      });
+      last = result.sent
+        ? { sent: true, to: recipient.email }
+        : { sent: false, to: recipient.email, reason: result.reason || 'Email provider did not accept the message.' };
+    } catch (error) {
+      last = { sent: false, to: recipient.email, reason: error instanceof Error ? error.message : 'Email send failed.' };
+    }
   }
+  return last;
 };
 
 const notifyPeople = async (
@@ -150,15 +230,17 @@ const notifyPeople = async (
   href: string,
   people: Array<{ code?: string; name?: string }>,
   fallbackRoles: string[],
+  review?: InternshipReview | null,
 ) => {
-  const codes = [...new Set(people.map((item) => compact(item.code)).filter(Boolean))];
-  if (codes.length) {
-    for (const employeeCode of codes) {
-      await notify(session, title, body, href, { employeeCode, roles: fallbackRoles });
+  const named = people.filter((item) => compact(item.code) || compact(item.name));
+  if (named.length) {
+    let last: NotifyDelivery = { sent: false, reason: 'No recipient mailbox resolved for the line manager.' };
+    for (const person of named) {
+      last = await notify(session, title, body, href, { employeeCode: person.code, name: person.name, roles: fallbackRoles }, review);
     }
-    return;
+    return last;
   }
-  await notify(session, title, body, href, { roles: fallbackRoles });
+  return notify(session, title, body, href, { roles: fallbackRoles }, review);
 };
 
 let writeChain: Promise<void> = Promise.resolve();
@@ -488,14 +570,23 @@ export const initiateInternshipReview = async (
     }
     await persistReview(review);
     if (input.notifyManager !== false) {
-      await notifyPeople(
+      const delivery = await notifyPeople(
         session,
         `Internship review assigned: ${review.employee.name}`,
         `Complete the one-year internship evaluation for ${review.employee.name} (${review.id}) in the ESS portal. Due ${review.dueDate}.`,
         internshipEssHref({ id: review.id, action: 'evaluate' }),
-        [{ code: intern.lineManagerCode, name: intern.lineManager }],
+        [{ code: intern.lineManagerCode || review.supervisorCode, name: intern.lineManager || review.supervisor }],
         [],
+        review,
       );
+      review.audit.push(audit(
+        'System',
+        delivery.sent ? 'Line manager email sent' : 'Line manager email not sent',
+        delivery.sent
+          ? `Email delivered to ${delivery.to}`
+          : delivery.reason || 'No mailbox resolved for the assigned line manager',
+      ));
+      await persistReview(review);
     }
     return review;
   });
@@ -587,6 +678,7 @@ export const submitInternshipEvaluation = async (
       internshipEssHref({ id: review.id, action: 'approve' }),
       [{ code: nextStep?.approverCode, name: nextStep?.approver }],
       next === 'Pending HR Manager' ? ['HR Manager'] : next === 'Pending MD' ? ['Managing Director'] : [],
+      review,
     );
     return review;
   });
@@ -633,6 +725,7 @@ export const decideInternshipApproval = async (
         internshipEssHref({ id: review.id, action: 'evaluate' }),
         [{ code: review.supervisorCode || review.employee.lineManagerCode, name: review.supervisor }],
         [],
+        review,
       );
     } else {
       review.audit.push(audit(actor, `${step.step} approved`, comment.trim() || 'Approved and routed onward'));
@@ -646,6 +739,7 @@ export const decideInternshipApproval = async (
           `${review.id} is approved. Record the HR next action in HRIS.`,
           internshipReviewHref(review.id),
           { roles: ['HR Manager', 'HR Officer', 'HR Director'] },
+          review,
         );
         await notifyPeople(
           session,
@@ -654,6 +748,7 @@ export const decideInternshipApproval = async (
           internshipEssHref({ id: review.id }),
           [{ code: review.supervisorCode || review.employee.lineManagerCode, name: review.supervisor }],
           [],
+          review,
         );
       } else {
         const nextStep = internshipCurrentApprovalStep(review);
@@ -664,6 +759,7 @@ export const decideInternshipApproval = async (
           internshipEssHref({ id: review.id, action: 'approve' }),
           [{ code: nextStep?.approverCode, name: nextStep?.approver }],
           next === 'Pending HR Manager' ? ['HR Manager'] : next === 'Pending MD' ? ['Managing Director'] : [],
+          review,
         );
       }
     }
@@ -705,6 +801,7 @@ export const recordInternshipHrAction = async (
         internshipEssHref({ id: review.id }),
         [{ code: review.supervisorCode || review.employee.lineManagerCode, name: review.supervisor }],
         [],
+        review,
       );
     }
     return review;
@@ -712,6 +809,43 @@ export const recordInternshipHrAction = async (
 
 export const internshipTasksForActor = (reviews: InternshipReview[], actorName: string, roleHint = '') =>
   internshipTasksForSession(reviews, { fullName: actorName, roles: roleHint ? [roleHint] : [] });
+
+export const resendInternshipInitiationNotice = async (
+  id: string,
+  session: SessionPayload | null,
+  actor = 'System',
+) => {
+  const review = await requireReview(id);
+  const href = internshipEssHref({
+    id: review.id,
+    action: review.status === 'In Evaluation' ? 'evaluate' : 'approve',
+  });
+  const delivery = await notifyPeople(
+    session,
+    `Internship review assigned: ${review.employee.name}`,
+    `Complete the internship evaluation for ${review.employee.name} (${review.id}) in the ESS portal. Due ${review.dueDate}.`,
+    href,
+    [{
+      code: review.supervisorCode || review.employee.lineManagerCode,
+      name: review.supervisor || review.employee.lineManager,
+    }],
+    [],
+    review,
+  );
+  review.audit.push(audit(
+    actor,
+    delivery.sent ? 'Line manager email sent' : 'Line manager email not sent',
+    delivery.sent
+      ? `Email delivered to ${delivery.to}`
+      : delivery.reason || 'No mailbox resolved for the assigned line manager',
+  ));
+  review.updatedAt = nowIsoDate();
+  await persistReview(review);
+  if (!delivery.sent) {
+    throw new Error(delivery.reason || 'Unable to email the assigned line manager.');
+  }
+  return { review, delivery };
+};
 
 export const buildEssInternshipWorkspace = async (session: SessionPayload) => {
   const reviews = await listInternshipReviews();

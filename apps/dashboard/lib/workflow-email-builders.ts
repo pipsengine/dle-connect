@@ -422,6 +422,36 @@ export const buildTimesheetApprovalRequestEmail = (input: {
   actions: [{ href: input.workspaceLink, label: 'Open Timesheet Approval', tone: 'primary' }],
 }, input.baseUrl);
 
+export const buildInternshipReviewTaskEmail = (input: {
+  recipientName: string;
+  internName: string;
+  internCode: string;
+  internDepartment?: string;
+  reviewId: string;
+  dueDate?: string;
+  stage?: string;
+  intro: string;
+  workspaceLink: string;
+  actionLabel?: string;
+  baseUrl?: string | null;
+}) => withBrand({
+  recipientName: input.recipientName,
+  subject: `Internship review assigned — ${input.internName}`,
+  module: 'Internship Performance Review',
+  headline: 'Internship evaluation required',
+  intro: input.intro,
+  tone: 'warning',
+  details: [
+    { label: 'Intern', value: `${input.internName} (${input.internCode})` },
+    ...(input.internDepartment ? [{ label: 'Department', value: input.internDepartment }] : []),
+    { label: 'Review', value: input.reviewId },
+    ...(input.dueDate ? [{ label: 'Due date', value: input.dueDate }] : []),
+    ...(input.stage ? [{ label: 'Stage', value: input.stage }] : []),
+  ],
+  actions: [{ href: input.workspaceLink, label: input.actionLabel || 'Open ESS Internship Review', tone: 'primary' }],
+  footerNote: 'Complete the evaluation in the Employee Self-Service portal. This task stays on your Internship Performance Review workspace until you submit it.',
+}, input.baseUrl);
+
 export const buildOvertimeApprovedEmail = (input: {
   recipientName: string;
   projectCode: string;

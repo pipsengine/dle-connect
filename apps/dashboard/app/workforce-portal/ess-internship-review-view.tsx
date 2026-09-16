@@ -99,10 +99,17 @@ export function EssInternshipReviewView({
 }: EssInternshipReviewViewProps) {
   const [modal, setModal] = useState<ModalKind>(null);
   const [activeId, setActiveId] = useState('');
+  const [cardFilter, setCardFilter] = useState<'tasks' | 'due' | 'visible'>('tasks');
 
   const tasks = workspace?.tasks || [];
   const reviews = workspace?.reviews || [];
-  const active = reviews.find((item) => item.id === activeId) || tasks.find((item) => item.id === activeId) || null;
+  const dueSoon = useMemo(
+    () => tasks.filter((item) => item.dueDate && item.dueDate <= new Date().toISOString().slice(0, 10)),
+    [tasks],
+  );
+  const lists = { tasks, due: dueSoon, visible: reviews };
+  const shown = lists[cardFilter];
+  const active = reviews.find((item) => item.id === activeId) || tasks.find((item) => item.id === activeId) || shown.find((item) => item.id === activeId) || null;
 
   useEffect(() => {
     if (!initialReviewId) return;
@@ -119,6 +126,12 @@ export function EssInternshipReviewView({
     if (internshipCanEvaluate(review, actor)) setModal('evaluate');
     else if (internshipCanApprove(review, actor)) setModal('approve');
     else setModal('detail');
+  };
+
+  const openCard = (key: 'tasks' | 'due' | 'visible') => {
+    setCardFilter(key);
+    const list = lists[key];
+    if (list.length === 1) openTask(list[0]);
   };
 
   return (
@@ -150,12 +163,19 @@ export function EssInternshipReviewView({
       ) : null}
 
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-        {[
-          { label: 'My open tasks', value: tasks.length, icon: ClipboardCheck, tone: 'text-[#2563EB] bg-[#EFF6FF]' },
-          { label: 'Due soon', value: tasks.filter((item) => item.dueDate <= new Date().toISOString().slice(0, 10)).length, icon: Clock3, tone: 'text-[#C2410C] bg-[#FFF7ED]' },
-          { label: 'Reviews visible to me', value: reviews.length, icon: Users, tone: 'text-[#047857] bg-[#ECFDF5]' },
-        ].map((item) => (
-          <EssCard key={item.label} className="p-4">
+        {([
+          { key: 'tasks' as const, label: 'My open tasks', value: tasks.length, icon: ClipboardCheck, tone: 'text-[#2563EB] bg-[#EFF6FF]' },
+          { key: 'due' as const, label: 'Due soon', value: dueSoon.length, icon: Clock3, tone: 'text-[#C2410C] bg-[#FFF7ED]' },
+          { key: 'visible' as const, label: 'Reviews visible to me', value: reviews.length, icon: Users, tone: 'text-[#047857] bg-[#ECFDF5]' },
+        ]).map((item) => (
+          <button
+            key={item.key}
+            type="button"
+            onClick={() => openCard(item.key)}
+            className={`rounded-[20px] border bg-white p-4 text-left shadow-[0_6px_18px_rgba(15,23,42,0.05)] transition hover:-translate-y-px hover:shadow-[0_8px_24px_rgba(37,99,235,0.12)] ${
+              cardFilter === item.key ? 'border-[#2563EB] ring-2 ring-[#BFDBFE]' : 'border-[#E2E8F0]'
+            }`}
+          >
             <div className="flex items-center gap-3">
               <span className={`inline-flex h-10 w-10 items-center justify-center rounded-[12px] ${item.tone}`}>
                 <item.icon className="h-5 w-5" />
@@ -163,22 +183,39 @@ export function EssInternshipReviewView({
               <div>
                 <p className="m-0 text-[11px] font-semibold uppercase tracking-wide text-[#64748B]">{item.label}</p>
                 <p className="m-0 text-[22px] font-bold text-[#0F172A]">{item.value}</p>
+                <p className="m-0 mt-0.5 text-[11px] font-semibold text-[#2563EB]">View details</p>
               </div>
             </div>
-          </EssCard>
+          </button>
         ))}
       </div>
 
       <EssCard>
         <div className="border-b border-[#E2E8F0] px-5 py-4">
-          <h2 className="m-0 text-sm font-bold text-[#0F172A]">Team action centre</h2>
-          <p className="m-0 mt-1 text-[12px] text-[#64748B]">Internship evaluations and approvals assigned to you.</p>
+          <h2 className="m-0 text-sm font-bold text-[#0F172A]">
+            {cardFilter === 'due' ? 'Due soon' : cardFilter === 'visible' ? 'Reviews visible to you' : 'Team action centre'}
+          </h2>
+          <p className="m-0 mt-1 text-[12px] text-[#64748B]">
+            {cardFilter === 'due'
+              ? 'Tasks at or past the due date.'
+              : cardFilter === 'visible'
+                ? 'Internship reviews you can open, including evaluations and approvals.'
+                : 'Internship evaluations and approvals assigned to you.'}
+          </p>
         </div>
         {!workspace ? (
           <EssEmptyState icon={Star} title="Loading internship tasks" description="Assigned evaluations and approvals will appear here." />
-        ) : !tasks.length ? (
+        ) : !shown.length ? (
           <div className="p-4">
-            <EssEmptyState icon={ClipboardCheck} title="No internship review tasks" description="When HR initiates a review and assigns you as line manager or approver, the task appears here." />
+            <EssEmptyState
+              icon={ClipboardCheck}
+              title={cardFilter === 'due' ? 'Nothing due soon' : cardFilter === 'visible' ? 'No reviews visible yet' : 'No internship review tasks'}
+              description={cardFilter === 'due'
+                ? 'Open tasks with an approaching due date will appear here.'
+                : cardFilter === 'visible'
+                  ? 'Reviews appear here when you are the line manager or an assigned approver.'
+                  : 'When HR initiates a review and assigns you as line manager or approver, the task appears here.'}
+            />
           </div>
         ) : (
           <div className="overflow-auto">
@@ -194,10 +231,14 @@ export function EssInternshipReviewView({
                 </tr>
               </thead>
               <tbody>
-                {tasks.map((task) => {
+                {shown.map((task) => {
                   const actionLabel = internshipCanEvaluate(task, actor) ? 'Evaluate' : internshipCanApprove(task, actor) ? 'Approve' : 'View';
                   return (
-                    <tr key={task.id} className="border-t border-[#EDF1F5]">
+                    <tr
+                      key={task.id}
+                      className="cursor-pointer border-t border-[#EDF1F5] hover:bg-[#F8FAFC]"
+                      onClick={() => openTask(task)}
+                    >
                       <td className="px-5 py-4">
                         <p className="m-0 font-bold text-[#0F172A]">{task.employee.name}</p>
                         <p className="m-0 text-[12px] text-[#94A3B8]">{task.employee.code} · {task.id}</p>
@@ -211,7 +252,10 @@ export function EssInternshipReviewView({
                       <td className="px-5 py-4 text-right">
                         <button
                           type="button"
-                          onClick={() => openTask(task)}
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            openTask(task);
+                          }}
                           className="inline-flex h-9 items-center rounded-[12px] bg-[#2563EB] px-4 text-[12px] font-semibold text-white"
                         >
                           {actionLabel}

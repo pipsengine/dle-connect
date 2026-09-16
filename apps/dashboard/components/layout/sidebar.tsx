@@ -251,7 +251,7 @@ export function Sidebar({
                       if (!isOpen) toggle();
                       toggleGroup(item.id);
                     }}
-                    className={`flex w-full items-center justify-between rounded-lg px-3 py-2.5 text-left transition-all duration-200 group whitespace-nowrap ${
+                    className={`flex w-full items-start justify-between rounded-lg px-3 py-2.5 text-left outline-none transition-all duration-200 group focus-visible:ring-2 focus-visible:ring-[#2563EB]/40 ${
                       isActivePrimary
                         ? 'bg-dle-blue/5 text-dle-blue font-medium'
                         : 'text-slate-500 hover:bg-slate-50 hover:text-slate-900'
@@ -260,7 +260,7 @@ export function Sidebar({
                     <span className="flex min-w-0 flex-1 items-center gap-3">
                       <item.icon className={`w-5 h-5 shrink-0 ${isActivePrimary ? 'text-dle-blue' : 'text-slate-400 group-hover:text-slate-600'}`} />
                       {isOpen && (
-                        <span className="text-sm font-medium truncate">
+                        <span className="text-sm font-medium leading-snug whitespace-normal break-words">
                           {item.label}
                         </span>
                       )}
@@ -282,15 +282,15 @@ export function Sidebar({
                   <Link
                     href={item.route || '#'}
                     onClick={onNavigate}
-                    className={`flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all duration-200 group whitespace-nowrap ${
+                    className={`flex items-start gap-3 px-3 py-2.5 rounded-lg outline-none transition-all duration-200 group focus-visible:ring-2 focus-visible:ring-[#2563EB]/40 ${
                       pathname === item.route
                         ? 'bg-dle-blue/5 text-dle-blue font-medium' 
                         : 'text-slate-500 hover:bg-slate-50 hover:text-slate-900'
                     }`}
                   >
-                    <item.icon className={`w-5 h-5 shrink-0 ${pathname === item.route ? 'text-dle-blue' : 'text-slate-400 group-hover:text-slate-600'}`} />
+                    <item.icon className={`mt-0.5 w-5 h-5 shrink-0 ${pathname === item.route ? 'text-dle-blue' : 'text-slate-400 group-hover:text-slate-600'}`} />
                     {isOpen && (
-                      <span className="text-sm font-medium flex-1">
+                      <span className="text-sm font-medium flex-1 leading-snug whitespace-normal break-words">
                         {item.label}
                       </span>
                     )}
@@ -316,7 +316,7 @@ export function Sidebar({
                                 key={sub.slug}
                                 href={sub.route}
                                 onClick={onNavigate}
-                                className={`text-[13px] py-2 px-3 rounded-md transition-colors ${
+                                className={`block whitespace-normal break-words text-[13px] leading-snug py-2 px-3 rounded-md outline-none transition-colors focus-visible:ring-2 focus-visible:ring-[#2563EB]/40 ${
                                   isSubActive 
                                     ? 'text-dle-blue font-semibold bg-dle-blue/5' 
                                     : 'text-slate-500 hover:text-slate-900 hover:bg-slate-50'
@@ -346,7 +346,7 @@ export function Sidebar({
   return (
     <motion.aside 
       initial={false}
-      animate={{ width: variant === 'mobile' ? 280 : isOpen ? 240 : 80 }}
+      animate={{ width: variant === 'mobile' ? 300 : isOpen ? 300 : 80 }}
       className={`bg-white border-r border-slate-100 flex flex-col shadow-sm shrink-0 ${
         variant === 'mobile' ? 'absolute inset-y-0 left-0 z-10 max-w-[86vw]' : 'relative z-20 hidden lg:flex'
       }`}
@@ -361,7 +361,7 @@ export function Sidebar({
 
       <button 
         onClick={toggle}
-        className="absolute right-1 top-20 w-6 h-6 bg-white border border-slate-200 rounded-full flex items-center justify-center text-slate-400 hover:text-dle-blue hover:border-dle-blue transition-colors shadow-sm z-30"
+        className="absolute right-1 top-20 w-6 h-6 bg-white border border-slate-200 rounded-full flex items-center justify-center text-slate-400 hover:text-dle-blue hover:border-dle-blue transition-colors shadow-sm z-30 outline-none focus-visible:ring-2 focus-visible:ring-[#2563EB]/40"
         aria-label={variant === 'mobile' ? 'Close navigation' : 'Toggle navigation'}
       >
         {isOpen || variant === 'mobile' ? <ChevronLeft className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}

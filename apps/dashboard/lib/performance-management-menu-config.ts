@@ -97,9 +97,16 @@ export const performanceMenuTree: PerformanceMenuItem[] = [
       { id: 'final-evaluation', label: 'Results Approval', route: 'performance-reviews/final-evaluation', icon: BadgeCheck, roles: ALL_HR, keywords: ['final', 'evaluation', 'results'] },
       { id: 'performance-scorecard', label: 'Published Results', route: 'performance-reviews/performance-scorecard', icon: BarChart3, roles: [...MANAGEMENT, ...ALL_HR, 'Employee'], keywords: ['scorecard', 'score', 'results'] },
       { id: 'appeals', label: 'Appeals & Grievances', route: 'performance-reviews/appeals', icon: AlertTriangle, roles: EMPLOYEE, keywords: ['appeal', 'grievance'] },
-      { id: 'internship-performance-review', label: 'Internship Performance Review', route: 'performance-reviews/internship-performance-review', icon: GraduationCap, roles: MANAGEMENT, keywords: ['internship', 'intern', 'nysc', 'trainee', 'one-year review'] },
       { id: 'probation', label: 'Probation & Confirmation', route: 'performance-reviews/probation', icon: UserCheck, roles: MANAGEMENT, keywords: ['probation', 'confirmation'] },
     ],
+  },
+  {
+    id: 'internship-performance-review',
+    label: 'Internship Performance Review',
+    route: 'performance-reviews/internship-performance-review',
+    icon: GraduationCap,
+    roles: MANAGEMENT,
+    keywords: ['internship', 'intern', 'nysc', 'trainee', 'one-year review'],
   },
   {
     id: 'continuous-performance',

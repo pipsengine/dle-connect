@@ -127,22 +127,22 @@ export function Sidebar({ isOpen, toggle }: { isOpen: boolean; toggle: () => voi
                       if (!isOpen) toggle(); // Auto-expand sidebar if closed
                       toggleGroup(item.id);
                     }}
-                    className={`flex items-center justify-between px-3 py-2.5 rounded-lg transition-all duration-200 w-full group whitespace-nowrap ${
+                    className={`flex items-start justify-between px-3 py-2.5 rounded-lg outline-none transition-all duration-200 w-full group focus-visible:ring-2 focus-visible:ring-[#2563EB]/40 ${
                       isActivePrimary && !isExpanded
                         ? 'bg-dle-blue/5 text-dle-blue font-medium' 
                         : 'text-slate-500 hover:bg-slate-50 hover:text-slate-900'
                     }`}
                   >
-                    <div className="flex items-center gap-3">
-                      <item.icon className={`w-5 h-5 shrink-0 ${isActivePrimary && !isExpanded ? 'text-dle-blue' : 'text-slate-400 group-hover:text-slate-600'}`} />
+                    <div className="flex min-w-0 flex-1 items-start gap-3">
+                      <item.icon className={`mt-0.5 w-5 h-5 shrink-0 ${isActivePrimary && !isExpanded ? 'text-dle-blue' : 'text-slate-400 group-hover:text-slate-600'}`} />
                       {isOpen && (
-                        <span className="text-sm font-medium">
+                        <span className="text-sm font-medium leading-snug whitespace-normal break-words">
                           {item.label}
                         </span>
                       )}
                     </div>
                     {isOpen && (
-                      <div className="flex items-center gap-2">
+                      <div className="mt-0.5 flex shrink-0 items-center gap-2">
                         {item.badgeCount && (
                           <span className="bg-dle-blue/10 text-dle-blue text-[10px] font-bold px-1.5 py-0.5 rounded-full min-w-[20px] text-center">
                             {item.badgeCount}
@@ -155,15 +155,15 @@ export function Sidebar({ isOpen, toggle }: { isOpen: boolean; toggle: () => voi
                 ) : (
                   <Link
                     href={toHref(item.route)}
-                    className={`flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all duration-200 group whitespace-nowrap ${
+                    className={`flex items-start gap-3 px-3 py-2.5 rounded-lg outline-none transition-all duration-200 group focus-visible:ring-2 focus-visible:ring-[#2563EB]/40 ${
                       currentPath === item.route
                         ? 'bg-dle-blue/5 text-dle-blue font-medium' 
                         : 'text-slate-500 hover:bg-slate-50 hover:text-slate-900'
                     }`}
                   >
-                    <item.icon className={`w-5 h-5 shrink-0 ${currentPath === item.route ? 'text-dle-blue' : 'text-slate-400 group-hover:text-slate-600'}`} />
+                    <item.icon className={`mt-0.5 w-5 h-5 shrink-0 ${currentPath === item.route ? 'text-dle-blue' : 'text-slate-400 group-hover:text-slate-600'}`} />
                     {isOpen && (
-                      <span className="text-sm font-medium flex-1">
+                      <span className="text-sm font-medium flex-1 leading-snug whitespace-normal break-words">
                         {item.label}
                       </span>
                     )}
@@ -181,7 +181,7 @@ export function Sidebar({ isOpen, toggle }: { isOpen: boolean; toggle: () => voi
                         transition={{ duration: 0.2 }}
                         className="overflow-hidden"
                       >
-                        <div className="py-1 px-4 ml-5 mt-1 border-l border-slate-100 flex flex-col gap-1">
+                        <div className="py-1 px-3 ml-3 mt-1 border-l border-slate-100 flex flex-col gap-1">
                           {item.subItems?.map((sub) => {
                             const childActive = Boolean(sub.children?.some((child) => currentPath === child.route || currentPath.startsWith(`${child.route}/`)));
                             const isSubActive = currentPath === sub.route || currentPath.startsWith(`${sub.route}/`) || childActive;
@@ -192,7 +192,7 @@ export function Sidebar({ isOpen, toggle }: { isOpen: boolean; toggle: () => voi
                                   <div className="flex items-center gap-1">
                                     <Link
                                       href={toHref(sub.route)}
-                                      className={`min-w-0 flex-1 text-[13px] py-2 px-3 rounded-md transition-colors ${
+                                      className={`min-w-0 flex-1 whitespace-normal break-words text-[13px] leading-snug py-2 px-3 rounded-md outline-none transition-colors focus-visible:ring-2 focus-visible:ring-[#2563EB]/40 ${
                                         isSubActive && !childActive
                                           ? 'text-dle-blue font-semibold bg-dle-blue/5'
                                           : isSubActive
@@ -206,7 +206,7 @@ export function Sidebar({ isOpen, toggle }: { isOpen: boolean; toggle: () => voi
                                       type="button"
                                       aria-label={`${nestedOpen ? 'Collapse' : 'Expand'} ${sub.title}`}
                                       onClick={() => toggleGroup(sub.slug)}
-                                      className="rounded-md p-1 text-slate-400 hover:bg-slate-50 hover:text-slate-700"
+                                      className="rounded-md p-1 text-slate-400 outline-none hover:bg-slate-50 hover:text-slate-700 focus-visible:ring-2 focus-visible:ring-[#2563EB]/40"
                                     >
                                       <ChevronDown className={`h-3.5 w-3.5 transition-transform ${nestedOpen ? 'rotate-180 text-dle-blue' : ''}`} />
                                     </button>
@@ -219,7 +219,7 @@ export function Sidebar({ isOpen, toggle }: { isOpen: boolean; toggle: () => voi
                                           <Link
                                             key={child.slug}
                                             href={toHref(child.route)}
-                                            className={`text-[12px] py-1.5 px-2.5 rounded-md transition-colors ${
+                                            className={`whitespace-normal break-words text-[12px] leading-snug py-1.5 px-2.5 rounded-md outline-none transition-colors focus-visible:ring-2 focus-visible:ring-[#2563EB]/40 ${
                                               isChildActive
                                                 ? 'text-dle-blue font-semibold bg-dle-blue/5'
                                                 : 'text-slate-500 hover:text-slate-900 hover:bg-slate-50'
@@ -238,7 +238,7 @@ export function Sidebar({ isOpen, toggle }: { isOpen: boolean; toggle: () => voi
                               <Link
                                 key={sub.slug}
                                 href={toHref(sub.route)}
-                                className={`text-[13px] py-2 px-3 rounded-md transition-colors ${
+                                className={`block whitespace-normal break-words text-[13px] leading-snug py-2 px-3 rounded-md outline-none transition-colors focus-visible:ring-2 focus-visible:ring-[#2563EB]/40 ${
                                   isSubActive 
                                     ? 'text-dle-blue font-semibold bg-dle-blue/5' 
                                     : 'text-slate-500 hover:text-slate-900 hover:bg-slate-50'
@@ -268,7 +268,7 @@ export function Sidebar({ isOpen, toggle }: { isOpen: boolean; toggle: () => voi
   return (
     <motion.aside 
       initial={false}
-      animate={{ width: isOpen ? 240 : 80 }}
+      animate={{ width: isOpen ? 300 : 80 }}
       className={`fixed inset-y-0 left-0 z-50 flex flex-col border-r border-slate-100 bg-white shadow-xl transition-transform duration-200 lg:relative lg:z-20 lg:shrink-0 lg:shadow-sm ${
         isOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'
       }`}
@@ -287,7 +287,7 @@ export function Sidebar({ isOpen, toggle }: { isOpen: boolean; toggle: () => voi
 
       <button 
         onClick={toggle}
-        className="absolute right-1 top-20 z-30 flex h-6 w-6 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-400 shadow-sm transition-colors hover:border-dle-blue hover:text-dle-blue"
+        className="absolute right-1 top-20 z-30 flex h-6 w-6 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-400 shadow-sm outline-none transition-colors hover:border-dle-blue hover:text-dle-blue focus-visible:ring-2 focus-visible:ring-[#2563EB]/40"
       >
         {isOpen ? <ChevronLeft className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
       </button>

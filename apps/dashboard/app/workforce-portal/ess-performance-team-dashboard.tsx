@@ -84,37 +84,63 @@ function LifecycleBar({ stages }: { stages: EssCycleStage[] }) {
   if (!stages.length) return null;
   return (
     <section className="overflow-x-auto rounded-lg border border-[#DFE5EE] bg-white px-3 py-3 shadow-[0_2px_6px_rgba(24,44,79,0.04)]">
-      <div className="flex min-w-[720px] items-start justify-between gap-1">
+      <ol className="flex w-full min-w-max">
         {stages.map((stage, index) => {
           const kind = stageIconState(stage.state);
+          const status =
+            kind === 'done' ? 'Completed' : kind === 'current' ? 'Current' : kind === 'upcoming' ? 'Upcoming' : 'Locked';
           return (
-            <div key={stage.id} className="relative flex min-w-0 flex-1 flex-col items-center px-1 text-center">
-              <div
-                className={`relative z-[1] grid h-8 w-8 place-items-center rounded-full border bg-white ${
-                  kind === 'done'
-                    ? 'border-[#00A878] text-[#00A878]'
-                    : kind === 'current'
-                      ? 'border-2 border-[#0868EC] text-[#0868EC] shadow-[0_0_0_5px_#DCEAFF]'
-                      : kind === 'upcoming'
-                        ? 'border border-dashed border-[#0868EC] text-[#0868EC]'
-                        : 'border-[#CBD3DF] text-[#94A3B8]'
+            <li
+              key={stage.id}
+              title={`${stage.label} · ${status}`}
+              aria-current={kind === 'current' ? 'step' : undefined}
+              className="flex w-[7.5rem] min-w-[7.5rem] flex-1 flex-col items-center text-center"
+            >
+              <div className="flex w-full items-center">
+                <span
+                  className={`h-px flex-1 ${index === 0 ? 'bg-transparent' : 'bg-[#D7DDE7]'}`}
+                  aria-hidden
+                />
+                <div
+                  className={`relative z-[1] grid h-8 w-8 shrink-0 place-items-center rounded-full border bg-white ${
+                    kind === 'done'
+                      ? 'border-[#00A878] text-[#00A878]'
+                      : kind === 'current'
+                        ? 'border-2 border-[#0868EC] text-[#0868EC] shadow-[0_0_0_5px_#DCEAFF]'
+                        : kind === 'upcoming'
+                          ? 'border border-dashed border-[#0868EC] text-[#0868EC]'
+                          : 'border-[#CBD3DF] text-[#94A3B8]'
+                  }`}
+                >
+                  {kind === 'done' ? (
+                    <Check className="h-4 w-4" />
+                  ) : kind === 'current' ? (
+                    <Activity className="h-4 w-4" />
+                  ) : kind === 'upcoming' ? (
+                    <Clock3 className="h-4 w-4" />
+                  ) : (
+                    <LockKeyhole className="h-3.5 w-3.5" />
+                  )}
+                </div>
+                <span
+                  className={`h-px flex-1 ${index === stages.length - 1 ? 'bg-transparent' : 'bg-[#D7DDE7]'}`}
+                  aria-hidden
+                />
+              </div>
+              <p
+                className={`mt-1.5 w-full px-1 text-[10px] font-bold leading-tight break-words ${
+                  kind === 'current' ? 'text-[#075FE4]' : 'text-[#0F172A]'
                 }`}
               >
-                {kind === 'done' ? <Check className="h-4 w-4" /> : kind === 'current' ? <Activity className="h-4 w-4" /> : kind === 'upcoming' ? <Clock3 className="h-4 w-4" /> : <LockKeyhole className="h-3.5 w-3.5" />}
-              </div>
-              {index < stages.length - 1 ? (
-                <span className="absolute left-[62%] right-[-38%] top-[15px] z-0 h-px bg-[#D7DDE7]" aria-hidden />
-              ) : null}
-              <p className={`mt-1.5 truncate text-[10px] font-bold ${kind === 'current' ? 'text-[#075FE4]' : 'text-[#0F172A]'}`}>
                 {stage.label}
               </p>
-              <p className={`truncate text-[10px] ${kind === 'current' ? 'text-[#075FE4]' : 'text-[#49566C]'}`}>
-                {kind === 'done' ? 'Completed' : kind === 'current' ? 'Current' : kind === 'upcoming' ? 'Upcoming' : 'Locked'}
+              <p className={`w-full text-[10px] leading-tight ${kind === 'current' ? 'text-[#075FE4]' : 'text-[#49566C]'}`}>
+                {status}
               </p>
-            </div>
+            </li>
           );
         })}
-      </div>
+      </ol>
     </section>
   );
 }

@@ -10,6 +10,7 @@ import {
   performanceMenuTree,
   performanceRouteHref,
   resolvePerformanceRole,
+  resolvePerformanceRoute,
 } from '@/lib/performance-management-menu-config';
 import type { PerformanceBadgeMap, PerformanceMenuItem, PerformanceRole } from '@/lib/performance-management-types';
 
@@ -36,7 +37,7 @@ export function PerformanceNavTree({ isOpen, onNavigate }: PerformanceNavTreePro
 
   const onPerformance = pathname.startsWith('/hris/performance-management');
   const [treeOpen, setTreeOpen] = useState(onPerformance);
-  const activeRoute = onPerformance ? normalize(pathname) : '';
+  const activeRoute = onPerformance ? resolvePerformanceRoute(normalize(pathname)) : '';
 
   useEffect(() => {
     if (onPerformance) setTreeOpen(true);
@@ -62,7 +63,11 @@ export function PerformanceNavTree({ isOpen, onNavigate }: PerformanceNavTreePro
 
   const visibleMenu = useMemo(() => filterMenuByRole(performanceMenuTree, role, permissions), [role, permissions]);
 
-  const isActive = (item: PerformanceMenuItem) => activeRoute && normalize(item.route) === activeRoute;
+  const isActive = (item: PerformanceMenuItem) => {
+    if (!activeRoute) return false;
+    const itemRoute = resolvePerformanceRoute(item.route);
+    return activeRoute === itemRoute || activeRoute.startsWith(`${itemRoute}/`);
+  };
 
   const renderBadge = (item: PerformanceMenuItem) => {
     const label = item.badgeKey ? badgeLabel(badges[item.badgeKey]) : null;
@@ -86,11 +91,12 @@ export function PerformanceNavTree({ isOpen, onNavigate }: PerformanceNavTreePro
         key={child.id}
         href={performanceRouteHref(child.route)}
         onClick={onNavigate}
-        className={`flex items-center gap-2 rounded-md px-3 py-2 text-[13px] transition-colors ${
+        title={child.label}
+        className={`flex items-start gap-2 rounded-md px-3 py-2 text-[13px] leading-snug outline-none transition-colors focus-visible:ring-2 focus-visible:ring-[#2563EB]/40 ${
           active ? 'bg-dle-blue/5 font-semibold text-dle-blue' : 'text-slate-500 hover:bg-slate-50 hover:text-slate-900'
         }`}
       >
-        <span className="truncate">{child.label}</span>
+        <span className="min-w-0 flex-1 whitespace-normal break-words">{child.label}</span>
         {renderBadge(child)}
       </Link>
     );
@@ -105,39 +111,41 @@ export function PerformanceNavTree({ isOpen, onNavigate }: PerformanceNavTreePro
           key={group.id}
           href={performanceRouteHref(group.route)}
           onClick={onNavigate}
-          className={`flex items-center gap-2 rounded-md px-3 py-2 text-[13px] font-medium transition-colors ${
+          title={group.label}
+          className={`flex items-start gap-2 rounded-md px-3 py-2 text-[13px] font-medium leading-snug outline-none transition-colors focus-visible:ring-2 focus-visible:ring-[#2563EB]/40 ${
             active ? 'bg-dle-blue/5 font-semibold text-dle-blue' : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
           }`}
         >
-          <group.icon className="h-4 w-4 shrink-0 text-slate-400" />
-          <span className="truncate">{group.label}</span>
+          <group.icon className="mt-0.5 h-4 w-4 shrink-0 text-slate-400" />
+          <span className="min-w-0 flex-1 whitespace-normal break-words">{group.label}</span>
           {renderBadge(group)}
         </Link>
       );
     }
 
-    const groupExpanded = expanded[group.id] ?? false;
-    const childActive = group.children?.some((child) => isActive(child));
+    const childActive = Boolean(group.children?.some((child) => isActive(child)));
+    const groupExpanded = childActive || (expanded[group.id] ?? false);
 
     return (
       <div key={group.id}>
         <button
           type="button"
           onClick={() => setExpanded((prev) => ({ ...prev, [group.id]: !groupExpanded }))}
-          className={`flex w-full items-center gap-2 rounded-md px-3 py-2 text-[13px] font-semibold transition-colors ${
-            childActive && !groupExpanded ? 'text-dle-blue' : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
+          title={group.label}
+          className={`flex w-full items-start gap-2 rounded-md px-3 py-2 text-[13px] font-semibold leading-snug outline-none transition-colors focus-visible:ring-2 focus-visible:ring-[#2563EB]/40 ${
+            childActive ? 'text-dle-blue' : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
           }`}
           aria-expanded={groupExpanded}
         >
-          <span className="truncate">{group.label}</span>
+          <span className="min-w-0 flex-1 text-left whitespace-normal break-words">{group.label}</span>
           {groupExpanded ? (
-            <ChevronDown className="ml-auto h-4 w-4 shrink-0 text-slate-400" />
+            <ChevronDown className="mt-0.5 h-4 w-4 shrink-0 text-slate-400" />
           ) : (
-            <ChevronRight className="ml-auto h-4 w-4 shrink-0 text-slate-400" />
+            <ChevronRight className="mt-0.5 h-4 w-4 shrink-0 text-slate-400" />
           )}
         </button>
         {groupExpanded ? (
-          <div className="ml-4 mt-1 flex flex-col gap-0.5 border-l border-slate-100 pl-3">
+          <div className="ml-3 mt-1 flex flex-col gap-0.5 border-l border-slate-100 pl-2">
             {group.children!.map((child) => renderChild(child))}
           </div>
         ) : null}
@@ -150,16 +158,16 @@ export function PerformanceNavTree({ isOpen, onNavigate }: PerformanceNavTreePro
       <button
         type="button"
         onClick={() => setTreeOpen((prev) => !prev)}
-        className={`group flex w-full items-center justify-between rounded-lg px-3 py-2.5 text-left transition-all duration-200 whitespace-nowrap ${
+        className={`group flex w-full items-start justify-between rounded-lg px-3 py-2.5 text-left outline-none transition-all duration-200 focus-visible:ring-2 focus-visible:ring-[#2563EB]/40 ${
           onPerformance
             ? 'bg-dle-blue/5 font-medium text-dle-blue'
             : 'text-slate-500 hover:bg-slate-50 hover:text-slate-900'
         }`}
         aria-expanded={treeOpen}
       >
-        <span className="flex min-w-0 flex-1 items-center gap-3">
-          <Target className={`h-5 w-5 shrink-0 ${onPerformance ? 'text-dle-blue' : 'text-slate-400'}`} />
-          {isOpen ? <span className="truncate text-sm font-medium">Performance Management</span> : null}
+        <span className="flex min-w-0 flex-1 items-start gap-3">
+          <Target className={`mt-0.5 h-5 w-5 shrink-0 ${onPerformance ? 'text-dle-blue' : 'text-slate-400'}`} />
+          {isOpen ? <span className="whitespace-normal break-words text-sm font-medium leading-snug">Performance Management</span> : null}
         </span>
         {isOpen ? (
           <span className="flex shrink-0 items-center gap-2">
@@ -169,7 +177,7 @@ export function PerformanceNavTree({ isOpen, onNavigate }: PerformanceNavTreePro
       </button>
 
       {isOpen && treeOpen ? (
-        <div className="ml-5 mt-1 flex flex-col gap-0.5 border-l border-slate-100 pl-2">
+        <div className="ml-3 mt-1 flex flex-col gap-0.5 border-l border-slate-100 pl-2">
           {visibleMenu.map((item) => renderGroup(item))}
         </div>
       ) : null}
