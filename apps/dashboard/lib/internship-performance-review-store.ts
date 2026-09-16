@@ -119,6 +119,26 @@ const defaultApprovals = (input: {
   { step: 'MD Final Approval', approver: input.md, approverCode: input.mdCode || '', role: 'MD', status: 'Pending' },
 ];
 
+const HR_MANAGER_ROLE_PATTERN = /\bHR Manager\b|\bHead of HR\b|\bHR Director\b|\bHR Officer\b|\bHuman Resource(s)? Manager\b/i;
+const MD_ROLE_PATTERN = /\bManaging Director\b|\bChief Executive\b|\bMD\b|\bCEO\b/i;
+const HOD_ROLE_PATTERN = /\bHead of Department\b|\bDepartment Head\b|\bHOD\b|\bFunctional Manager\b/i;
+
+const fallbackRolesForStatus = (status: string) => {
+  if (status === 'Pending HOD') return ['HOD', 'Head of Department', 'Department Head'];
+  if (status === 'Pending HR Manager') return ['HR Manager', 'Head of HR', 'HR Director'];
+  if (status === 'Pending MD') return ['Managing Director', 'Chief Executive', 'MD', 'CEO'];
+  return [];
+};
+
+const directoryPatternsForRoles = (roles: string[]) => {
+  const blob = roles.join(' ').toLowerCase();
+  const patterns: RegExp[] = [];
+  if (/\bhod\b|head of department|department head|functional manager/.test(blob)) patterns.push(HOD_ROLE_PATTERN);
+  if (/hr manager|head of hr|hr director|hr officer|human resource/.test(blob)) patterns.push(HR_MANAGER_ROLE_PATTERN);
+  if (/managing director|chief executive|\bmd\b|\bceo\b/.test(blob)) patterns.push(MD_ROLE_PATTERN);
+  return patterns;
+};
+
 type NotifyTarget = { employeeCode?: string; name?: string; roles?: string[] };
 
 type NotifyDelivery = { sent: boolean; to?: string; reason?: string };
@@ -155,6 +175,11 @@ const resolveNotifyRecipients = async (target?: NotifyTarget) => {
   }
 
   if (!recipients.length && target?.roles?.length) {
+    for (const pattern of directoryPatternsForRoles(target.roles)) {
+      for (const holder of findRoleHolders(employees, pattern)) {
+        await push(personCode(holder), personLabel(holder, ''), holder);
+      }
+    }
     const needed = target.roles.map((role) => role.toLowerCase());
     for (const user of users) {
       const haystack = (user.roles || []).map((role) => String(role).toLowerCase());
@@ -522,8 +547,8 @@ export const initiateInternshipReview = async (
       throw new Error('An open internship review already exists for this intern.');
     }
     const employees = await directoryEmployees();
-    const hrManagers = findRoleHolders(employees, /\bHR Manager\b|\bHead of HR\b|\bHR Director\b|\bHuman Resource(s)? Manager\b/i);
-    const managingDirectors = findRoleHolders(employees, /\bManaging Director\b|\bChief Executive\b|\bMD\b|\bCEO\b/i);
+    const hrManagers = findRoleHolders(employees, HR_MANAGER_ROLE_PATTERN);
+    const managingDirectors = findRoleHolders(employees, MD_ROLE_PATTERN);
     const hrManager = hrManagers[0] || null;
     const md = managingDirectors[0] || null;
     const hod = intern.hod || input.hod || '';
@@ -677,7 +702,7 @@ export const submitInternshipEvaluation = async (
       `${actor} submitted ${review.id}. Next stage: ${next}. Complete this in the ESS portal.`,
       internshipEssHref({ id: review.id, action: 'approve' }),
       [{ code: nextStep?.approverCode, name: nextStep?.approver }],
-      next === 'Pending HR Manager' ? ['HR Manager'] : next === 'Pending MD' ? ['Managing Director'] : [],
+      fallbackRolesForStatus(next),
       review,
     );
     return review;
@@ -758,7 +783,7 @@ export const decideInternshipApproval = async (
           `${actor} approved ${review.id}. Next stage: ${next}. Complete this in the ESS portal.`,
           internshipEssHref({ id: review.id, action: 'approve' }),
           [{ code: nextStep?.approverCode, name: nextStep?.approver }],
-          next === 'Pending HR Manager' ? ['HR Manager'] : next === 'Pending MD' ? ['Managing Director'] : [],
+          fallbackRolesForStatus(next),
           review,
         );
       }
