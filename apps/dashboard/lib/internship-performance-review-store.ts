@@ -211,7 +211,7 @@ const notify = async (session: SessionPayload | null, title: string, body: strin
       title,
       body,
       module: 'Performance Management',
-      kind: 'Task',
+      kind: 'Workflow',
       href,
       recipientEmployeeCode,
       actor: session.fullName,
