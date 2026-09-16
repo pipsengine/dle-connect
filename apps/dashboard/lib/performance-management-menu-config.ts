@@ -97,6 +97,7 @@ export const performanceMenuTree: PerformanceMenuItem[] = [
       { id: 'final-evaluation', label: 'Results Approval', route: 'performance-reviews/final-evaluation', icon: BadgeCheck, roles: ALL_HR, keywords: ['final', 'evaluation', 'results'] },
       { id: 'performance-scorecard', label: 'Published Results', route: 'performance-reviews/performance-scorecard', icon: BarChart3, roles: [...MANAGEMENT, ...ALL_HR, 'Employee'], keywords: ['scorecard', 'score', 'results'] },
       { id: 'appeals', label: 'Appeals & Grievances', route: 'performance-reviews/appeals', icon: AlertTriangle, roles: EMPLOYEE, keywords: ['appeal', 'grievance'] },
+      { id: 'internship-performance-review', label: 'Internship Performance Review', route: 'performance-reviews/internship-performance-review', icon: GraduationCap, roles: MANAGEMENT, keywords: ['internship', 'intern', 'nysc', 'trainee', 'one-year review'] },
       { id: 'probation', label: 'Probation & Confirmation', route: 'performance-reviews/probation', icon: UserCheck, roles: MANAGEMENT, keywords: ['probation', 'confirmation'] },
     ],
   },
@@ -221,6 +222,8 @@ export const performanceRouteAliases: Record<string, string> = {
   '360-degree-review': 'performance-reviews/360-review',
   'competency-assessment': 'competencies/competency-framework',
   'performance-scorecard': 'performance-reviews/performance-scorecard',
+  'internship-reviews': 'performance-reviews/internship-performance-review',
+  'internship-performance-review': 'performance-reviews/internship-performance-review',
   'promotion-recommendation': 'talent-management/promotion-recommendations',
   'performance-improvement-plan': 'improvement/pip',
   'performance-reports': 'reports-analytics/performance-reports',
@@ -235,17 +238,21 @@ export const resolvePerformanceRoute = (route: string) => {
 
 export const findPerformanceMenuItem = (route: string): PerformanceMenuItem | null => {
   const normalized = resolvePerformanceRoute(route);
+  let prefixMatch: PerformanceMenuItem | null = null;
   for (const item of flattenPerformanceMenu()) {
     if (item.route === normalized || item.id === normalized) return item;
+    if (normalized.startsWith(`${item.route}/`) && (!prefixMatch || item.route.length > prefixMatch.route.length)) {
+      prefixMatch = item;
+    }
   }
-  return null;
+  return prefixMatch;
 };
 
 export const findParentGroupId = (route: string): string | null => {
   const normalized = resolvePerformanceRoute(route);
   for (const parent of performanceMenuTree) {
-    if (parent.route === normalized) return parent.id;
-    if (parent.children?.some((child) => child.route === normalized)) return parent.id;
+    if (parent.route === normalized || normalized.startsWith(`${parent.route}/`)) return parent.id;
+    if (parent.children?.some((child) => child.route === normalized || normalized.startsWith(`${child.route}/`))) return parent.id;
   }
   return null;
 };

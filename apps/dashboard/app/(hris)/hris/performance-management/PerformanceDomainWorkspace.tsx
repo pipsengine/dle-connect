@@ -22,6 +22,7 @@ import MatrixProjectInputsView from './MatrixProjectInputsView';
 import CalibrationModerationView from './CalibrationModerationView';
 import ResultsApprovalView from './ResultsApprovalView';
 import CompetencyFrameworkView from './CompetencyFrameworkView';
+import InternshipPerformanceReviewView from './internship-reviews/InternshipPerformanceReviewView';
 
 type Props = {
   route: string;
@@ -586,6 +587,9 @@ export default function PerformanceDomainWorkspace({ route, payload, onAction, b
   );
 
   const content = useMemo(() => {
+    if (route.includes('internship-performance-review') || route.includes('internship-reviews')) {
+      return <InternshipPerformanceReviewView route={route} />;
+    }
     if (route.includes('performance-cycles') || route === 'planning') return cyclesView;
     if (route.includes('corporate-goals') || route.includes('company-objectives')) return companyObjectivesView;
     if (route.includes('department-goals')) return goalCascadingView;
@@ -634,8 +638,11 @@ export default function PerformanceDomainWorkspace({ route, payload, onAction, b
     );
   }, [route, domain, form, busy, payload.actor]);
 
+  const isInternshipReview = route.includes('internship-performance-review') || route.includes('internship-reviews');
+
   return (
     <div className="space-y-4">
+      {isInternshipReview ? null : (
       <div className="flex items-center justify-between gap-3">
         <p className="text-xs font-bold uppercase tracking-wide text-[#64748B]">
           Active cycle: {domain.cycles.find((cycle) => cycle.id === activeCycleId)?.name || 'None'} · Actor: {payload.actor.fullName}
@@ -645,6 +652,7 @@ export default function PerformanceDomainWorkspace({ route, payload, onAction, b
           {busy ? 'Saving…' : 'Ready'}
         </span>
       </div>
+      )}
       {content}
     </div>
   );
