@@ -13,6 +13,7 @@ const ESS_HREF_MAP: Array<[string, string]> = [
   ['/hris/announcements', '/workforce-portal?tab=communication'],
   ['/hris/administration/approval-workflow', '/workforce-portal?tab=leave&leaveSection=Approvals'],
   ['/hris/time-and-logs/timesheet-approval', '/workforce-portal?tab=time'],
+  ['/hris/performance-management/performance-reviews/internship-performance-review', '/workforce-portal?tab=performance&performanceSection=internship'],
   ['/hris/administration/audit-trail', '/workforce-portal?tab=security'],
   ['/workforce-portal?tab=leave', '/workforce-portal?tab=leave&leaveSection=Approvals'],
 ];

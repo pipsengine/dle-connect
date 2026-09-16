@@ -34,6 +34,21 @@ export const INTERNSHIP_REVIEW_BASE_ROUTE = 'performance-reviews/internship-perf
 export const internshipReviewHref = (sub = '') =>
   `/hris/performance-management/${INTERNSHIP_REVIEW_BASE_ROUTE}${sub ? `/${sub.replace(/^\/+/, '')}` : ''}`;
 
+export const ESS_INTERNSHIP_SECTION = 'internship';
+
+export const internshipEssHref = (options?: { id?: string; action?: 'evaluate' | 'approve' }) => {
+  const params = new URLSearchParams({
+    tab: 'performance',
+    performanceSection: ESS_INTERNSHIP_SECTION,
+  });
+  if (options?.id) params.set('internshipReviewId', options.id);
+  if (options?.action) params.set('internshipAction', options.action);
+  return `/workforce-portal?${params.toString()}`;
+};
+
+export const compareEmployeeCodesSerial = (left: string, right: string) =>
+  String(left || '').localeCompare(String(right || ''), undefined, { numeric: true, sensitivity: 'base' });
+
 export const parseInternshipReviewRoute = (route: string) => {
   const normalized = route.replace(/^\/+/, '');
   const prefix = INTERNSHIP_REVIEW_BASE_ROUTE;

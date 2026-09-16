@@ -54,14 +54,24 @@ export type EssTab =
   | 'security'
   | 'exit';
 
-export const ESS_NAV_ITEMS: Array<{ id: EssTab; label: string; icon: LucideIcon }> = [
+export type EssNavChild = { id: string; label: string; section: string };
+
+export const ESS_NAV_ITEMS: Array<{ id: EssTab; label: string; icon: LucideIcon; children?: EssNavChild[] }> = [
   { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
   { id: 'profile', label: 'Profile', icon: UserRound },
   { id: 'leave', label: 'Leave', icon: CalendarCheck },
   { id: 'time', label: 'Time', icon: Clock },
   { id: 'payroll', label: 'Payslip', icon: Banknote },
   { id: 'documents', label: 'Documents', icon: FileArchive },
-  { id: 'performance', label: 'Performance', icon: Target },
+  {
+    id: 'performance',
+    label: 'Performance',
+    icon: Target,
+    children: [
+      { id: 'performance-management', label: 'Performance Management', section: 'cycle' },
+      { id: 'internship-performance-review', label: 'Internship Performance Review', section: 'internship' },
+    ],
+  },
   { id: 'learning', label: 'Learning', icon: GraduationCap },
   { id: 'claims', label: 'Claims', icon: WalletCards },
   { id: 'loans', label: 'Loans', icon: Landmark },
@@ -84,7 +94,7 @@ const QUICK_ACCESS = [
 
 type EssPortalShellProps = {
   tab: EssTab;
-  onTabChange: (tab: EssTab, options?: { leaveSection?: string }) => void;
+  onTabChange: (tab: EssTab, options?: { leaveSection?: string; performanceSection?: string }) => void;
   locale: string;
   onLocaleChange: (locale: string) => void;
   loading: boolean;
@@ -111,6 +121,7 @@ type EssPortalShellProps = {
   };
   children: ReactNode;
   rightPanel?: ReactNode;
+  performanceSection?: string;
 };
 
 export function EssPortalShell({
@@ -126,6 +137,7 @@ export function EssPortalShell({
   managerMetrics,
   children,
   rightPanel,
+  performanceSection = 'cycle',
 }: EssPortalShellProps) {
   const syncLabel = generatedAt
     ? new Date(generatedAt).toLocaleString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })
@@ -144,6 +156,42 @@ export function EssPortalShell({
         <nav className="flex-1 space-y-0.5 overflow-y-auto px-3 py-4">
           {ESS_NAV_ITEMS.map((item) => {
             const active = tab === item.id;
+            const children = item.children || [];
+            const expanded = active && children.length > 0;
+            if (children.length) {
+              return (
+                <div key={item.id} className="space-y-0.5">
+                  <button
+                    type="button"
+                    onClick={() => onTabChange(item.id, { performanceSection: performanceSection || children[0]?.section })}
+                    className={`flex w-full items-center gap-3 rounded-[14px] px-3 py-2.5 text-left text-[14px] font-medium transition-all duration-150 ${
+                      active
+                        ? 'bg-[#2563EB] text-white shadow-[0_0_20px_rgba(37,99,235,0.45)]'
+                        : 'text-white/75 hover:bg-[#173067] hover:text-white'
+                    }`}
+                  >
+                    <item.icon className="h-5 w-5 shrink-0" strokeWidth={2} />
+                    <span className="flex-1">{item.label}</span>
+                    <ChevronDown className={`h-4 w-4 shrink-0 transition-transform ${expanded ? 'rotate-180' : ''}`} />
+                  </button>
+                  {expanded ? children.map((child) => {
+                    const childActive = performanceSection === child.section;
+                    return (
+                      <button
+                        key={child.id}
+                        type="button"
+                        onClick={() => onTabChange(item.id, { performanceSection: child.section })}
+                        className={`ml-4 flex w-[calc(100%-1rem)] items-center rounded-[12px] px-3 py-2 text-left text-[13px] font-medium ${
+                          childActive ? 'bg-white/15 text-white' : 'text-white/65 hover:bg-white/10 hover:text-white'
+                        }`}
+                      >
+                        {child.label}
+                      </button>
+                    );
+                  }) : null}
+                </div>
+              );
+            }
             return (
               <button
                 key={item.id}

@@ -23,7 +23,9 @@ export type InternshipEmployee = {
   email: string;
   internshipStart: string;
   lineManager: string;
+  lineManagerCode?: string;
   hod?: string;
+  hodCode?: string;
 };
 
 export type InternshipScore = {
@@ -35,6 +37,7 @@ export type InternshipScore = {
 export type InternshipApproval = {
   step: string;
   approver: string;
+  approverCode?: string;
   role: InternshipWorkflowRole;
   status: InternshipApprovalStatus;
   comment?: string;
@@ -56,6 +59,7 @@ export type InternshipReview = {
   dueDate: string;
   status: InternshipReviewStatus;
   supervisor: string;
+  supervisorCode?: string;
   scores: InternshipScore[];
   strength: string;
   improvement: string;

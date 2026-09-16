@@ -1,4 +1,16 @@
-import type { InternshipReview, InternshipReviewStatus } from '@/lib/internship-performance-review-types';
+import type { InternshipApproval, InternshipReview, InternshipReviewStatus } from '@/lib/internship-performance-review-types';
+
+type InternshipActor = {
+  fullName?: string;
+  username?: string;
+  employeeCode?: string;
+  employeeId?: string;
+  roles?: string[];
+  isGlobalAdmin?: boolean;
+};
+
+const compact = (value: unknown) => String(value || '').trim();
+const normalizeKey = (value: unknown) => compact(value).toUpperCase();
 
 export function internshipNextStatus(
   review: InternshipReview,
@@ -33,3 +45,79 @@ export function internshipCurrentApprovalStep(review: InternshipReview) {
   if (review.status === 'Pending MD') return review.approvals.find((item) => item.role === 'MD') || null;
   return null;
 }
+
+export const internshipActorKeys = (actor: InternshipActor) =>
+  new Set(
+    [actor.employeeCode, actor.employeeId, actor.username, actor.fullName]
+      .map(normalizeKey)
+      .filter(Boolean),
+  );
+
+export const internshipIsHrManagerActor = (actor: InternshipActor) => {
+  const roles = (actor.roles || []).join(' ');
+  return /HR Manager|HR Director|Head of HR|Head of Human Resource/i.test(roles);
+};
+
+export const internshipIsMdActor = (actor: InternshipActor) => {
+  const roles = (actor.roles || []).join(' ');
+  return /^(MD|CEO)$/i.test(compact(actor.roles?.[0]))
+    || /\b(MD|CEO)\b/i.test(roles)
+    || /Managing Director|Chief Executive|Executive Management|Executive Director/i.test(roles);
+};
+
+const namesOverlap = (left: string, right: string) => {
+  const a = compact(left).toLowerCase();
+  const b = compact(right).toLowerCase();
+  if (!a || !b) return false;
+  return a === b || a.includes(b) || b.includes(a);
+};
+
+export const internshipApprovalMatchesActor = (approval: InternshipApproval | null | undefined, actor: InternshipActor) => {
+  if (!approval) return false;
+  const keys = internshipActorKeys(actor);
+  if (approval.approverCode && keys.has(normalizeKey(approval.approverCode))) return true;
+  if (approval.approver && (keys.has(normalizeKey(approval.approver)) || namesOverlap(approval.approver, actor.fullName || ''))) return true;
+  if (approval.role === 'HR_MANAGER' && internshipIsHrManagerActor(actor)) return true;
+  if (approval.role === 'MD' && internshipIsMdActor(actor)) return true;
+  return false;
+};
+
+export const internshipTasksForSession = (reviews: InternshipReview[], actor: InternshipActor) => {
+  const keys = internshipActorKeys(actor);
+  return reviews.filter((review) => {
+    if (['Approved', 'HR Action', 'Closed'].includes(review.status)) return false;
+    const step = internshipCurrentApprovalStep(review);
+    if (!step || step.role === 'HR') return false;
+    if (internshipApprovalMatchesActor(step, actor)) return true;
+    if (['In Evaluation', 'Returned', 'Assigned'].includes(review.status)) {
+      if (review.supervisorCode && keys.has(normalizeKey(review.supervisorCode))) return true;
+      if (review.employee.lineManagerCode && keys.has(normalizeKey(review.employee.lineManagerCode))) return true;
+      if (namesOverlap(review.supervisor, actor.fullName || '')) return true;
+    }
+    return false;
+  });
+};
+
+export const internshipActorInvolved = (review: InternshipReview, actor: InternshipActor) => {
+  const keys = internshipActorKeys(actor);
+  if (review.supervisorCode && keys.has(normalizeKey(review.supervisorCode))) return true;
+  if (review.employee.lineManagerCode && keys.has(normalizeKey(review.employee.lineManagerCode))) return true;
+  if (review.employee.hodCode && keys.has(normalizeKey(review.employee.hodCode))) return true;
+  if (namesOverlap(review.supervisor, actor.fullName || '')) return true;
+  return review.approvals.some((item) => internshipApprovalMatchesActor(item, actor));
+};
+
+export const internshipCanEvaluate = (review: InternshipReview, actor: InternshipActor) => {
+  if (internshipEvaluationLocked(review.status)) return false;
+  const step = internshipCurrentApprovalStep(review);
+  if (!step || step.role !== 'LINE_MANAGER') return false;
+  return internshipApprovalMatchesActor(step, actor)
+    || Boolean(review.supervisorCode && internshipActorKeys(actor).has(normalizeKey(review.supervisorCode)))
+    || namesOverlap(review.supervisor, actor.fullName || '');
+};
+
+export const internshipCanApprove = (review: InternshipReview, actor: InternshipActor) => {
+  const step = internshipCurrentApprovalStep(review);
+  if (!step || step.role === 'LINE_MANAGER' || step.role === 'HR') return false;
+  return internshipApprovalMatchesActor(step, actor);
+};

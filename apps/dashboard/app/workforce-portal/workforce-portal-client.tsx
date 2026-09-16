@@ -23,7 +23,9 @@ import { EssProfileDashboardView, type EssProfilePayload } from './ess-profile-d
 import { EssPayrollDashboardView, type EssPayrollPayload } from './ess-payroll-dashboard-view';
 import { EssTravelDashboardView, type EssTravelPayload } from './ess-travel-dashboard-view';
 import { EssPerformanceView } from './ess-performance-view';
+import { EssInternshipReviewView } from './ess-internship-review-view';
 import type { EssPerformanceWorkspace } from '@/lib/ess-performance-workspace';
+import type { InternshipReview } from '@/lib/internship-performance-review-types';
 import type { EssTravelRecord } from '@/lib/ess-portal-derived-data';
 import { ESS_NAV_ITEMS, EssPortalShell, EssMobileNav, type EssTab } from './ess-portal-shell';
 import { EssEmptyState } from './ess-portal-ui';
@@ -130,6 +132,7 @@ type PayrollHistoryRow = {
 type Payload = {
   generatedAt: string;
   locale: string;
+  sessionRoles?: string[];
   security: Record<string, string>;
   employee: { employeeId: string; employeeCode: string; fullName: string; jobTitle: string; department: string; businessUnit: string; location: string; manager: string; email: string; phone: string; photoUrl: string; hasPhoto?: boolean; status?: string; yearsOfService: number; payrollGroup: string; salaryGrade: string };
   widgets: {
@@ -196,6 +199,7 @@ type Payload = {
   };
   performance: { goals: SimpleRecord[]; kpis: SimpleRecord[]; reviews: SimpleRecord[]; developmentPlans: SimpleRecord[] };
   performanceWorkspace?: EssPerformanceWorkspace | null;
+  internshipReviews?: { tasks: InternshipReview[]; reviews: InternshipReview[] } | null;
   learning: { courses: SimpleRecord[]; materials: SimpleRecord[]; certifications: SimpleRecord[] };
   claims: SimpleRecord[];
   loanManagement: { products: LoanProduct[]; applications: SimpleRecord[]; repaymentSchedules: SimpleRecord[]; history: SimpleRecord[] };
@@ -1358,16 +1362,31 @@ export default function WorkforcePortalClient({ initialNow }: { initialNow: stri
   const [error, setError] = useState('');
   const [toast, setToast] = useState('');
   const [leaveSection, setLeaveSection] = useState<string | null>(null);
+  const [performanceSection, setPerformanceSection] = useState<'cycle' | 'internship'>('cycle');
+  const [internshipReviewId, setInternshipReviewId] = useState<string | null>(null);
+  const [internshipAction, setInternshipAction] = useState<string | null>(null);
   const [forceCelebrationOpen, setForceCelebrationOpen] = useState(false);
 
-  const navigateTab = (next: Tab, options?: { leaveSection?: string }) => {
+  const navigateTab = (next: Tab, options?: { leaveSection?: string; performanceSection?: string }) => {
     setTab(next);
     setLeaveSection(options?.leaveSection || null);
+    if (options?.performanceSection === 'internship' || options?.performanceSection === 'cycle') {
+      setPerformanceSection(options.performanceSection);
+    } else if (next !== 'performance') {
+      setPerformanceSection('cycle');
+    }
     if (typeof window !== 'undefined') {
       const url = new URL(window.location.href);
       url.searchParams.set('tab', next);
       if (options?.leaveSection) url.searchParams.set('leaveSection', options.leaveSection);
       else url.searchParams.delete('leaveSection');
+      if (next === 'performance') {
+        url.searchParams.set('performanceSection', (options?.performanceSection as string) || performanceSection);
+      } else {
+        url.searchParams.delete('performanceSection');
+        url.searchParams.delete('internshipReviewId');
+        url.searchParams.delete('internshipAction');
+      }
       window.history.replaceState(null, '', url.toString());
     }
   };
@@ -1404,8 +1423,14 @@ export default function WorkforcePortalClient({ initialNow }: { initialNow: stri
   useEffect(() => {
     const requestedTab = searchParams.get('tab') as Tab | null;
     const requestedLeaveSection = searchParams.get('leaveSection');
+    const requestedPerformanceSection = searchParams.get('performanceSection');
+    const requestedInternshipId = searchParams.get('internshipReviewId');
+    const requestedInternshipAction = searchParams.get('internshipAction');
     if (requestedTab && navItems.some((item) => item.id === requestedTab)) setTab(requestedTab);
     if (requestedLeaveSection) setLeaveSection(requestedLeaveSection);
+    if (requestedPerformanceSection === 'internship' || requestedPerformanceSection === 'cycle') setPerformanceSection(requestedPerformanceSection);
+    setInternshipReviewId(requestedInternshipId);
+    setInternshipAction(requestedInternshipAction);
   }, [searchParams]);
 
   const submitRequest = async () => {
@@ -1501,6 +1526,31 @@ export default function WorkforcePortalClient({ initialNow }: { initialNow: stri
       await load();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Performance action failed.');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const runInternshipAction = async (internshipActionName: string, actionPayload: Record<string, unknown> = {}, id = '') => {
+    setSaving(true);
+    setToast('');
+    setError('');
+    try {
+      const res = await fetch('/api/workforce-portal', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ action: 'internship-review', internshipAction: internshipActionName, id, payload: actionPayload }),
+      });
+      const json = await parseJsonResponse(res, 'Internship review API') as ApiResponse<{ message?: string; internshipReviews?: Payload['internshipReviews'] }>;
+      if (!res.ok || json.status !== 'success') throw new Error(json.error || 'Internship review action failed.');
+      if (json.data?.internshipReviews) {
+        setPayload((current) => (current ? { ...current, internshipReviews: json.data?.internshipReviews || null } : current));
+      }
+      setToast(json.data?.message || 'Saved.');
+      await load({ refresh: true });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Internship review action failed.');
+      throw err;
     } finally {
       setSaving(false);
     }
@@ -1699,6 +1749,7 @@ export default function WorkforcePortalClient({ initialNow }: { initialNow: stri
       department={employee?.department}
       employee={employee}
       managerMetrics={payload?.managerMetrics}
+      performanceSection={performanceSection}
       rightPanel={tab === 'dashboard' ? (
         <EssRightPanel
           payload={payload}
@@ -1776,7 +1827,25 @@ export default function WorkforcePortalClient({ initialNow }: { initialNow: stri
             <EssLeaveWorkspace payload={payload} employee={employee} onLeaveSubmitted={submitLeaveApplication} onLeaveAction={submitLeaveApproval} onWithdrawLeave={withdrawLeaveRequest} onRetryNotification={retryLeaveNotification} retryingRequestId={retryingRequestId} saving={saving} actingRequestId={actingRequestId} submitError={error} initialNow={initialNow} initialSection={leaveSection} managerMetrics={payload?.managerMetrics} />
           )}
 
-          {tab === 'performance' && (
+          {tab === 'performance' && performanceSection === 'internship' && (
+            <EssInternshipReviewView
+              workspace={payload?.internshipReviews ?? null}
+              actor={{
+                fullName: payload?.employee?.fullName || employee?.fullName,
+                employeeCode: payload?.employee?.employeeCode || employee?.employeeCode,
+                employeeId: payload?.employee?.employeeId || employee?.employeeId,
+                roles: payload?.sessionRoles || [],
+              }}
+              saving={saving}
+              error={error}
+              initialReviewId={internshipReviewId}
+              initialAction={internshipAction}
+              onRefresh={() => void load({ refresh: true })}
+              onAction={runInternshipAction}
+            />
+          )}
+
+          {tab === 'performance' && performanceSection !== 'internship' && (
             <EssPerformanceView
               workspace={payload?.performanceWorkspace ?? null}
               saving={saving}

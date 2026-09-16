@@ -1,62 +1,50 @@
-import { mkdir, readFile, writeFile } from 'node:fs/promises';
-import path from 'node:path';
+import sql from 'mssql';
 import { readPayrollEmployees } from '@/lib/payroll-employee-source';
 import { isStipendPayrollEmployeeCode } from '@/lib/payroll-employee-classification';
 import { createEnterpriseNotification } from '@/lib/enterprise-notifications-store';
 import type { SessionPayload } from '@/lib/auth/session';
+import type { DleEmployeeDirectoryRow } from '@/lib/dle-enterprise-db';
+import { employeeCodeFromReference } from '@/lib/reporting-manager-match';
 import {
   INTERNSHIP_REVIEW_CRITERIA,
   INTERNSHIP_REVIEW_CYCLE,
+  compareEmployeeCodesSerial,
+  internshipEssHref,
   internshipReviewHref,
 } from '@/lib/internship-performance-review-constants';
+import { getInternshipReviewSqlPool } from '@/lib/internship-performance-review-sql';
 import {
+  internshipActorInvolved,
   internshipAverage,
+  internshipCanApprove,
+  internshipCanEvaluate,
   internshipCurrentApprovalStep,
   internshipEvaluationLocked,
   internshipNextStatus,
+  internshipTasksForSession,
 } from '@/lib/internship-performance-review-workflow';
 import type {
   InternshipApproval,
   InternshipAuditEvent,
   InternshipEligibleIntern,
-  InternshipRating,
   InternshipRecommendation,
   InternshipReview,
   InternshipReviewSettings,
   InternshipScore,
 } from '@/lib/internship-performance-review-types';
 
-type StoreFile = {
-  reviews: InternshipReview[];
-  settings: InternshipReviewSettings;
-};
-
-const resolveDataFile = async () => {
-  const candidates = [
-    path.join(process.cwd(), 'apps', 'dashboard', 'data', 'hris', 'internship-reviews.json'),
-    path.join(process.cwd(), 'data', 'hris', 'internship-reviews.json'),
-  ];
-  for (const candidate of candidates) {
-    try {
-      await mkdir(path.dirname(candidate), { recursive: true });
-      return candidate;
-    } catch {
-      /* try next */
-    }
-  }
-  return candidates[0];
-};
-
+const compact = (value: unknown) => String(value || '').trim();
 const nowIsoDate = () => new Date().toISOString().slice(0, 10);
 const nowStamp = () => new Date().toISOString();
 const newId = (prefix: string) => `${prefix}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`;
+const SETTINGS_KEY = 'default';
 
-const monthsBetween = (start: string) => {
-  const from = new Date(`${start.slice(0, 10)}T00:00:00`);
-  if (Number.isNaN(from.getTime())) return 0;
-  const now = new Date();
-  return Math.max(0, (now.getFullYear() - from.getFullYear()) * 12 + (now.getMonth() - from.getMonth()));
-};
+const defaultSettings = (): InternshipReviewSettings => ({
+  eligibilityMonths: 12,
+  workflow: 'Line Manager → HOD (if present) → HR Manager → MD',
+  reminderSchedule: '3 days and 1 day before due date',
+  lockAfterSubmission: true,
+});
 
 const audit = (actor: string, action: string, detail: string): InternshipAuditEvent => ({
   id: newId('AUD'),
@@ -66,145 +54,77 @@ const audit = (actor: string, action: string, detail: string): InternshipAuditEv
   detail,
 });
 
-const defaultApprovals = (lineManager: string, hod?: string): InternshipApproval[] => [
-  { step: 'Line Manager Evaluation', approver: lineManager, role: 'LINE_MANAGER', status: 'Pending' },
-  hod
-    ? { step: 'HOD / Functional Manager', approver: hod, role: 'HOD', status: 'Pending' }
-    : { step: 'HOD / Functional Manager', approver: '', role: 'HOD', status: 'Skipped', comment: 'No HOD configured' },
-  { step: 'HR Manager Review', approver: 'HR Manager', role: 'HR_MANAGER', status: 'Pending' },
-  { step: 'MD Final Approval', approver: 'Managing Director', role: 'MD', status: 'Pending' },
-];
-
-const seedReviews = (): InternshipReview[] => [
-  {
-    id: 'IPR-2026-0041',
-    employee: {
-      code: 'NYSC0021',
-      name: 'OTAIGBE ANETOR',
-      department: 'INFORMATION TECHNOLOGY',
-      jobTitle: 'IT Intern',
-      email: 'anetor@dormanlongeng.com',
-      internshipStart: '2025-09-01',
-      lineManager: 'Chris Ogbaisi',
-      hod: 'Functional Manager, IT',
-    },
-    cycle: INTERNSHIP_REVIEW_CYCLE,
-    dueDate: '2026-09-20',
-    status: 'In Evaluation',
-    supervisor: 'Chris Ogbaisi',
-    scores: [],
-    strength: '',
-    improvement: '',
-    impression: '',
-    recommendation: '',
-    overall: 0,
-    approvals: defaultApprovals('Chris Ogbaisi', 'Functional Manager, IT'),
-    createdAt: '2026-09-16',
-    updatedAt: '2026-09-16',
-    createdBy: 'HR Officer',
-    audit: [
-      audit('HR Officer', 'Review initiated by HR', 'Employee and reporting line validated'),
-      audit('System', 'Line manager notified', 'Email and in-app task generated'),
-    ],
-  },
-  {
-    id: 'IPR-2026-0038',
-    employee: {
-      code: 'INT0148',
-      name: 'AMINA BELLO',
-      department: 'PROCUREMENT',
-      jobTitle: 'Procurement Intern',
-      email: 'amina@dormanlongeng.com',
-      internshipStart: '2025-08-11',
-      lineManager: 'Procurement Manager',
-    },
-    cycle: INTERNSHIP_REVIEW_CYCLE,
-    dueDate: '2026-09-12',
-    status: 'Pending MD',
-    supervisor: 'Procurement Manager',
-    scores: INTERNSHIP_REVIEW_CRITERIA.map((criterion, index) => ({
-      criterion,
-      rating: ([4, 5, 4, 4, 5, 4, 5, 4, 4, 4, 4][index] || 4) as InternshipRating,
-    })),
-    strength: 'Strong analytical ability',
-    improvement: 'Vendor negotiation',
-    impression: 'Reliable and ready for more responsibility',
-    recommendation: 'Yes',
-    overall: 4.3,
-    approvals: [
-      { step: 'Line Manager Evaluation', approver: 'Procurement Manager', role: 'LINE_MANAGER', status: 'Approved', at: '2026-09-10' },
-      { step: 'HOD / Functional Manager', approver: '', role: 'HOD', status: 'Skipped', comment: 'No HOD configured' },
-      { step: 'HR Manager Review', approver: 'HR Manager', role: 'HR_MANAGER', status: 'Approved', at: '2026-09-11' },
-      { step: 'MD Final Approval', approver: 'Managing Director', role: 'MD', status: 'Pending' },
-    ],
-    createdAt: '2026-09-01',
-    updatedAt: '2026-09-11',
-    createdBy: 'HR Officer',
-    audit: [
-      audit('HR Officer', 'Review initiated by HR', 'Employee and reporting line validated'),
-      audit('Procurement Manager', 'Evaluation submitted', 'Recommended for trainee placement'),
-      audit('System', 'HOD stage skipped', 'No HOD configured'),
-      audit('HR Manager', 'HR Manager approved', 'Routed to MD final approval'),
-    ],
-  },
-];
-
-const defaultSettings = (): InternshipReviewSettings => ({
-  eligibilityMonths: 12,
-  workflow: 'Line Manager → HOD (if present) → HR Manager → MD',
-  reminderSchedule: '3 days and 1 day before due date',
-  lockAfterSubmission: true,
-});
-
-const emptyStore = (): StoreFile => ({ reviews: seedReviews(), settings: defaultSettings() });
-
-let writeChain: Promise<void> = Promise.resolve();
-
-const readStore = async (): Promise<StoreFile> => {
-  try {
-    const file = await resolveDataFile();
-    const raw = await readFile(file, 'utf8');
-    const parsed = JSON.parse(raw) as StoreFile;
-    if (!Array.isArray(parsed.reviews)) return emptyStore();
-    return {
-      reviews: parsed.reviews,
-      settings: { ...defaultSettings(), ...(parsed.settings || {}) },
-    };
-  } catch {
-    const seeded = emptyStore();
-    await persistStore(seeded);
-    return seeded;
-  }
+const monthsBetween = (start: string) => {
+  const from = new Date(`${start.slice(0, 10)}T00:00:00`);
+  if (Number.isNaN(from.getTime())) return 0;
+  const now = new Date();
+  return Math.max(0, (now.getFullYear() - from.getFullYear()) * 12 + (now.getMonth() - from.getMonth()));
 };
 
-const persistStore = async (store: StoreFile) => {
-  const file = await resolveDataFile();
-  await mkdir(path.dirname(file), { recursive: true });
-  await writeFile(file, JSON.stringify(store, null, 2), 'utf8');
+const plusDays = (days: number) => {
+  const date = new Date();
+  date.setDate(date.getDate() + days);
+  return date.toISOString().slice(0, 10);
 };
 
-const withStore = async <T,>(fn: (store: StoreFile) => Promise<T> | T) => {
-  let result!: T;
-  writeChain = writeChain.then(async () => {
-    const store = await readStore();
-    result = await fn(store);
-    await persistStore(store);
+const directoryEmployees = async () => {
+  const { employees } = await readPayrollEmployees().catch(() => ({ employees: [] as DleEmployeeDirectoryRow[] }));
+  return employees;
+};
+
+const findPerson = (employees: DleEmployeeDirectoryRow[], reference: string) => {
+  const value = compact(reference);
+  if (!value) return null;
+  const code = compact(employeeCodeFromReference(value) || value).toUpperCase();
+  const byCode = employees.find((item) => compact(item.employeeCode || item.employeeId).toUpperCase() === code);
+  if (byCode) return byCode;
+  const needle = value.toLowerCase();
+  return employees.find((item) => {
+    const name = compact(item.fullName).toLowerCase();
+    return name === needle || name.includes(needle) || needle.includes(name);
+  }) || null;
+};
+
+const findRoleHolders = (employees: DleEmployeeDirectoryRow[], pattern: RegExp) =>
+  employees.filter((item) => {
+    const status = compact(item.status).toLowerCase();
+    if (['resigned', 'terminated', 'retired', 'inactive'].includes(status)) return false;
+    return pattern.test(`${item.jobTitle} ${item.designation} ${item.employeeCategory} ${item.staffCategory}`);
   });
-  await writeChain;
-  return result;
-};
 
-const nextReviewId = (reviews: InternshipReview[]) => {
-  const year = new Date().getFullYear();
-  const seq = reviews.reduce((max, review) => {
-    const match = review.id.match(/^IPR-(\d{4})-(\d+)$/);
-    if (!match || Number(match[1]) !== year) return max;
-    return Math.max(max, Number(match[2]));
-  }, 0);
-  return `IPR-${year}-${String(seq + 1).padStart(4, '0')}`;
-};
+const personLabel = (employee: DleEmployeeDirectoryRow | null, fallback: string) =>
+  employee ? compact(employee.fullName) || fallback : fallback;
 
-const notify = async (session: SessionPayload | null, title: string, body: string, href: string, recipientEmployeeCode?: string) => {
+const personCode = (employee: DleEmployeeDirectoryRow | null) =>
+  employee ? compact(employee.employeeCode || employee.employeeId) : '';
+
+const defaultApprovals = (input: {
+  lineManager: string;
+  lineManagerCode?: string;
+  hod?: string;
+  hodCode?: string;
+  hrManager: string;
+  hrManagerCode?: string;
+  md: string;
+  mdCode?: string;
+}): InternshipApproval[] => [
+  { step: 'Line Manager Evaluation', approver: input.lineManager, approverCode: input.lineManagerCode || '', role: 'LINE_MANAGER', status: 'Pending' },
+  input.hod
+    ? { step: 'HOD / Functional Manager', approver: input.hod, approverCode: input.hodCode || '', role: 'HOD', status: 'Pending' }
+    : { step: 'HOD / Functional Manager', approver: '', approverCode: '', role: 'HOD', status: 'Skipped', comment: 'No HOD configured' },
+  { step: 'HR Manager Review', approver: input.hrManager, approverCode: input.hrManagerCode || '', role: 'HR_MANAGER', status: 'Pending' },
+  { step: 'MD Final Approval', approver: input.md, approverCode: input.mdCode || '', role: 'MD', status: 'Pending' },
+];
+
+type NotifyTarget = { employeeCode?: string; roles?: string[] };
+
+const notify = async (
+  session: SessionPayload | null,
+  title: string,
+  body: string,
+  href: string,
+  target?: NotifyTarget,
+) => {
   if (!session) return;
   try {
     await createEnterpriseNotification(session, {
@@ -213,7 +133,8 @@ const notify = async (session: SessionPayload | null, title: string, body: strin
       module: 'Performance Management',
       kind: 'Workflow',
       href,
-      recipientEmployeeCode,
+      recipientEmployeeCode: compact(target?.employeeCode) || 'ROLE-INTERNSHIP-REVIEW',
+      recipientRoles: target?.roles || [],
       actor: session.fullName,
       channels: ['In-App'],
     });
@@ -222,75 +143,195 @@ const notify = async (session: SessionPayload | null, title: string, body: strin
   }
 };
 
-export const listInternshipReviews = async () => (await readStore()).reviews;
+const notifyPeople = async (
+  session: SessionPayload | null,
+  title: string,
+  body: string,
+  href: string,
+  people: Array<{ code?: string; name?: string }>,
+  fallbackRoles: string[],
+) => {
+  const codes = [...new Set(people.map((item) => compact(item.code)).filter(Boolean))];
+  if (codes.length) {
+    for (const employeeCode of codes) {
+      await notify(session, title, body, href, { employeeCode, roles: fallbackRoles });
+    }
+    return;
+  }
+  await notify(session, title, body, href, { roles: fallbackRoles });
+};
+
+let writeChain: Promise<void> = Promise.resolve();
+
+const withLock = async <T,>(fn: () => Promise<T>) => {
+  let result!: T;
+  writeChain = writeChain.then(async () => {
+    result = await fn();
+  });
+  await writeChain;
+  return result;
+};
+
+const parseReview = (raw: unknown): InternshipReview | null => {
+  if (!raw) return null;
+  try {
+    const parsed = (typeof raw === 'string' ? JSON.parse(raw) : raw) as InternshipReview;
+    if (!parsed?.id || !parsed.employee?.code) return null;
+    return parsed;
+  } catch {
+    return null;
+  }
+};
+
+const persistReview = async (review: InternshipReview) => {
+  const pool = await getInternshipReviewSqlPool();
+  await pool.request()
+    .input('ReviewId', sql.NVarChar(80), review.id)
+    .input('EmployeeCode', sql.NVarChar(80), review.employee.code)
+    .input('EmployeeName', sql.NVarChar(220), review.employee.name)
+    .input('Department', sql.NVarChar(180), review.employee.department || null)
+    .input('Status', sql.NVarChar(60), review.status)
+    .input('Supervisor', sql.NVarChar(220), review.supervisor || null)
+    .input('SupervisorCode', sql.NVarChar(80), review.supervisorCode || review.employee.lineManagerCode || null)
+    .input('DueDate', sql.Date, review.dueDate || null)
+    .input('Overall', sql.Decimal(9, 4), Number(review.overall || 0))
+    .input('CreatedBy', sql.NVarChar(160), review.createdBy)
+    .input('CreatedAt', sql.DateTime2(3), new Date(review.createdAt || Date.now()))
+    .input('UpdatedAt', sql.DateTime2(3), new Date())
+    .input('ReviewJson', sql.NVarChar(sql.MAX), JSON.stringify(review))
+    .query(`
+      MERGE [hris].[InternshipReviews] AS target
+      USING (SELECT @ReviewId AS ReviewId) AS source
+      ON target.ReviewId = source.ReviewId
+      WHEN MATCHED THEN UPDATE SET
+        EmployeeCode = @EmployeeCode,
+        EmployeeName = @EmployeeName,
+        Department = @Department,
+        Status = @Status,
+        Supervisor = @Supervisor,
+        SupervisorCode = @SupervisorCode,
+        DueDate = @DueDate,
+        Overall = @Overall,
+        UpdatedAt = @UpdatedAt,
+        ReviewJson = @ReviewJson
+      WHEN NOT MATCHED THEN INSERT
+        (ReviewId, EmployeeCode, EmployeeName, Department, Status, Supervisor, SupervisorCode, DueDate, Overall, CreatedBy, CreatedAt, UpdatedAt, ReviewJson)
+      VALUES
+        (@ReviewId, @EmployeeCode, @EmployeeName, @Department, @Status, @Supervisor, @SupervisorCode, @DueDate, @Overall, @CreatedBy, @CreatedAt, @UpdatedAt, @ReviewJson);
+    `);
+};
+
+export const listInternshipReviews = async (): Promise<InternshipReview[]> => {
+  const pool = await getInternshipReviewSqlPool();
+  const result = await pool.request().query(`
+    SELECT ReviewJson
+    FROM [hris].[InternshipReviews]
+    ORDER BY CreatedAt DESC
+  `);
+  return (result.recordset || [])
+    .map((row: { ReviewJson?: string }) => parseReview(row.ReviewJson))
+    .filter((item): item is InternshipReview => Boolean(item));
+};
 
 export const getInternshipReview = async (id: string) =>
-  (await readStore()).reviews.find((review) => review.id === id) || null;
+  (await listInternshipReviews()).find((review) => review.id === id) || null;
 
-export const getInternshipReviewSettings = async () => (await readStore()).settings;
+export const getInternshipReviewSettings = async (): Promise<InternshipReviewSettings> => {
+  const pool = await getInternshipReviewSqlPool();
+  const result = await pool.request()
+    .input('SettingsKey', sql.NVarChar(80), SETTINGS_KEY)
+    .query(`
+      SELECT TOP 1 EligibilityMonths, Workflow, ReminderSchedule, LockAfterSubmission
+      FROM [hris].[InternshipReviewSettings]
+      WHERE SettingsKey = @SettingsKey
+    `);
+  const row = result.recordset[0] as {
+    EligibilityMonths?: number;
+    Workflow?: string;
+    ReminderSchedule?: string;
+    LockAfterSubmission?: boolean;
+  } | undefined;
+  if (!row) return defaultSettings();
+  return {
+    eligibilityMonths: Number(row.EligibilityMonths || 12),
+    workflow: compact(row.Workflow) || defaultSettings().workflow,
+    reminderSchedule: compact(row.ReminderSchedule) || defaultSettings().reminderSchedule,
+    lockAfterSubmission: row.LockAfterSubmission !== false,
+  };
+};
 
-export const saveInternshipReviewSettings = async (patch: Partial<InternshipReviewSettings>) =>
-  withStore((store) => {
-    store.settings = { ...store.settings, ...patch };
-    return store.settings;
-  });
+export const saveInternshipReviewSettings = async (patch: Partial<InternshipReviewSettings>, actor = 'HR') => {
+  const next = { ...defaultSettings(), ...(await getInternshipReviewSettings()), ...patch };
+  const pool = await getInternshipReviewSqlPool();
+  await pool.request()
+    .input('SettingsKey', sql.NVarChar(80), SETTINGS_KEY)
+    .input('EligibilityMonths', sql.Int, next.eligibilityMonths)
+    .input('Workflow', sql.NVarChar(200), next.workflow)
+    .input('ReminderSchedule', sql.NVarChar(200), next.reminderSchedule)
+    .input('LockAfterSubmission', sql.Bit, next.lockAfterSubmission ? 1 : 0)
+    .input('UpdatedBy', sql.NVarChar(160), actor)
+    .query(`
+      MERGE [hris].[InternshipReviewSettings] AS target
+      USING (SELECT @SettingsKey AS SettingsKey) AS source
+      ON target.SettingsKey = source.SettingsKey
+      WHEN MATCHED THEN UPDATE SET
+        EligibilityMonths = @EligibilityMonths,
+        Workflow = @Workflow,
+        ReminderSchedule = @ReminderSchedule,
+        LockAfterSubmission = @LockAfterSubmission,
+        UpdatedAt = SYSUTCDATETIME(),
+        UpdatedBy = @UpdatedBy
+      WHEN NOT MATCHED THEN INSERT
+        (SettingsKey, EligibilityMonths, Workflow, ReminderSchedule, LockAfterSubmission, UpdatedBy)
+      VALUES
+        (@SettingsKey, @EligibilityMonths, @Workflow, @ReminderSchedule, @LockAfterSubmission, @UpdatedBy);
+    `);
+  return next;
+};
 
 export const listEligibleInternshipInterns = async (): Promise<InternshipEligibleIntern[]> => {
   const settings = await getInternshipReviewSettings();
-  const { employees } = await readPayrollEmployees().catch(() => ({ employees: [] as Awaited<ReturnType<typeof readPayrollEmployees>>['employees'] }));
+  const employees = await directoryEmployees();
   const active = employees.filter((employee) => {
-    const status = String(employee.status || '').toLowerCase();
+    const status = compact(employee.status).toLowerCase();
     return !['resigned', 'terminated', 'retired', 'inactive'].includes(status);
   });
   const interns = active.filter(isStipendPayrollEmployeeCode);
-  const mapped = (interns.length ? interns : active.filter((employee) => /intern|nysc|industrial train/i.test(`${employee.jobTitle} ${employee.employeeCategory} ${employee.staffCategory}`))).map((employee) => {
-    const start = String(employee.dateJoined || employee.contractStartDate || '').slice(0, 10);
+  const mapped = interns.map((employee) => {
+    const start = compact(employee.dateJoined || employee.contractStartDate).slice(0, 10);
     const monthsCompleted = monthsBetween(start || nowIsoDate());
+    const manager = findPerson(employees, compact(employee.managerName));
+    const hodRef = compact(
+      compact(employee.departmentHead) && compact(employee.departmentHead) !== compact(employee.managerName)
+        ? employee.departmentHead
+        : compact(employee.functionalManager) && compact(employee.functionalManager) !== compact(employee.managerName)
+          ? employee.functionalManager
+          : '',
+    );
+    const hod = findPerson(employees, hodRef);
     return {
-      code: employee.employeeCode || employee.employeeId,
+      code: compact(employee.employeeCode || employee.employeeId),
       name: employee.fullName,
       department: employee.department || 'Unassigned',
-      jobTitle: employee.jobTitle || 'Intern',
-      email: employee.officialEmail || employee.email || '',
+      jobTitle: employee.jobTitle || employee.designation || 'Intern',
+      email: compact(employee.officialEmail || employee.email),
       internshipStart: start || nowIsoDate(),
-      lineManager: String(employee.managerName || '').trim(),
+      lineManager: personLabel(manager, compact(employee.managerName)),
+      lineManagerCode: personCode(manager) || compact(employeeCodeFromReference(compact(employee.managerName))),
+      hod: personLabel(hod, compact(hodRef)) || undefined,
+      hodCode: personCode(hod) || compact(employeeCodeFromReference(hodRef)) || undefined,
       monthsCompleted,
       eligible: monthsCompleted >= settings.eligibilityMonths,
     } satisfies InternshipEligibleIntern;
   });
-  if (mapped.length) return mapped.sort((a, b) => a.name.localeCompare(b.name));
-  return [
-    {
-      code: 'NYSC0021',
-      name: 'OTAIGBE ANETOR',
-      department: 'INFORMATION TECHNOLOGY',
-      jobTitle: 'IT Intern',
-      email: 'anetor@dormanlongeng.com',
-      internshipStart: '2025-09-01',
-      lineManager: 'Chris Ogbaisi',
-      hod: 'Functional Manager, IT',
-      monthsCompleted: 12,
-      eligible: true,
-    },
-    {
-      code: 'INT0148',
-      name: 'AMINA BELLO',
-      department: 'PROCUREMENT',
-      jobTitle: 'Procurement Intern',
-      email: 'amina@dormanlongeng.com',
-      internshipStart: '2025-08-11',
-      lineManager: 'Procurement Manager',
-      monthsCompleted: 13,
-      eligible: true,
-    },
-  ];
+  return mapped.sort((a, b) => compareEmployeeCodesSerial(a.code, b.code) || a.name.localeCompare(b.name));
 };
 
 export const internshipReviewKpis = (reviews: InternshipReview[]) => {
   const open = reviews.filter((review) => !['Approved', 'HR Action', 'Closed'].includes(review.status)).length;
   const awaiting = reviews.filter((review) => ['Pending HOD', 'Pending HR Manager', 'Pending MD'].includes(review.status)).length;
   const month = nowIsoDate().slice(0, 7);
-  const approvedMonth = reviews.filter((review) => (review.status === 'Approved' || review.status === 'HR Action' || review.status === 'Closed') && review.updatedAt.slice(0, 7) === month).length;
+  const approvedMonth = reviews.filter((review) => (review.status === 'Approved' || review.status === 'HR Action' || review.status === 'Closed') && String(review.updatedAt || '').slice(0, 7) === month).length;
   const recommended = reviews.filter((review) => review.recommendation === 'Yes' && ['Approved', 'HR Action', 'Closed'].includes(review.status)).length;
   const returned = reviews.filter((review) => review.status === 'Returned' || review.status === 'HR Action').length;
   return {
@@ -300,6 +341,24 @@ export const internshipReviewKpis = (reviews: InternshipReview[]) => {
     recommendedPct: approvedMonth ? Math.round((recommended / Math.max(approvedMonth, 1)) * 100) : 0,
     returned,
   };
+};
+
+const averageStageDays = (reviews: InternshipReview[], role: InternshipApproval['role']) => {
+  const values: number[] = [];
+  for (const review of reviews) {
+    const step = review.approvals.find((item) => item.role === role && item.at);
+    if (!step?.at) continue;
+    const index = review.approvals.findIndex((item) => item.role === role);
+    const previous = review.approvals.slice(0, index).reverse().find((item) => item.at);
+    const start = previous?.at || review.createdAt;
+    const from = Date.parse(start);
+    const to = Date.parse(step.at);
+    if (Number.isFinite(from) && Number.isFinite(to) && to >= from) {
+      values.push((to - from) / 86400000);
+    }
+  }
+  if (!values.length) return '—';
+  return `${(values.reduce((sum, value) => sum + value, 0) / values.length).toFixed(1)} days`;
 };
 
 export const internshipReviewAnalytics = (reviews: InternshipReview[]) => {
@@ -326,16 +385,26 @@ export const internshipReviewAnalytics = (reviews: InternshipReview[]) => {
       pct: Math.round((count / maxDept) * 100),
     })),
     turnaround: [
-      { stage: 'Line Manager', days: '2.4 days' },
-      { stage: 'HOD / Functional Manager', days: '1.2 days' },
-      { stage: 'HR Manager', days: '0.9 days' },
-      { stage: 'MD Final Approval', days: '1.5 days' },
+      { stage: 'Line Manager', days: averageStageDays(reviews, 'LINE_MANAGER') },
+      { stage: 'HOD / Functional Manager', days: averageStageDays(reviews, 'HOD') },
+      { stage: 'HR Manager', days: averageStageDays(reviews, 'HR_MANAGER') },
+      { stage: 'MD Final Approval', days: averageStageDays(reviews, 'MD') },
     ],
   };
 };
 
-const requireReview = (store: StoreFile, id: string) => {
-  const review = store.reviews.find((item) => item.id === id);
+const nextReviewId = async (reviews: InternshipReview[]) => {
+  const year = new Date().getFullYear();
+  const seq = reviews.reduce((max, review) => {
+    const match = review.id.match(/^IPR-(\d{4})-(\d+)$/);
+    if (!match || Number(match[1]) !== year) return max;
+    return Math.max(max, Number(match[2]));
+  }, 0);
+  return `IPR-${year}-${String(seq + 1).padStart(4, '0')}`;
+};
+
+const requireReview = async (id: string) => {
+  const review = await getInternshipReview(id);
   if (!review) throw new Error('Internship review not found.');
   return review;
 };
@@ -349,7 +418,6 @@ export const initiateInternshipReview = async (
     notifyManager?: boolean;
     reminders?: boolean;
     hod?: string;
-    hrManager?: string;
   },
   actor: string,
   session: SessionPayload | null,
@@ -361,25 +429,41 @@ export const initiateInternshipReview = async (
   if (!intern.eligible) throw new Error(`This intern has completed ${intern.monthsCompleted} month(s). Eligibility requires ${settings.eligibilityMonths} months.`);
   if (!intern.lineManager) throw new Error('Reporting line is missing. Resolve the line manager from organization hierarchy before initiation.');
 
-  return withStore(async (store) => {
-    if (store.reviews.some((review) => review.employee.code === intern.code && !['Closed'].includes(review.status))) {
+  return withLock(async () => {
+    const reviews = await listInternshipReviews();
+    if (reviews.some((review) => review.employee.code === intern.code && !['Closed'].includes(review.status))) {
       throw new Error('An open internship review already exists for this intern.');
     }
+    const employees = await directoryEmployees();
+    const hrManagers = findRoleHolders(employees, /\bHR Manager\b|\bHead of HR\b|\bHR Director\b|\bHuman Resource(s)? Manager\b/i);
+    const managingDirectors = findRoleHolders(employees, /\bManaging Director\b|\bChief Executive\b|\bMD\b|\bCEO\b/i);
+    const hrManager = hrManagers[0] || null;
+    const md = managingDirectors[0] || null;
     const hod = intern.hod || input.hod || '';
     const review: InternshipReview = {
-      id: nextReviewId(store.reviews),
+      id: await nextReviewId(reviews),
       employee: intern,
       cycle: input.cycle || INTERNSHIP_REVIEW_CYCLE,
-      dueDate: input.dueDate || nowIsoDate(),
+      dueDate: input.dueDate || plusDays(7),
       status: 'In Evaluation',
       supervisor: intern.lineManager,
+      supervisorCode: intern.lineManagerCode || '',
       scores: [],
       strength: '',
       improvement: '',
       impression: '',
       recommendation: '',
       overall: 0,
-      approvals: defaultApprovals(intern.lineManager, hod),
+      approvals: defaultApprovals({
+        lineManager: intern.lineManager,
+        lineManagerCode: intern.lineManagerCode,
+        hod,
+        hodCode: intern.hodCode,
+        hrManager: personLabel(hrManager, 'HR Manager'),
+        hrManagerCode: personCode(hrManager),
+        md: personLabel(md, 'Managing Director'),
+        mdCode: personCode(md),
+      }),
       instructions: input.instructions || '',
       notifyManager: input.notifyManager !== false,
       reminders: input.reminders !== false,
@@ -388,19 +472,21 @@ export const initiateInternshipReview = async (
       createdBy: actor,
       audit: [
         audit(actor, 'Review initiated by HR', 'Employee and reporting line validated'),
-        audit('System', 'Line manager notified', input.notifyManager === false ? 'Notification suppressed' : 'Email and in-app task generated'),
+        audit('System', 'Line manager notified', input.notifyManager === false ? 'Notification suppressed' : 'ESS task generated for the line manager'),
       ],
     };
     if (!hod) {
       review.audit.push(audit('System', 'HOD stage skipped', 'No HOD / Functional Manager resolved from organization hierarchy'));
     }
-    store.reviews.unshift(review);
+    await persistReview(review);
     if (input.notifyManager !== false) {
-      await notify(
+      await notifyPeople(
         session,
         `Internship review assigned: ${review.employee.name}`,
-        `Complete the one-year internship evaluation for ${review.employee.name} (${review.id}). Due ${review.dueDate}.`,
-        internshipReviewHref(`${review.id}/evaluate`),
+        `Complete the one-year internship evaluation for ${review.employee.name} (${review.id}) in the ESS portal. Due ${review.dueDate}.`,
+        internshipEssHref({ id: review.id, action: 'evaluate' }),
+        [{ code: intern.lineManagerCode, name: intern.lineManager }],
+        [],
       );
     }
     return review;
@@ -417,10 +503,15 @@ export const saveInternshipEvaluation = async (
     recommendation?: InternshipRecommendation;
   },
   actor: string,
+  session?: SessionPayload | null,
 ) =>
-  withStore((store) => {
-    const review = requireReview(store, id);
-    if (internshipEvaluationLocked(review.status) && store.settings.lockAfterSubmission) {
+  withLock(async () => {
+    const review = await requireReview(id);
+    if (session && !internshipCanEvaluate(review, session)) {
+      throw new Error('Only the assigned line manager can save this evaluation in the ESS portal.');
+    }
+    const settings = await getInternshipReviewSettings();
+    if (internshipEvaluationLocked(review.status) && settings.lockAfterSubmission) {
       throw new Error('Submitted evaluation is locked. Corrections are only allowed after a formal return.');
     }
     if (payload.scores) review.scores = payload.scores;
@@ -431,6 +522,7 @@ export const saveInternshipEvaluation = async (
     review.overall = internshipAverage(review.scores.map((score) => score.rating));
     review.updatedAt = nowIsoDate();
     review.audit.push(audit(actor, 'Evaluation draft saved', `${review.scores.length} criteria captured`));
+    await persistReview(review);
     return review;
   });
 
@@ -446,9 +538,13 @@ export const submitInternshipEvaluation = async (
   actor: string,
   session: SessionPayload | null,
 ) =>
-  withStore(async (store) => {
-    const review = requireReview(store, id);
-    if (internshipEvaluationLocked(review.status) && store.settings.lockAfterSubmission) {
+  withLock(async () => {
+    const review = await requireReview(id);
+    if (session && !internshipCanEvaluate(review, session)) {
+      throw new Error('Only the assigned line manager can submit this evaluation in the ESS portal.');
+    }
+    const settings = await getInternshipReviewSettings();
+    if (internshipEvaluationLocked(review.status) && settings.lockAfterSubmission) {
       throw new Error('Submitted evaluation is locked. Corrections are only allowed after a formal return.');
     }
     if (!payload.scores || payload.scores.length !== INTERNSHIP_REVIEW_CRITERIA.length || payload.scores.some((score) => !score.rating)) {
@@ -467,17 +563,22 @@ export const submitInternshipEvaluation = async (
     if (line) {
       line.status = 'Approved';
       line.approver = actor;
+      line.approverCode = compact(session?.employeeCode || session?.employeeId || line.approverCode);
       line.at = nowIsoDate();
     }
     const next = internshipNextStatus(review, 'LINE_MANAGER', 'approve');
     review.status = next;
     review.updatedAt = nowIsoDate();
     review.audit.push(audit(actor, 'Evaluation submitted', `Overall ${review.overall.toFixed(1)} · ${review.recommendation}`));
-    await notify(
+    await persistReview(review);
+    const nextStep = internshipCurrentApprovalStep(review);
+    await notifyPeople(
       session,
       `Internship evaluation submitted: ${review.employee.name}`,
-      `${actor} submitted ${review.id}. Next stage: ${next}.`,
-      internshipReviewHref(`${review.id}/approve`),
+      `${actor} submitted ${review.id}. Next stage: ${next}. Complete this in the ESS portal.`,
+      internshipEssHref({ id: review.id, action: 'approve' }),
+      [{ code: nextStep?.approverCode, name: nextStep?.approver }],
+      next === 'Pending HR Manager' ? ['HR Manager'] : next === 'Pending MD' ? ['Managing Director'] : [],
     );
     return review;
   });
@@ -489,8 +590,11 @@ export const decideInternshipApproval = async (
   actor: string,
   session: SessionPayload | null,
 ) =>
-  withStore(async (store) => {
-    const review = requireReview(store, id);
+  withLock(async () => {
+    const review = await requireReview(id);
+    if (session && !internshipCanApprove(review, session)) {
+      throw new Error('This approval can only be completed in the ESS portal by the assigned approver.');
+    }
     const step = internshipCurrentApprovalStep(review);
     if (!step || step.role === 'LINE_MANAGER') {
       throw new Error('This review is not waiting on an approval decision.');
@@ -501,6 +605,7 @@ export const decideInternshipApproval = async (
     step.status = decision === 'return' ? 'Returned' : 'Approved';
     step.comment = comment.trim() || undefined;
     step.approver = actor;
+    step.approverCode = compact(session?.employeeCode || session?.employeeId || step.approverCode);
     step.at = nowIsoDate();
     const next = internshipNextStatus(review, step.role, decision);
     review.status = next;
@@ -512,28 +617,45 @@ export const decideInternshipApproval = async (
         line.at = undefined;
       }
       review.audit.push(audit(actor, 'Returned for correction', comment.trim()));
-      await notify(
+      await persistReview(review);
+      await notifyPeople(
         session,
         `Internship review returned: ${review.employee.name}`,
         `${actor} returned ${review.id}. ${comment.trim()}`,
-        internshipReviewHref(`${review.id}/evaluate`),
+        internshipEssHref({ id: review.id, action: 'evaluate' }),
+        [{ code: review.supervisorCode || review.employee.lineManagerCode, name: review.supervisor }],
+        [],
       );
     } else {
       review.audit.push(audit(actor, `${step.step} approved`, comment.trim() || 'Approved and routed onward'));
+      await persistReview(review);
       if (next === 'Approved') {
         review.audit.push(audit('System', 'Final approval completed', 'HR and the line manager have been notified. Evaluation is locked.'));
+        await persistReview(review);
         await notify(
           session,
           `MD approved internship review: ${review.employee.name}`,
-          `${review.id} is approved. Record the HR next action.`,
-          internshipReviewHref(`${review.id}/hr-action`),
+          `${review.id} is approved. Record the HR next action in HRIS.`,
+          internshipReviewHref(review.id),
+          { roles: ['HR Manager', 'HR Officer', 'HR Director'] },
+        );
+        await notifyPeople(
+          session,
+          `Internship review approved: ${review.employee.name}`,
+          `${review.id} received MD approval.`,
+          internshipEssHref({ id: review.id }),
+          [{ code: review.supervisorCode || review.employee.lineManagerCode, name: review.supervisor }],
+          [],
         );
       } else {
-        await notify(
+        const nextStep = internshipCurrentApprovalStep(review);
+        await notifyPeople(
           session,
           `Internship review approved onward: ${review.employee.name}`,
-          `${actor} approved ${review.id}. Next stage: ${next}.`,
-          internshipReviewHref(`${review.id}/approve`),
+          `${actor} approved ${review.id}. Next stage: ${next}. Complete this in the ESS portal.`,
+          internshipEssHref({ id: review.id, action: 'approve' }),
+          [{ code: nextStep?.approverCode, name: nextStep?.approver }],
+          next === 'Pending HR Manager' ? ['HR Manager'] : next === 'Pending MD' ? ['Managing Director'] : [],
         );
       }
     }
@@ -552,8 +674,8 @@ export const recordInternshipHrAction = async (
   actor: string,
   session: SessionPayload | null,
 ) =>
-  withStore(async (store) => {
-    const review = requireReview(store, id);
+  withLock(async () => {
+    const review = await requireReview(id);
     if (review.status !== 'Approved' && review.status !== 'HR Action') {
       throw new Error('HR action can only be recorded after MD final approval.');
     }
@@ -566,28 +688,29 @@ export const recordInternshipHrAction = async (
     review.status = 'Closed';
     review.updatedAt = nowIsoDate();
     review.audit.push(audit(actor, 'HR action confirmed', payload.hrAction));
+    await persistReview(review);
     if (payload.notifyOnHrAction !== false) {
-      await notify(
+      await notifyPeople(
         session,
         `HR action recorded: ${review.employee.name}`,
         `${payload.hrAction} for ${review.id}.`,
-        internshipReviewHref(review.id),
+        internshipEssHref({ id: review.id }),
+        [{ code: review.supervisorCode || review.employee.lineManagerCode, name: review.supervisor }],
+        [],
       );
     }
     return review;
   });
 
-export const internshipTasksForActor = (reviews: InternshipReview[], actorName: string, roleHint = '') => {
-  const name = actorName.toLowerCase();
-  const role = roleHint.toLowerCase();
-  return reviews.filter((review) => {
-    if (review.status === 'In Evaluation' || review.status === 'Returned' || review.status === 'Assigned') {
-      return review.supervisor.toLowerCase().includes(name) || role.includes('supervisor') || role.includes('manager') || role.includes('hr');
-    }
-    if (review.status === 'Pending HOD') return role.includes('hod') || role.includes('head') || role.includes('hr') || role.includes('admin');
-    if (review.status === 'Pending HR Manager') return role.includes('hr');
-    if (review.status === 'Pending MD') return role.includes('md') || role.includes('director') || role.includes('executive') || role.includes('admin') || role.includes('hr');
-    if (review.status === 'Approved') return role.includes('hr');
-    return false;
-  });
+export const internshipTasksForActor = (reviews: InternshipReview[], actorName: string, roleHint = '') =>
+  internshipTasksForSession(reviews, { fullName: actorName, roles: roleHint ? [roleHint] : [] });
+
+export const buildEssInternshipWorkspace = async (session: SessionPayload) => {
+  const reviews = await listInternshipReviews();
+  return {
+    tasks: internshipTasksForSession(reviews, session),
+    reviews: reviews.filter((review) => internshipActorInvolved(review, session)),
+  };
 };
+
+export type EssInternshipWorkspace = Awaited<ReturnType<typeof buildEssInternshipWorkspace>>;

@@ -46,6 +46,13 @@ import {
 } from '@/lib/ess-portal-derived-data';
 import { getEssPerformanceBundle, applyPerformanceAction, buildPerformanceActorContext } from '@/lib/performance-domain-store';
 import { assertEssPerformanceAction, buildEssPerformanceWorkspace } from '@/lib/ess-performance-workspace';
+import {
+  buildEssInternshipWorkspace,
+  decideInternshipApproval,
+  saveInternshipEvaluation,
+  submitInternshipEvaluation,
+} from '@/lib/internship-performance-review-store';
+import type { InternshipRecommendation, InternshipScore } from '@/lib/internship-performance-review-types';
 import { invalidateEssPortalCache, readEssPortalResponseCache, writeEssPortalResponseCache } from '@/lib/ess-portal-cache';
 import { buildEssReportExport } from '@/lib/ess-reports-export';
 import { isNigeriaCountry, resolveNigeriaPersonalLocation } from '@/lib/nigeria-locations';
@@ -930,6 +937,7 @@ export async function GET(request: Request) {
       String(employee.employeeCode || ''),
     ).catch(() => null);
     const performanceWorkspace = session ? await buildEssPerformanceWorkspace(session).catch(() => null) : null;
+    const internshipReviews = session ? await buildEssInternshipWorkspace(session).catch(() => null) : null;
     const derivedPerformance = performanceWorkspace
       ? {
           goals: performanceWorkspace.self.goals,
@@ -1299,6 +1307,7 @@ export async function GET(request: Request) {
     const payload = {
       generatedAt: new Date().toISOString(),
       locale,
+      sessionRoles: session.roles || [],
       security: {
         rbacRole: session.isGlobalAdmin || (session.roles || []).includes('Super Administrator') ? 'Super Administrator' : 'Employee',
         mfa: 'Enabled',
@@ -1459,6 +1468,7 @@ export async function GET(request: Request) {
       },
       performance: derivedPerformance,
       performanceWorkspace,
+      internshipReviews,
       learning: derivedLearning,
       claims: derivedClaims,
       loanManagement: {
@@ -1792,6 +1802,55 @@ export async function POST(request: Request) {
       if (!result.ok) return err(400, result.error || 'Unable to acknowledge performance item.');
       invalidateEssPortalCache();
       return ok({ message: result.message || 'Acknowledged.' });
+    }
+
+    if (action === 'internship-review') {
+      const internAction = compact(body.internshipAction || body.internAction);
+      const reviewId = compact(body.id || body.reviewId || (body.payload as { id?: string } | undefined)?.id);
+      const actor = session.fullName || session.username;
+      const payload = (body.payload && typeof body.payload === 'object' && !Array.isArray(body.payload))
+        ? (body.payload as Record<string, unknown>)
+        : body;
+      try {
+        if (internAction === 'save-evaluation') {
+          await saveInternshipEvaluation(
+            reviewId,
+            {
+              scores: Array.isArray(payload.scores) ? payload.scores as InternshipScore[] : undefined,
+              strength: payload.strength == null ? undefined : String(payload.strength),
+              improvement: payload.improvement == null ? undefined : String(payload.improvement),
+              impression: payload.impression == null ? undefined : String(payload.impression),
+              recommendation: payload.recommendation == null ? undefined : payload.recommendation as InternshipRecommendation,
+            },
+            actor,
+            session,
+          );
+        } else if (internAction === 'submit-evaluation') {
+          await submitInternshipEvaluation(
+            reviewId,
+            {
+              scores: (payload.scores || []) as InternshipScore[],
+              strength: String(payload.strength || ''),
+              improvement: String(payload.improvement || ''),
+              impression: String(payload.impression || ''),
+              recommendation: (payload.recommendation || '') as InternshipRecommendation,
+            },
+            actor,
+            session,
+          );
+        } else if (internAction === 'approve' || internAction === 'return') {
+          await decideInternshipApproval(reviewId, internAction, String(payload.comment || ''), actor, session);
+        } else {
+          return err(400, 'Unknown internship review action.');
+        }
+        invalidateEssPortalCache();
+        return ok({
+          message: internAction === 'return' ? 'Review returned to the line manager.' : internAction === 'approve' ? 'Approval recorded.' : internAction === 'submit-evaluation' ? 'Evaluation submitted.' : 'Draft saved.',
+          internshipReviews: await buildEssInternshipWorkspace(session).catch(() => null),
+        });
+      } catch (error) {
+        return err(400, error instanceof Error ? error.message : 'Unable to update internship review.');
+      }
     }
 
     if (action === 'performance-action') {

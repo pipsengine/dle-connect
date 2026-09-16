@@ -3,7 +3,6 @@ import { NextRequest, NextResponse } from 'next/server';
 import { AUTH_COOKIE, verifySessionToken } from '@/lib/auth/session';
 import { canAccessHrisPerformanceManagement } from '@/lib/access/route-access';
 import {
-  decideInternshipApproval,
   getInternshipReview,
   getInternshipReviewSettings,
   initiateInternshipReview,
@@ -13,11 +12,8 @@ import {
   listEligibleInternshipInterns,
   listInternshipReviews,
   recordInternshipHrAction,
-  saveInternshipEvaluation,
   saveInternshipReviewSettings,
-  submitInternshipEvaluation,
 } from '@/lib/internship-performance-review-store';
-import type { InternshipRecommendation, InternshipScore } from '@/lib/internship-performance-review-types';
 
 const jsonOk = (data: unknown) => NextResponse.json({ status: 'success', data });
 const jsonErr = (status: number, error: string) => NextResponse.json({ status: 'error', error }, { status });
@@ -71,35 +67,15 @@ export async function POST(request: NextRequest) {
       const review = await initiateInternshipReview(body.payload || body, actor, session);
       return jsonOk({ review, workspace: await workspace(session, review.id) });
     }
-    if (action === 'save-evaluation') {
-      const review = await saveInternshipEvaluation(id, body.payload || body, actor);
-      return jsonOk({ review, workspace: await workspace(session, review.id) });
-    }
-    if (action === 'submit-evaluation') {
-      const review = await submitInternshipEvaluation(
-        id,
-        {
-          scores: (body.payload?.scores || body.scores) as InternshipScore[],
-          strength: String(body.payload?.strength || body.strength || ''),
-          improvement: String(body.payload?.improvement || body.improvement || ''),
-          impression: String(body.payload?.impression || body.impression || ''),
-          recommendation: (body.payload?.recommendation || body.recommendation || '') as InternshipRecommendation,
-        },
-        actor,
-        session,
-      );
-      return jsonOk({ review, workspace: await workspace(session, review.id) });
-    }
-    if (action === 'approve' || action === 'return') {
-      const review = await decideInternshipApproval(id, action, String(body.payload?.comment || body.comment || ''), actor, session);
-      return jsonOk({ review, workspace: await workspace(session, review.id) });
+    if (action === 'save-evaluation' || action === 'submit-evaluation' || action === 'approve' || action === 'return') {
+      return jsonErr(403, 'Line manager evaluation and approvals are completed in the Employee Self-Service portal.');
     }
     if (action === 'hr-action') {
       const review = await recordInternshipHrAction(id, body.payload || body, actor, session);
       return jsonOk({ review, workspace: await workspace(session, review.id) });
     }
     if (action === 'save-settings') {
-      const settings = await saveInternshipReviewSettings(body.payload || body);
+      const settings = await saveInternshipReviewSettings(body.payload || body, actor);
       return jsonOk({ settings, workspace: await workspace(session) });
     }
     return jsonErr(400, 'Unknown internship review action.');
