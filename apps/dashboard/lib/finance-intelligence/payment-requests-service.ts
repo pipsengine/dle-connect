@@ -419,7 +419,7 @@ const resolveInitialStage = async (
     supervisorName: context?.supervisorName,
     projectCode: context?.projectCode,
     department: context?.department,
-    paymentType: context?.paymentType,
+    paymentType,
   });
   fallbackStages = applyHrManagerAfterReportingManager(fallbackStages, context?.expenseNature);
   return {
