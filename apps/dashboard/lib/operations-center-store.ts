@@ -1,6 +1,6 @@
 import { readPayrollEmployees } from '@/lib/payroll-employee-source';
 import { readTimeAndLogsPayload } from '@/lib/time-and-logs-management-store';
-import { readTimesheetData, readTimesheetPeriod, type TimesheetHeader, type TimesheetLine } from '@/lib/timesheet-entry-store';
+import { readTimesheetData, readOpenTimesheetPeriod, type TimesheetHeader, type TimesheetLine } from '@/lib/timesheet-entry-store';
 
 export type OperationsSection =
   | 'operations-dashboard'
@@ -163,7 +163,7 @@ export async function readOperationsCenterPayload(input?: {
     readPayrollEmployees(),
     readTimeAndLogsPayload('timesheet-entry', roles.includes('Supervisor') ? 'Supervisor' : roles.includes('Project Manager') ? 'Project Manager' : roles.includes('Project Cost Controller') ? 'Finance Team' : 'HR Manager'),
     readTimesheetData({ softFail: true }).catch(() => ({ headers: [] as TimesheetHeader[], lines: [] as TimesheetLine[] })),
-    readTimesheetPeriod().catch(() => ({ id: 'current', name: 'Current Period', startDate: new Date().toISOString().slice(0, 10), endDate: new Date().toISOString().slice(0, 10), status: 'Open' })),
+    readOpenTimesheetPeriod().catch(() => ({ id: 'current', name: 'Current Period', startDate: new Date().toISOString().slice(0, 10), endDate: new Date().toISOString().slice(0, 10), status: 'Open' })),
   ]);
 
   const employees = employeesSource.employees.filter((employee) => !['resigned', 'terminated', 'retired', 'inactive'].includes(employee.status.toLowerCase()));

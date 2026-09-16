@@ -18,6 +18,7 @@ import {
   invalidateTimesheetApprovalWorkspaceCache,
   readTimesheetApprovalPage,
   readTimesheetApprovalData,
+  readOpenTimesheetPeriod,
   readTimesheetApprovalWorkspaceStats,
   readTimesheetData,
   readTimesheetDraftBookedHeaders,
@@ -550,7 +551,7 @@ const buildPayload = async (request: Request) => {
 
   return {
     generatedAt: new Date().toISOString(),
-    currentPeriodId: calculateTimesheetPeriod(new Date()).id,
+    currentPeriodId: (await readOpenTimesheetPeriod()).id,
     pagination: {
       page,
       pageSize,

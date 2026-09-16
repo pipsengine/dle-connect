@@ -440,7 +440,7 @@ export const executePayrollWorkflowAction = async (input: WorkflowInput) => {
       skipped: true as const,
       queued: true as const,
       payrollPeriod: period,
-      reason: 'Period closed. Database backup will run in the background — confirm it in Backup & Disaster Recovery before opening the next period.',
+      reason: 'Period closed. Database backup will run in the background.',
     };
     void runPayrollCutoverBackup(period, actor).then(async (result) => {
       await appendPayrollAudit({
@@ -745,7 +745,7 @@ export const executePayrollWorkflowAction = async (input: WorkflowInput) => {
         skipped: true,
         queued: true,
         payrollPeriod: period,
-        reason: 'Period closed. Database backup will run in the background — confirm it in Backup & Disaster Recovery before opening the next period.',
+        reason: 'Period closed. Database backup will run in the background.',
       },
     };
   }

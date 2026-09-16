@@ -19,7 +19,7 @@ import {
   type TimesheetLine,
 } from '@/lib/timesheet-entry-shared';
 import {
-  assertTimesheetDateInCurrentPeriod,
+  assertTimesheetDateInOpenPeriod,
   isTimesheetEditableStatus,
   isTimesheetPayrollReadyStatus,
   normalizeTimesheetStatus,
@@ -273,7 +273,7 @@ export const resolveProjectManagerForSubmission = (lines: TimesheetLine[], proje
 };
 
 const requireOpenPeriod = async (date: string, options?: { requireOpen?: boolean }) => {
-  assertTimesheetDateInCurrentPeriod(date);
+  if (options?.requireOpen !== false) await assertTimesheetDateInOpenPeriod(date);
   const period = await readTimesheetPeriod(date);
   if (options?.requireOpen !== false && period.status !== 'Open') {
     throw new Error(`Timesheet period ${period.name} is ${period.status}. Reopen the period before changing timesheets.`);

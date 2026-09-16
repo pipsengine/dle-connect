@@ -886,7 +886,10 @@ export async function POST(request: Request) {
         isGlobalAdmin,
         baseUrl: origin,
       });
-      return jsonOk({ run: result.run, runs: (result as { runs?: typeof result.run[] }).runs });
+      return jsonOk({
+        run: result.run,
+        runs: (result as { runs?: typeof result.run[] }).runs,
+      });
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Unable to complete payroll action.';
       const clientError = /permission|cannot|blocked|requires|not found|unsupported|before closing|already closed|journal posting/i.test(message);

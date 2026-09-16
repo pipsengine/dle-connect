@@ -1,5 +1,5 @@
 import { readPayrollEmployees } from '@/lib/payroll-employee-source';
-import { readTimesheetData, readTimesheetPeriod, readTimesheetPeriodSummaries, type TimesheetHeader, type TimesheetLine } from '@/lib/timesheet-entry-store';
+import { readTimesheetData, readOpenTimesheetPeriod, readTimesheetPeriodSummaries, type TimesheetHeader, type TimesheetLine } from '@/lib/timesheet-entry-store';
 
 export type TimeRole = 'Payroll Officer' | 'HR Officer' | 'HR Manager' | 'Supervisor' | 'Department Manager' | 'Project Manager' | 'Site Manager' | 'Employee' | 'Finance Team' | 'System Administrator';
 export type TimeActionId =
@@ -263,7 +263,7 @@ const permissionsFor = (role: TimeRole): TimePayload['permissions'] => ({
 export async function readTimeAndLogsPayload(section = 'timesheet-entry', roleInput?: string | null): Promise<TimePayload> {
   const role = normalizeRole(roleInput);
   const [period, summaries, data] = await Promise.all([
-    readTimesheetPeriod().catch(() => ({ id: 'current', name: 'Current Period', startDate: new Date().toISOString().slice(0, 10), endDate: new Date().toISOString().slice(0, 10), status: 'Open' })),
+    readOpenTimesheetPeriod().catch(() => ({ id: 'current', name: 'Current Period', startDate: new Date().toISOString().slice(0, 10), endDate: new Date().toISOString().slice(0, 10), status: 'Open' })),
     readTimesheetPeriodSummaries(6).catch(() => []),
     readTimesheetData({ softFail: true }).catch(() => ({ headers: [], lines: [] })),
   ]);

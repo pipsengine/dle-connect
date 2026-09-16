@@ -2,7 +2,7 @@ import { access, mkdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import sql from 'mssql';
 import { getDleEnterpriseDbPool } from '@/lib/dle-enterprise-db';
-import { ACTIVE_PAYROLL_PERIOD, NEXT_PAYROLL_PERIOD } from '@/lib/payroll-periods';
+import { ACTIVE_PAYROLL_PERIOD, NEXT_PAYROLL_PERIOD, nextPayrollPeriod, successorPeriodIfActiveClosed } from '@/lib/payroll-periods';
 import {
   ensurePayrollSqlSchema,
   payrollJsonMirrorEnabled,
@@ -207,6 +207,24 @@ const readState = async (): Promise<PayrollPeriodState> => {
 };
 
 export const readPayrollPeriodState = async () => readState();
+
+export const advanceClosedActivePayrollPeriod = async (actor = 'System') => {
+  const state = await readState();
+  const next = successorPeriodIfActiveClosed(state.activePeriod, state.periods);
+  if (!next) {
+    process.env.HRIS_ACTIVE_PAYROLL_PERIOD = state.activePeriod;
+    return { period: state.activePeriod, advanced: false as const };
+  }
+  const periodRecord = await openPayrollPeriod(next, actor);
+  return { period: next, advanced: true as const, periodRecord, closedPeriod: state.activePeriod };
+};
+
+export const openSuccessorPayrollPeriod = async (closedPeriod: string, actor: string) => {
+  const next = nextPayrollPeriod(closedPeriod);
+  if (!next) throw new Error(`Cannot determine the next payroll period after ${closedPeriod}.`);
+  const periodRecord = await openPayrollPeriod(next, actor);
+  return { nextPeriod: next, periodRecord };
+};
 
 export const getActivePayrollPeriod = async () => {
   const pool = await getDleEnterpriseDbPool();

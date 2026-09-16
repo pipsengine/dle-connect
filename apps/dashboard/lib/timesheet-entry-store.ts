@@ -34,6 +34,12 @@ import {
   selectTimesheetHeaderForLocation,
   type TimesheetLine,
 } from '@/lib/timesheet-entry-shared';
+import {
+  TIMESHEET_OCTOBER_2026_PERIOD_ID,
+  TIMESHEET_SEPTEMBER_2026_PERIOD_ID,
+  findOpenTimesheetPeriod,
+  repairManualTimesheetPeriods,
+} from '@/lib/timesheet-period-control';
 
 export type { TimesheetLine } from '@/lib/timesheet-entry-shared';
 export { DAILY_BREAK_HOURS, STANDARD_TIMESHEET_HOURS, isTimesheetPaidLeaveLine } from '@/lib/timesheet-entry-shared';
@@ -740,6 +746,20 @@ export const assertTimesheetDateInCurrentPeriod = (date: Date | string, today: D
   return current;
 };
 
+export const assertTimesheetDateInOpenPeriod = async (date: Date | string) => {
+  const open = await readOpenTimesheetPeriod();
+  const target = calculateTimesheetPeriod(date);
+  if (target.id !== open.id) {
+    throw new Error(
+      `Timesheets can only be booked in the open period (${open.name}, ${open.startDate} to ${open.endDate}). ${target.name} is not open.`,
+    );
+  }
+  if (open.status !== 'Open') {
+    throw new Error(`Timesheet period ${open.name} is ${open.status}. Reopen the period before changing timesheets.`);
+  }
+  return open;
+};
+
 const padIsoDay = (value: number) => String(value).padStart(2, '0');
 
 export const shiftIsoDateByMonths = (isoDate: string, months: number) => {
@@ -1151,91 +1171,63 @@ export async function writeTimesheetPeriods(periods: TimesheetPeriod[]) {
   }
 }
 
-const closeOtherOpenPeriods = async (periods: TimesheetPeriod[], keepId: string, actor = 'System') => {
-  const extras = periods.filter((period) => period.id !== keepId && period.status === 'Open');
-  if (!extras.length) return periods;
-  const now = new Date().toISOString();
-  const next = periods.map((period) => {
-    if (period.id === keepId || period.status !== 'Open') return period;
-    return {
-      ...period,
-      status: 'Closed' as const,
-      closedAt: now,
-      closedBy: actor,
-      updatedAt: now,
-      updatedBy: actor,
-    };
-  });
-  await writeTimesheetPeriods(next);
-  return next;
+const deleteTimesheetPeriod = async (id: string) => {
+  const pool = await db();
+  await pool.request().input('Id', sql.NVarChar(40), id).query(`DELETE FROM [hris].[TimesheetPeriods] WHERE [Id]=@Id`);
 };
 
-export async function readTimesheetPeriod(date: Date | string = new Date()): Promise<TimesheetPeriod> {
-  const calculated = calculateTimesheetPeriod(date);
-  const periods = await readTimesheetPeriods();
-  const stored = periods.find((period) => period.id === calculated.id);
-  const now = new Date().toISOString();
-  const currentPeriodId = calculateTimesheetPeriod(new Date()).id;
-  const isCurrentPeriod = calculated.id === currentPeriodId;
+let timesheetPeriodRepair: Promise<TimesheetPeriod[]> | null = null;
 
+export async function ensureManualTimesheetPeriods() {
+  if (!timesheetPeriodRepair) {
+    timesheetPeriodRepair = (async () => {
+      const stored = await readTimesheetPeriods();
+      const september = calculateTimesheetPeriod('2026-09-15');
+      const repaired = repairManualTimesheetPeriods(stored, september, new Date().toISOString());
+      const storedSeptember = stored.find((period) => period.id === TIMESHEET_SEPTEMBER_2026_PERIOD_ID);
+      const septemberNeedsWrite = !storedSeptember || storedSeptember.status !== 'Open';
+      if (repaired.removedOctober) {
+        await deleteTimesheetPeriod(TIMESHEET_OCTOBER_2026_PERIOD_ID).catch(() => undefined);
+      }
+      if (repaired.removedOctober || septemberNeedsWrite || repaired.reopenedSeptember) {
+        await writeTimesheetPeriods(repaired.periods);
+      }
+      return repaired.periods;
+    })().catch(async () => readTimesheetPeriods()).finally(() => {
+      timesheetPeriodRepair = null;
+    });
+  }
+  return timesheetPeriodRepair;
+}
+
+export async function readOpenTimesheetPeriod(): Promise<TimesheetPeriod> {
+  const periods = await ensureManualTimesheetPeriods();
+  return findOpenTimesheetPeriod(periods) || calculateTimesheetPeriod('2026-09-15');
+}
+
+export async function readTimesheetPeriod(date: Date | string = new Date()): Promise<TimesheetPeriod> {
+  const periods = await ensureManualTimesheetPeriods();
+  const calculated = calculateTimesheetPeriod(date);
+  const stored = periods.find((period) => period.id === calculated.id);
   if (stored) {
-    const normalized = {
+    return {
       ...calculated,
       ...stored,
       startDate: calculated.startDate,
       endDate: calculated.endDate,
       name: calculated.name,
     };
-    if (isCurrentPeriod && stored.status === 'Closed' && (!stored.closedBy || stored.closedBy === 'System')) {
-      const reopened: TimesheetPeriod = {
-        ...normalized,
-        status: 'Open',
-        openedAt: stored.openedAt || now,
-        openedBy: stored.openedBy || 'System',
-        closedAt: null,
-        closedBy: null,
-        updatedAt: now,
-        updatedBy: 'System',
-      };
-      try {
-        const withCurrent = periods.map((period) => (period.id === reopened.id ? reopened : period));
-        await writeTimesheetPeriods(withCurrent);
-        await closeOtherOpenPeriods(withCurrent, reopened.id);
-      } catch {
-        // Read-only fallback: the page can still render when SQL is temporarily unavailable.
-      }
-      return reopened;
-    }
-    if (isCurrentPeriod && stored.status === 'Open') {
-      try {
-        await closeOtherOpenPeriods(periods, stored.id);
-      } catch {
-        // Keep serving the current open period even if a prior period cannot be closed.
-      }
-    }
-    return normalized;
   }
-
-  const shouldAutoOpen = isCurrentPeriod;
-  const period: TimesheetPeriod = {
+  return {
     ...calculated,
-    status: shouldAutoOpen ? 'Open' : 'Closed',
-    openedAt: shouldAutoOpen ? now : null,
-    openedBy: shouldAutoOpen ? 'System' : null,
-    closedAt: shouldAutoOpen ? null : now,
-    closedBy: shouldAutoOpen ? null : 'System',
-    updatedAt: now,
-    updatedBy: 'System',
+    status: calculated.id === TIMESHEET_SEPTEMBER_2026_PERIOD_ID ? 'Open' : 'Closed',
+    openedAt: null,
+    openedBy: null,
+    closedAt: null,
+    closedBy: null,
+    updatedAt: null,
+    updatedBy: null,
   };
-
-  try {
-    const withCurrent = [...periods, period];
-    await writeTimesheetPeriods(withCurrent);
-    if (shouldAutoOpen) await closeOtherOpenPeriods(withCurrent, period.id);
-  } catch {
-    // Read-only fallback: the page can still render when SQL is temporarily unavailable.
-  }
-  return period;
 }
 
 export async function updateTimesheetPeriodStatus(date: Date | string, status: TimesheetPeriod['status'], actor: string): Promise<TimesheetPeriod> {
@@ -1282,15 +1274,19 @@ export async function updateTimesheetPeriodStatus(date: Date | string, status: T
 }
 
 export async function readTimesheetPeriodSummaries(windowMonths = 12): Promise<TimesheetPeriodSummary[]> {
-  const current = calculateTimesheetPeriod(new Date());
-  const currentEnd = new Date(`${current.endDate}T00:00:00`);
-  const periods = await Promise.all(
-    Array.from({ length: windowMonths }, (_, index) => {
-      const end = new Date(currentEnd);
-      end.setMonth(currentEnd.getMonth() - index);
-      return readTimesheetPeriod(end);
-    }),
-  );
+  const stored = await ensureManualTimesheetPeriods();
+  const open = findOpenTimesheetPeriod(stored) || calculateTimesheetPeriod('2026-09-15');
+  const currentEnd = new Date(`${open.endDate}T00:00:00`);
+  const periods = Array.from({ length: windowMonths }, (_, index) => {
+    const end = new Date(currentEnd);
+    end.setMonth(currentEnd.getMonth() - index);
+    const calculated = calculateTimesheetPeriod(end);
+    const storedPeriod = stored.find((period) => period.id === calculated.id);
+    return storedPeriod || {
+      ...calculated,
+      status: calculated.id === TIMESHEET_SEPTEMBER_2026_PERIOD_ID ? 'Open' as const : 'Closed' as const,
+    };
+  }).filter((period) => period.id !== TIMESHEET_OCTOBER_2026_PERIOD_ID);
   const { headers, lines } = await readTimesheetData();
 
   return periods.map((period) => {
@@ -3625,7 +3621,7 @@ export async function syncAttendanceForTimesheet(
   options: { persist?: boolean; shiftLabel?: string | null } = {},
 ) {
   const persist = options.persist !== false;
-  if (persist) assertTimesheetDateInCurrentPeriod(date);
+  if (persist) await assertTimesheetDateInOpenPeriod(date);
   if (isOffshoreWorkCenterName(workCenterName)) {
     throw new Error('Offshore timesheets are booked from the HR mobilization roster. Attendance sync is not used because there is no clocking machine.');
   }

@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { getUiPermissions, resolveAccessContext } from '@/lib/hris-access';
 import {
-  calculateTimesheetPeriod,
+  readOpenTimesheetPeriod,
   readTimesheetPeriodSummaries,
   updateTimesheetPeriodStatus,
   type TimesheetPeriod,
@@ -33,12 +33,12 @@ const monthDateFromPayload = (payload: PeriodPayload) => {
 const buildPayload = async (request: Request) => {
   const access = resolveAccessContext(request);
   const permissions = getUiPermissions(access);
-  const currentPeriod = calculateTimesheetPeriod(new Date());
+  const currentPeriod = await readOpenTimesheetPeriod();
 
   return {
     generatedAt: new Date().toISOString(),
     periodRule: {
-      description: 'Each monthly timesheet period runs from the 16th of the previous month to the 15th of the selected month.',
+      description: 'Each monthly timesheet period runs from the 16th of the previous month to the 15th of the selected month. Periods open and close only when HR/Payroll do it — the calendar date does not roll them automatically.',
       startDay: 16,
       endDay: 15,
     },
@@ -76,14 +76,6 @@ export async function PATCH(request: Request) {
     }
 
     const periodDate = monthDateFromPayload(payload);
-    const targetPeriod = calculateTimesheetPeriod(periodDate);
-    const currentPeriod = calculateTimesheetPeriod(new Date());
-    if (targetPeriod.endDate > currentPeriod.endDate) {
-      return err(400, 'Future timesheet periods are not available yet.');
-    }
-    if (payload.action === 'OPEN_PERIOD' && targetPeriod.id !== currentPeriod.id) {
-      return err(400, 'Only the current timesheet period can be opened. Close the prior period instead of reopening it.');
-    }
     const status: TimesheetPeriod['status'] = payload.action === 'OPEN_PERIOD' ? 'Open' : 'Closed';
     await updateTimesheetPeriodStatus(periodDate, status, access.actor);
 

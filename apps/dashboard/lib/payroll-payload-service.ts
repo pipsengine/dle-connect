@@ -63,6 +63,7 @@ import {
   type PayrollMonthOverMonth,
 } from '@/lib/payroll-month-over-month';
 import { previousPayrollPeriod } from '@/lib/payroll-review-export';
+import { stripPendingPayrollAmounts } from '@/lib/payroll-pending-display';
 
 const roundMoney = (value: number) => Math.round((Number.isFinite(value) ? value : 0) * 100) / 100;
 
@@ -174,34 +175,6 @@ const isPayrollComputed = (run: UnifiedPayrollRun | null, periodRecord: { status
   if (run.status === 'Closed' || run.status === 'Posted' || run.status === 'Published' || run.status === 'Locked') return true;
   return COMPUTED_RUN_STATUSES.has(run.status);
 };
-
-const stripPendingPayrollAmounts = (calculation: Awaited<ReturnType<typeof calculatePayrollForPeriod>>) => ({
-  ...calculation,
-  summary: {
-    ...calculation.summary,
-    basePay: 0,
-    allowances: 0,
-    grossPay: 0,
-    totalDeductions: 0,
-    deductions: 0,
-    netPay: 0,
-    employerCost: 0,
-    sageGrossPay: 0,
-    sageNetPay: 0,
-    grossVariance: 0,
-    netVariance: 0,
-    scheduleNetPay: Number(calculation.summary.scheduleNetPay || 0),
-    scheduleGrossPay: Number(calculation.summary.scheduleGrossPay || 0),
-    scheduleEmployees: Number(calculation.summary.scheduleEmployees || 0),
-  },
-  breakdowns: {
-    ...calculation.breakdowns,
-    byPayrollGroup: calculation.breakdowns.byPayrollGroup.map((item) => ({ ...item, grossPay: 0, netPay: 0 })),
-    byDepartment: calculation.breakdowns.byDepartment.map((item) => ({ ...item, grossPay: 0, netPay: 0 })),
-    byEmploymentType: calculation.breakdowns.byEmploymentType.map((item) => ({ ...item, grossPay: 0, netPay: 0 })),
-    byComponent: calculation.breakdowns.byComponent.map((item) => ({ ...item, amount: 0 })),
-  },
-});
 
 const shouldUseSnapshot = (
   run: UnifiedPayrollRun | null,
@@ -316,29 +289,14 @@ const totalsFromSummaryAndRecords = (
     : currencySlice === 'all'
       ? (records || [])
       : ngnPayrollKpiRecords(records);
-  const fromRecords = { grossPay: 0, deductions: 0, netPay: 0, employerCost: 0 };
-  for (const record of forKpi) {
-    fromRecords.grossPay += Number(record.grossPay || 0);
-    fromRecords.deductions += Number(record.totalDeductions || record.deductions || 0);
-    fromRecords.netPay += Number(record.netPay || 0);
-    fromRecords.employerCost += Number(record.employerCost || 0);
-  }
   return {
     period,
     periodLabel: payrollPeriodLabel(period),
     employees: Number(summary.scheduleEmployees || summary.employees || summary.payrollEligible || forKpi.length || 0),
-    grossPay: roundMoney(
-      payrollComputed
-        ? Number(summary.grossPay || 0)
-        : Number(summary.scheduleGrossPay || fromRecords.grossPay || 0),
-    ),
-    deductions: roundMoney(payrollComputed ? Number(summary.deductions || summary.totalDeductions || 0) : fromRecords.deductions),
-    netPay: roundMoney(
-      payrollComputed
-        ? Number(summary.netPay || 0)
-        : Number(summary.scheduleNetPay || fromRecords.netPay || 0),
-    ),
-    employerCost: roundMoney(payrollComputed ? Number(summary.employerCost || 0) : fromRecords.employerCost),
+    grossPay: roundMoney(payrollComputed ? Number(summary.grossPay || 0) : 0),
+    deductions: roundMoney(payrollComputed ? Number(summary.deductions || summary.totalDeductions || 0) : 0),
+    netPay: roundMoney(payrollComputed ? Number(summary.netPay || 0) : 0),
+    employerCost: roundMoney(payrollComputed ? Number(summary.employerCost || 0) : 0),
   };
 };
 
@@ -590,10 +548,12 @@ const buildPackPayload = async (
   const dataMode = resolved.dataMode;
   const payrollComputed = resolved.payrollComputed;
   const totals = totalsFromSummaryAndRecords(period, calculation.summary, calculation.records, payrollComputed, scope.currencySlice);
-  const presentMoney = (value: number | null | undefined, fallback: number) =>
-    value == null || (Math.abs(Number(value || 0)) < 0.005 && Math.abs(fallback) >= 0.005)
+  const presentMoney = (value: number | null | undefined, fallback: number) => {
+    if (!payrollComputed) return roundMoney(Number(value || 0));
+    return value == null || (Math.abs(Number(value || 0)) < 0.005 && Math.abs(fallback) >= 0.005)
       ? roundMoney(fallback)
       : value;
+  };
 
   const summary = canViewMoney
     ? calculation.summary
@@ -918,8 +878,8 @@ export const buildManagementPayload = async (
     : isFinancePayrollOnlyUser(permissions || [], identity);
   const fullPayrollAccess = !restrictedApprover && (hasFullPayrollManagementAccess(permissions || []) || Boolean(isGlobalAdmin));
   const salaryReviewAccess = restrictedApprover || (!fullPayrollAccess && hasPayrollSalaryReviewAccess(permissions || []));
+  const period = requestedPeriod || (await getActivePayrollPeriod());
   const periodState = await listPayrollPeriods();
-  const period = requestedPeriod || periodState.activePeriod || (await getActivePayrollPeriod());
   const pack = normalizePayrollRunPack(requestedPack) || 'salaried';
   const company = normalizePayrollCompany(requestedCompany) || 'DLE';
   const scope = findPayrollScheduleScope(pack, company);
