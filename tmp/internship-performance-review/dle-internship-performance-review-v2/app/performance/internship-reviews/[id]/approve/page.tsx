@@ -1,0 +1,1 @@
+import ApprovalPage from '@/components/internship-review/ApprovalPage'; export default async function Page({params}:{params:Promise<{id:string}>}){const {id}=await params;return <ApprovalPage id={id}/>}
