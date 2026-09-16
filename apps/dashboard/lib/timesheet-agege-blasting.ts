@@ -122,7 +122,9 @@ export const timesheetLocationsMatch = (a?: string | null, b?: string | null) =>
   const left = timesheetLocationMatchKey(a);
   const right = timesheetLocationMatchKey(b);
   if (!left || !right) return false;
-  return left === right || left.includes(right) || right.includes(left);
+  if (left === right || left.includes(right) || right.includes(left)) return true;
+  const idiOro = (value: string) => /^(idioro|idiidioro|nnd|nigeriannavaldockyard|navaldockyard)$/.test(value);
+  return idiOro(left) && idiOro(right);
 };
 
 /**

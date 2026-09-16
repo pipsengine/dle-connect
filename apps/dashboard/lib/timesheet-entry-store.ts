@@ -3864,11 +3864,7 @@ export async function syncAttendanceForTimesheet(
     const employeeName = payrollEmployee
       ? formatSageEmployeeFullName(payrollEmployee, attendance.employeeName)
       : attendance.employeeName;
-    return !employeeIsOtherTimesheetSupervisor(
-      { employeeNo: employeeCode, employeeId: employeeCode, employeeName },
-      syncHeaderRef,
-      headers,
-    ) && !employeeAlreadyCommittedOnOtherTimesheet(
+    return !employeeAlreadyCommittedOnOtherTimesheet(
       { employeeNo: employeeCode, employeeId: employeeCode, employeeName },
       syncHeaderRef,
       headers,
@@ -3952,9 +3948,30 @@ export async function syncAttendanceForTimesheet(
     ...preservedNightLines.map((line) => ({ ...line, headerId: header!.id })),
   ];
   const syncedKeys = new Set(newLines.flatMap((line) => attendanceMatchKeys(line.employeeId, line.employeeNo, line.employeeName)));
-  const parkedOtherLocationLines = existingHeaderLines.filter((line) => {
-    if (attendanceMatchKeys(line.employeeId, line.employeeNo, line.employeeName).some((key) => syncedKeys.has(key))) return false;
-    return !employeeAlreadyCommittedOnOtherTimesheet(line, syncHeaderRef, headers, lines);
+  const parkedOtherLocationLines = existingHeaderLines.flatMap((line) => {
+    if (attendanceMatchKeys(line.employeeId, line.employeeNo, line.employeeName).some((key) => syncedKeys.has(key))) return [];
+    if (employeeAlreadyCommittedOnOtherTimesheet(line, syncHeaderRef, headers, lines)) return [];
+    const lineKeys = attendanceMatchKeys(line.employeeId, line.employeeNo, line.employeeName);
+    const matchedClock = attendanceCandidates.find((candidate) =>
+      attendanceCandidateKeys(candidate).some((key) => lineKeys.includes(key)),
+    );
+    if (matchedClock?.attendance.checkInTime) {
+      const att = matchedClock.attendance;
+      const clockIn = att.checkInTime;
+      const clockOut = att.checkOutTime || line.clockOut || null;
+      const fromClock = attendanceDurationFromClock(clockIn, clockOut);
+      return [{
+        ...line,
+        clockIn,
+        clockOut,
+        attendanceDuration: fromClock && fromClock > 0 ? Math.round(fromClock * 10) / 10 : line.attendanceDuration,
+        attendanceMode: line.attendanceMode || 'Biometric',
+        biometricId: att.id,
+        attendanceId: att.id,
+      }];
+    }
+    if (employeeIsOtherTimesheetSupervisor(line, syncHeaderRef, headers) && !line.clockIn) return [];
+    return [line];
   });
   const persistLines = [...newLines, ...parkedOtherLocationLines];
 

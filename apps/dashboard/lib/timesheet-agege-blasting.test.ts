@@ -93,6 +93,8 @@ assert.equal(untouched.workCenterName, 'Maintenance');
 assert.equal(timesheetLocationsMatch('AGEGE', 'Agege'), true);
 assert.equal(timesheetLocationsMatch('Lagos - Idi Oro', 'IDI-ORO'), true);
 assert.equal(timesheetLocationsMatch('IDI_ORO', 'Idi-Oro'), true);
+assert.equal(timesheetLocationsMatch('NND', 'IDI_ORO'), true, 'NND biometric office clocks at Idi-Oro');
+assert.equal(timesheetLocationsMatch('Nigerian Naval Dockyard', 'IDI-ORO'), true);
 assert.equal(timesheetLocationsMatch('AGEGE', 'IDI-ORO'), false);
 assert.equal(timesheetCrewMatchesLocation('AGEGE', 'AGEGE', 'AGEGE'), true);
 assert.equal(timesheetCrewMatchesLocation('Lagos - Idi Oro', 'IDI-ORO', 'AGEGE'), true);

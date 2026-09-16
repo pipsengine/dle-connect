@@ -333,7 +333,14 @@ const readLiveDailyAttendanceRaw = async (requestedDate?: string): Promise<{ att
       [attendanceDate],
     );
 
-    const attendanceEmployees = rows.filter((row) => isDailyAttendanceEmployeeCode(row.uniqueCode));
+    const attendanceEmployees = rows.filter((row) => {
+      if (!isDailyAttendanceEmployeeCode(row.uniqueCode)) return false;
+      if (Number(row.punchCount || 0) > 0) return true;
+      const code = String(row.uniqueCode || '').trim().toUpperCase();
+      const office = String(row.officeName || '');
+      if (/^NA\d/i.test(code) && /(\*{2,}|unassigned)/i.test(office)) return false;
+      return true;
+    });
 
     return {
       attendanceDate: displayDate(attendanceDate),
@@ -512,7 +519,7 @@ const readPairedShiftClockingActivityRaw = async (
       `
       SELECT
         e.L_UID AS uid,
-        COALESCE(NULLIF(e.C_Unique, ''), NULLIF(u.C_Unique, ''), CAST(e.L_UID AS CHAR)) AS uniqueCode,
+        COALESCE(NULLIF(u.C_Unique, ''), NULLIF(e.C_Unique, ''), CAST(e.L_UID AS CHAR)) AS uniqueCode,
         COALESCE(NULLIF(e.C_Name, ''), NULLIF(u.C_Name, ''), CONCAT('Employee ', e.L_UID)) AS employeeName,
         e.C_Date AS punchDate,
         e.C_Time AS punchTime,
@@ -638,7 +645,7 @@ const readLiveAttendancePunchesRaw = async (requestedDate?: string): Promise<{ a
       SELECT
         CONCAT(e.L_UID, '-', e.C_Date, '-', e.C_Time, '-', e.L_TID, '-', e.L_Mode, '-', e.L_MatchingType) AS punchId,
         e.L_UID AS uid,
-        COALESCE(NULLIF(e.C_Unique, ''), NULLIF(u.C_Unique, ''), CAST(e.L_UID AS CHAR)) AS uniqueCode,
+        COALESCE(NULLIF(u.C_Unique, ''), NULLIF(e.C_Unique, ''), CAST(e.L_UID AS CHAR)) AS uniqueCode,
         COALESCE(NULLIF(e.C_Name, ''), NULLIF(u.C_Name, ''), CONCAT('Employee ', e.L_UID)) AS employeeName,
         e.C_Date AS punchDate,
         e.C_Time AS punchTime,
