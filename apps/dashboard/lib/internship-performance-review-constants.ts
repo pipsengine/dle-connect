@@ -59,6 +59,7 @@ export const parseInternshipReviewRoute = (route: string) => {
   if (!rest) return { kind: 'dashboard' as const };
   if (rest === 'new') return { kind: 'new' as const };
   if (rest === 'my-tasks') return { kind: 'tasks' as const };
+  if (rest === 'register') return { kind: 'register' as const };
   if (rest === 'reports') return { kind: 'reports' as const };
   if (rest === 'settings') return { kind: 'settings' as const };
   const parts = rest.split('/');

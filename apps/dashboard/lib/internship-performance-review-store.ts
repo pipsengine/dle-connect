@@ -418,6 +418,7 @@ export const initiateInternshipReview = async (
     notifyManager?: boolean;
     reminders?: boolean;
     hod?: string;
+    bypassEligibility?: boolean;
   },
   actor: string,
   session: SessionPayload | null,
@@ -426,7 +427,11 @@ export const initiateInternshipReview = async (
   const intern = interns.find((item) => item.code === input.employeeCode);
   if (!intern) throw new Error('Select an intern from the Employee Directory.');
   const settings = await getInternshipReviewSettings();
-  if (!intern.eligible) throw new Error(`This intern has completed ${intern.monthsCompleted} month(s). Eligibility requires ${settings.eligibilityMonths} months.`);
+  if (!intern.eligible && !input.bypassEligibility) {
+    throw new Error(
+      `This intern has completed ${intern.monthsCompleted} month(s). Standard eligibility is ${settings.eligibilityMonths} months. Tick “Bypass eligibility and initiate anyway” if HR still wants to start this review.`,
+    );
+  }
   if (!intern.lineManager) throw new Error('Reporting line is missing. Resolve the line manager from organization hierarchy before initiation.');
 
   return withLock(async () => {
@@ -467,11 +472,14 @@ export const initiateInternshipReview = async (
       instructions: input.instructions || '',
       notifyManager: input.notifyManager !== false,
       reminders: input.reminders !== false,
+      eligibilityBypassed: Boolean(!intern.eligible && input.bypassEligibility),
       createdAt: nowIsoDate(),
       updatedAt: nowIsoDate(),
       createdBy: actor,
       audit: [
-        audit(actor, 'Review initiated by HR', 'Employee and reporting line validated'),
+        audit(actor, 'Review initiated by HR', intern.eligible
+          ? 'Employee and reporting line validated'
+          : `Eligibility bypassed: intern completed ${intern.monthsCompleted} of ${settings.eligibilityMonths} required months`),
         audit('System', 'Line manager notified', input.notifyManager === false ? 'Notification suppressed' : 'ESS task generated for the line manager'),
       ],
     };

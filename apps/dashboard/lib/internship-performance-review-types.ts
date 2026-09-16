@@ -79,6 +79,7 @@ export type InternshipReview = {
   updatedAt: string;
   createdBy: string;
   audit: InternshipAuditEvent[];
+  eligibilityBypassed?: boolean;
 };
 
 export type InternshipReviewSettings = {

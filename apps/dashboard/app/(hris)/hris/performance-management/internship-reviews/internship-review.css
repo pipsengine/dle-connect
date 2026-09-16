@@ -8,3 +8,18 @@
 .dle-ipr .comboList button{width:100%;text-align:left;background:white;border:0;border-bottom:1px solid #f1f5f9;padding:10px 12px;cursor:pointer}
 .dle-ipr .comboList button:hover,.dle-ipr .comboList button[data-active="true"]{background:#eef2ff}
 .dle-ipr .comboList small{display:block;color:#64748b}
+.dle-ipr .shell{min-height:0;display:block}
+.dle-ipr .page{padding:18px 4px 40px}
+.dle-ipr .tabs{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));overflow:hidden;border:1px solid #dfe5ee;border-radius:12px;background:white;margin-bottom:8px}
+.dle-ipr .tabs a,.dle-ipr .tabs button{display:flex;align-items:center;justify-content:center;gap:8px;min-height:48px;padding:10px 8px;border:0;background:transparent;color:#475569;font-size:13px;font-weight:700;cursor:pointer;text-align:center}
+.dle-ipr .tabs a[data-active="true"],.dle-ipr .tabs a[aria-selected="true"]{background:#eff6ff;color:#1d4ed8;box-shadow:inset 0 -2px 0 #2563eb}
+.dle-ipr .tabs a:hover,.dle-ipr .tabs button:hover{background:#f8fafc;color:#0f172a}
+.dle-ipr .panel.internPick{overflow:visible}
+.dle-ipr .combo{width:100%}
+.dle-ipr .combo input{width:100%;display:block}
+.ipr-combo-portal{position:fixed;z-index:120;max-height:280px;overflow:auto;background:white;border:1px solid #dce3ed;border-radius:10px;box-shadow:0 16px 40px rgba(15,23,42,.18)}
+.ipr-combo-portal button{display:block;width:100%;text-align:left;background:white;border:0;border-bottom:1px solid #f1f5f9;padding:10px 12px;cursor:pointer;font:inherit;color:#0f172a}
+.ipr-combo-portal button:hover,.ipr-combo-portal button[data-active="true"]{background:#eef2ff}
+.ipr-combo-portal small{display:block;color:#64748b;margin-top:2px}
+.ipr-combo-portal p{margin:0;padding:12px;color:#64748b}
+@media(max-width:900px){.dle-ipr .tabs{grid-template-columns:1fr 1fr}}

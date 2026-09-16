@@ -1,6 +1,7 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { useRouter } from 'next/navigation';
 import {
   AlertTriangle,
@@ -123,47 +124,97 @@ function InternSearchSelect({
   value: string;
   onChange: (code: string) => void;
 }) {
+  const wrapRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
   const [query, setQuery] = useState('');
   const [open, setOpen] = useState(false);
+  const [rect, setRect] = useState<{ top: number; left: number; width: number } | null>(null);
   const selected = interns.find((item) => item.code === value) || null;
+  const needle = query.trim().toLowerCase();
   const filtered = interns.filter((item) => {
+    if (!needle) return true;
     const haystack = `${item.code} ${item.name} ${item.department} ${item.jobTitle}`.toLowerCase();
-    return haystack.includes(query.toLowerCase());
+    return haystack.includes(needle);
   });
+
+  const place = useCallback(() => {
+    const node = inputRef.current;
+    if (!node) return;
+    const next = node.getBoundingClientRect();
+    setRect({ top: next.bottom + 4, left: next.left, width: Math.max(next.width, 320) });
+  }, []);
+
+  useEffect(() => {
+    if (!open) return;
+    place();
+    const onPointer = (event: MouseEvent) => {
+      const target = event.target as Node | null;
+      if (wrapRef.current?.contains(target)) return;
+      if ((event.target as HTMLElement | null)?.closest('[data-ipr-combo-list]')) return;
+      setOpen(false);
+    };
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setOpen(false);
+    };
+    window.addEventListener('resize', place);
+    window.addEventListener('scroll', place, true);
+    document.addEventListener('mousedown', onPointer);
+    document.addEventListener('keydown', onKey);
+    return () => {
+      window.removeEventListener('resize', place);
+      window.removeEventListener('scroll', place, true);
+      document.removeEventListener('mousedown', onPointer);
+      document.removeEventListener('keydown', onKey);
+    };
+  }, [open, place]);
+
+  const list = open && rect && typeof document !== 'undefined'
+    ? createPortal(
+      <div
+        data-ipr-combo-list="true"
+        className="ipr-combo-portal"
+        style={{ top: rect.top, left: rect.left, width: rect.width }}
+      >
+        {filtered.map((item) => (
+          <button
+            type="button"
+            key={item.code}
+            data-active={item.code === value ? 'true' : 'false'}
+            onClick={() => {
+              onChange(item.code);
+              setQuery('');
+              setOpen(false);
+            }}
+          >
+            <b>{item.code}</b> — {item.name}
+            <small>{item.department} · {item.eligible ? 'Eligible' : `Below eligibility (${item.monthsCompleted} months) — bypass available`}</small>
+          </button>
+        ))}
+        {!filtered.length ? <p>No matching interns in the live directory.</p> : null}
+      </div>,
+      document.body,
+    )
+    : null;
+
   return (
-    <div className="combo">
+    <div className="combo" ref={wrapRef}>
       <input
+        ref={inputRef}
         value={open ? query : (selected ? `${selected.code} — ${selected.name}` : query)}
         placeholder="Search intern by employee code or name..."
+        autoComplete="off"
         onFocus={() => {
           setOpen(true);
           setQuery('');
+          place();
         }}
         onChange={(event) => {
           setQuery(event.target.value);
           setOpen(true);
+          place();
         }}
       />
-      {open ? (
-        <div className="comboList">
-          {filtered.map((item) => (
-            <button
-              type="button"
-              key={item.code}
-              data-active={item.code === value ? 'true' : 'false'}
-              onClick={() => {
-                onChange(item.code);
-                setQuery('');
-                setOpen(false);
-              }}
-            >
-              <b>{item.code}</b> — {item.name}
-              <small>{item.department} · {item.eligible ? 'Eligible' : `Not yet eligible (${item.monthsCompleted} months)`}</small>
-            </button>
-          ))}
-          {!filtered.length ? <button type="button" disabled>No matching interns in the live directory.</button> : null}
-        </div>
-      ) : null}
+      {list}
     </div>
   );
 }
@@ -205,7 +256,7 @@ export default function InternshipPerformanceReviewView({ route }: { route: stri
   const closeModal = () => {
     setModal(null);
     setActiveId('');
-    if (parsed.kind !== 'dashboard' && parsed.kind !== 'reports' && parsed.kind !== 'none') {
+    if (!['dashboard', 'register', 'reports', 'none'].includes(parsed.kind)) {
       router.replace(internshipReviewHref());
     }
   };
@@ -224,6 +275,10 @@ export default function InternshipPerformanceReviewView({ route }: { route: stri
       if (json.data?.workspace) setWorkspace(json.data.workspace);
       else await load();
       return json.data;
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Unable to complete this action.';
+      setError(message);
+      throw err;
     } finally {
       setBusy(false);
     }
@@ -237,23 +292,31 @@ export default function InternshipPerformanceReviewView({ route }: { route: stri
     ? workspace?.reviews.find((item) => item.id === (activeId || reviewId)) || workspace?.review || null
     : null;
 
+  const tabHref = parsed.kind === 'reports' ? 'reports' : parsed.kind === 'register' ? 'register' : '';
+
   return (
     <div className="dle-ipr">
       {error ? <div className="notice" style={{ margin: '0 0 16px' }}><AlertTriangle /><div><b>Unable to complete action</b><span>{error}</span></div></div> : null}
-      {parsed.kind === 'reports' ? (
-        <ReportsScreen workspace={workspace} />
-      ) : (
-        <DashboardScreen
-          workspace={workspace}
-          essNotice={parsed.kind === 'evaluate' || parsed.kind === 'approve' || parsed.kind === 'tasks'}
-          onInitiate={() => setModal('initiate')}
-          onSettings={() => setModal('settings')}
-          onOpen={(item) => {
-            setActiveId(item.id);
-            setModal(item.status === 'Approved' ? 'hr-action' : 'detail');
-          }}
-        />
-      )}
+      <InternshipReviewShell
+        activeHref={tabHref}
+        onInitiate={() => setModal('initiate')}
+        onSettings={() => setModal('settings')}
+      >
+        {parsed.kind === 'reports' ? (
+          <ReportsScreen workspace={workspace} />
+        ) : (
+          <DashboardScreen
+            workspace={workspace}
+            mode={parsed.kind === 'register' ? 'register' : 'overview'}
+            essNotice={parsed.kind === 'evaluate' || parsed.kind === 'approve' || parsed.kind === 'tasks'}
+            onInitiate={() => setModal('initiate')}
+            onOpen={(item) => {
+              setActiveId(item.id);
+              setModal(item.status === 'Approved' ? 'hr-action' : 'detail');
+            }}
+          />
+        )}
+      </InternshipReviewShell>
       {modal === 'initiate' ? (
         <Modal title="Initiate internship review" onClose={closeModal}>
           <InitiateForm workspace={workspace} busy={busy} onInitiate={run} onDone={closeModal} />
@@ -283,15 +346,15 @@ export default function InternshipPerformanceReviewView({ route }: { route: stri
 
 function DashboardScreen({
   workspace,
+  mode,
   essNotice,
   onInitiate,
-  onSettings,
   onOpen,
 }: {
   workspace: Workspace | null;
+  mode: 'overview' | 'register';
   essNotice?: boolean;
   onInitiate: () => void;
-  onSettings: () => void;
   onOpen: (review: InternshipReview) => void;
 }) {
   const [query, setQuery] = useState('');
@@ -319,31 +382,44 @@ function DashboardScreen({
     URL.revokeObjectURL(url);
   };
   return (
-    <InternshipReviewShell title="Internship Performance" activeHref="" onInitiate={onInitiate} onSettings={onSettings}>
-      <div className="page">
+    <div className="page">
+      {mode === 'overview' ? (
+        <>
+          <div className="pageHead">
+            <div>
+              <span className="eyebrow">INTERNSHIP PERFORMANCE REVIEW</span>
+              <h1>Performance review dashboard</h1>
+              <p>HR initiates here. Line managers evaluate and approvers decide in the ESS portal.</p>
+            </div>
+            <button type="button" className="primary" onClick={onInitiate}><Plus size={17} />Initiate review</button>
+          </div>
+          {essNotice ? (
+            <div className="notice">
+              <Info />
+              <div>
+                <b>Evaluation and approval moved to ESS</b>
+                <span>Line managers, HODs, the HR Manager and the MD complete assigned internship tasks in Workforce Portal → Performance → Internship Performance Review.</span>
+              </div>
+            </div>
+          ) : null}
+          <div className="kpis">
+            <InternshipKpiCard label="Open reviews" value={workspace?.kpis.open ?? 0} sub="Across all departments" Icon={ClipboardCheck} />
+            <InternshipKpiCard label="Awaiting approval" value={workspace?.kpis.awaiting ?? 0} sub="Require ESS approval" Icon={Clock3} />
+            <InternshipKpiCard label="Approved this month" value={workspace?.kpis.approvedMonth ?? 0} sub={`${workspace?.kpis.recommendedPct ?? 0}% recommended`} Icon={CheckCircle2} />
+            <InternshipKpiCard label="Returned / action" value={workspace?.kpis.returned ?? 0} sub="Needs follow-up" Icon={RotateCcw} />
+          </div>
+        </>
+      ) : (
         <div className="pageHead">
           <div>
-            <span className="eyebrow">INTERNSHIP PERFORMANCE REVIEW</span>
-            <h1>Performance review dashboard</h1>
-            <p>HR initiates here. Line managers evaluate and approvers decide in the ESS portal.</p>
+            <span className="eyebrow">REVIEW REGISTER</span>
+            <h1>Internship review register</h1>
+            <p>Live internship assessments. Empty until HR initiates a review.</p>
           </div>
           <button type="button" className="primary" onClick={onInitiate}><Plus size={17} />Initiate review</button>
         </div>
-        {essNotice ? (
-          <div className="notice">
-            <Info />
-            <div>
-              <b>Evaluation and approval moved to ESS</b>
-              <span>Line managers, HODs, the HR Manager and the MD complete assigned internship tasks in Workforce Portal → Performance → Internship Performance Review.</span>
-            </div>
-          </div>
-        ) : null}
-        <div className="kpis">
-          <InternshipKpiCard label="Open reviews" value={workspace?.kpis.open ?? 0} sub="Across all departments" Icon={ClipboardCheck} />
-          <InternshipKpiCard label="Awaiting approval" value={workspace?.kpis.awaiting ?? 0} sub="Require ESS approval" Icon={Clock3} />
-          <InternshipKpiCard label="Approved this month" value={workspace?.kpis.approvedMonth ?? 0} sub={`${workspace?.kpis.recommendedPct ?? 0}% recommended`} Icon={CheckCircle2} />
-          <InternshipKpiCard label="Returned / action" value={workspace?.kpis.returned ?? 0} sub="Needs follow-up" Icon={RotateCcw} />
-        </div>
+      )}
+      {(mode === 'register' || mode === 'overview') ? (
         <section className="panel">
           <div className="panelHead">
             <div>
@@ -389,7 +465,7 @@ function DashboardScreen({
                         <span>{initials(review.employee.name)}</span>
                         <div>
                           <b>{review.employee.name}</b>
-                          <small>{review.employee.code}</small>
+                          <small>{review.employee.code}{review.eligibilityBypassed ? ' · Eligibility bypassed' : ''}</small>
                         </div>
                       </div>
                     </td>
@@ -420,8 +496,8 @@ function DashboardScreen({
             </table>
           </div>
         </section>
-      </div>
-    </InternshipReviewShell>
+      ) : null}
+    </div>
   );
 }
 
@@ -441,7 +517,39 @@ function InitiateForm({
   const [instructions, setInstructions] = useState('');
   const [notifyManager, setNotifyManager] = useState(true);
   const [reminders, setReminders] = useState(true);
+  const [bypassEligibility, setBypassEligibility] = useState(false);
+  const [formError, setFormError] = useState('');
   const intern = workspace?.eligibleInterns.find((item) => item.code === code) || null;
+  const requiredMonths = workspace?.settings.eligibilityMonths ?? 12;
+  const needsBypass = Boolean(intern && !intern.eligible);
+
+  const submit = async () => {
+    setFormError('');
+    if (!intern) {
+      setFormError('Search and select an intern from the live directory before initiating.');
+      return;
+    }
+    if (needsBypass && !bypassEligibility) {
+      setFormError(
+        `This intern has completed ${intern.monthsCompleted} month(s). Standard eligibility is ${requiredMonths} months. Tick “Bypass eligibility and initiate anyway” to continue.`,
+      );
+      return;
+    }
+    try {
+      await onInitiate('initiate', {
+        employeeCode: code,
+        dueDate,
+        instructions,
+        notifyManager,
+        reminders,
+        bypassEligibility: needsBypass && bypassEligibility,
+      });
+      onDone();
+    } catch (err) {
+      setFormError(err instanceof Error ? err.message : 'Unable to initiate this internship review.');
+    }
+  };
+
   return (
     <div className="page narrow">
       <div className="notice">
@@ -451,7 +559,16 @@ function InitiateForm({
           <span>The intern list is the live Employee Directory, sorted by employee code. HOD is resolved from organization hierarchy and skipped only when truly absent. The line manager is notified in ESS.</span>
         </div>
       </div>
-      <section className="panel">
+      {formError ? (
+        <div className="notice" style={{ background: '#fff1f2', borderColor: '#fecdd3', color: '#9f1239' }}>
+          <AlertTriangle />
+          <div>
+            <b>Unable to initiate this review</b>
+            <span>{formError}</span>
+          </div>
+        </div>
+      ) : null}
+      <section className="panel internPick">
         <div className="panelHead">
           <div>
             <h2>1. Search and select intern</h2>
@@ -460,7 +577,15 @@ function InitiateForm({
         </div>
         <div className="formStack">
           <label>Intern <i>*</i>
-            <InternSearchSelect interns={workspace?.eligibleInterns || []} value={code} onChange={setCode} />
+            <InternSearchSelect
+              interns={workspace?.eligibleInterns || []}
+              value={code}
+              onChange={(next) => {
+                setCode(next);
+                setBypassEligibility(false);
+                setFormError('');
+              }}
+            />
           </label>
           {intern ? (
             <div className="profilePreview">
@@ -471,10 +596,25 @@ function InitiateForm({
                 <div className="chips">
                   <span>Started {formatDay(intern.internshipStart)}</span>
                   <span>{intern.monthsCompleted}+ months completed</span>
-                  <span>{intern.eligible ? 'Eligible' : 'Not eligible'}</span>
+                  <span>{intern.eligible ? 'Eligible' : `Below ${requiredMonths}-month eligibility`}</span>
                 </div>
               </div>
             </div>
+          ) : null}
+          {needsBypass ? (
+            <>
+              <div className="notice" style={{ margin: 0 }}>
+                <Info />
+                <div>
+                  <b>This intern is under {requiredMonths} months</b>
+                  <span>{intern?.name} has completed {intern?.monthsCompleted} month(s). You can still start the review by ticking the bypass below. This is recorded on the audit trail.</span>
+                </div>
+              </div>
+              <label className="check">
+                <input type="checkbox" checked={bypassEligibility} onChange={(event) => { setBypassEligibility(event.target.checked); setFormError(''); }} />
+                Bypass eligibility and initiate anyway ({intern?.monthsCompleted} of {requiredMonths} months completed)
+              </label>
+            </>
           ) : null}
         </div>
       </section>
@@ -516,9 +656,7 @@ function InitiateForm({
           type="button"
           disabled={!code || busy}
           className="primary"
-          onClick={() => {
-            void onInitiate('initiate', { employeeCode: code, dueDate, instructions, notifyManager, reminders }).then(() => onDone());
-          }}
+          onClick={() => void submit()}
         >
           <Send size={16} />Initiate &amp; notify manager
         </button>
@@ -538,6 +676,15 @@ function DetailBody({ review, onHrAction }: { review: InternshipReview; onHrActi
         </div>
         <InternshipStatusBadge status={review.status} />
       </div>
+      {review.eligibilityBypassed ? (
+        <div className="notice">
+          <Info />
+          <div>
+            <b>Eligibility was bypassed at initiation</b>
+            <span>HR started this review before the intern reached the standard duration. The bypass is recorded in the audit trail.</span>
+          </div>
+        </div>
+      ) : null}
       <div className="summaryGrid">
         <div><User /><span>Line manager<b>{review.supervisor}</b></span></div>
         <div><Building2 /><span>Department<b>{review.employee.department}</b></span></div>
@@ -639,8 +786,18 @@ function HrActionForm({
   const [role, setRole] = useState(review.proposedRole || '');
   const [notes, setNotes] = useState(review.hrActionNotes || '');
   const [notify, setNotify] = useState(review.notifyOnHrAction !== false);
+  const [formError, setFormError] = useState('');
   return (
     <div className="page narrow">
+      {formError ? (
+        <div className="notice" style={{ background: '#fff1f2', borderColor: '#fecdd3', color: '#9f1239' }}>
+          <AlertTriangle />
+          <div>
+            <b>Unable to save this action</b>
+            <span>{formError}</span>
+          </div>
+        </div>
+      ) : null}
       <section className="panel successPanel">
         <CheckCircle2 />
         <div>
@@ -678,7 +835,10 @@ function HrActionForm({
           disabled={!action || busy}
           className="primary"
           onClick={() => {
-            void onSave('hr-action', { hrAction: action, hrActionDate: date, proposedRole: role, hrActionNotes: notes, notifyOnHrAction: notify }, review.id).then(() => onDone());
+            setFormError('');
+            void onSave('hr-action', { hrAction: action, hrActionDate: date, proposedRole: role, hrActionNotes: notes, notifyOnHrAction: notify }, review.id)
+              .then(() => onDone())
+              .catch((err) => setFormError(err instanceof Error ? err.message : 'Unable to save this action.'));
           }}
         >
           <FileSignature />Confirm HR action
@@ -700,14 +860,25 @@ function SettingsForm({
   onDone: () => void;
 }) {
   const [months, setMonths] = useState(String(workspace?.settings.eligibilityMonths ?? 12));
+  const [formError, setFormError] = useState('');
   return (
     <div className="page narrow">
+      {formError ? (
+        <div className="notice" style={{ background: '#fff1f2', borderColor: '#fecdd3', color: '#9f1239' }}>
+          <AlertTriangle />
+          <div>
+            <b>Unable to save settings</b>
+            <span>{formError}</span>
+          </div>
+        </div>
+      ) : null}
       <div className="settingsGrid">
         <section className="panel setting">
           <ListChecks />
           <div>
             <h3>Eligibility rules</h3>
             <label>Internship duration<input value={`${months} months`} onChange={(event) => setMonths(event.target.value.replace(/[^\d]/g, '') || '12')} /></label>
+            <p style={{ margin: '8px 0 0', color: '#64748b', fontSize: 13 }}>HR can still initiate a shorter internship by ticking “Bypass eligibility and initiate anyway”.</p>
           </div>
         </section>
         <section className="panel setting">
@@ -720,7 +891,12 @@ function SettingsForm({
       </div>
       <div className="stickyActions">
         <div><Settings /><span><b>Save configuration</b><small>Eligibility duration is used when initiating reviews.</small></span></div>
-        <button type="button" className="primary" disabled={busy} onClick={() => void onSave('save-settings', { eligibilityMonths: Number(months) || 12 }).then(() => onDone())}>Save settings</button>
+        <button type="button" className="primary" disabled={busy} onClick={() => {
+          setFormError('');
+          void onSave('save-settings', { eligibilityMonths: Number(months) || 12 })
+            .then(() => onDone())
+            .catch((err) => setFormError(err instanceof Error ? err.message : 'Unable to save settings.'));
+        }}>Save settings</button>
       </div>
     </div>
   );
@@ -738,8 +914,7 @@ function ReportsScreen({ workspace }: { workspace: Workspace | null }) {
     URL.revokeObjectURL(url);
   };
   return (
-    <InternshipReviewShell title="Reports & Analytics" activeHref="reports">
-      <div className="page">
+    <div className="page">
         <div className="pageHead">
           <div>
             <span className="eyebrow">PERFORMANCE INTELLIGENCE</span>
@@ -784,6 +959,5 @@ function ReportsScreen({ workspace }: { workspace: Workspace | null }) {
           </div>
         </section>
       </div>
-    </InternshipReviewShell>
   );
 }
