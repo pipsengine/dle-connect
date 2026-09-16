@@ -59,7 +59,16 @@ import {
   type SupplierInvoiceCategory,
 } from '@/lib/finance-intelligence/payment-invoice-category';
 import type { PaymentRequestLookups } from '@/lib/finance-intelligence/payment-request-lookups';
-import { preferredPaymentDepartment } from '@/lib/finance-intelligence/payment-request-departments';
+import {
+  CORPORATE_PROJECT_LABEL,
+  formatPaymentProjectLabel,
+  paymentProjectSelectOptions,
+  preferredPaymentDepartment,
+} from '@/lib/finance-intelligence/payment-request-departments';
+import {
+  preferredPaymentDepartmentForHats,
+  previewPaymentReportingManager,
+} from '@/lib/finance-intelligence/payment-department-hats';
 import { downloadExcelWorkbook } from '@/lib/excel-export';
 import PaymentRequestCommentsThread from './PaymentRequestCommentsThread';
 import {
@@ -221,7 +230,7 @@ function SearchableSelect({
         <div className="absolute z-30 mt-1 max-h-52 w-full overflow-auto rounded-xl border border-slate-200 bg-white shadow-lg">
           {filtered.length ? filtered.map((option) => (
             <button
-              key={option.value}
+              key={option.value || '__corporate__'}
               type="button"
               onMouseDown={(e) => e.preventDefault()}
               onClick={() => {
@@ -244,6 +253,29 @@ function SearchableSelect({
   );
 }
 
+function PaymentProjectField({
+  projectCode,
+  projects,
+  onChange,
+}: {
+  projectCode: string;
+  projects?: Array<{ code: string; name: string; label: string; projectManager: string }>;
+  onChange: (value: string) => void;
+}) {
+  return (
+    <div>
+      <SearchableSelect
+        label="Project"
+        value={projectCode}
+        placeholder={CORPORATE_PROJECT_LABEL}
+        options={paymentProjectSelectOptions(projects)}
+        onChange={onChange}
+      />
+      <ProjectManagerConfirmation projectCode={projectCode} projects={projects} />
+    </div>
+  );
+}
+
 function ProjectManagerConfirmation({
   projectCode,
   projects,
@@ -254,7 +286,7 @@ function ProjectManagerConfirmation({
   if (!projectCode) {
     return (
       <p className="mt-1.5 text-xs text-slate-500">
-        Leave blank for overhead. Project Manager is only added when a project is selected.
+        {CORPORATE_PROJECT_LABEL} is the default for Cash Advance, Supplier Invoice, and Expense. Project Manager is only added when a project is selected.
       </p>
     );
   }
@@ -521,10 +553,15 @@ export default function PaymentRequestsClient({
             jobTitle: user.jobTitle || user.role,
             departments: departmentOptions,
           });
+          const preferredDept = preferredPaymentDepartmentForHats({
+            paymentType: composerType,
+            employeeCode: user.employeeCode,
+            homeDepartment: resolvedDepartment || user.department || '',
+          });
           setSignedInRequester({
             name: user.name || '',
             employeeCode: user.employeeCode || '',
-            department: resolvedDepartment || user.department || '',
+            department: preferredDept || resolvedDepartment || user.department || '',
             jobTitle: user.jobTitle || user.role || '',
           });
           if (composerType === 'Cash Advance Payment') {
@@ -533,7 +570,9 @@ export default function PaymentRequestsClient({
               ...prev,
               employeeName: prev.employeeName || user.name || '',
               employeeCode: prev.employeeCode || nextCode,
-              department: prev.department || resolvedDepartment || user.department || '',
+              department: editingRequestId
+                ? prev.department
+                : (preferredDept || prev.department || resolvedDepartment || user.department || ''),
               location: prev.location || user.location || '',
               beneficiaryName: prev.beneficiaryName || user.name || '',
               beneficiaryCode: prev.beneficiaryCode || nextCode,
@@ -543,7 +582,9 @@ export default function PaymentRequestsClient({
           } else {
             setForm((prev) => ({
               ...prev,
-              department: prev.department || resolvedDepartment || user.department || '',
+              department: editingRequestId
+                ? prev.department
+                : (preferredDept || prev.department || resolvedDepartment || user.department || ''),
               location: prev.location || user.location || '',
             }));
           }
@@ -554,7 +595,7 @@ export default function PaymentRequestsClient({
     };
     void load();
     return () => { cancelled = true; };
-  }, [composerOpen, composerType]);
+  }, [composerOpen, composerType, editingRequestId]);
 
   const filteredEmployees = useMemo(() => {
     const q = employeeSearch.trim().toLowerCase();
@@ -567,6 +608,17 @@ export default function PaymentRequestsClient({
         || employee.department.toLowerCase().includes(q))
       .slice(0, 12);
   }, [lookups?.employees, employeeSearch]);
+
+  const firstApproverPreview = useMemo(() => {
+    const routingCode = signedInRequester?.employeeCode || form.employeeCode || '';
+    const fallback = (lookups?.employees || []).find((employee) =>
+      employee.employeeCode.toUpperCase() === routingCode.toUpperCase())?.reportingManager || '';
+    return previewPaymentReportingManager({
+      employeeCode: routingCode,
+      department: form.department,
+      fallbackManager: fallback,
+    });
+  }, [signedInRequester?.employeeCode, form.employeeCode, form.department, lookups?.employees]);
 
   const listScopeForPost = listMode === 'inbox' ? 'inbox' : listMode === 'team' ? 'team' : 'mine';
 
@@ -1048,11 +1100,16 @@ export default function PaymentRequestsClient({
       jobTitle: employee.jobTitle,
       departments: lookups?.departments,
     });
+    const preferredDept = preferredPaymentDepartmentForHats({
+      paymentType: composerType,
+      employeeCode: employee.employeeCode,
+      homeDepartment: resolvedDepartment || employee.department,
+    });
     setForm((prev) => ({
       ...prev,
       employeeCode: employee.employeeCode,
       employeeName: employee.fullName,
-      department: resolvedDepartment || employee.department || prev.department,
+      department: preferredDept || resolvedDepartment || employee.department || prev.department,
       location: employee.location || prev.location,
       beneficiaryCode: employee.employeeCode,
       beneficiaryName: employee.fullName,
@@ -1919,7 +1976,7 @@ export default function PaymentRequestsClient({
                     ) : null}
                     <td className="hidden px-2.5 py-2 2xl:table-cell">{row.currencyCode}</td>
                     <td className="max-w-[120px] truncate px-2.5 py-2">{row.department || '—'}</td>
-                    <td className="hidden px-2.5 py-2 2xl:table-cell">{row.projectCode || '—'}</td>
+                    <td className="hidden px-2.5 py-2 2xl:table-cell">{formatPaymentProjectLabel(row.projectCode)}</td>
                     <td className="whitespace-nowrap px-2.5 py-2">{fmtDateTime(row.submittedAt || row.createdAt)}</td>
                     <td className="hidden px-2.5 py-2 2xl:table-cell">
                       <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-semibold text-slate-600">{row.currentStage}</span>
@@ -2049,7 +2106,7 @@ export default function PaymentRequestsClient({
                         ? (workspace.viewer?.teamReportCount
                           ? 'When your employees raise cash advances or supplier payments, their status will appear here.'
                           : 'Team Payments lists employees who report to you in HRIS. Ask HR to confirm reporting lines if this looks wrong.')
-                        : 'Create a Cash Advance or Supplier Invoice payment request to begin the approval lifecycle.'}
+                        : 'Create a Cash Advance, Supplier Invoice, or Expense payment request to begin the approval lifecycle.'}
                     </p>
                     {listMode === 'team' ? null : (
                       <button
@@ -2191,7 +2248,12 @@ export default function PaymentRequestsClient({
                 </p>
                 {composerType === 'Cash Advance Payment' ? (
                   <p className="mt-1.5 text-[11px] text-slate-500">
-                    Approval routing follows the selected employee’s reporting manager.
+                    Approval routing follows the selected employee’s reporting manager
+                    {firstApproverPreview ? `: ${firstApproverPreview}` : '.'}
+                  </p>
+                ) : firstApproverPreview ? (
+                  <p className="mt-1.5 text-[11px] text-slate-500">
+                    First approver: <span className="font-semibold text-slate-700">{firstApproverPreview}</span>
                   </p>
                 ) : null}
               </div>
@@ -2264,19 +2326,11 @@ export default function PaymentRequestsClient({
                       ).map((item) => ({ value: item, label: item }))}
                       onChange={(value) => setForm((prev) => ({ ...prev, location: value }))}
                     />
-                    <div>
-                      <SearchableSelect
-                        label="Project"
-                        value={form.projectCode}
-                        placeholder="No project (optional)"
-                        options={[
-                          { value: '', label: 'No project (non-project / overhead)' },
-                          ...(lookups?.projects || []).map((item) => ({ value: item.code, label: item.label })),
-                        ]}
-                        onChange={(value) => setForm((prev) => ({ ...prev, projectCode: value }))}
-                      />
-                      <ProjectManagerConfirmation projectCode={form.projectCode} projects={lookups?.projects} />
-                    </div>
+                    <PaymentProjectField
+                      projectCode={form.projectCode}
+                      projects={lookups?.projects}
+                      onChange={(value) => setForm((prev) => ({ ...prev, projectCode: value }))}
+                    />
                   </div>
 
                   <SearchableSelect
@@ -2491,19 +2545,11 @@ export default function PaymentRequestsClient({
                       ).map((item) => ({ value: item, label: item }))}
                       onChange={(value) => setForm((prev) => ({ ...prev, department: value }))}
                     />
-                    <div>
-                      <SearchableSelect
-                        label="Project"
-                        value={form.projectCode}
-                        placeholder="No project (optional)"
-                        options={[
-                          { value: '', label: 'No project (non-project / overhead)' },
-                          ...(lookups?.projects || []).map((item) => ({ value: item.code, label: item.label })),
-                        ]}
-                        onChange={(value) => setForm((prev) => ({ ...prev, projectCode: value }))}
-                      />
-                      <ProjectManagerConfirmation projectCode={form.projectCode} projects={lookups?.projects} />
-                    </div>
+                    <PaymentProjectField
+                      projectCode={form.projectCode}
+                      projects={lookups?.projects}
+                      onChange={(value) => setForm((prev) => ({ ...prev, projectCode: value }))}
+                    />
                   </div>
                   <SearchableSelect
                     label="Location"

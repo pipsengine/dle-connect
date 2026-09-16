@@ -2,6 +2,7 @@ import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import type { PaymentRequestActionRow, PaymentRequestRow } from '@/lib/finance-intelligence/payment-requests-service';
 import { filterDocumentPaymentActions } from '@/lib/finance-intelligence/payment-action-visibility';
+import { formatPaymentProjectLabel } from '@/lib/finance-intelligence/payment-request-departments';
 
 const compact = (value: unknown) => String(value ?? '').trim();
 
@@ -222,7 +223,7 @@ export const buildPaymentRequestDocumentPdf = async (
     ['Department', pdfSafe(request.department || '-')],
     ['Location', pdfSafe(request.location || '-')],
     ['Payment site', pdfSafe(request.paymentSiteName || request.companyCode || '-')],
-    ['Project', pdfSafe(request.projectCode || '-')],
+    ['Project', pdfSafe(formatPaymentProjectLabel(request.projectCode))],
   ];
   let rowY = y - 18;
   for (const [label, value] of summaryRows) {

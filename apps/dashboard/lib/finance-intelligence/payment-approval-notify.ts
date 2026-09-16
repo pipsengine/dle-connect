@@ -9,6 +9,7 @@ import {
   resolveEmployeeMailbox,
 } from '@/lib/mail-service';
 import { resolveLineManagerForEmployee, resolveLineManagerOrThrow } from '@/lib/leave-workflow-service';
+import { resolvePaymentDepartmentHat } from '@/lib/finance-intelligence/payment-department-hats';
 import { readDirectoryEmployees } from '@/lib/payroll-employee-source';
 import { resolveWorkflowLinkOrigin } from '@/lib/public-app-url';
 import { readProjects } from '@/lib/timesheet-entry-store';
@@ -142,6 +143,7 @@ export const resolvePaymentStageApprover = async (input: {
   stage: string;
   requesterCode?: string | null;
   projectCode?: string | null;
+  department?: string | null;
   supervisorName?: string | null;
   paymentType?: string | null;
   /** When true, return the directory principal and skip active delegation. */
@@ -161,9 +163,18 @@ export const resolvePaymentStageApprover = async (input: {
   const stageKey = stage.toLowerCase();
 
   if (/reporting manager|line manager|supervisor|lead/.test(stageKey)) {
-    // Strictly the HRIS reporting manager. No supervisor-name or department-head guessing:
-    // an unresolved line manager must fail loudly rather than route to the wrong approver.
-    if (requester) {
+    const hat = resolvePaymentDepartmentHat({
+      employeeCode: input.requesterCode,
+      department: input.department,
+    });
+    if (hat?.managerCode) {
+      matched = findEmployeeByProjectManagerText(
+        employees,
+        `${hat.managerCode} - ${hat.managerName}`,
+      ) || findEmployeeByProjectManagerText(employees, hat.managerCode);
+    }
+    // Home HRIS reporting manager when no department hat matches.
+    if (!matched && requester) {
       matched = resolveLineManagerForEmployee(requester, employees)?.employee || null;
     }
   } else if (/project manager/.test(stageKey)) {
@@ -316,8 +327,15 @@ export const assertReportingManagerRoutable = async (input: {
   stage: string;
   requesterCode?: string | null;
   requesterName?: string | null;
+  department?: string | null;
 }) => {
   if (!isReportingManagerStage(input.stage)) return;
+
+  const hat = resolvePaymentDepartmentHat({
+    employeeCode: input.requesterCode,
+    department: input.department,
+  });
+  if (hat?.managerCode) return;
 
   const directory = await readDirectoryEmployees().catch(() => ({ employees: [] as DleEmployeeDirectoryRow[] }));
   const employees = directory.employees || [];
@@ -356,6 +374,7 @@ export const notifyPaymentApprovalRequired = async (input: {
     stage: input.stage,
     requesterCode: input.request.requesterCode,
     projectCode: input.request.projectCode,
+    department: input.request.department,
     supervisorName: input.request.supervisorName,
     paymentType: input.request.paymentType,
   });

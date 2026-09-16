@@ -7,6 +7,21 @@ const compact = (value: unknown) => String(value ?? '').trim();
 const uniqueSorted = (values: string[]) =>
   Array.from(new Set(values.map(compact).filter(Boolean))).sort((a, b) => a.localeCompare(b));
 
+/** Empty project on a payment request — Corporate / overhead, not a Timesheet project. */
+export const CORPORATE_PROJECT_LABEL = '[Corporate]';
+
+export const formatPaymentProjectLabel = (projectCode?: string | null) =>
+  compact(projectCode) ? compact(projectCode) : CORPORATE_PROJECT_LABEL;
+
+export const paymentProjectSelectOptions = (projects?: Array<{ code: string; label: string }>) => [
+  { value: '', label: CORPORATE_PROJECT_LABEL },
+  ...(projects || []).map((item) => ({ value: item.code, label: item.label })),
+];
+
+/** Empty / overhead labels that must not switch a payment onto the Project approval path. */
+export const isCorporateOrPlaceholderProjectCode = (value?: string | null) =>
+  /^(n\/?a|none|nil|null|—|-|no project|unassigned|\[?corporate\]?)$/i.test(compact(value));
+
 /**
  * Canonical departments for Cash Advance / Supplier Invoice / Expense payment forms.
  * Always merged into the dropdown so operating units like SECURITY remain selectable

@@ -7,6 +7,7 @@ import {
   supplierInvoiceCategoryLabel,
 } from '@/lib/finance-intelligence/payment-invoice-category';
 import { filterDocumentPaymentActions } from '@/lib/finance-intelligence/payment-action-visibility';
+import { formatPaymentProjectLabel } from '@/lib/finance-intelligence/payment-request-departments';
 import PaymentAttachmentLinks from '@/app/(finance)/finance/PaymentAttachmentLinks';
 import PaymentRequestCommentsThread from '@/app/(finance)/finance/PaymentRequestCommentsThread';
 import { MessageSquare } from 'lucide-react';
@@ -71,7 +72,7 @@ export default function PaymentRequestDetailPanel({
     ['Expense code', request.expenseCode || '—'],
     ['Department', request.department || '—'],
     ['Cost centre', request.costCentre || '—'],
-    ['Project', request.projectCode || '—'],
+    ['Project', formatPaymentProjectLabel(request.projectCode)],
     ['Requester', request.requesterName || '—'],
     ['Invoice #', request.invoiceNumber || '—'],
     ['Invoice category', supplierInvoiceCategoryLabel(request) || '—'],

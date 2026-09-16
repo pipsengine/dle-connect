@@ -18,6 +18,7 @@ import {
   XCircle,
 } from 'lucide-react';
 import type { PaymentRequestActionRow, PaymentRequestAttachment, PaymentRequestCommentRow, PaymentRequestRow } from '@/lib/finance-intelligence/payment-requests-service';
+import { formatPaymentProjectLabel } from '@/lib/finance-intelligence/payment-request-departments';
 import {
   isExpenseNoPoPayment,
   supplierInvoiceCategoryLabel,
@@ -540,7 +541,7 @@ export default function PaymentApprovalDetailClient() {
               ['Payment site', request.paymentSiteName || request.paymentSiteCode || '—'],
               ['Department', request.department || '—'],
               ['Location', request.location || '—'],
-              ['Project', request.projectCode || '—'],
+              ['Project', formatPaymentProjectLabel(request.projectCode)],
               ['Invoice', request.invoiceNumber || '—'],
               ['Category', supplierInvoiceCategoryLabel(request) || '—'],
               ...(isExpenseNoPoPayment(request) && request.payload?.expenseNature

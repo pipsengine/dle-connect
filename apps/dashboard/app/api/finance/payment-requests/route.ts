@@ -38,6 +38,7 @@ import {
   repairPrematureTreasuryHandoff,
   repairMissingProjectLineManager,
   repairMisroutedProjectPathWithoutProject,
+  repairMisroutedDepartmentHatReportingManager,
   isUnpaidTreasuryPayable,
   transitionPaymentRequest,
   updateReturnedPaymentRequest,
@@ -190,6 +191,7 @@ export async function GET(request: Request) {
       paymentRequest = await repairPrematureTreasuryHandoff(paymentRequest);
       paymentRequest = await repairMissingProjectLineManager(paymentRequest);
       paymentRequest = await repairMisroutedProjectPathWithoutProject(paymentRequest);
+      paymentRequest = await repairMisroutedDepartmentHatReportingManager(paymentRequest);
       const actions = await listPaymentRequestActions(paymentRequest.requestId);
       const comments = await listPaymentRequestComments(paymentRequest.requestId);
       if (!await canAccessPaymentRequestWithTeam(actor, paymentRequest, {

@@ -1,5 +1,6 @@
 import sql from 'mssql';
 import { ensureFinanceDb } from '@/lib/finance-intelligence/store';
+import { isCorporateOrPlaceholderProjectCode } from '@/lib/finance-intelligence/payment-request-departments';
 
 export type ApprovalRuleStatus = 'Active' | 'Draft' | 'Pending' | 'Inactive';
 export type ApprovalPathType = 'Non-project' | 'Project';
@@ -340,9 +341,6 @@ VALUES (@AuditId, @MatrixId, @ActionType, @ActorName, @DetailJson)
   }
 };
 
-const isPlaceholderProjectCode = (value: string) =>
-  /^(n\/?a|none|nil|null|—|-|no project|unassigned)$/i.test(value);
-
 /**
  * Project path only when a real project is selected on the request
  * (or an explicit test flag). Department name is not enough — staff in the
@@ -355,7 +353,7 @@ export const isProjectPaymentPath = (input: {
 }) => {
   if (input.projectDepartment) return true;
   const projectCode = compact(input.projectCode);
-  if (!projectCode || isPlaceholderProjectCode(projectCode)) return false;
+  if (!projectCode || isCorporateOrPlaceholderProjectCode(projectCode)) return false;
   return true;
 };
 
@@ -859,6 +857,7 @@ export const skipProjectReportingManagerWhenSameAsPm = async (input: {
   requesterCode?: string | null;
   supervisorName?: string | null;
   projectCode?: string | null;
+  department?: string | null;
   paymentType?: string | null;
 }): Promise<string[]> => {
   const stages = [...(input.stages || [])].map((stage) => compact(stage)).filter(Boolean);
@@ -870,6 +869,7 @@ export const skipProjectReportingManagerWhenSameAsPm = async (input: {
       requesterCode: input.requesterCode,
       supervisorName: input.supervisorName,
       projectCode: input.projectCode,
+      department: input.department,
       paymentType: input.paymentType,
       principalOnly: true,
     });
@@ -878,6 +878,7 @@ export const skipProjectReportingManagerWhenSameAsPm = async (input: {
       requesterCode: input.requesterCode,
       supervisorName: input.supervisorName,
       projectCode: input.projectCode,
+      department: input.department,
       paymentType: input.paymentType,
       principalOnly: true,
     });

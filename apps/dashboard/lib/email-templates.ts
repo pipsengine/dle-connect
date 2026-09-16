@@ -7,6 +7,7 @@ import {
 
 export type DleEmailModule =
   | 'Payroll Management'
+  | 'Final Payroll Settlement'
   | 'Leave Management'
   | 'Overtime Management'
   | 'Timesheet Approval'

@@ -22,6 +22,7 @@ export type PaymentEmployeeOption = {
   location: string;
   jobTitle: string;
   projectCode: string;
+  reportingManager: string;
 };
 
 export type PaymentRequestLookups = {
@@ -171,6 +172,7 @@ export const buildPaymentRequestLookups = async (): Promise<PaymentRequestLookup
       location: compact(employee.workLocation || employee.location || employee.officeLocation || employee.projectSite),
       jobTitle: compact(employee.jobTitle || employee.designation),
       projectCode: '',
+      reportingManager: compact(employee.managerName),
     }))
     .filter((employee) => employee.employeeCode && employee.fullName)
     .sort((a, b) => a.fullName.localeCompare(b.fullName));

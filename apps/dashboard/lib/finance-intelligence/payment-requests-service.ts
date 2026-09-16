@@ -18,6 +18,12 @@ import {
   savePaymentAttachmentFile as savePaymentAttachmentFileToStore,
 } from '@/lib/finance-intelligence/payment-attachment-storage';
 import { resolveWorkflowLinkOrigin } from '@/lib/public-app-url';
+import {
+  canonicalPaymentHatDepartment,
+  paymentHatEmployeeCodesMatch,
+  paymentUsesProcurementHat,
+  resolvePaymentDepartmentHat,
+} from '@/lib/finance-intelligence/payment-department-hats';
 
 export const ALLOWED_PAYMENT_CURRENCIES = ['NGN', 'USD', 'EUR', 'GBP'] as const;
 export const PAYMENT_TYPES = [
@@ -412,6 +418,8 @@ const resolveInitialStage = async (
     requesterCode: context?.requesterCode,
     supervisorName: context?.supervisorName,
     projectCode: context?.projectCode,
+    department: context?.department,
+    paymentType: context?.paymentType,
   });
   fallbackStages = applyHrManagerAfterReportingManager(fallbackStages, context?.expenseNature);
   return {
@@ -822,6 +830,7 @@ const assignCurrentApprover = async (input: {
   stage: string;
   requesterCode?: string;
   projectCode?: string;
+  department?: string;
   supervisorName?: string;
   paymentType?: string;
 }) => {
@@ -829,6 +838,7 @@ const assignCurrentApprover = async (input: {
     stage: input.stage,
     requesterCode: input.requesterCode,
     projectCode: input.projectCode,
+    department: input.department,
     supervisorName: input.supervisorName,
     paymentType: input.paymentType,
   });
@@ -836,6 +846,7 @@ const assignCurrentApprover = async (input: {
     await assertReportingManagerRoutable({
       stage: input.stage,
       requesterCode: input.requesterCode,
+      department: input.department,
     });
     // assertReportingManagerRoutable throws when unroutable; reaching here means the
     // directory resolved a manager but the stage lookup did not, which is still unsafe.
@@ -1102,6 +1113,7 @@ WHERE [RequestId] = @RequestId
       stage: nextStage,
       requesterCode: row.requesterCode,
       projectCode: row.projectCode,
+      department: row.department,
       supervisorName: row.supervisorName,
       paymentType: row.paymentType,
     });
@@ -1180,6 +1192,7 @@ export const repairMissingProjectLineManager = async (row: PaymentRequestRow): P
       requesterCode: row.requesterCode,
       supervisorName: row.supervisorName,
       projectCode: row.projectCode,
+      department: row.department,
       paymentType: row.paymentType,
     });
   }
@@ -1223,6 +1236,7 @@ WHERE [RequestId] = @RequestId
       stage: nextFirst,
       requesterCode: row.requesterCode,
       projectCode: row.projectCode,
+      department: row.department,
       supervisorName: row.supervisorName,
       paymentType: row.paymentType,
     });
@@ -1331,6 +1345,7 @@ WHERE [RequestId] = @RequestId
       stage: nextStage,
       requesterCode: row.requesterCode,
       projectCode: row.projectCode,
+      department: row.department,
       supervisorName: row.supervisorName,
       paymentType: row.paymentType,
     });
@@ -1361,6 +1376,94 @@ WHERE [RequestId] = @RequestId
     }).catch((error) => console.error('[payment-requests] non-project reroute notification failed', error));
   }
   return repaired;
+};
+
+/**
+ * Dual-hat staff (e.g. Funke P0465): procurement / supplier invoices sitting with the
+ * home reporting manager are reassigned to the Procurement hat manager.
+ */
+export const repairMisroutedDepartmentHatReportingManager = async (row: PaymentRequestRow): Promise<PaymentRequestRow> => {
+  if (!['Pending Approval', 'Submitted', 'Finance Review'].includes(row.status)) return row;
+  if (!isReportingManagerStage(row.currentStage)) return row;
+  if (!paymentUsesProcurementHat({
+    employeeCode: row.requesterCode,
+    department: row.department,
+    paymentType: row.paymentType,
+  })) return row;
+
+  const procurementHat = resolvePaymentDepartmentHat({
+    employeeCode: row.requesterCode,
+    department: 'PROCUREMENT',
+  });
+  if (!procurementHat?.managerCode) return row;
+
+  const alreadyOnHat = paymentHatEmployeeCodesMatch(row.currentApproverCode, procurementHat.managerCode);
+  const departmentAlreadyProcurement = canonicalPaymentHatDepartment(row.department) === 'PROCUREMENT';
+  const homeHat = resolvePaymentDepartmentHat({
+    employeeCode: row.requesterCode,
+    department: 'CORPORATE OFFICE',
+  });
+  const sittingWithHome = !compact(row.currentApproverCode)
+    || paymentHatEmployeeCodesMatch(row.currentApproverCode, homeHat?.managerCode)
+    || /p0060|rosemary/i.test(`${row.currentApproverCode} ${row.currentApproverName}`);
+
+  if (alreadyOnHat && departmentAlreadyProcurement) return row;
+  if (!alreadyOnHat && !sittingWithHome) return row;
+
+  const pool = await ensureFinanceDb().catch(() => null);
+  if (!pool) return row;
+
+  try {
+    if (!departmentAlreadyProcurement) {
+      await pool.request()
+        .input('RequestId', sql.NVarChar(60), row.requestId)
+        .input('Department', sql.NVarChar(150), procurementHat.department)
+        .query(`
+UPDATE [finance].[PaymentRequests]
+SET [Department] = @Department,
+    [UpdatedAt] = SYSUTCDATETIME()
+WHERE [RequestId] = @RequestId
+`);
+    }
+
+    await assignCurrentApprover({
+      requestId: row.requestId,
+      stage: row.currentStage,
+      requesterCode: row.requesterCode,
+      projectCode: row.projectCode,
+      department: procurementHat.department,
+      supervisorName: row.supervisorName,
+      paymentType: row.paymentType,
+    });
+
+    if (!alreadyOnHat) {
+      await logAction({
+        requestId: row.requestId,
+        actionType: 'repair-stages',
+        stage: row.currentStage,
+        actorName: 'System',
+        actorCode: 'system',
+        comment: `Re-routed Reporting Manager from ${row.currentApproverName || row.currentApproverCode || 'home manager'} to ${procurementHat.managerName} (${procurementHat.managerCode}) for the Procurement hat.`,
+      });
+    }
+  } catch (error) {
+    console.error('[payment-requests] dual-hat reporting manager repair failed', error);
+    return row;
+  }
+
+  const next = (await getPaymentRequestById(row.requestId)) || {
+    ...row,
+    department: procurementHat.department,
+  };
+  if (!alreadyOnHat) {
+    await notifyPaymentApprovalRequired({
+      request: next,
+      stage: next.currentStage || row.currentStage,
+      actorName: 'System',
+      baseUrl: resolveWorkflowLinkOrigin(),
+    }).catch((error) => console.error('[payment-requests] dual-hat reroute notification failed', error));
+  }
+  return next;
 };
 
 const countOutstandingCashAdvances = async (employeeCode: string) => {
@@ -1790,6 +1893,14 @@ export const buildPaymentRequestsWorkspace = async (input?: {
     }
   }
 
+  for (let index = 0; index < rows.length; index += 1) {
+    try {
+      rows[index] = await repairMisroutedDepartmentHatReportingManager(rows[index]);
+    } catch (error) {
+      console.error('[payment-requests] dual-hat reporting manager repair failed', rows[index]?.requestNumber, error);
+    }
+  }
+
   // Travelling Expense/Allowance must include HR Manager after Reporting/Line Manager.
   for (const row of rows) {
     if (!['Pending Approval', 'Submitted', 'Finance Review'].includes(row.status)) continue;
@@ -2090,7 +2201,15 @@ export const createPaymentRequest = async (input: CreatePaymentRequestInput) => 
   const paymentSiteCode = normalizeSiteCode(input.paymentSiteCode || input.companyCode);
   const paymentSiteName = compact(input.paymentSiteName);
   const expenseCode = compact(input.expenseCode);
-  const department = compact(input.department);
+  const requesterCodeForHats = compact(input.requesterCode) || beneficiaryCode;
+  let department = compact(input.department);
+  if (paymentUsesProcurementHat({
+    employeeCode: requesterCodeForHats,
+    department,
+    paymentType: input.paymentType,
+  })) {
+    department = 'PROCUREMENT';
+  }
   const location = compact(input.location);
   let waiverIdToConsume: string | null = null;
 
@@ -2219,6 +2338,7 @@ export const createPaymentRequest = async (input: CreatePaymentRequestInput) => 
       stage: stageInfo.stage,
       requesterCode: compact(input.requesterCode) || beneficiaryCode,
       requesterName: compact(input.requesterName) || beneficiaryName,
+      department,
     });
   }
 
@@ -2326,6 +2446,7 @@ INSERT INTO [finance].[PaymentRequests] (
       stage: stageInfo.stage,
       requesterCode: compact(input.requesterCode) || beneficiaryCode,
       projectCode: compact(input.projectCode),
+      department: compact(input.department),
       supervisorName: compact(input.supervisorName),
       paymentType: input.paymentType,
     });
@@ -2402,7 +2523,15 @@ export const updateReturnedPaymentRequest = async (input: UpdateReturnedPaymentR
   const paymentSiteCode = normalizeSiteCode(input.paymentSiteCode || input.companyCode) || existing.paymentSiteCode;
   const paymentSiteName = compact(input.paymentSiteName) || existing.paymentSiteName;
   const expenseCode = compact(input.expenseCode) || existing.expenseCode;
-  const department = compact(input.department) || existing.department;
+  let department = compact(input.department) || existing.department;
+  const requesterCodeForHats = compact(input.requesterCode) || existing.requesterCode || beneficiaryCode;
+  if (paymentUsesProcurementHat({
+    employeeCode: requesterCodeForHats,
+    department,
+    paymentType: existing.paymentType,
+  })) {
+    department = 'PROCUREMENT';
+  }
   const location = compact(input.location) || existing.location;
   // Pending (not-yet-approved) edits always stay in the approval queue from stage 1.
   const resubmit = wasPending ? true : input.resubmit !== false;
@@ -2654,6 +2783,7 @@ WHERE [RequestId] = @RequestId
       stage: stageInfo.stage,
       requesterCode: compact(input.requesterCode) || existing.requesterCode || beneficiaryCode,
       projectCode: compact(input.projectCode) || existing.projectCode,
+      department: compact(input.department) || existing.department,
       supervisorName: compact(input.supervisorName) || existing.supervisorName,
       paymentType: existing.paymentType,
     });
@@ -2959,8 +3089,10 @@ export const transitionPaymentRequest = async (input: {
   const existingRaw = (await listRows()).find((row) => row.requestId === input.requestId)
     || await getPaymentRequestById(input.requestId);
   if (!existingRaw) throw new Error('Payment request not found.');
-  const existing = await repairMisroutedProjectPathWithoutProject(
-    await repairMissingProjectLineManager(await repairPrematureTreasuryHandoff(existingRaw)),
+  const existing = await repairMisroutedDepartmentHatReportingManager(
+    await repairMisroutedProjectPathWithoutProject(
+      await repairMissingProjectLineManager(await repairPrematureTreasuryHandoff(existingRaw)),
+    ),
   );
   if (['approve', 'reject', 'return', 'clarify', 'delegate', 'escalate'].includes(input.action)) {
     const actorCode = compact(input.actorCode).toLowerCase();
@@ -3286,6 +3418,7 @@ WHERE [RequestId] = @RequestId
       stage: advancedTo,
       requesterCode: existing.requesterCode,
       projectCode: existing.projectCode,
+      department: existing.department,
       supervisorName: existing.supervisorName,
       paymentType: existing.paymentType,
     });
