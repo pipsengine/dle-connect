@@ -187,20 +187,34 @@ const seedDefaults = async (pool: sql.ConnectionPool) => {
   await seedSampleCbeIfEmpty(pool);
 };
 
+const textCol = (row: Record<string, unknown>, key: string) =>
+  row[key] == null || String(row[key]).trim() === '' ? null : String(row[key]).trim();
+
 const mapSupplier = (row: Record<string, unknown>) => ({
   supplierId: String(row.SupplierId),
   name: String(row.Name),
   code: row.Code == null ? null : String(row.Code),
   sageCode: row.SageCode == null ? null : String(row.SageCode),
   source: String(row.Source || 'LOCAL'),
+  shortName: textCol(row, 'ShortName'),
+  contactName: textCol(row, 'ContactName'),
   isApproved: toBool(row.IsApproved),
   currency: row.Currency == null ? null : String(row.Currency),
   paymentTerms: row.PaymentTerms == null ? null : String(row.PaymentTerms),
   deliveryPeriod: row.DeliveryPeriod == null ? null : String(row.DeliveryPeriod),
   deliveryLocation: row.DeliveryLocation == null ? null : String(row.DeliveryLocation),
+  addressLine: textCol(row, 'AddressLine'),
+  city: textCol(row, 'City'),
+  stateName: textCol(row, 'StateName'),
+  country: textCol(row, 'Country'),
+  postalCode: textCol(row, 'PostalCode'),
   outstanding: toNum(row.Outstanding),
   email: row.Email == null ? null : String(row.Email),
   phone: row.Phone == null ? null : String(row.Phone),
+  mobile: textCol(row, 'Mobile'),
+  website: textCol(row, 'Website'),
+  taxId: textCol(row, 'TaxId'),
+  registrationNo: textCol(row, 'RegistrationNo'),
   notes: row.Notes == null ? null : String(row.Notes),
   isActive: toBool(row.IsActive),
   isBlacklisted: row.IsBlacklisted == null ? false : toBool(row.IsBlacklisted),
@@ -423,10 +437,21 @@ export const upsertSupplier = async (input: Record<string, unknown>, actor = 'sy
     .input('Currency', sql.NVarChar(10), cleanNullable(input.currency, 10) || 'NGN')
     .input('PaymentTerms', sql.NVarChar(200), cleanNullable(input.paymentTerms, 200))
     .input('DeliveryPeriod', sql.NVarChar(120), cleanNullable(input.deliveryPeriod, 120))
+    .input('ShortName', sql.NVarChar(80), cleanNullable(input.shortName, 80))
+    .input('ContactName', sql.NVarChar(220), cleanNullable(input.contactName, 220))
     .input('DeliveryLocation', sql.NVarChar(200), cleanNullable(input.deliveryLocation, 200))
+    .input('AddressLine', sql.NVarChar(500), cleanNullable(input.addressLine, 500))
+    .input('City', sql.NVarChar(120), cleanNullable(input.city, 120))
+    .input('StateName', sql.NVarChar(120), cleanNullable(input.stateName, 120))
+    .input('Country', sql.NVarChar(80), cleanNullable(input.country, 80))
+    .input('PostalCode', sql.NVarChar(40), cleanNullable(input.postalCode, 40))
     .input('Outstanding', sql.Decimal(19, 2), toNum(input.outstanding))
     .input('Email', sql.NVarChar(200), cleanNullable(input.email, 200))
     .input('Phone', sql.NVarChar(80), cleanNullable(input.phone, 80))
+    .input('Mobile', sql.NVarChar(80), cleanNullable(input.mobile, 80))
+    .input('Website', sql.NVarChar(200), cleanNullable(input.website, 200))
+    .input('TaxId', sql.NVarChar(80), cleanNullable(input.taxId, 80))
+    .input('RegistrationNo', sql.NVarChar(80), cleanNullable(input.registrationNo, 80))
     .input('Notes', sql.NVarChar(sql.MAX), cleanNullable(input.notes, 8000))
     .input('IsActive', sql.Bit, input.isActive == null ? 1 : toBool(input.isActive) ? 1 : 0)
     .input('IsBlacklisted', sql.Bit, input.isBlacklisted == null ? 0 : toBool(input.isBlacklisted) ? 1 : 0)
@@ -437,19 +462,26 @@ export const upsertSupplier = async (input: Record<string, unknown>, actor = 'sy
         UPDATE [procurement].[Suppliers] SET
           [Name]=@Name, [Code]=@Code, [SageCode]=COALESCE(@SageCode, [SageCode]),
           [Source]=CASE WHEN [Source]=N'SAGE' THEN [Source] ELSE @Source END,
+          [ShortName]=@ShortName, [ContactName]=@ContactName,
           [IsApproved]=@IsApproved, [Currency]=@Currency,
           [PaymentTerms]=@PaymentTerms, [DeliveryPeriod]=@DeliveryPeriod, [DeliveryLocation]=@DeliveryLocation,
-          [Outstanding]=@Outstanding, [Email]=@Email, [Phone]=@Phone, [Notes]=@Notes, [IsActive]=@IsActive,
+          [AddressLine]=@AddressLine, [City]=@City, [StateName]=@StateName, [Country]=@Country, [PostalCode]=@PostalCode,
+          [Outstanding]=@Outstanding, [Email]=@Email, [Phone]=@Phone, [Mobile]=@Mobile, [Website]=@Website,
+          [TaxId]=@TaxId, [RegistrationNo]=@RegistrationNo, [Notes]=@Notes, [IsActive]=@IsActive,
           [IsBlacklisted]=@IsBlacklisted,
           [UpdatedAt]=SYSUTCDATETIME(), [UpdatedBy]=@UpdatedBy
         WHERE [SupplierId]=@SupplierId
       ELSE
         INSERT INTO [procurement].[Suppliers] (
-          [SupplierId], [Name], [Code], [SageCode], [Source], [IsApproved], [Currency], [PaymentTerms], [DeliveryPeriod],
-          [DeliveryLocation], [Outstanding], [Email], [Phone], [Notes], [IsActive], [IsBlacklisted], [CreatedBy], [UpdatedBy]
+          [SupplierId], [Name], [Code], [SageCode], [Source], [ShortName], [ContactName], [IsApproved], [Currency],
+          [PaymentTerms], [DeliveryPeriod], [DeliveryLocation], [AddressLine], [City], [StateName], [Country],
+          [PostalCode], [Outstanding], [Email], [Phone], [Mobile], [Website], [TaxId], [RegistrationNo], [Notes],
+          [IsActive], [IsBlacklisted], [CreatedBy], [UpdatedBy]
         ) VALUES (
-          @SupplierId, @Name, @Code, @SageCode, @Source, @IsApproved, @Currency, @PaymentTerms, @DeliveryPeriod,
-          @DeliveryLocation, @Outstanding, @Email, @Phone, @Notes, @IsActive, @IsBlacklisted, @CreatedBy, @UpdatedBy
+          @SupplierId, @Name, @Code, @SageCode, @Source, @ShortName, @ContactName, @IsApproved, @Currency,
+          @PaymentTerms, @DeliveryPeriod, @DeliveryLocation, @AddressLine, @City, @StateName, @Country,
+          @PostalCode, @Outstanding, @Email, @Phone, @Mobile, @Website, @TaxId, @RegistrationNo, @Notes,
+          @IsActive, @IsBlacklisted, @CreatedBy, @UpdatedBy
         )
     `);
   return (await listSuppliers()).find((s) => s.supplierId === supplierId) || null;
@@ -484,26 +516,46 @@ export const syncSageSuppliersFromX3 = async (actor = 'system') => {
       .input('Currency', sql.NVarChar(10), cleanNullable(supplier.currency, 10) || 'NGN')
       .input('PaymentTerms', sql.NVarChar(200), cleanNullable(supplier.paymentTerms, 200))
       .input('DeliveryLocation', sql.NVarChar(200), cleanNullable(supplier.deliveryLocation, 200))
+      .input('ShortName', sql.NVarChar(80), cleanNullable(supplier.shortName, 80))
+      .input('ContactName', sql.NVarChar(220), cleanNullable(supplier.contactName, 220))
+      .input('AddressLine', sql.NVarChar(500), cleanNullable(supplier.addressLine, 500))
+      .input('City', sql.NVarChar(120), cleanNullable(supplier.city, 120))
+      .input('StateName', sql.NVarChar(120), cleanNullable(supplier.stateName, 120))
+      .input('Country', sql.NVarChar(80), cleanNullable(supplier.country, 80))
+      .input('PostalCode', sql.NVarChar(40), cleanNullable(supplier.postalCode, 40))
       .input('Email', sql.NVarChar(200), cleanNullable(supplier.email, 200))
       .input('Phone', sql.NVarChar(80), cleanNullable(supplier.phone, 80))
+      .input('Mobile', sql.NVarChar(80), cleanNullable(supplier.mobile, 80))
+      .input('Website', sql.NVarChar(200), cleanNullable(supplier.website, 200))
+      .input('TaxId', sql.NVarChar(80), cleanNullable(supplier.taxId, 80))
+      .input('RegistrationNo', sql.NVarChar(80), cleanNullable(supplier.registrationNo, 80))
       .input('IsActive', sql.Bit, supplier.isActive ? 1 : 0)
+      .input('IsBlacklisted', sql.Bit, supplier.isBlacklisted ? 1 : 0)
       .input('CreatedBy', sql.NVarChar(120), clean(actor, 120))
       .input('UpdatedBy', sql.NVarChar(120), clean(actor, 120))
       .query(`
         IF EXISTS (SELECT 1 FROM [procurement].[Suppliers] WHERE [SupplierId]=@SupplierId)
           UPDATE [procurement].[Suppliers] SET
             [Name]=@Name, [Code]=@Code, [SageCode]=@SageCode, [Source]=@Source,
+            [ShortName]=@ShortName, [ContactName]=@ContactName,
             [Currency]=@Currency, [PaymentTerms]=@PaymentTerms, [DeliveryLocation]=@DeliveryLocation,
-            [Email]=@Email, [Phone]=@Phone, [IsActive]=@IsActive, [IsApproved]=@IsApproved,
+            [AddressLine]=@AddressLine, [City]=@City, [StateName]=@StateName, [Country]=@Country,
+            [PostalCode]=@PostalCode, [Email]=@Email, [Phone]=@Phone, [Mobile]=@Mobile, [Website]=@Website,
+            [TaxId]=@TaxId, [RegistrationNo]=@RegistrationNo,
+            [IsActive]=@IsActive, [IsApproved]=@IsApproved, [IsBlacklisted]=@IsBlacklisted,
             [UpdatedAt]=SYSUTCDATETIME(), [UpdatedBy]=@UpdatedBy
           WHERE [SupplierId]=@SupplierId
         ELSE
           INSERT INTO [procurement].[Suppliers] (
-            [SupplierId], [Name], [Code], [SageCode], [Source], [IsApproved], [Currency], [PaymentTerms],
-            [DeliveryLocation], [Email], [Phone], [IsActive], [CreatedBy], [UpdatedBy]
+            [SupplierId], [Name], [Code], [SageCode], [Source], [ShortName], [ContactName], [IsApproved],
+            [Currency], [PaymentTerms], [DeliveryLocation], [AddressLine], [City], [StateName], [Country],
+            [PostalCode], [Email], [Phone], [Mobile], [Website], [TaxId], [RegistrationNo],
+            [IsActive], [IsBlacklisted], [CreatedBy], [UpdatedBy]
           ) VALUES (
-            @SupplierId, @Name, @Code, @SageCode, @Source, @IsApproved, @Currency, @PaymentTerms,
-            @DeliveryLocation, @Email, @Phone, @IsActive, @CreatedBy, @UpdatedBy
+            @SupplierId, @Name, @Code, @SageCode, @Source, @ShortName, @ContactName, @IsApproved,
+            @Currency, @PaymentTerms, @DeliveryLocation, @AddressLine, @City, @StateName, @Country,
+            @PostalCode, @Email, @Phone, @Mobile, @Website, @TaxId, @RegistrationNo,
+            @IsActive, @IsBlacklisted, @CreatedBy, @UpdatedBy
           )
       `);
     if (wasExisting) updated += 1;
@@ -1723,15 +1775,64 @@ export const listProcurementLookupDepartments = async () => {
 };
 
 export const listProcurementLookupLocations = async () => {
-  const { syncSageLocationsToOrganizationDb } = await import('@/lib/organization-locations-store');
-  const payload = await syncSageLocationsToOrganizationDb();
-  return (payload.records || []).map((r) => ({
-    id: r.id,
-    name: r.name,
-    code: r.costCenter || '',
-    region: r.region || '',
-    recordType: r.recordType || 'Location',
-  }));
+  const mapped: Array<{ id: string; name: string; code: string; region: string; recordType: string }> = [];
+  try {
+    const { getDleEnterpriseDbPool } = await import('@/lib/dle-enterprise-db');
+    const org = await getDleEnterpriseDbPool();
+    if (org) {
+      const result = await org.request().query(`
+        SELECT TOP 500 [Id], [Name], [CostCenter], [Region], [RecordType], [Location]
+        FROM [hris].[OrganizationLocationsSites]
+        ORDER BY [Name]
+      `);
+      for (const row of result.recordset) {
+        const name = String(row.Name || row.Location || '').trim();
+        if (!name) continue;
+        mapped.push({
+          id: String(row.Id),
+          name,
+          code: String(row.CostCenter || ''),
+          region: String(row.Region || ''),
+          recordType: String(row.RecordType || 'Location'),
+        });
+      }
+    }
+  } catch {
+    // Locations table may be empty or unavailable; fall through to supplier cities.
+  }
+  if (mapped.length) return mapped;
+
+  const pool = await ensureProcurementDb();
+  try {
+    const result = await pool.request().query(`
+      SELECT DISTINCT TOP 400
+        COALESCE(NULLIF(LTRIM(RTRIM([City])), N''), NULLIF(LTRIM(RTRIM([DeliveryLocation])), N'')) AS Name
+      FROM [procurement].[Suppliers]
+      WHERE COALESCE(NULLIF(LTRIM(RTRIM([City])), N''), NULLIF(LTRIM(RTRIM([DeliveryLocation])), N'')) IS NOT NULL
+      ORDER BY 1
+    `);
+    return result.recordset.map((row, index) => ({
+      id: `city-${index}`,
+      name: String(row.Name),
+      code: '',
+      region: '',
+      recordType: 'City',
+    }));
+  } catch {
+    const result = await pool.request().query(`
+      SELECT DISTINCT TOP 400 NULLIF(LTRIM(RTRIM([DeliveryLocation])), N'') AS Name
+      FROM [procurement].[Suppliers]
+      WHERE NULLIF(LTRIM(RTRIM([DeliveryLocation])), N'') IS NOT NULL
+      ORDER BY 1
+    `);
+    return result.recordset.map((row, index) => ({
+      id: `loc-${index}`,
+      name: String(row.Name),
+      code: '',
+      region: '',
+      recordType: 'Location',
+    }));
+  }
 };
 
 export const buildProcurementReports = async () => {

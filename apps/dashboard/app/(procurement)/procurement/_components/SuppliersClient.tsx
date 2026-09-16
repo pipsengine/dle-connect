@@ -7,17 +7,20 @@ import {
   CheckCircle2,
   CloudDownload,
   Eye,
+  Globe,
   Loader2,
   Mail,
+  MapPin,
   MoreHorizontal,
   Phone,
   Plus,
   RefreshCw,
   Sparkles,
+  UserRound,
   Users,
 } from 'lucide-react';
 import { procurementGet, procurementPost } from '../lib/procurement-api';
-import { LocationLookup } from './proc-lookups';
+import { LocationLookup, SearchableSelect } from './proc-lookups';
 import {
   FilterBar,
   KpiCard,
@@ -41,14 +44,25 @@ type SupplierRow = {
   code: string | null;
   sageCode?: string | null;
   source?: string;
+  shortName?: string | null;
+  contactName?: string | null;
   isApproved: boolean;
   currency: string | null;
   paymentTerms: string | null;
   deliveryPeriod: string | null;
   deliveryLocation: string | null;
+  addressLine?: string | null;
+  city?: string | null;
+  stateName?: string | null;
+  country?: string | null;
+  postalCode?: string | null;
   outstanding: number;
   email: string | null;
   phone: string | null;
+  mobile?: string | null;
+  website?: string | null;
+  taxId?: string | null;
+  registrationNo?: string | null;
   notes: string | null;
   isActive: boolean;
   isBlacklisted: boolean;
@@ -58,10 +72,21 @@ type SupplierRow = {
 type SupplierForm = {
   supplierId?: string;
   name: string;
+  shortName: string;
   code: string;
+  contactName: string;
   deliveryLocation: string;
+  addressLine: string;
+  city: string;
+  stateName: string;
+  country: string;
+  postalCode: string;
   email: string;
   phone: string;
+  mobile: string;
+  website: string;
+  taxId: string;
+  registrationNo: string;
   paymentTerms: string;
   deliveryPeriod: string;
   currency: string;
@@ -72,12 +97,49 @@ type SupplierForm = {
   source?: string;
 };
 
+type CardKey = '' | 'Sage' | 'Approved' | 'Pending Approval' | 'Inactive' | 'Blacklisted';
+
+const CURRENCIES = ['NGN', 'USD', 'EUR', 'GBP', 'ZAR', 'GHS'];
+const COUNTRIES = [
+  'Nigeria',
+  'Ghana',
+  'United Kingdom',
+  'United States',
+  'South Africa',
+  'Cameroon',
+  'Kenya',
+  'China',
+  'India',
+  'United Arab Emirates',
+  'Germany',
+  'France',
+];
+const NIGERIA_STATES = [
+  'Abia', 'Adamawa', 'Akwa Ibom', 'Anambra', 'Bauchi', 'Bayelsa', 'Benue', 'Borno', 'Cross River',
+  'Delta', 'Ebonyi', 'Edo', 'Ekiti', 'Enugu', 'FCT', 'Gombe', 'Imo', 'Jigawa', 'Kaduna', 'Kano',
+  'Katsina', 'Kebbi', 'Kogi', 'Kwara', 'Lagos', 'Nasarawa', 'Niger', 'Ogun', 'Ondo', 'Osun', 'Oyo',
+  'Plateau', 'Rivers', 'Sokoto', 'Taraba', 'Yobe', 'Zamfara',
+];
+
+const optionList = (values: string[]) => values.map((value) => ({ value, label: value }));
+
 const emptyForm = (code = ''): SupplierForm => ({
   name: '',
+  shortName: '',
   code,
+  contactName: '',
   deliveryLocation: '',
+  addressLine: '',
+  city: '',
+  stateName: '',
+  country: 'Nigeria',
+  postalCode: '',
   email: '',
   phone: '',
+  mobile: '',
+  website: '',
+  taxId: '',
+  registrationNo: '',
   paymentTerms: '',
   deliveryPeriod: '',
   currency: 'NGN',
@@ -87,6 +149,9 @@ const emptyForm = (code = ''): SupplierForm => ({
   notes: '',
   source: 'LOCAL',
 });
+
+const placeLabel = (row: Pick<SupplierRow, 'city' | 'stateName' | 'country' | 'deliveryLocation'>) =>
+  [row.city, row.stateName, row.country].filter(Boolean).join(', ') || row.deliveryLocation || '—';
 
 function TogglePill({
   label,
@@ -128,7 +193,7 @@ export function SuppliersClient() {
   const [modalOpen, setModalOpen] = useState(false);
   const [form, setForm] = useState<SupplierForm>(emptyForm());
   const [search, setSearch] = useState('');
-  const [statusFilter, setStatusFilter] = useState('');
+  const [statusFilter, setStatusFilter] = useState<CardKey | string>('');
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
 
@@ -171,11 +236,23 @@ export function SuppliersClient() {
       if (statusFilter === 'Sage' && (r.source || '').toUpperCase() !== 'SAGE') return false;
       if (statusFilter === 'Local' && (r.source || '').toUpperCase() === 'SAGE') return false;
       if (!q) return true;
-      return [r.supplierId, r.name, r.code, r.sageCode, r.email, r.phone, r.deliveryLocation, r.currency, r.source]
+      return [
+        r.supplierId, r.name, r.shortName, r.contactName, r.code, r.sageCode, r.email, r.phone, r.mobile,
+        r.deliveryLocation, r.addressLine, r.city, r.stateName, r.country, r.currency, r.source, r.taxId,
+        r.registrationNo,
+      ]
         .filter(Boolean)
         .some((v) => String(v).toLowerCase().includes(q));
     });
   }, [rows, search, statusFilter]);
+
+  const sliceStats = useMemo(() => {
+    const withEmail = filtered.filter((r) => r.email).length;
+    const withPhone = filtered.filter((r) => r.phone || r.mobile).length;
+    const withAddress = filtered.filter((r) => r.addressLine || r.city || r.country).length;
+    const missingContact = filtered.filter((r) => !r.email && !r.phone && !r.mobile).length;
+    return { withEmail, withPhone, withAddress, missingContact };
+  }, [filtered]);
 
   useEffect(() => {
     setPage(1);
@@ -183,6 +260,10 @@ export function SuppliersClient() {
 
   const pageRows = filtered.slice((page - 1) * pageSize, page * pageSize);
   const isEdit = Boolean(form.supplierId);
+
+  const selectCard = (key: CardKey) => {
+    setStatusFilter((current) => (key === '' ? '' : current === key ? '' : key));
+  };
 
   const openCreate = async () => {
     setError('');
@@ -200,10 +281,21 @@ export function SuppliersClient() {
     setForm({
       supplierId: row.supplierId,
       name: row.name,
+      shortName: row.shortName || '',
       code: row.code || '',
+      contactName: row.contactName || '',
       deliveryLocation: row.deliveryLocation || '',
+      addressLine: row.addressLine || '',
+      city: row.city || '',
+      stateName: row.stateName || '',
+      country: row.country || 'Nigeria',
+      postalCode: row.postalCode || '',
       email: row.email || '',
       phone: row.phone || '',
+      mobile: row.mobile || '',
+      website: row.website || '',
+      taxId: row.taxId || '',
+      registrationNo: row.registrationNo || '',
       paymentTerms: row.paymentTerms || '',
       deliveryPeriod: row.deliveryPeriod || '',
       currency: row.currency || 'NGN',
@@ -225,14 +317,28 @@ export function SuppliersClient() {
     setSaving(true);
     setError('');
     try {
+      const composedLocation =
+        form.deliveryLocation.trim()
+        || [form.city, form.stateName, form.country].map((v) => v.trim()).filter(Boolean).join(', ');
       await procurementPost('upsert-supplier', {
         payload: {
           supplierId: form.supplierId,
           name: form.name.trim(),
+          shortName: form.shortName.trim() || null,
           code: form.code.trim() || null,
-          deliveryLocation: form.deliveryLocation.trim() || null,
+          contactName: form.contactName.trim() || null,
+          deliveryLocation: composedLocation || null,
+          addressLine: form.addressLine.trim() || null,
+          city: form.city.trim() || null,
+          stateName: form.stateName.trim() || null,
+          country: form.country.trim() || null,
+          postalCode: form.postalCode.trim() || null,
           email: form.email.trim() || null,
           phone: form.phone.trim() || null,
+          mobile: form.mobile.trim() || null,
+          website: form.website.trim() || null,
+          taxId: form.taxId.trim() || null,
+          registrationNo: form.registrationNo.trim() || null,
           paymentTerms: form.paymentTerms.trim() || null,
           deliveryPeriod: form.deliveryPeriod.trim() || null,
           currency: form.currency || 'NGN',
@@ -302,18 +408,118 @@ export function SuppliersClient() {
       ) : null}
 
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-6">
-        <KpiCard label="Total" value={kpis.total} icon={<Users className="h-4 w-4" />} />
-        <KpiCard label="From Sage" value={kpis.sage} icon={<CloudDownload className="h-4 w-4" />} tint="bg-sky-50 text-sky-700" />
-        <KpiCard label="Approved" value={kpis.approved} icon={<CheckCircle2 className="h-4 w-4" />} tint="bg-emerald-50 text-emerald-700" />
-        <KpiCard label="Pending Approval" value={kpis.pending} icon={<Users className="h-4 w-4" />} tint="bg-amber-50 text-amber-700" />
-        <KpiCard label="Inactive" value={kpis.inactive} icon={<Users className="h-4 w-4" />} tint="bg-slate-100 text-slate-700" />
-        <KpiCard label="Blacklisted" value={kpis.blacklisted} icon={<Ban className="h-4 w-4" />} tint="bg-red-50 text-red-700" />
+        <KpiCard
+          label="Total"
+          value={kpis.total}
+          icon={<Users className="h-4 w-4" />}
+          onClick={() => selectCard('')}
+          active={statusFilter === ''}
+          hint="All records"
+        />
+        <KpiCard
+          label="From Sage"
+          value={kpis.sage}
+          icon={<CloudDownload className="h-4 w-4" />}
+          tint="bg-sky-50 text-sky-700"
+          onClick={() => selectCard('Sage')}
+          active={statusFilter === 'Sage'}
+          hint="Click to view"
+        />
+        <KpiCard
+          label="Approved"
+          value={kpis.approved}
+          icon={<CheckCircle2 className="h-4 w-4" />}
+          tint="bg-emerald-50 text-emerald-700"
+          onClick={() => selectCard('Approved')}
+          active={statusFilter === 'Approved'}
+          hint="Click to view"
+        />
+        <KpiCard
+          label="Pending Approval"
+          value={kpis.pending}
+          icon={<Users className="h-4 w-4" />}
+          tint="bg-amber-50 text-amber-700"
+          onClick={() => selectCard('Pending Approval')}
+          active={statusFilter === 'Pending Approval'}
+          hint="Click to view"
+        />
+        <KpiCard
+          label="Inactive"
+          value={kpis.inactive}
+          icon={<Users className="h-4 w-4" />}
+          tint="bg-slate-100 text-slate-700"
+          onClick={() => selectCard('Inactive')}
+          active={statusFilter === 'Inactive'}
+          hint="Click to view"
+        />
+        <KpiCard
+          label="Blacklisted"
+          value={kpis.blacklisted}
+          icon={<Ban className="h-4 w-4" />}
+          tint="bg-red-50 text-red-700"
+          onClick={() => selectCard('Blacklisted')}
+          active={statusFilter === 'Blacklisted'}
+          hint="Click to view"
+        />
       </div>
+
+      <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <h2 className="text-sm font-black text-slate-900">{statusFilter || 'All suppliers'}</h2>
+            <p className="mt-0.5 text-xs text-slate-500">
+              {filtered.length} record{filtered.length === 1 ? '' : 's'} in this view. Click a card to filter, then open a supplier for full Sage contact details.
+            </p>
+          </div>
+          {statusFilter ? (
+            <button type="button" className={secondaryBtnClass} onClick={() => setStatusFilter('')}>
+              Clear filter
+            </button>
+          ) : null}
+        </div>
+        <div className="mt-3 grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
+          {[
+            ['With email', sliceStats.withEmail],
+            ['With phone', sliceStats.withPhone],
+            ['With address', sliceStats.withAddress],
+            ['Missing contact', sliceStats.missingContact],
+          ].map(([label, value]) => (
+            <div key={String(label)} className="rounded-xl border border-slate-100 bg-slate-50 px-3 py-2">
+              <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">{label}</div>
+              <div className="mt-1 text-lg font-black tabular-nums text-slate-900">{value}</div>
+            </div>
+          ))}
+        </div>
+        {filtered.length ? (
+          <div className="mt-4 grid gap-2 md:grid-cols-2 xl:grid-cols-4">
+            {filtered.slice(0, 8).map((row) => (
+              <button
+                key={row.supplierId}
+                type="button"
+                onClick={() => openEdit(row)}
+                className="rounded-xl border border-slate-200 bg-white p-3 text-left transition hover:border-blue-300 hover:bg-blue-50/40"
+              >
+                <div className="truncate text-sm font-semibold text-slate-900">{row.name}</div>
+                <div className="mt-1 truncate text-xs text-slate-500">{row.code || row.sageCode}</div>
+                <div className="mt-2 truncate text-xs text-slate-600">{row.email || 'No email on file'}</div>
+                <div className="truncate text-xs text-slate-600">{row.phone || row.mobile || 'No phone on file'}</div>
+              </button>
+            ))}
+          </div>
+        ) : (
+          <p className="mt-4 text-sm text-slate-500">No suppliers in this slice.</p>
+        )}
+      </section>
 
       <FilterBar>
         <div className="min-w-[200px] flex-1">
           <label className={labelClass}>Search</label>
-          <input className={inputClass} placeholder="Name, code, email, location…" value={search} onChange={(e) => setSearch(e.target.value)} />
+          <input
+            className={inputClass}
+            placeholder="Name, code, email, phone, city, tax ID…"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+          />
         </div>
         <div className="w-48">
           <label className={labelClass}>Status</label>
@@ -336,17 +542,28 @@ export function SuppliersClient() {
         onExport={() =>
           exportCsv(
             'suppliers.csv',
-            ['ID', 'Name', 'Code', 'Source', 'Currency', 'Approved', 'Outstanding', 'Active', 'Blacklisted', 'Updated'],
+            [
+              'ID', 'Name', 'Code', 'Source', 'Contact', 'Email', 'Phone', 'Mobile', 'Address', 'City',
+              'State', 'Country', 'Currency', 'Tax ID', 'Registration', 'Approved', 'Active', 'Updated',
+            ],
             filtered.map((r) => [
               r.supplierId,
               r.name,
               r.code,
               r.source || 'LOCAL',
+              r.contactName,
+              r.email,
+              r.phone,
+              r.mobile,
+              r.addressLine,
+              r.city,
+              r.stateName,
+              r.country,
               r.currency,
+              r.taxId,
+              r.registrationNo,
               r.isApproved ? 'Yes' : 'No',
-              r.outstanding,
               r.isActive ? 'Yes' : 'No',
-              r.isBlacklisted ? 'Yes' : 'No',
               formatWhen(r.updatedAt),
             ]),
           )
@@ -364,11 +581,11 @@ export function SuppliersClient() {
                   <tr>
                     <th className="px-3 py-3 text-left">Code</th>
                     <th className="px-3 py-3 text-left">Name</th>
+                    <th className="px-3 py-3 text-left">Contact</th>
+                    <th className="px-3 py-3 text-left">Location</th>
                     <th className="px-3 py-3 text-left">Source</th>
-                    <th className="px-3 py-3 text-left">Country / Currency</th>
                     <th className="px-3 py-3 text-left">Approved</th>
                     <th className="px-3 py-3 text-left">Outstanding</th>
-                    <th className="px-3 py-3 text-left">Updated</th>
                     <th className="px-3 py-3 text-left">Status</th>
                     <th className="px-3 py-3 text-left">Actions</th>
                   </tr>
@@ -381,19 +598,26 @@ export function SuppliersClient() {
                           {row.code || row.supplierId}
                         </button>
                       </td>
-                      <td className="px-3 py-3 font-semibold text-slate-900">{row.name}</td>
                       <td className="px-3 py-3">
-                        <StatusBadge status={(row.source || 'LOCAL').toUpperCase() === 'SAGE' ? 'Sage' : 'Local'} />
+                        <div className="font-semibold text-slate-900">{row.name}</div>
+                        {row.shortName ? <div className="text-xs text-slate-500">{row.shortName}</div> : null}
                       </td>
                       <td className="px-3 py-3 text-slate-700">
-                        <div>{row.deliveryLocation || '—'}</div>
+                        {row.contactName ? <div className="text-xs font-medium text-slate-800">{row.contactName}</div> : null}
+                        <div className="text-xs">{row.email || 'No email'}</div>
+                        <div className="text-xs text-slate-500">{row.phone || row.mobile || 'No phone'}</div>
+                      </td>
+                      <td className="px-3 py-3 text-slate-700">
+                        <div>{placeLabel(row)}</div>
                         <div className="text-xs text-slate-500">{row.currency || 'NGN'}</div>
+                      </td>
+                      <td className="px-3 py-3">
+                        <StatusBadge status={(row.source || 'LOCAL').toUpperCase() === 'SAGE' ? 'Sage' : 'Local'} />
                       </td>
                       <td className="px-3 py-3">
                         <StatusBadge status={row.isApproved ? 'Approved' : 'Pending Approval'} />
                       </td>
                       <td className="px-3 py-3 tabular-nums text-slate-800">{moneyPlain(row.outstanding, row.currency || 'NGN')}</td>
-                      <td className="px-3 py-3 text-slate-600">{formatWhen(row.updatedAt)}</td>
                       <td className="px-3 py-3">
                         <StatusBadge
                           status={row.isBlacklisted ? 'Blacklisted' : row.isActive ? 'Active' : 'Inactive'}
@@ -422,10 +646,10 @@ export function SuppliersClient() {
 
       <ProcModal
         open={modalOpen}
-        title={isEdit ? 'Edit supplier' : 'Create supplier'}
+        title={isEdit ? 'Supplier details' : 'Create supplier'}
         subtitle={
           isEdit
-            ? 'Changes are saved to DLE_Enterprise. Sage codes stay unique and are not duplicated.'
+            ? 'Sage master data and local edits are stored in DLE_Enterprise. Sage codes stay unique and are not duplicated.'
             : 'The supplier code is generated from the last code in this register. The record is stored in DLE_Enterprise.'
         }
         onClose={() => setModalOpen(false)}
@@ -462,6 +686,15 @@ export function SuppliersClient() {
                 />
               </div>
               <div>
+                <label className={labelClass}>Short name</label>
+                <input
+                  className={inputClass}
+                  placeholder="Sage short name / trading style"
+                  value={form.shortName}
+                  onChange={(e) => setForm((f) => ({ ...f, shortName: e.target.value }))}
+                />
+              </div>
+              <div>
                 <label className={labelClass}>Supplier code</label>
                 <div className="relative">
                   <input className={`${inputClass} bg-slate-100 pr-28 font-semibold tracking-wide`} value={form.code} readOnly />
@@ -476,19 +709,46 @@ export function SuppliersClient() {
               <div>
                 <label className={labelClass}>Currency</label>
                 <select className={selectClass} value={form.currency} onChange={(e) => setForm((f) => ({ ...f, currency: e.target.value }))}>
-                  {['NGN', 'USD', 'EUR', 'GBP'].map((c) => (
+                  {CURRENCIES.map((c) => (
                     <option key={c} value={c}>{c}</option>
                   ))}
                 </select>
+              </div>
+              <div>
+                <label className={labelClass}>Registration no.</label>
+                <input
+                  className={inputClass}
+                  placeholder="CAC / company registration"
+                  value={form.registrationNo}
+                  onChange={(e) => setForm((f) => ({ ...f, registrationNo: e.target.value }))}
+                />
+              </div>
+              <div>
+                <label className={labelClass}>Tax / VAT ID</label>
+                <input
+                  className={inputClass}
+                  placeholder="TIN, VAT number"
+                  value={form.taxId}
+                  onChange={(e) => setForm((f) => ({ ...f, taxId: e.target.value }))}
+                />
               </div>
             </div>
           </section>
 
           <section className="rounded-2xl border border-slate-200 bg-white p-4">
             <div className="mb-3 flex items-center gap-2 text-xs font-bold uppercase tracking-wide text-slate-500">
-              <Mail className="h-3.5 w-3.5 text-blue-600" /> Contact
+              <UserRound className="h-3.5 w-3.5 text-blue-600" /> Contact
             </div>
             <div className="grid gap-3 md:grid-cols-2">
+              <div className="md:col-span-2">
+                <label className={labelClass}>Primary contact name</label>
+                <input
+                  className={inputClass}
+                  placeholder="Accounts payable / sales contact"
+                  value={form.contactName}
+                  onChange={(e) => setForm((f) => ({ ...f, contactName: e.target.value }))}
+                />
+              </div>
               <div>
                 <label className={labelClass}>Email</label>
                 <div className="relative">
@@ -514,12 +774,87 @@ export function SuppliersClient() {
                   />
                 </div>
               </div>
+              <div>
+                <label className={labelClass}>Mobile</label>
+                <input
+                  className={inputClass}
+                  placeholder="Mobile / WhatsApp"
+                  value={form.mobile}
+                  onChange={(e) => setForm((f) => ({ ...f, mobile: e.target.value }))}
+                />
+              </div>
+              <div>
+                <label className={labelClass}>Website</label>
+                <div className="relative">
+                  <Globe className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
+                  <input
+                    className={`${inputClass} pl-9`}
+                    placeholder="https://"
+                    value={form.website}
+                    onChange={(e) => setForm((f) => ({ ...f, website: e.target.value }))}
+                  />
+                </div>
+              </div>
+            </div>
+          </section>
+
+          <section className="rounded-2xl border border-slate-200 bg-white p-4">
+            <div className="mb-3 flex items-center gap-2 text-xs font-bold uppercase tracking-wide text-slate-500">
+              <MapPin className="h-3.5 w-3.5 text-blue-600" /> Address
+            </div>
+            <div className="grid gap-3 md:grid-cols-2">
+              <div className="md:col-span-2">
+                <label className={labelClass}>Street address</label>
+                <input
+                  className={inputClass}
+                  placeholder="Building, street, area"
+                  value={form.addressLine}
+                  onChange={(e) => setForm((f) => ({ ...f, addressLine: e.target.value }))}
+                />
+              </div>
+              <div>
+                <label className={labelClass}>City</label>
+                <input
+                  className={inputClass}
+                  placeholder="e.g. Lagos, Port Harcourt"
+                  value={form.city}
+                  onChange={(e) => setForm((f) => ({ ...f, city: e.target.value }))}
+                />
+              </div>
+              <SearchableSelect
+                label="State / region"
+                value={form.stateName}
+                options={optionList(NIGERIA_STATES)}
+                placeholder="Search or type a state"
+                allowCustom
+                onChange={(value) => setForm((f) => ({ ...f, stateName: value }))}
+              />
+              <SearchableSelect
+                label="Country"
+                value={form.country}
+                options={optionList(COUNTRIES)}
+                placeholder="Search or type a country"
+                allowCustom
+                onChange={(value) => setForm((f) => ({ ...f, country: value }))}
+              />
+              <div>
+                <label className={labelClass}>Postal code</label>
+                <input
+                  className={inputClass}
+                  placeholder="Optional"
+                  value={form.postalCode}
+                  onChange={(e) => setForm((f) => ({ ...f, postalCode: e.target.value }))}
+                />
+              </div>
               <div className="md:col-span-2">
                 <LocationLookup
-                  label="Delivery location"
+                  label="Delivery location / site"
                   value={form.deliveryLocation}
                   onChange={(name) => setForm((f) => ({ ...f, deliveryLocation: name }))}
                 />
+                <p className="mt-1 text-[11px] text-slate-500">
+                  Search a DLE site, or type any city / yard. This field stays editable even if suggestions are still loading.
+                </p>
               </div>
             </div>
           </section>

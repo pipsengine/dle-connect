@@ -4,12 +4,24 @@ import { loadWorkspaceEnv } from '@/lib/dle-enterprise-db';
 export type SageX3Supplier = {
   sageCode: string;
   name: string;
+  shortName: string | null;
+  contactName: string | null;
   currency: string | null;
   paymentTerms: string | null;
   deliveryLocation: string | null;
   email: string | null;
   phone: string | null;
+  mobile: string | null;
+  website: string | null;
+  addressLine: string | null;
+  city: string | null;
+  stateName: string | null;
+  country: string | null;
+  postalCode: string | null;
+  taxId: string | null;
+  registrationNo: string | null;
   isActive: boolean;
+  isBlacklisted: boolean;
 };
 
 type NamedTable = { schemaName: string; tableName: string };
@@ -31,42 +43,89 @@ const pick = (row: Record<string, unknown>, names: string[]) => {
   return null;
 };
 
-const sageX3Config = (): sql.config => {
+const COUNTRY_NAMES: Record<string, string> = {
+  NGA: 'Nigeria',
+  GH: 'Ghana',
+  GHA: 'Ghana',
+  GB: 'United Kingdom',
+  GBR: 'United Kingdom',
+  UK: 'United Kingdom',
+  US: 'United States',
+  USA: 'United States',
+  ZA: 'South Africa',
+  ZAF: 'South Africa',
+  CM: 'Cameroon',
+  CMR: 'Cameroon',
+  KE: 'Kenya',
+  KEN: 'Kenya',
+  CN: 'China',
+  CHN: 'China',
+  IN: 'India',
+  IND: 'India',
+  AE: 'United Arab Emirates',
+  ARE: 'United Arab Emirates',
+  DE: 'Germany',
+  DEU: 'Germany',
+  FR: 'France',
+  FRA: 'France',
+};
+
+const prettyCountry = (value: string | null) => {
+  if (!value) return null;
+  return COUNTRY_NAMES[value.toUpperCase()] || value;
+};
+
+const sageX3Attempts = (): sql.config[] => {
   loadWorkspaceEnv();
-  const server = process.env.SAGE_X3_DB_HOST || '192.168.5.5';
   const database = process.env.SAGE_X3_DB_NAME || 'x3data';
   const user = process.env.SAGE_X3_DB_USER || 'sage';
   const password = process.env.SAGE_X3_DB_PASSWORD || '';
+  const instance = process.env.SAGE_X3_DB_INSTANCE || 'SAGEX3';
+  const configuredHosts = (process.env.SAGE_X3_DB_HOST || '')
+    .split(',')
+    .map((value) => value.trim())
+    .filter(Boolean);
+  const hosts = [...new Set(['DLESGENT', ...configuredHosts, '192.168.5.5'])];
   if (!password) {
     throw new Error(
-      'Sage X3 credentials are not configured. Set SAGE_X3_DB_PASSWORD in apps/dashboard/.env (database x3data).',
+      'Sage X3 credentials are not configured. Set SAGE_X3_DB_PASSWORD in apps/dashboard/.env (instance DLESGENT\\SAGEX3, database x3data).',
     );
   }
-  return {
-    server,
-    port: Number(process.env.SAGE_X3_DB_PORT || 1433),
-    database,
-    user,
-    password,
-    options: {
-      encrypt: boolEnv(process.env.SAGE_X3_DB_ENCRYPT, false),
-      trustServerCertificate: boolEnv(process.env.SAGE_X3_DB_TRUST_SERVER_CERTIFICATE, true),
-      enableArithAbort: true,
-    },
-    connectionTimeout: Number(process.env.SAGE_X3_DB_CONNECT_TIMEOUT || 20000),
-    requestTimeout: Number(process.env.SAGE_X3_DB_REQUEST_TIMEOUT || 60000),
-  };
+  const attempts: sql.config[] = [];
+  for (const host of hosts) {
+    const base = {
+      database,
+      user,
+      password,
+      connectionTimeout: Number(process.env.SAGE_X3_DB_CONNECT_TIMEOUT || 20000),
+      requestTimeout: Number(process.env.SAGE_X3_DB_REQUEST_TIMEOUT || 60000),
+    };
+    attempts.push({
+      ...base,
+      server: host,
+      options: {
+        instanceName: instance,
+        encrypt: boolEnv(process.env.SAGE_X3_DB_ENCRYPT, false),
+        trustServerCertificate: boolEnv(process.env.SAGE_X3_DB_TRUST_SERVER_CERTIFICATE, true),
+        enableArithAbort: true,
+      },
+    });
+    attempts.push({
+      ...base,
+      server: host,
+      options: {
+        instanceName: instance,
+        encrypt: true,
+        trustServerCertificate: true,
+        enableArithAbort: true,
+      },
+    });
+  }
+  return attempts;
 };
 
 const connectSageX3 = async () => {
-  const primary = sageX3Config();
-  const attempts: sql.config[] = [
-    primary,
-    {
-      ...primary,
-      options: { ...primary.options, encrypt: !primary.options?.encrypt },
-    },
-  ];
+  const attempts = sageX3Attempts();
   let lastError: unknown = null;
   for (const config of attempts) {
     try {
@@ -75,8 +134,11 @@ const connectSageX3 = async () => {
       lastError = error;
     }
   }
+  const first = attempts[0];
   const message = lastError instanceof Error ? lastError.message : 'Sage X3 connection failed';
-  throw new Error(`Unable to read suppliers from Sage X3 (${primary.database} on ${primary.server}): ${message}`);
+  throw new Error(
+    `Unable to read suppliers from Sage X3 (${first?.database} on ${first?.server}\\SAGEX3): ${message}`,
+  );
 };
 
 const listCandidateTables = async (pool: sql.ConnectionPool) => {
@@ -110,21 +172,30 @@ const tableHasColumn = async (pool: sql.ConnectionPool, table: NamedTable, colum
   return result.recordset.length > 0;
 };
 
+const resolveColumn = async (pool: sql.ConnectionPool, table: NamedTable, names: string[]) => {
+  for (const name of names) {
+    if (await tableHasColumn(pool, table, name)) return name;
+  }
+  return null;
+};
+
 const qn = (table: NamedTable) => `[${table.schemaName}].[${table.tableName}]`;
 
 const pickBestTable = async (pool: sql.ConnectionPool, tables: NamedTable[], pattern: RegExp) => {
-  const matches = tables.filter((table) => pattern.test(table.tableName));
-  let best: { table: NamedTable; count: number } | null = null;
-  for (const table of matches) {
+  const preferredSchema = (process.env.SAGE_X3_FOLDER || 'DLEX3DATA').toUpperCase();
+  const exact = tables.filter((table) => pattern.test(table.tableName));
+  let best: { table: NamedTable; score: number } | null = null;
+  for (const table of exact) {
     try {
       const result = await pool.request().query(`SELECT COUNT(1) AS Cnt FROM ${qn(table)}`);
       const count = Number(result.recordset[0]?.Cnt || 0);
-      if (!best || count > best.count) best = { table, count };
+      const score = count + (table.schemaName.toUpperCase() === preferredSchema ? 1_000_000 : 0);
+      if (!best || score > best.score) best = { table, score };
     } catch {
       // Skip tables the login cannot read.
     }
   }
-  return best?.count ? best.table : matches[0] || null;
+  return best?.table || exact[0] || null;
 };
 
 const isEnabledFlag = (value: unknown) => {
@@ -134,55 +205,115 @@ const isEnabledFlag = (value: unknown) => {
   return true;
 };
 
+const isYesFlag = (value: unknown) => {
+  const text = trim(value).toUpperCase();
+  return text === '2' || text === 'Y' || text === 'YES' || text === 'TRUE';
+};
+
 export const fetchDistinctSageX3Suppliers = async () => {
   const pool = await connectSageX3();
   try {
     const tables = await listCandidateTables(pool);
     const supplierTable = await pickBestTable(pool, tables, /^BPSUPPLIER$/i)
-      || await pickBestTable(pool, tables, /BPSUPPLIER/i)
-      || await pickBestTable(pool, tables, /SUPPLIER/i);
+      || await pickBestTable(pool, tables, /BPSUPPLIER/i);
     if (!supplierTable) {
       throw new Error('No Sage X3 supplier table was found in x3data.');
     }
 
-    const partnerTable = await pickBestTable(pool, tables, /^BPARTNER$/i) || await pickBestTable(pool, tables, /BPARTNER/i);
-    const nameTable = await pickBestTable(pool, tables, /^BPSUPPLIERT$/i) || await pickBestTable(pool, tables, /BPSUPPLIERT/i);
-    const addressTable = await pickBestTable(pool, tables, /^BPADDRESS$/i) || await pickBestTable(pool, tables, /BPADDRESS/i);
+    const partnerTable = await pickBestTable(pool, tables, /^BPARTNER$/i);
+    const addressTable = await pickBestTable(pool, tables, /^BPADDRESS$/i);
 
-    const supplierCodeCol = (await tableHasColumn(pool, supplierTable, 'BPSNUM')) ? 'BPSNUM' : null;
+    const supplierCodeCol = await resolveColumn(pool, supplierTable, ['BPSNUM_0', 'BPSNUM']);
     if (!supplierCodeCol) {
       throw new Error(`Sage supplier table ${qn(supplierTable)} does not expose BPSNUM.`);
     }
 
-    const supplierSelect = [`s.[${supplierCodeCol}] AS SageCode`];
-    if (await tableHasColumn(pool, supplierTable, 'CUR')) supplierSelect.push('s.[CUR] AS Currency');
-    if (await tableHasColumn(pool, supplierTable, 'PTE')) supplierSelect.push('s.[PTE] AS PaymentTerms');
-    if (await tableHasColumn(pool, supplierTable, 'ENAFLG')) supplierSelect.push('s.[ENAFLG] AS EnabledFlag');
+    const supplierSelect = [`LTRIM(RTRIM(s.[${supplierCodeCol}])) AS SageCode`];
+    const nameCol = await resolveColumn(pool, supplierTable, ['BPSNAM_0', 'BPSNAM']);
+    const shortCol = await resolveColumn(pool, supplierTable, ['BPSSHO_0', 'BPSSHO']);
+    const contactCol = await resolveColumn(pool, supplierTable, ['CNTNAM_0', 'CNTNAM']);
+    const currencyCol = await resolveColumn(pool, supplierTable, ['CUR_0', 'CUR']);
+    const payCol = await resolveColumn(pool, supplierTable, ['PTE_0', 'PTE']);
+    const enabledCol = await resolveColumn(pool, supplierTable, ['ENAFLG_0', 'ENAFLG']);
+    const emailCol = await resolveColumn(pool, supplierTable, ['YEMAIL_0', 'YEMAIL', 'CNTEML_0', 'CNTWEB_0', 'EMAIL_0', 'EMAIL']);
+    const locCol = await resolveColumn(pool, supplierTable, ['LOC_0', 'LOC']);
+    const blacklistCol = await resolveColumn(pool, supplierTable, ['YBLACKLIST_0', 'YBLACKLIST']);
+    const regCol = await resolveColumn(pool, supplierTable, ['YREGNO_0', 'YREGNO', 'CRN_0', 'CRN']);
+    const supplierTelCol = await resolveColumn(pool, supplierTable, ['CNTTEL_0', 'TEL_0', 'TEL']);
+    if (nameCol) supplierSelect.push(`s.[${nameCol}] AS SupplierName`);
+    if (shortCol) supplierSelect.push(`s.[${shortCol}] AS ShortName`);
+    if (contactCol) supplierSelect.push(`s.[${contactCol}] AS ContactName`);
+    if (currencyCol) supplierSelect.push(`s.[${currencyCol}] AS Currency`);
+    if (payCol) supplierSelect.push(`s.[${payCol}] AS PaymentTerms`);
+    if (enabledCol) supplierSelect.push(`s.[${enabledCol}] AS EnabledFlag`);
+    if (emailCol) supplierSelect.push(`s.[${emailCol}] AS SupplierEmail`);
+    if (locCol) supplierSelect.push(`s.[${locCol}] AS SupplierLocation`);
+    if (blacklistCol) supplierSelect.push(`s.[${blacklistCol}] AS BlacklistFlag`);
+    if (regCol) supplierSelect.push(`s.[${regCol}] AS RegistrationNo`);
+    if (supplierTelCol) supplierSelect.push(`s.[${supplierTelCol}] AS SupplierPhone`);
 
     const joins: string[] = [];
-    if (nameTable && (await tableHasColumn(pool, nameTable, 'BPSNUM')) && (await tableHasColumn(pool, nameTable, 'BPSNAM'))) {
-      const langFilter = (await tableHasColumn(pool, nameTable, 'LANGUE'))
-        ? `AND (nt.[LANGUE] IN (N'ENG', N'EN', N'GBR') OR nt.[LANGUE] IS NULL)`
-        : '';
-      joins.push(`LEFT JOIN ${qn(nameTable)} nt ON nt.[BPSNUM] = s.[${supplierCodeCol}] ${langFilter}`);
-      supplierSelect.push('nt.[BPSNAM] AS TranslatedName');
+    if (partnerTable) {
+      const partnerCodeCol = await resolveColumn(pool, partnerTable, ['BPRNUM_0', 'BPRNUM']);
+      if (partnerCodeCol) {
+        joins.push(`LEFT JOIN ${qn(partnerTable)} p ON p.[${partnerCodeCol}] = s.[${supplierCodeCol}]`);
+        const partnerNameCol = await resolveColumn(pool, partnerTable, ['BPRNAM_0', 'BPRNAM']);
+        const partnerCountryCol = await resolveColumn(pool, partnerTable, ['CRY_0', 'CRY']);
+        const partnerRegCol = await resolveColumn(pool, partnerTable, ['CRN_0', 'CRN']);
+        const partnerVatCol = await resolveColumn(pool, partnerTable, ['VATNUM_0', 'VATNO_0', 'VATNUM', 'VATNO']);
+        if (partnerNameCol) supplierSelect.push(`p.[${partnerNameCol}] AS PartnerName`);
+        if (partnerCountryCol) supplierSelect.push(`p.[${partnerCountryCol}] AS Country`);
+        if (partnerRegCol) supplierSelect.push(`p.[${partnerRegCol}] AS PartnerRegNo`);
+        if (partnerVatCol) supplierSelect.push(`p.[${partnerVatCol}] AS TaxId`);
+      }
     }
-    if (partnerTable && (await tableHasColumn(pool, partnerTable, 'BPRNUM'))) {
-      joins.push(`LEFT JOIN ${qn(partnerTable)} p ON p.[BPRNUM] = s.[${supplierCodeCol}]`);
-      if (await tableHasColumn(pool, partnerTable, 'BPRNAM')) supplierSelect.push('p.[BPRNAM] AS PartnerName');
-      if (await tableHasColumn(pool, partnerTable, 'BPRSHO')) supplierSelect.push('p.[BPRSHO] AS ShortName');
-      if (await tableHasColumn(pool, partnerTable, 'BPRLOG')) supplierSelect.push('p.[BPRLOG] AS Email');
-      if (await tableHasColumn(pool, partnerTable, 'WEB')) supplierSelect.push('p.[WEB] AS WebEmail');
-      if (await tableHasColumn(pool, partnerTable, 'TEL')) supplierSelect.push('p.[TEL] AS Phone');
-      if (await tableHasColumn(pool, partnerTable, 'TEL0')) supplierSelect.push('p.[TEL0] AS Phone0');
-      if (await tableHasColumn(pool, partnerTable, 'TEL1')) supplierSelect.push('p.[TEL1] AS Phone1');
-      if (await tableHasColumn(pool, partnerTable, 'CRY')) supplierSelect.push('p.[CRY] AS Country');
-    }
-    if (addressTable && (await tableHasColumn(pool, addressTable, 'BPANUM'))) {
-      joins.push(`LEFT JOIN ${qn(addressTable)} a ON a.[BPANUM] = s.[${supplierCodeCol}]`);
-      if (await tableHasColumn(pool, addressTable, 'CTY')) supplierSelect.push('a.[CTY] AS City');
-      if (await tableHasColumn(pool, addressTable, 'CRYNAM')) supplierSelect.push('a.[CRYNAM] AS CountryName');
-      if (await tableHasColumn(pool, addressTable, 'BPAADDLIG')) supplierSelect.push('a.[BPAADDLIG] AS AddressLine');
+    if (addressTable) {
+      const addressCodeCol = await resolveColumn(pool, addressTable, ['BPANUM_0', 'BPANUM']);
+      if (addressCodeCol) {
+        const addressSelect: string[] = [];
+        const addrIdCol = await resolveColumn(pool, addressTable, ['BPAADD_0', 'BPAADD']);
+        const line0 = await resolveColumn(pool, addressTable, ['BPAADDLIG_0', 'BPAADDLIG']);
+        const line1 = await resolveColumn(pool, addressTable, ['BPAADDLIG_1']);
+        const line2 = await resolveColumn(pool, addressTable, ['BPAADDLIG_2']);
+        const cityCol = await resolveColumn(pool, addressTable, ['CTY_0', 'CTY']);
+        const stateCol = await resolveColumn(pool, addressTable, ['SAT_0', 'SAT']);
+        const countryNameCol = await resolveColumn(pool, addressTable, ['CRYNAM_0', 'CRYNAM']);
+        const postalCol = await resolveColumn(pool, addressTable, ['POSCOD_0', 'POSCOD']);
+        const telCol = await resolveColumn(pool, addressTable, ['TEL_0', 'TEL']);
+        const mobileCol = await resolveColumn(pool, addressTable, ['MOB_0', 'MOB']);
+        const webCol = await resolveColumn(pool, addressTable, ['WEB_0', 'WEB']);
+        if (line0) addressSelect.push(`a.[${line0}] AS Addr1`);
+        if (line1) addressSelect.push(`a.[${line1}] AS Addr2`);
+        if (line2) addressSelect.push(`a.[${line2}] AS Addr3`);
+        if (cityCol) addressSelect.push(`a.[${cityCol}] AS City`);
+        if (stateCol) addressSelect.push(`a.[${stateCol}] AS StateName`);
+        if (countryNameCol) addressSelect.push(`a.[${countryNameCol}] AS CountryName`);
+        if (postalCol) addressSelect.push(`a.[${postalCol}] AS PostalCode`);
+        if (telCol) addressSelect.push(`a.[${telCol}] AS Phone`);
+        if (mobileCol) addressSelect.push(`a.[${mobileCol}] AS Mobile`);
+        if (webCol) addressSelect.push(`a.[${webCol}] AS Website`);
+        if (addressSelect.length) {
+          const orderBits = [
+            telCol ? `CASE WHEN NULLIF(LTRIM(RTRIM(a.[${telCol}])), N'') IS NULL THEN 1 ELSE 0 END` : null,
+            webCol ? `CASE WHEN NULLIF(LTRIM(RTRIM(a.[${webCol}])), N'') IS NULL THEN 1 ELSE 0 END` : null,
+            addrIdCol ? `a.[${addrIdCol}]` : '1',
+          ].filter(Boolean);
+          joins.push(`
+            OUTER APPLY (
+              SELECT TOP 1 ${addressSelect.join(', ')}
+              FROM ${qn(addressTable)} a
+              WHERE a.[${addressCodeCol}] = s.[${supplierCodeCol}]
+              ORDER BY ${orderBits.join(', ')}
+            ) a
+          `);
+          supplierSelect.push(
+            ...addressSelect.map((bit) => {
+              const alias = bit.split(/ AS /i).pop()?.trim();
+              return alias ? `a.[${alias}] AS [${alias}]` : bit;
+            }),
+          );
+        }
+      }
     }
 
     const result = await pool.request().query(`
@@ -191,24 +322,52 @@ export const fetchDistinctSageX3Suppliers = async () => {
       ${joins.join('\n')}
     `);
 
+    const richness = (supplier: SageX3Supplier) =>
+      (supplier.email ? 2 : 0)
+      + (supplier.phone ? 2 : 0)
+      + (supplier.addressLine ? 1 : 0)
+      + (supplier.contactName ? 1 : 0)
+      + (supplier.city ? 1 : 0);
+
     const distinct = new Map<string, SageX3Supplier>();
     for (const raw of result.recordset) {
       const row = raw as Record<string, unknown>;
-      const sageCode = pick(row, ['SageCode', 'BPSNUM']) || '';
+      const sageCode = pick(row, ['SageCode', 'BPSNUM_0', 'BPSNUM']) || '';
       if (!sageCode) continue;
-      const name = pick(row, ['TranslatedName', 'PartnerName', 'ShortName', 'Name']) || sageCode;
-      const existing = distinct.get(sageCode);
+      const name = pick(row, ['SupplierName', 'PartnerName', 'ShortName']) || sageCode;
+      const websiteOrWeb = pick(row, ['Website', 'WEB_0', 'WebEmail']);
+      const website = websiteOrWeb && !websiteOrWeb.includes('@') ? websiteOrWeb : null;
+      const webEmail = websiteOrWeb && websiteOrWeb.includes('@') ? websiteOrWeb : null;
+      const city = pick(row, ['City', 'CTY_0']);
+      const stateName = pick(row, ['StateName', 'SAT_0']);
+      const country = prettyCountry(pick(row, ['CountryName', 'Country', 'CRYNAM_0', 'CRY_0']));
       const next: SageX3Supplier = {
         sageCode,
         name,
-        currency: pick(row, ['Currency', 'CUR']),
-        paymentTerms: pick(row, ['PaymentTerms', 'PTE']),
-        deliveryLocation: pick(row, ['City', 'CountryName', 'AddressLine', 'Country', 'CRY']),
-        email: pick(row, ['Email', 'WebEmail', 'BPRLOG', 'WEB']),
-        phone: pick(row, ['Phone', 'Phone0', 'Phone1', 'TEL', 'TEL0']),
-        isActive: isEnabledFlag(row.EnabledFlag ?? row.ENAFLG),
+        shortName: pick(row, ['ShortName', 'BPSSHO_0']),
+        contactName: pick(row, ['ContactName', 'CNTNAM_0']),
+        currency: pick(row, ['Currency', 'CUR_0', 'CUR']),
+        paymentTerms: pick(row, ['PaymentTerms', 'PTE_0', 'PTE']),
+        deliveryLocation:
+          pick(row, ['SupplierLocation', 'LOC_0'])
+          || [city, stateName, country].filter(Boolean).join(', ')
+          || null,
+        email: pick(row, ['SupplierEmail']) || webEmail,
+        phone: pick(row, ['Phone', 'SupplierPhone', 'TEL_0', 'TEL']),
+        mobile: pick(row, ['Mobile', 'MOB_0']),
+        website,
+        addressLine: [pick(row, ['Addr1']), pick(row, ['Addr2']), pick(row, ['Addr3'])].filter(Boolean).join(', ') || null,
+        city,
+        stateName,
+        country,
+        postalCode: pick(row, ['PostalCode', 'POSCOD_0']),
+        taxId: pick(row, ['TaxId', 'VATNUM_0', 'VATNO_0']),
+        registrationNo: pick(row, ['RegistrationNo', 'PartnerRegNo', 'YREGNO_0', 'CRN_0']),
+        isActive: isEnabledFlag(row.EnabledFlag ?? row.ENAFLG_0 ?? row.ENAFLG),
+        isBlacklisted: isYesFlag(row.BlacklistFlag ?? row.YBLACKLIST_0),
       };
-      if (!existing || (existing.name === existing.sageCode && next.name !== next.sageCode)) {
+      const existing = distinct.get(sageCode);
+      if (!existing || richness(next) > richness(existing) || (existing.name === existing.sageCode && next.name !== next.sageCode)) {
         distinct.set(sageCode, next);
       }
     }

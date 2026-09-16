@@ -42,6 +42,7 @@ export function SearchableSelect({
   placeholder,
   onChange,
   disabled,
+  allowCustom,
 }: {
   label?: string;
   required?: boolean;
@@ -50,14 +51,16 @@ export function SearchableSelect({
   placeholder?: string;
   onChange: (value: string, option?: LookupOption) => void;
   disabled?: boolean;
+  allowCustom?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState('');
   const selected = options.find((option) => option.value === value) || null;
+  const display = selected?.label || (allowCustom ? value : '');
 
   useEffect(() => {
-    if (!open) setQuery(selected?.label || '');
-  }, [open, selected?.label, value]);
+    if (!open) setQuery(display);
+  }, [open, display]);
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -71,7 +74,7 @@ export function SearchableSelect({
   }, [options, query, selected]);
 
   return (
-    <label className="relative block text-sm">
+    <label className={`relative block text-sm ${open ? 'z-20' : ''}`}>
       {label ? (
         <span className={labelClass}>
           {label}
@@ -81,7 +84,7 @@ export function SearchableSelect({
       <div className="relative">
         <Search className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
         <input
-          value={open ? query : selected?.label || ''}
+          value={open ? query : display}
           disabled={disabled}
           placeholder={placeholder || 'Search…'}
           onChange={(e) => {
@@ -91,9 +94,14 @@ export function SearchableSelect({
           }}
           onFocus={() => {
             setOpen(true);
-            setQuery('');
+            setQuery(display);
           }}
-          onBlur={() => window.setTimeout(() => setOpen(false), 150)}
+          onBlur={() => {
+            if (allowCustom && query.trim() && query.trim() !== display) {
+              onChange(query.trim());
+            }
+            window.setTimeout(() => setOpen(false), 150);
+          }}
           className={`${inputClass} pl-9 pr-9`}
           autoComplete="off"
           inputMode="search"
@@ -103,7 +111,7 @@ export function SearchableSelect({
         />
       </div>
       {open ? (
-        <div className="absolute z-30 mt-1 max-h-52 w-full overflow-auto rounded-xl border border-slate-200 bg-white shadow-lg">
+        <div className="absolute z-50 mt-1 max-h-52 w-full overflow-auto rounded-xl border border-slate-200 bg-white shadow-lg">
           {filtered.length ? (
             filtered.map((option) => (
               <button
@@ -123,8 +131,22 @@ export function SearchableSelect({
                 {option.sub ? <div className="text-xs text-slate-500">{option.sub}</div> : null}
               </button>
             ))
+          ) : allowCustom && query.trim() ? (
+            <button
+              type="button"
+              onMouseDown={(e) => e.preventDefault()}
+              onClick={() => {
+                onChange(query.trim());
+                setOpen(false);
+              }}
+              className="block w-full px-3 py-2.5 text-left text-sm font-semibold text-blue-700 hover:bg-blue-50"
+            >
+              Use “{query.trim()}”
+            </button>
           ) : (
-            <p className="px-3 py-3 text-xs text-slate-500">No matches. Try another search.</p>
+            <p className="px-3 py-3 text-xs text-slate-500">
+              {allowCustom ? 'Type a value, or search the list.' : 'No matches. Try another search.'}
+            </p>
           )}
         </div>
       ) : null}
@@ -343,9 +365,9 @@ export function LocationLookup({
       required={required}
       value={value}
       options={options}
-      placeholder={loaded ? 'Search locations…' : 'Loading locations…'}
+      placeholder={loaded ? 'Search or type a city / site' : 'Type a city or site — suggestions load in the background'}
       onChange={(v) => onChange(v)}
-      disabled={!loaded && !options.length}
+      allowCustom
     />
   );
 }

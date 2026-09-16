@@ -105,23 +105,41 @@ export function KpiCard({
   href,
   icon,
   tint = 'bg-blue-50 text-blue-700',
+  onClick,
+  active,
+  hint,
 }: {
   label: string;
   value: number | string;
   href?: string;
   icon?: ReactNode;
   tint?: string;
+  onClick?: () => void;
+  active?: boolean;
+  hint?: string;
 }) {
   const body = (
-    <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+    <div
+      className={`rounded-xl border bg-white p-4 shadow-sm transition ${
+        active ? 'border-blue-500 ring-2 ring-blue-100' : 'border-slate-200'
+      } ${onClick || href ? 'hover:border-blue-300 hover:shadow-md' : ''}`}
+    >
       <div className="flex items-start justify-between gap-2">
         <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">{label}</div>
         {icon ? <span className={`inline-flex h-8 w-8 items-center justify-center rounded-lg ${tint}`}>{icon}</span> : null}
       </div>
       <div className="mt-2 text-3xl font-black tabular-nums text-slate-900">{value}</div>
-      {href ? <div className="mt-2 text-xs font-semibold text-blue-600">View all →</div> : null}
+      {hint ? <div className="mt-1 text-[11px] font-medium text-slate-500">{hint}</div> : null}
+      {href && !onClick ? <div className="mt-2 text-xs font-semibold text-blue-600">View all →</div> : null}
     </div>
   );
+  if (onClick) {
+    return (
+      <button type="button" onClick={onClick} className="block w-full text-left">
+        {body}
+      </button>
+    );
+  }
   return href ? (
     <Link href={href} className="block transition hover:border-blue-300">
       {body}
@@ -170,7 +188,7 @@ export function ProcModal({
             <X className="h-4 w-4" />
           </button>
         </div>
-        <div className="max-h-[70vh] overflow-y-auto px-6 py-5">{children}</div>
+        <div className={`${extraWide ? 'px-6 py-5' : 'max-h-[70vh] overflow-y-auto px-6 py-5'}`}>{children}</div>
         {footer ? (
           <div className="flex flex-wrap items-center justify-end gap-2 border-t border-slate-100 bg-slate-50/80 px-6 py-4">{footer}</div>
         ) : null}

@@ -29,6 +29,28 @@ IF COL_LENGTH(N'[procurement].[Suppliers]', N'Source') IS NULL
   ALTER TABLE [procurement].[Suppliers] ADD [Source] NVARCHAR(20) NOT NULL CONSTRAINT [DF_ProcSuppliers_Source] DEFAULT N'LOCAL';
 IF COL_LENGTH(N'[procurement].[Suppliers]', N'SageCode') IS NULL
   ALTER TABLE [procurement].[Suppliers] ADD [SageCode] NVARCHAR(80) NULL;
+IF COL_LENGTH(N'[procurement].[Suppliers]', N'ShortName') IS NULL
+  ALTER TABLE [procurement].[Suppliers] ADD [ShortName] NVARCHAR(80) NULL;
+IF COL_LENGTH(N'[procurement].[Suppliers]', N'ContactName') IS NULL
+  ALTER TABLE [procurement].[Suppliers] ADD [ContactName] NVARCHAR(220) NULL;
+IF COL_LENGTH(N'[procurement].[Suppliers]', N'AddressLine') IS NULL
+  ALTER TABLE [procurement].[Suppliers] ADD [AddressLine] NVARCHAR(500) NULL;
+IF COL_LENGTH(N'[procurement].[Suppliers]', N'City') IS NULL
+  ALTER TABLE [procurement].[Suppliers] ADD [City] NVARCHAR(120) NULL;
+IF COL_LENGTH(N'[procurement].[Suppliers]', N'StateName') IS NULL
+  ALTER TABLE [procurement].[Suppliers] ADD [StateName] NVARCHAR(120) NULL;
+IF COL_LENGTH(N'[procurement].[Suppliers]', N'Country') IS NULL
+  ALTER TABLE [procurement].[Suppliers] ADD [Country] NVARCHAR(80) NULL;
+IF COL_LENGTH(N'[procurement].[Suppliers]', N'PostalCode') IS NULL
+  ALTER TABLE [procurement].[Suppliers] ADD [PostalCode] NVARCHAR(40) NULL;
+IF COL_LENGTH(N'[procurement].[Suppliers]', N'Mobile') IS NULL
+  ALTER TABLE [procurement].[Suppliers] ADD [Mobile] NVARCHAR(80) NULL;
+IF COL_LENGTH(N'[procurement].[Suppliers]', N'Website') IS NULL
+  ALTER TABLE [procurement].[Suppliers] ADD [Website] NVARCHAR(200) NULL;
+IF COL_LENGTH(N'[procurement].[Suppliers]', N'TaxId') IS NULL
+  ALTER TABLE [procurement].[Suppliers] ADD [TaxId] NVARCHAR(80) NULL;
+IF COL_LENGTH(N'[procurement].[Suppliers]', N'RegistrationNo') IS NULL
+  ALTER TABLE [procurement].[Suppliers] ADD [RegistrationNo] NVARCHAR(80) NULL;
 BEGIN TRY
   IF NOT EXISTS (
     SELECT 1 FROM sys.indexes WHERE name = N'UX_ProcSuppliers_Code' AND object_id = OBJECT_ID(N'[procurement].[Suppliers]')
