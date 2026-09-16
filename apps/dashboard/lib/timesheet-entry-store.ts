@@ -37,6 +37,7 @@ import {
 import {
   TIMESHEET_OCTOBER_2026_PERIOD_ID,
   TIMESHEET_SEPTEMBER_2026_PERIOD_ID,
+  clampDateToTimesheetPeriod,
   findOpenTimesheetPeriod,
   repairManualTimesheetPeriods,
 } from '@/lib/timesheet-period-control';
@@ -787,6 +788,8 @@ export const mapTimesheetDateIntoPeriod = (
   if (date > target.endDate) return target.endDate;
   return date;
 };
+
+export { clampDateToTimesheetPeriod };
 
 export const calculateTimesheetPeriodForMonth = (year: number, month: number): TimesheetPeriod => {
   const endDate = new Date(year, month - 1, 15);

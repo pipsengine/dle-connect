@@ -30,10 +30,23 @@ export const isDateInTimesheetPeriod = (date: Date | string, period: Pick<Timesh
   return Boolean(day) && day >= period.startDate && day <= period.endDate;
 };
 
-export const findOpenTimesheetPeriod = (periods: TimesheetPeriodControlRecord[]) =>
-  periods
-    .filter((period) => period.status === 'Open')
-    .sort((a, b) => b.endDate.localeCompare(a.endDate))[0] || null;
+export const findOpenTimesheetPeriod = (periods: TimesheetPeriodControlRecord[]) => {
+  const open = periods.filter((period) => period.status === 'Open');
+  const september = open.find((period) => period.id === TIMESHEET_SEPTEMBER_2026_PERIOD_ID);
+  if (september) return september;
+  return open.sort((a, b) => b.endDate.localeCompare(a.endDate))[0] || null;
+};
+
+export const clampDateToTimesheetPeriod = (
+  date: string,
+  period: Pick<TimesheetPeriodControlRecord, 'startDate' | 'endDate'>,
+) => {
+  const day = String(date || '').slice(0, 10);
+  if (!day) return period.endDate;
+  if (day < period.startDate) return period.startDate;
+  if (day > period.endDate) return period.endDate;
+  return day;
+};
 
 export const repairManualTimesheetPeriods = (
   periods: TimesheetPeriodControlRecord[],

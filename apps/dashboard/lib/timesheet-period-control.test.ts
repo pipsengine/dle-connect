@@ -76,4 +76,24 @@ const humanOctober = repairManualTimesheetPeriods(
 );
 assert.equal(humanOctober.removedOctober, false);
 
+const bothOpen = findOpenTimesheetPeriod([
+  {
+    id: TIMESHEET_OCTOBER_2026_PERIOD_ID,
+    name: 'October 2026 Period',
+    startDate: '2026-09-16',
+    endDate: '2026-10-15',
+    status: 'Open',
+    openedBy: 'Payroll Officer',
+  },
+  {
+    id: TIMESHEET_SEPTEMBER_2026_PERIOD_ID,
+    name: 'September 2026 Period',
+    startDate: '2026-08-16',
+    endDate: '2026-09-15',
+    status: 'Open',
+    openedBy: 'Payroll Officer',
+  },
+]);
+assert.equal(bothOpen?.id, TIMESHEET_SEPTEMBER_2026_PERIOD_ID);
+
 console.log('timesheet-period-control tests passed');

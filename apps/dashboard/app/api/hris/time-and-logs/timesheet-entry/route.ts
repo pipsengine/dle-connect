@@ -6,7 +6,9 @@ import { getUiPermissions, hasPermission, resolveAccessContext } from '@/lib/hri
 import {
   assertTimesheetDateInOpenPeriod,
   calculateTimesheetPeriod,
+  clampDateToTimesheetPeriod,
   parseTimesheetCalendarDate,
+  readOpenTimesheetPeriod,
   advanceTimesheetWorkflow,
   actorMatchesTimesheetSupervisor,
   generateProjectCode,
@@ -907,6 +909,7 @@ const buildPayload = async (
     assignmentRows,
     holidayDates,
     allMobilizations,
+    openPeriod,
   ] = await Promise.all([
     readTimesheetData(),
     readSystemTimesheetDepartments(),
@@ -920,6 +923,7 @@ const buildPayload = async (
     readSupervisorAssignments().catch(() => []),
     readPublicHolidayDates(),
     readTimesheetMobilizations().catch(() => [] as TimesheetMobilization[]),
+    readOpenTimesheetPeriod(),
   ]);
   const { headers, lines: allLines } = timesheetData;
   const employees = payrollEmployeeSource.employees;
@@ -933,7 +937,10 @@ const buildPayload = async (
   if (requestedHeaderId && !requestedHeader) {
     throw new Error('That timesheet draft could not be opened. It may have been submitted or removed. Return to Timesheet Approval and click the draft again.');
   }
-  const targetDate = requestedHeader?.timesheetDate || date || todayDateInputValue();
+  let targetDate = requestedHeader?.timesheetDate || date || todayDateInputValue();
+  if (!requestedHeader) {
+    targetDate = clampDateToTimesheetPeriod(targetDate, openPeriod);
+  }
   const targetShiftLabel = resolveTimesheetShift(requestedHeader?.shiftLabel || requestedShiftLabel).label;
   const dayContext = dayContextFor(targetDate, holidayDates, targetShiftLabel);
   if (supervisorMode && !session) throw new Error('Authenticated supervisor session is required.');
@@ -941,7 +948,7 @@ const buildPayload = async (
   let targetWorkCenter = clean(requestedHeader?.workCenterName || workCenterName);
   let targetLocation = clean(locationName);
   const pinnedWorkCenter = Boolean(targetWorkCenter);
-  const period = await readTimesheetPeriod(targetDate);
+  const period = requestedHeader ? await readTimesheetPeriod(targetDate) : openPeriod;
   const recordSupervisors = Array.from(new Set(timesheetRecords.map((record) => record.supervisor).map(clean).filter(Boolean)));
   const employeesBySupervisor = new Map<string, typeof activeEmployees>();
   for (const employee of activeEmployees) {
@@ -1512,7 +1519,7 @@ const buildPayload = async (
     timesheetDate: targetDate,
     holidayDates,
     period,
-    currentPeriod: calculateTimesheetPeriod(new Date()),
+    currentPeriod: openPeriod,
     header,
     lines,
     idleReasons,

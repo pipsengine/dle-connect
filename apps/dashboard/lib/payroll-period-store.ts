@@ -227,17 +227,9 @@ export const openSuccessorPayrollPeriod = async (closedPeriod: string, actor: st
 };
 
 export const getActivePayrollPeriod = async () => {
-  const pool = await getDleEnterpriseDbPool();
-  if (pool) {
-    await ensurePayrollSqlSchema(pool);
-    const active = await readPayrollSetting(pool, ACTIVE_PERIOD_KEY);
-    if (active) {
-      process.env.HRIS_ACTIVE_PAYROLL_PERIOD = active;
-      return active;
-    }
-  }
-  const state = await readState();
-  return state.activePeriod;
+  const advanced = await advanceClosedActivePayrollPeriod('System');
+  process.env.HRIS_ACTIVE_PAYROLL_PERIOD = advanced.period;
+  return advanced.period;
 };
 
 export const listPayrollPeriods = async () => {
@@ -302,7 +294,13 @@ export const closePayrollPeriodRecord = async (period: string, actor: string, re
   record.closedBy = actor;
   record.reopenReason = reason || null;
   record.updatedAt = stamp;
+  const wasActive = state.activePeriod === period;
   await writeState(state);
+  if (wasActive) {
+    await openSuccessorPayrollPeriod(period, actor).catch((error) => {
+      console.warn('[payroll] successor period after close failed', error);
+    });
+  }
   return record;
 };
 

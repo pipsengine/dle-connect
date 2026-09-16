@@ -518,6 +518,7 @@ export default function TimesheetEntryClient({ variant = 'admin' }: { variant?: 
         setMatrixColumns(data.matrixColumns.filter((column) => !isIdleTimeProjectCode(column.code)));
       }
       if (data.header?.timesheetDate) setSelectedDate(data.header.timesheetDate);
+      else if (data.timesheetDate) setSelectedDate(data.timesheetDate);
       if (data.header?.supervisorId) setSelectedSupervisor(data.header.supervisorId);
       else if (!selectedSupervisor) setSelectedSupervisor(data.filterOptions.supervisors[0] || data.permissions.actor);
       if (headerId && data.header?.shiftLabel) setSelectedShift(resolveTimesheetShift(data.header.shiftLabel).label);
@@ -1503,7 +1504,11 @@ export default function TimesheetEntryClient({ variant = 'admin' }: { variant?: 
   };
   const pctOfCrew = (value: number) => (summary.totalEmployees > 0 ? (value / summary.totalEmployees) * 100 : 0);
   const periodStatus = payload?.period.status ?? 'Open';
-  const displayPeriod = payload?.period.startDate && payload.period.endDate ? payload.period : fallbackPeriodForDate(selectedDate);
+  const displayPeriod = payload?.currentPeriod?.startDate
+    ? payload.currentPeriod
+    : payload?.period.startDate && payload.period.endDate
+      ? payload.period
+      : fallbackPeriodForDate(selectedDate);
   const dayRules = resolveTimesheetHours({ date: selectedDate, holidayDates: payload?.holidayDates ?? [], shiftLabel: selectedShift });
   const grossTimesheetHours = dayRules.grossHours;
   const standardTimesheetHours = dayRules.standardProductiveHours;

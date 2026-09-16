@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import {
   assertTimesheetDateInCurrentPeriod,
   calculateTimesheetPeriod,
+  clampDateToTimesheetPeriod,
   isTimesheetDateInCurrentPeriod,
   mapTimesheetDateIntoPeriod,
   shiftIsoDateByMonths,
@@ -46,5 +47,9 @@ assert.equal(mapTimesheetDateIntoPeriod('2026-10-02', september), '2026-09-02');
 assert.equal(mapTimesheetDateIntoPeriod('2026-10-06', september), '2026-09-06');
 assert.equal(mapTimesheetDateIntoPeriod('2026-09-15', september), '2026-09-15');
 assert.equal(mapTimesheetDateIntoPeriod('2026-08-20', september), '2026-08-20');
+
+assert.equal(clampDateToTimesheetPeriod('2026-09-16', september), '2026-09-15');
+assert.equal(clampDateToTimesheetPeriod('2026-08-10', september), '2026-08-16');
+assert.equal(clampDateToTimesheetPeriod('2026-09-01', september), '2026-09-01');
 
 console.log('timesheet-current-period.test.ts ok');
