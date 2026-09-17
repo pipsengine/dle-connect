@@ -76,12 +76,12 @@ function stepIndexForStatus(status: string | undefined) {
 }
 
 const QUICK_ACTIONS = [
+  { label: 'New Plan', href: '/procurement/plans', icon: ClipboardList },
   { label: 'New Purchase Requisition', href: '/procurement/purchase-requisitions', icon: FileText },
-  { label: 'New RFQ', href: '/procurement/rfqs', icon: FileText },
+  { label: 'New Sourcing Event', href: '/procurement/sourcing', icon: FileText },
   { label: 'New CBE', href: '/procurement/cbe', icon: Scale },
   { label: 'New Purchase Order', href: '/procurement/purchase-orders', icon: ShoppingCart },
-  { label: 'Suppliers', href: '/procurement/suppliers', icon: Users },
-  { label: 'Reports', href: '/procurement/reports', icon: ClipboardList },
+  { label: 'Approvals Queue', href: '/procurement/approvals', icon: CheckCircle2 },
 ];
 
 export function ProcurementDashboard() {
@@ -114,9 +114,9 @@ export function ProcurementDashboard() {
     <div className="space-y-5">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-black text-slate-900">Procurement Dashboard</h1>
+          <h1 className="text-2xl font-black text-slate-900">Procurement Command Centre</h1>
           <p className="mt-1 text-sm text-slate-600">
-            Live pipeline, spend, and approvals across the procurement lifecycle.
+            Live pipeline, spend, approvals and exceptions across the full procurement lifecycle.
           </p>
         </div>
         <button type="button" onClick={() => void load()} className={secondaryBtnClass}>
@@ -136,11 +136,11 @@ export function ProcurementDashboard() {
         <>
           <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-6">
             <KpiCard label="Open PRs" value={data.openPrCount} href="/procurement/purchase-requisitions" icon={<FileText className="h-4 w-4" />} />
-            <KpiCard label="Open RFQs" value={data.openRfqCount} href="/procurement/rfqs" icon={<FileText className="h-4 w-4" />} tint="bg-indigo-50 text-indigo-700" />
+            <KpiCard label="Open RFQs" value={data.openRfqCount} href="/procurement/sourcing" icon={<FileText className="h-4 w-4" />} tint="bg-indigo-50 text-indigo-700" />
             <KpiCard label="Active CBEs" value={data.openCbeCount} href="/procurement/cbe" icon={<Scale className="h-4 w-4" />} tint="bg-violet-50 text-violet-700" />
             <KpiCard label="Open POs" value={data.openPoCount} href="/procurement/purchase-orders" icon={<ShoppingCart className="h-4 w-4" />} tint="bg-emerald-50 text-emerald-700" />
             <KpiCard label="Suppliers" value={data.supplierCount} href="/procurement/suppliers" icon={<Users className="h-4 w-4" />} tint="bg-sky-50 text-sky-700" />
-            <KpiCard label="Pending Approvals" value={data.pendingApprovalCount} href="/procurement/cbe" icon={<CheckCircle2 className="h-4 w-4" />} tint="bg-amber-50 text-amber-700" />
+            <KpiCard label="Pending Approvals" value={data.pendingApprovalCount} href="/procurement/approvals" icon={<CheckCircle2 className="h-4 w-4" />} tint="bg-amber-50 text-amber-700" />
           </div>
 
           <div className="grid gap-4 xl:grid-cols-3">

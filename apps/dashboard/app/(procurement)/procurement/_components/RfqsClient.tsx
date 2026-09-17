@@ -41,10 +41,16 @@ export type RfqRow = {
   issueDate: string | null;
   submissionDeadline: string | null;
   buyerName: string | null;
+  rfxType?: string | null;
+  procurementMethod?: string | null;
+  evaluationMethod?: string | null;
+  technicalWeight?: number | null;
+  commercialWeight?: number | null;
+  instructions?: string | null;
   updatedAt: string;
 };
 
-const RFQ_STATUSES = ['Draft', 'Open', 'Closed', 'Cancelled'] as const;
+const RFQ_STATUSES = ['Draft', 'Open', 'Closed', 'Cancelled', 'Awarded'] as const;
 
 type RfqForm = {
   rfqId?: string;
@@ -54,6 +60,12 @@ type RfqForm = {
   status: string;
   issueDate: string;
   submissionDeadline: string;
+  rfxType: string;
+  procurementMethod: string;
+  evaluationMethod: string;
+  technicalWeight: string;
+  commercialWeight: string;
+  instructions: string;
 };
 
 const emptyForm = (): RfqForm => ({
@@ -63,6 +75,12 @@ const emptyForm = (): RfqForm => ({
   status: 'Draft',
   issueDate: '',
   submissionDeadline: '',
+  rfxType: 'RFQ',
+  procurementMethod: 'Competitive',
+  evaluationMethod: 'Lowest Price',
+  technicalWeight: '40',
+  commercialWeight: '60',
+  instructions: '',
 });
 
 function statusNorm(s: string) {
@@ -168,6 +186,12 @@ export function RfqsClient() {
       status: RFQ_STATUSES.includes(status as (typeof RFQ_STATUSES)[number]) ? status : row.status,
       issueDate: toDateInput(row.issueDate),
       submissionDeadline: toDateInput(row.submissionDeadline),
+      rfxType: row.rfxType || 'RFQ',
+      procurementMethod: row.procurementMethod || 'Competitive',
+      evaluationMethod: row.evaluationMethod || 'Lowest Price',
+      technicalWeight: row.technicalWeight == null ? '40' : String(row.technicalWeight),
+      commercialWeight: row.commercialWeight == null ? '60' : String(row.commercialWeight),
+      instructions: row.instructions || '',
     });
     setError('');
     setModalOpen(true);
@@ -190,6 +214,12 @@ export function RfqsClient() {
           status: form.status === 'Open' ? 'Issued' : form.status,
           issueDate: form.issueDate || null,
           submissionDeadline: form.submissionDeadline || null,
+          rfxType: form.rfxType,
+          procurementMethod: form.procurementMethod,
+          evaluationMethod: form.evaluationMethod,
+          technicalWeight: form.technicalWeight === '' ? null : Number(form.technicalWeight),
+          commercialWeight: form.commercialWeight === '' ? null : Number(form.commercialWeight),
+          instructions: form.instructions.trim() || null,
         },
       });
       setModalOpen(false);
@@ -205,9 +235,9 @@ export function RfqsClient() {
     <div className="space-y-5">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-black text-slate-900">Request for Quotations</h1>
+          <h1 className="text-2xl font-black text-slate-900">Sourcing & RFx</h1>
           <p className="mt-1 text-sm text-slate-600">
-            Issue RFQs linked to purchase requisitions and track supplier response windows.
+            Issue RFIs, RFQs, RFPs and tenders from approved requisitions, with evaluation weights and bidder instructions.
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
@@ -215,7 +245,7 @@ export function RfqsClient() {
             <RefreshCw className="h-4 w-4" /> Refresh
           </button>
           <button type="button" onClick={openCreate} className={primaryBtnClass}>
-            <Plus className="h-4 w-4" /> New RFQ
+            <Plus className="h-4 w-4" /> New RFx
           </button>
         </div>
       </div>
@@ -329,7 +359,7 @@ export function RfqsClient() {
 
       <ProcModal
         open={modalOpen}
-        title={form.rfqId ? `Edit ${form.rfqId}` : 'New RFQ'}
+        title={form.rfqId ? `Edit ${form.rfqId}` : 'New sourcing event'}
         onClose={() => setModalOpen(false)}
         wide
         footer={
@@ -377,6 +407,42 @@ export function RfqsClient() {
           <div>
             <label className={labelClass}>Submission deadline</label>
             <input type="date" className={inputClass} value={form.submissionDeadline} onChange={(e) => setForm((f) => ({ ...f, submissionDeadline: e.target.value }))} />
+          </div>
+          <div>
+            <label className={labelClass}>RFx type</label>
+            <select className={selectClass} value={form.rfxType} onChange={(e) => setForm((f) => ({ ...f, rfxType: e.target.value }))}>
+              {['RFI', 'RFQ', 'RFP', 'Tender'].map((s) => (
+                <option key={s} value={s}>{s}</option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label className={labelClass}>Procurement method</label>
+            <select className={selectClass} value={form.procurementMethod} onChange={(e) => setForm((f) => ({ ...f, procurementMethod: e.target.value }))}>
+              {['Competitive', 'Restricted', 'Single Source', 'Framework Call-off'].map((s) => (
+                <option key={s} value={s}>{s}</option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label className={labelClass}>Evaluation method</label>
+            <select className={selectClass} value={form.evaluationMethod} onChange={(e) => setForm((f) => ({ ...f, evaluationMethod: e.target.value }))}>
+              {['Lowest Price', 'Best Value (Weighted)', 'Pass / Fail Technical then Lowest Price'].map((s) => (
+                <option key={s} value={s}>{s}</option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label className={labelClass}>Technical weight %</label>
+            <input type="number" className={inputClass} value={form.technicalWeight} onChange={(e) => setForm((f) => ({ ...f, technicalWeight: e.target.value }))} />
+          </div>
+          <div>
+            <label className={labelClass}>Commercial weight %</label>
+            <input type="number" className={inputClass} value={form.commercialWeight} onChange={(e) => setForm((f) => ({ ...f, commercialWeight: e.target.value }))} />
+          </div>
+          <div className="md:col-span-2">
+            <label className={labelClass}>Instructions to bidders</label>
+            <textarea className={`${inputClass} min-h-[80px] py-2`} value={form.instructions} onChange={(e) => setForm((f) => ({ ...f, instructions: e.target.value }))} />
           </div>
         </div>
       </ProcModal>

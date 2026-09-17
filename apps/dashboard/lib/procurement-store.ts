@@ -216,6 +216,11 @@ const mapSupplier = (row: Record<string, unknown>) => ({
   taxId: textCol(row, 'TaxId'),
   registrationNo: textCol(row, 'RegistrationNo'),
   notes: row.Notes == null ? null : String(row.Notes),
+  category: textCol(row, 'Category'),
+  prequalificationStatus: textCol(row, 'PrequalificationStatus'),
+  riskRating: textCol(row, 'RiskRating'),
+  performanceScore: row.PerformanceScore == null ? null : toNum(row.PerformanceScore),
+  complianceExpiry: toIso(row.ComplianceExpiry),
   isActive: toBool(row.IsActive),
   isBlacklisted: row.IsBlacklisted == null ? false : toBool(row.IsBlacklisted),
   createdAt: toIso(row.CreatedAt) || nowProcIso(),
@@ -236,6 +241,12 @@ const mapPr = (row: Record<string, unknown>) => ({
   estimatedAmount: row.EstimatedAmount == null ? null : toNum(row.EstimatedAmount),
   requiredDate: toIso(row.RequiredDate),
   currentWith: row.CurrentWith == null ? null : String(row.CurrentWith),
+  requestType: textCol(row, 'RequestType'),
+  costCentre: textCol(row, 'CostCentre'),
+  budgetLine: textCol(row, 'BudgetLine'),
+  businessJustification: row.BusinessJustification == null ? null : String(row.BusinessJustification),
+  deliveryLocation: textCol(row, 'DeliveryLocation'),
+  priority: textCol(row, 'Priority'),
   createdAt: toIso(row.CreatedAt) || nowProcIso(),
   updatedAt: toIso(row.UpdatedAt) || nowProcIso(),
   createdBy: row.CreatedBy == null ? null : String(row.CreatedBy),
@@ -245,10 +256,17 @@ const mapPr = (row: Record<string, unknown>) => ({
 const mapPrLine = (row: Record<string, unknown>) => ({
   lineId: String(row.LineId),
   prId: String(row.PrId),
+  itemCode: textCol(row, 'ItemCode'),
   description: String(row.Description),
+  specification: textCol(row, 'Specification'),
   uom: row.Uom == null ? null : String(row.Uom),
   qty: toNum(row.Qty, 1),
+  quantity: toNum(row.Qty, 1),
   unitEstimate: row.UnitEstimate == null ? null : toNum(row.UnitEstimate),
+  unitPrice: row.UnitEstimate == null ? 0 : toNum(row.UnitEstimate),
+  taxRate: row.TaxRate == null ? 0 : toNum(row.TaxRate),
+  requiredDate: toIso(row.RequiredDate),
+  deliveryLocation: textCol(row, 'DeliveryLocation'),
   sortOrder: toNum(row.SortOrder),
 });
 
@@ -260,6 +278,12 @@ const mapRfq = (row: Record<string, unknown>) => ({
   issueDate: toIso(row.IssueDate),
   submissionDeadline: toIso(row.SubmissionDeadline),
   buyerName: row.BuyerName == null ? null : String(row.BuyerName),
+  rfxType: textCol(row, 'RfxType') || 'RFQ',
+  procurementMethod: textCol(row, 'ProcurementMethod'),
+  evaluationMethod: textCol(row, 'EvaluationMethod'),
+  technicalWeight: row.TechnicalWeight == null ? null : toNum(row.TechnicalWeight),
+  commercialWeight: row.CommercialWeight == null ? null : toNum(row.CommercialWeight),
+  instructions: row.Instructions == null ? null : String(row.Instructions),
   createdAt: toIso(row.CreatedAt) || nowProcIso(),
   updatedAt: toIso(row.UpdatedAt) || nowProcIso(),
   createdBy: row.CreatedBy == null ? null : String(row.CreatedBy),
@@ -286,10 +310,34 @@ const mapPo = (row: Record<string, unknown>) => ({
   amount: row.Amount == null ? null : toNum(row.Amount),
   orderDate: toIso(row.OrderDate),
   expectedDate: toIso(row.ExpectedDate),
+  awardRef: textCol(row, 'AwardRef'),
+  contractId: textCol(row, 'ContractId'),
+  paymentTerms: textCol(row, 'PaymentTerms'),
+  deliveryTerms: textCol(row, 'DeliveryTerms'),
+  deliveryLocation: textCol(row, 'DeliveryLocation'),
+  quoteRef: textCol(row, 'QuoteRef'),
+  project: textCol(row, 'Project'),
+  costCentre: textCol(row, 'CostCentre'),
   createdAt: toIso(row.CreatedAt) || nowProcIso(),
   updatedAt: toIso(row.UpdatedAt) || nowProcIso(),
   createdBy: row.CreatedBy == null ? null : String(row.CreatedBy),
   updatedBy: row.UpdatedBy == null ? null : String(row.UpdatedBy),
+});
+
+const mapPoLine = (row: Record<string, unknown>) => ({
+  lineId: String(row.LineId),
+  poId: String(row.PoId),
+  itemCode: textCol(row, 'ItemCode'),
+  description: String(row.Description),
+  specification: textCol(row, 'Specification'),
+  uom: row.Uom == null ? null : String(row.Uom),
+  qty: toNum(row.Qty, 1),
+  quantity: toNum(row.Qty, 1),
+  unitPrice: toNum(row.UnitPrice),
+  taxRate: toNum(row.TaxRate),
+  requiredDate: toIso(row.RequiredDate),
+  deliveryLocation: textCol(row, 'DeliveryLocation'),
+  sortOrder: toNum(row.SortOrder),
 });
 
 const mapContract = (row: Record<string, unknown>) => ({
@@ -303,6 +351,11 @@ const mapContract = (row: Record<string, unknown>) => ({
   endDate: toIso(row.EndDate),
   value: row.Value == null ? null : toNum(row.Value),
   notes: row.Notes == null ? null : String(row.Notes),
+  contractType: textCol(row, 'ContractType'),
+  currency: textCol(row, 'Currency') || 'NGN',
+  paymentTerms: textCol(row, 'PaymentTerms'),
+  performanceSecurity: textCol(row, 'PerformanceSecurity'),
+  warranty: textCol(row, 'Warranty'),
   createdAt: toIso(row.CreatedAt) || nowProcIso(),
   updatedAt: toIso(row.UpdatedAt) || nowProcIso(),
   createdBy: row.CreatedBy == null ? null : String(row.CreatedBy),
@@ -453,6 +506,11 @@ export const upsertSupplier = async (input: Record<string, unknown>, actor = 'sy
     .input('TaxId', sql.NVarChar(80), cleanNullable(input.taxId, 80))
     .input('RegistrationNo', sql.NVarChar(80), cleanNullable(input.registrationNo, 80))
     .input('Notes', sql.NVarChar(sql.MAX), cleanNullable(input.notes, 8000))
+    .input('Category', sql.NVarChar(120), cleanNullable(input.category, 120))
+    .input('PrequalificationStatus', sql.NVarChar(80), cleanNullable(input.prequalificationStatus, 80))
+    .input('RiskRating', sql.NVarChar(40), cleanNullable(input.riskRating, 40))
+    .input('PerformanceScore', sql.Decimal(9, 2), input.performanceScore == null || input.performanceScore === '' ? null : toNum(input.performanceScore))
+    .input('ComplianceExpiry', sql.Date, toDateOnly(input.complianceExpiry))
     .input('IsActive', sql.Bit, input.isActive == null ? 1 : toBool(input.isActive) ? 1 : 0)
     .input('IsBlacklisted', sql.Bit, input.isBlacklisted == null ? 0 : toBool(input.isBlacklisted) ? 1 : 0)
     .input('CreatedBy', sql.NVarChar(120), clean(actor, 120))
@@ -469,6 +527,8 @@ export const upsertSupplier = async (input: Record<string, unknown>, actor = 'sy
           [Outstanding]=@Outstanding, [Email]=@Email, [Phone]=@Phone, [Mobile]=@Mobile, [Website]=@Website,
           [TaxId]=@TaxId, [RegistrationNo]=@RegistrationNo, [Notes]=@Notes, [IsActive]=@IsActive,
           [IsBlacklisted]=@IsBlacklisted,
+          [Category]=@Category, [PrequalificationStatus]=@PrequalificationStatus, [RiskRating]=@RiskRating,
+          [PerformanceScore]=@PerformanceScore, [ComplianceExpiry]=@ComplianceExpiry,
           [UpdatedAt]=SYSUTCDATETIME(), [UpdatedBy]=@UpdatedBy
         WHERE [SupplierId]=@SupplierId
       ELSE
@@ -476,12 +536,14 @@ export const upsertSupplier = async (input: Record<string, unknown>, actor = 'sy
           [SupplierId], [Name], [Code], [SageCode], [Source], [ShortName], [ContactName], [IsApproved], [Currency],
           [PaymentTerms], [DeliveryPeriod], [DeliveryLocation], [AddressLine], [City], [StateName], [Country],
           [PostalCode], [Outstanding], [Email], [Phone], [Mobile], [Website], [TaxId], [RegistrationNo], [Notes],
-          [IsActive], [IsBlacklisted], [CreatedBy], [UpdatedBy]
+          [IsActive], [IsBlacklisted], [Category], [PrequalificationStatus], [RiskRating], [PerformanceScore],
+          [ComplianceExpiry], [CreatedBy], [UpdatedBy]
         ) VALUES (
           @SupplierId, @Name, @Code, @SageCode, @Source, @ShortName, @ContactName, @IsApproved, @Currency,
           @PaymentTerms, @DeliveryPeriod, @DeliveryLocation, @AddressLine, @City, @StateName, @Country,
           @PostalCode, @Outstanding, @Email, @Phone, @Mobile, @Website, @TaxId, @RegistrationNo, @Notes,
-          @IsActive, @IsBlacklisted, @CreatedBy, @UpdatedBy
+          @IsActive, @IsBlacklisted, @Category, @PrequalificationStatus, @RiskRating, @PerformanceScore,
+          @ComplianceExpiry, @CreatedBy, @UpdatedBy
         )
     `);
   return (await listSuppliers()).find((s) => s.supplierId === supplierId) || null;
@@ -606,6 +668,12 @@ export const upsertPurchaseRequisition = async (input: Record<string, unknown>, 
     .input('EstimatedAmount', sql.Decimal(19, 2), input.estimatedAmount == null ? null : toNum(input.estimatedAmount))
     .input('RequiredDate', sql.Date, toDateOnly(input.requiredDate))
     .input('CurrentWith', sql.NVarChar(120), cleanNullable(input.currentWith, 120))
+    .input('RequestType', sql.NVarChar(40), cleanNullable(input.requestType, 40))
+    .input('CostCentre', sql.NVarChar(100), cleanNullable(input.costCentre, 100))
+    .input('BudgetLine', sql.NVarChar(120), cleanNullable(input.budgetLine, 120))
+    .input('BusinessJustification', sql.NVarChar(sql.MAX), cleanNullable(input.businessJustification || input.description, 8000))
+    .input('DeliveryLocation', sql.NVarChar(200), cleanNullable(input.deliveryLocation, 200))
+    .input('Priority', sql.NVarChar(20), cleanNullable(input.priority, 20) || 'Medium')
     .input('CreatedBy', sql.NVarChar(120), clean(actor, 120))
     .input('UpdatedBy', sql.NVarChar(120), clean(actor, 120))
     .query(`
@@ -614,15 +682,19 @@ export const upsertPurchaseRequisition = async (input: Record<string, unknown>, 
           [Title]=@Title, [Description]=@Description, [Department]=@Department, [Project]=@Project,
           [RequesterName]=@RequesterName, [Status]=@Status, [Currency]=@Currency,
           [EstimatedAmount]=@EstimatedAmount, [RequiredDate]=@RequiredDate, [CurrentWith]=@CurrentWith,
+          [RequestType]=@RequestType, [CostCentre]=@CostCentre, [BudgetLine]=@BudgetLine,
+          [BusinessJustification]=@BusinessJustification, [DeliveryLocation]=@DeliveryLocation, [Priority]=@Priority,
           [UpdatedAt]=SYSUTCDATETIME(), [UpdatedBy]=@UpdatedBy
         WHERE [PrId]=@PrId
       ELSE
         INSERT INTO [procurement].[PurchaseRequisitions] (
           [PrId], [Title], [Description], [Department], [Project], [RequesterName], [Status],
-          [Currency], [EstimatedAmount], [RequiredDate], [CurrentWith], [CreatedBy], [UpdatedBy]
+          [Currency], [EstimatedAmount], [RequiredDate], [CurrentWith], [RequestType], [CostCentre],
+          [BudgetLine], [BusinessJustification], [DeliveryLocation], [Priority], [CreatedBy], [UpdatedBy]
         ) VALUES (
           @PrId, @Title, @Description, @Department, @Project, @RequesterName, @Status,
-          @Currency, @EstimatedAmount, @RequiredDate, @CurrentWith, @CreatedBy, @UpdatedBy
+          @Currency, @EstimatedAmount, @RequiredDate, @CurrentWith, @RequestType, @CostCentre,
+          @BudgetLine, @BusinessJustification, @DeliveryLocation, @Priority, @CreatedBy, @UpdatedBy
         )
     `);
 
@@ -637,15 +709,20 @@ export const upsertPurchaseRequisition = async (input: Record<string, unknown>, 
         .input('LineId', sql.NVarChar(40), clean(raw.lineId, 40) || newId('PRL'))
         .input('PrId', sql.NVarChar(40), prId)
         .input('Description', sql.NVarChar(500), clean(raw.description, 500))
+        .input('ItemCode', sql.NVarChar(80), cleanNullable(raw.itemCode, 80))
+        .input('Specification', sql.NVarChar(500), cleanNullable(raw.specification, 500))
         .input('Uom', sql.NVarChar(40), cleanNullable(raw.uom, 40))
-        .input('Qty', sql.Decimal(19, 4), toNum(raw.qty, 1))
-        .input('UnitEstimate', sql.Decimal(19, 2), raw.unitEstimate == null ? null : toNum(raw.unitEstimate))
+        .input('Qty', sql.Decimal(19, 4), toNum(raw.qty ?? raw.quantity, 1))
+        .input('UnitEstimate', sql.Decimal(19, 2), raw.unitEstimate == null && raw.unitPrice == null ? null : toNum(raw.unitEstimate ?? raw.unitPrice))
+        .input('TaxRate', sql.Decimal(9, 4), toNum(raw.taxRate))
+        .input('RequiredDate', sql.Date, toDateOnly(raw.requiredDate))
+        .input('DeliveryLocation', sql.NVarChar(200), cleanNullable(raw.deliveryLocation, 200))
         .input('SortOrder', sql.Int, raw.sortOrder == null ? sort : toNum(raw.sortOrder))
         .query(`
           INSERT INTO [procurement].[PurchaseRequisitionLines]
-            ([LineId], [PrId], [Description], [Uom], [Qty], [UnitEstimate], [SortOrder])
+            ([LineId], [PrId], [Description], [ItemCode], [Specification], [Uom], [Qty], [UnitEstimate], [TaxRate], [RequiredDate], [DeliveryLocation], [SortOrder])
           VALUES
-            (@LineId, @PrId, @Description, @Uom, @Qty, @UnitEstimate, @SortOrder)
+            (@LineId, @PrId, @Description, @ItemCode, @Specification, @Uom, @Qty, @UnitEstimate, @TaxRate, @RequiredDate, @DeliveryLocation, @SortOrder)
         `);
       sort += 1;
     }
@@ -685,6 +762,12 @@ export const upsertRfq = async (input: Record<string, unknown>, actor = 'system'
     .input('IssueDate', sql.Date, toDateOnly(input.issueDate))
     .input('SubmissionDeadline', sql.Date, toDateOnly(input.submissionDeadline))
     .input('BuyerName', sql.NVarChar(220), cleanNullable(input.buyerName, 220) || actor)
+    .input('RfxType', sql.NVarChar(20), cleanNullable(input.rfxType, 20) || 'RFQ')
+    .input('ProcurementMethod', sql.NVarChar(80), cleanNullable(input.procurementMethod, 80))
+    .input('EvaluationMethod', sql.NVarChar(120), cleanNullable(input.evaluationMethod, 120))
+    .input('TechnicalWeight', sql.Decimal(9, 4), input.technicalWeight == null || input.technicalWeight === '' ? null : toNum(input.technicalWeight))
+    .input('CommercialWeight', sql.Decimal(9, 4), input.commercialWeight == null || input.commercialWeight === '' ? null : toNum(input.commercialWeight))
+    .input('Instructions', sql.NVarChar(sql.MAX), cleanNullable(input.instructions, 8000))
     .input('CreatedBy', sql.NVarChar(120), clean(actor, 120))
     .input('UpdatedBy', sql.NVarChar(120), clean(actor, 120))
     .query(`
@@ -692,13 +775,19 @@ export const upsertRfq = async (input: Record<string, unknown>, actor = 'system'
         UPDATE [procurement].[Rfqs] SET
           [PrId]=@PrId, [Title]=@Title, [Status]=@Status, [IssueDate]=@IssueDate,
           [SubmissionDeadline]=@SubmissionDeadline, [BuyerName]=@BuyerName,
+          [RfxType]=@RfxType, [ProcurementMethod]=@ProcurementMethod, [EvaluationMethod]=@EvaluationMethod,
+          [TechnicalWeight]=@TechnicalWeight, [CommercialWeight]=@CommercialWeight, [Instructions]=@Instructions,
           [UpdatedAt]=SYSUTCDATETIME(), [UpdatedBy]=@UpdatedBy
         WHERE [RfqId]=@RfqId
       ELSE
         INSERT INTO [procurement].[Rfqs] (
-          [RfqId], [PrId], [Title], [Status], [IssueDate], [SubmissionDeadline], [BuyerName], [CreatedBy], [UpdatedBy]
+          [RfqId], [PrId], [Title], [Status], [IssueDate], [SubmissionDeadline], [BuyerName],
+          [RfxType], [ProcurementMethod], [EvaluationMethod], [TechnicalWeight], [CommercialWeight], [Instructions],
+          [CreatedBy], [UpdatedBy]
         ) VALUES (
-          @RfqId, @PrId, @Title, @Status, @IssueDate, @SubmissionDeadline, @BuyerName, @CreatedBy, @UpdatedBy
+          @RfqId, @PrId, @Title, @Status, @IssueDate, @SubmissionDeadline, @BuyerName,
+          @RfxType, @ProcurementMethod, @EvaluationMethod, @TechnicalWeight, @CommercialWeight, @Instructions,
+          @CreatedBy, @UpdatedBy
         )
     `);
 
@@ -728,11 +817,21 @@ export const upsertRfq = async (input: Record<string, unknown>, actor = 'system'
 
 export const listPurchaseOrders = async () => {
   const pool = await ensureProcurementDb();
-  const result = await pool.request().query(`
-    SELECT * FROM [procurement].[PurchaseOrders]
-    ORDER BY [UpdatedAt] DESC
-  `);
-  return result.recordset.map((row) => mapPo(row as Record<string, unknown>));
+  const [headers, lines] = await Promise.all([
+    pool.request().query(`SELECT * FROM [procurement].[PurchaseOrders] ORDER BY [UpdatedAt] DESC`),
+    pool.request().query(`SELECT * FROM [procurement].[PurchaseOrderLines] ORDER BY [SortOrder], [LineId]`).catch(() => ({ recordset: [] as Record<string, unknown>[] })),
+  ]);
+  const linesByPo = new Map<string, ReturnType<typeof mapPoLine>[]>();
+  for (const row of lines.recordset) {
+    const mapped = mapPoLine(row as Record<string, unknown>);
+    const list = linesByPo.get(mapped.poId) || [];
+    list.push(mapped);
+    linesByPo.set(mapped.poId, list);
+  }
+  return headers.recordset.map((row) => {
+    const po = mapPo(row as Record<string, unknown>);
+    return { ...po, lines: linesByPo.get(po.poId) || [] };
+  });
 };
 
 export const upsertPurchaseOrder = async (input: Record<string, unknown>, actor = 'system') => {
@@ -751,6 +850,14 @@ export const upsertPurchaseOrder = async (input: Record<string, unknown>, actor 
     .input('Amount', sql.Decimal(19, 2), input.amount == null ? null : toNum(input.amount))
     .input('OrderDate', sql.Date, toDateOnly(input.orderDate))
     .input('ExpectedDate', sql.Date, toDateOnly(input.expectedDate))
+    .input('AwardRef', sql.NVarChar(80), cleanNullable(input.awardRef, 80))
+    .input('ContractId', sql.NVarChar(40), cleanNullable(input.contractId, 40))
+    .input('PaymentTerms', sql.NVarChar(200), cleanNullable(input.paymentTerms, 200))
+    .input('DeliveryTerms', sql.NVarChar(200), cleanNullable(input.deliveryTerms, 200))
+    .input('DeliveryLocation', sql.NVarChar(200), cleanNullable(input.deliveryLocation, 200))
+    .input('QuoteRef', sql.NVarChar(120), cleanNullable(input.quoteRef, 120))
+    .input('Project', sql.NVarChar(180), cleanNullable(input.project, 180))
+    .input('CostCentre', sql.NVarChar(100), cleanNullable(input.costCentre, 100))
     .input('CreatedBy', sql.NVarChar(120), clean(actor, 120))
     .input('UpdatedBy', sql.NVarChar(120), clean(actor, 120))
     .query(`
@@ -758,17 +865,53 @@ export const upsertPurchaseOrder = async (input: Record<string, unknown>, actor 
         UPDATE [procurement].[PurchaseOrders] SET
           [Title]=@Title, [SupplierId]=@SupplierId, [SupplierName]=@SupplierName, [CbeId]=@CbeId,
           [Status]=@Status, [Currency]=@Currency, [Amount]=@Amount, [OrderDate]=@OrderDate,
-          [ExpectedDate]=@ExpectedDate, [UpdatedAt]=SYSUTCDATETIME(), [UpdatedBy]=@UpdatedBy
+          [ExpectedDate]=@ExpectedDate, [AwardRef]=@AwardRef, [ContractId]=@ContractId,
+          [PaymentTerms]=@PaymentTerms, [DeliveryTerms]=@DeliveryTerms, [DeliveryLocation]=@DeliveryLocation,
+          [QuoteRef]=@QuoteRef, [Project]=@Project, [CostCentre]=@CostCentre,
+          [UpdatedAt]=SYSUTCDATETIME(), [UpdatedBy]=@UpdatedBy
         WHERE [PoId]=@PoId
       ELSE
         INSERT INTO [procurement].[PurchaseOrders] (
           [PoId], [Title], [SupplierId], [SupplierName], [CbeId], [Status], [Currency],
-          [Amount], [OrderDate], [ExpectedDate], [CreatedBy], [UpdatedBy]
+          [Amount], [OrderDate], [ExpectedDate], [AwardRef], [ContractId], [PaymentTerms], [DeliveryTerms],
+          [DeliveryLocation], [QuoteRef], [Project], [CostCentre], [CreatedBy], [UpdatedBy]
         ) VALUES (
           @PoId, @Title, @SupplierId, @SupplierName, @CbeId, @Status, @Currency,
-          @Amount, @OrderDate, @ExpectedDate, @CreatedBy, @UpdatedBy
+          @Amount, @OrderDate, @ExpectedDate, @AwardRef, @ContractId, @PaymentTerms, @DeliveryTerms,
+          @DeliveryLocation, @QuoteRef, @Project, @CostCentre, @CreatedBy, @UpdatedBy
         )
     `);
+
+  if (Array.isArray(input.lines)) {
+    await pool.request().input('PoId', sql.NVarChar(40), poId).query(`
+      DELETE FROM [procurement].[PurchaseOrderLines] WHERE [PoId]=@PoId
+    `);
+    let sort = 0;
+    for (const raw of input.lines as Record<string, unknown>[]) {
+      await pool
+        .request()
+        .input('LineId', sql.NVarChar(40), clean(raw.lineId, 40) || newId('POL'))
+        .input('PoId', sql.NVarChar(40), poId)
+        .input('ItemCode', sql.NVarChar(80), cleanNullable(raw.itemCode, 80))
+        .input('Description', sql.NVarChar(500), clean(raw.description, 500))
+        .input('Specification', sql.NVarChar(500), cleanNullable(raw.specification, 500))
+        .input('Uom', sql.NVarChar(40), cleanNullable(raw.uom, 40))
+        .input('Qty', sql.Decimal(19, 4), toNum(raw.qty ?? raw.quantity, 1))
+        .input('UnitPrice', sql.Decimal(19, 4), toNum(raw.unitPrice ?? raw.unitEstimate))
+        .input('TaxRate', sql.Decimal(9, 4), toNum(raw.taxRate))
+        .input('RequiredDate', sql.Date, toDateOnly(raw.requiredDate))
+        .input('DeliveryLocation', sql.NVarChar(200), cleanNullable(raw.deliveryLocation, 200))
+        .input('SortOrder', sql.Int, raw.sortOrder == null ? sort : toNum(raw.sortOrder))
+        .query(`
+          INSERT INTO [procurement].[PurchaseOrderLines]
+            ([LineId], [PoId], [ItemCode], [Description], [Specification], [Uom], [Qty], [UnitPrice], [TaxRate], [RequiredDate], [DeliveryLocation], [SortOrder])
+          VALUES
+            (@LineId, @PoId, @ItemCode, @Description, @Specification, @Uom, @Qty, @UnitPrice, @TaxRate, @RequiredDate, @DeliveryLocation, @SortOrder)
+        `);
+      sort += 1;
+    }
+  }
+
   return (await listPurchaseOrders()).find((p) => p.poId === poId) || null;
 };
 
@@ -797,6 +940,11 @@ export const upsertContract = async (input: Record<string, unknown>, actor = 'sy
     .input('EndDate', sql.Date, toDateOnly(input.endDate))
     .input('Value', sql.Decimal(19, 2), input.value == null ? null : toNum(input.value))
     .input('Notes', sql.NVarChar(sql.MAX), cleanNullable(input.notes, 8000))
+    .input('ContractType', sql.NVarChar(80), cleanNullable(input.contractType, 80))
+    .input('Currency', sql.NVarChar(10), cleanNullable(input.currency, 10) || 'NGN')
+    .input('PaymentTerms', sql.NVarChar(200), cleanNullable(input.paymentTerms, 200))
+    .input('PerformanceSecurity', sql.NVarChar(200), cleanNullable(input.performanceSecurity, 200))
+    .input('Warranty', sql.NVarChar(200), cleanNullable(input.warranty, 200))
     .input('CreatedBy', sql.NVarChar(120), clean(actor, 120))
     .input('UpdatedBy', sql.NVarChar(120), clean(actor, 120))
     .query(`
@@ -804,15 +952,19 @@ export const upsertContract = async (input: Record<string, unknown>, actor = 'sy
         UPDATE [procurement].[Contracts] SET
           [Title]=@Title, [SupplierId]=@SupplierId, [SupplierName]=@SupplierName, [PoId]=@PoId,
           [Status]=@Status, [StartDate]=@StartDate, [EndDate]=@EndDate, [Value]=@Value, [Notes]=@Notes,
+          [ContractType]=@ContractType, [Currency]=@Currency, [PaymentTerms]=@PaymentTerms,
+          [PerformanceSecurity]=@PerformanceSecurity, [Warranty]=@Warranty,
           [UpdatedAt]=SYSUTCDATETIME(), [UpdatedBy]=@UpdatedBy
         WHERE [ContractId]=@ContractId
       ELSE
         INSERT INTO [procurement].[Contracts] (
           [ContractId], [Title], [SupplierId], [SupplierName], [PoId], [Status], [StartDate],
-          [EndDate], [Value], [Notes], [CreatedBy], [UpdatedBy]
+          [EndDate], [Value], [Notes], [ContractType], [Currency], [PaymentTerms], [PerformanceSecurity],
+          [Warranty], [CreatedBy], [UpdatedBy]
         ) VALUES (
           @ContractId, @Title, @SupplierId, @SupplierName, @PoId, @Status, @StartDate,
-          @EndDate, @Value, @Notes, @CreatedBy, @UpdatedBy
+          @EndDate, @Value, @Notes, @ContractType, @Currency, @PaymentTerms, @PerformanceSecurity,
+          @Warranty, @CreatedBy, @UpdatedBy
         )
     `);
   return (await listContracts()).find((c) => c.contractId === contractId) || null;
@@ -1887,6 +2039,298 @@ export const buildProcurementReports = async () => {
       count: toNum(row.Cnt),
     })),
   };
+};
+
+const mapDomainLine = (row: Record<string, unknown>) => ({
+  lineId: String(row.LineId),
+  recordId: String(row.RecordId),
+  itemCode: textCol(row, 'ItemCode'),
+  description: String(row.Description || ''),
+  specification: textCol(row, 'Specification'),
+  uom: row.Uom == null ? 'EA' : String(row.Uom),
+  qty: toNum(row.Qty, 1),
+  quantity: toNum(row.Qty, 1),
+  unitPrice: toNum(row.UnitPrice),
+  taxRate: toNum(row.TaxRate),
+  requiredDate: toIso(row.RequiredDate),
+  deliveryLocation: textCol(row, 'DeliveryLocation'),
+  sortOrder: toNum(row.SortOrder),
+});
+
+const mapDomainRecord = (row: Record<string, unknown>, lines: ReturnType<typeof mapDomainLine>[] = []) => {
+  const payload = parseJson<Record<string, unknown>>(row.PayloadJson, {});
+  return {
+    id: String(row.RecordId),
+    recordId: String(row.RecordId),
+    domain: String(row.Domain),
+    reference: String(row.Reference || row.RecordId),
+    title: String(row.Title || ''),
+    status: String(row.Status || 'Draft'),
+    priority: textCol(row, 'Priority') || 'Medium',
+    project: textCol(row, 'Project'),
+    costCentre: textCol(row, 'CostCentre'),
+    ownerName: textCol(row, 'OwnerName'),
+    owner: textCol(row, 'OwnerName'),
+    currency: textCol(row, 'Currency') || 'NGN',
+    amount: row.Amount == null ? 0 : toNum(row.Amount),
+    dueDate: toIso(row.DueDate),
+    createdAt: toIso(row.CreatedAt) || nowProcIso(),
+    updatedAt: toIso(row.UpdatedAt) || nowProcIso(),
+    createdBy: textCol(row, 'CreatedBy'),
+    updatedBy: textCol(row, 'UpdatedBy'),
+    lines,
+    ...payload,
+    transactionType: payload.transactionType == null ? null : String(payload.transactionType),
+  };
+};
+
+export const listDomainRecords = async (domain: string) => {
+  const pool = await ensureProcurementDb();
+  const [headers, lines] = await Promise.all([
+    pool
+      .request()
+      .input('Domain', sql.NVarChar(60), clean(domain, 60))
+      .query(`SELECT * FROM [procurement].[DomainRecords] WHERE [Domain]=@Domain ORDER BY [UpdatedAt] DESC`),
+    pool.request().query(`SELECT * FROM [procurement].[DomainLines] ORDER BY [SortOrder], [LineId]`).catch(() => ({
+      recordset: [] as Record<string, unknown>[],
+    })),
+  ]);
+  const linesByRecord = new Map<string, ReturnType<typeof mapDomainLine>[]>();
+  for (const row of lines.recordset) {
+    const mapped = mapDomainLine(row as Record<string, unknown>);
+    const list = linesByRecord.get(mapped.recordId) || [];
+    list.push(mapped);
+    linesByRecord.set(mapped.recordId, list);
+  }
+  return headers.recordset.map((row) =>
+    mapDomainRecord(row as Record<string, unknown>, linesByRecord.get(String((row as Record<string, unknown>).RecordId)) || []),
+  );
+};
+
+export const upsertDomainRecord = async (domain: string, input: Record<string, unknown>, actor = 'system') => {
+  const { domainById, linesTotal } = await import('@/lib/procurement/catalog');
+  const spec = domainById(domain);
+  if (!spec) throw new Error(`Unknown procurement domain: ${domain}`);
+  const pool = await ensureProcurementDb();
+  const recordId =
+    clean(input.recordId || input.id, 40) ||
+    (await nextSequentialId(pool, 'DomainRecords', 'RecordId', yearPrefix(spec.prefix)));
+  const payload: Record<string, unknown> = { ...input };
+  for (const key of [
+    'id',
+    'recordId',
+    'domain',
+    'reference',
+    'title',
+    'status',
+    'priority',
+    'project',
+    'costCentre',
+    'ownerName',
+    'owner',
+    'currency',
+    'amount',
+    'dueDate',
+    'lines',
+    'createdAt',
+    'updatedAt',
+    'createdBy',
+    'updatedBy',
+    'action',
+    'payload',
+  ]) {
+    delete payload[key];
+  }
+  const lines = Array.isArray(input.lines) ? (input.lines as Record<string, unknown>[]) : [];
+  const amount =
+    input.amount == null || input.amount === ''
+      ? lines.length
+        ? linesTotal(
+            lines.map((line) => ({
+              description: String(line.description || ''),
+              quantity: toNum(line.qty ?? line.quantity, 1),
+              uom: String(line.uom || 'EA'),
+              unitPrice: toNum(line.unitPrice ?? line.unitEstimate),
+              taxRate: toNum(line.taxRate),
+            })),
+          )
+        : 0
+      : toNum(input.amount);
+
+  await pool
+    .request()
+    .input('RecordId', sql.NVarChar(40), recordId)
+    .input('Domain', sql.NVarChar(60), spec.id)
+    .input('Reference', sql.NVarChar(80), clean(input.reference, 80) || recordId)
+    .input('Title', sql.NVarChar(300), clean(input.title, 300) || `${spec.title} record`)
+    .input('Status', sql.NVarChar(40), clean(input.status, 40) || spec.statuses?.[0] || 'Draft')
+    .input('Priority', sql.NVarChar(20), cleanNullable(input.priority, 20) || 'Medium')
+    .input('Project', sql.NVarChar(180), cleanNullable(input.project, 180))
+    .input('CostCentre', sql.NVarChar(100), cleanNullable(input.costCentre, 100))
+    .input('OwnerName', sql.NVarChar(220), cleanNullable(input.ownerName || input.owner, 220) || actor)
+    .input('Currency', sql.NVarChar(10), cleanNullable(input.currency, 10) || 'NGN')
+    .input('Amount', sql.Decimal(19, 2), amount)
+    .input('DueDate', sql.DateTime2, toDateOnly(input.dueDate))
+    .input('PayloadJson', sql.NVarChar(sql.MAX), JSON.stringify(payload))
+    .input('CreatedBy', sql.NVarChar(120), clean(actor, 120))
+    .input('UpdatedBy', sql.NVarChar(120), clean(actor, 120))
+    .query(`
+      IF EXISTS (SELECT 1 FROM [procurement].[DomainRecords] WHERE [RecordId]=@RecordId)
+        UPDATE [procurement].[DomainRecords] SET
+          [Title]=@Title, [Status]=@Status, [Priority]=@Priority, [Project]=@Project, [CostCentre]=@CostCentre,
+          [OwnerName]=@OwnerName, [Currency]=@Currency, [Amount]=@Amount, [DueDate]=@DueDate, [PayloadJson]=@PayloadJson,
+          [UpdatedAt]=SYSUTCDATETIME(), [UpdatedBy]=@UpdatedBy
+        WHERE [RecordId]=@RecordId
+      ELSE
+        INSERT INTO [procurement].[DomainRecords] (
+          [RecordId], [Domain], [Reference], [Title], [Status], [Priority], [Project], [CostCentre],
+          [OwnerName], [Currency], [Amount], [DueDate], [PayloadJson], [CreatedBy], [UpdatedBy]
+        ) VALUES (
+          @RecordId, @Domain, @Reference, @Title, @Status, @Priority, @Project, @CostCentre,
+          @OwnerName, @Currency, @Amount, @DueDate, @PayloadJson, @CreatedBy, @UpdatedBy
+        )
+    `);
+
+  if (Array.isArray(input.lines)) {
+    await pool.request().input('RecordId', sql.NVarChar(40), recordId).query(`
+      DELETE FROM [procurement].[DomainLines] WHERE [RecordId]=@RecordId
+    `);
+    let sort = 0;
+    for (const raw of lines) {
+      await pool
+        .request()
+        .input('LineId', sql.NVarChar(40), clean(raw.lineId || raw.id, 40) || newId('DLN'))
+        .input('RecordId', sql.NVarChar(40), recordId)
+        .input('ItemCode', sql.NVarChar(80), cleanNullable(raw.itemCode, 80))
+        .input('Description', sql.NVarChar(500), clean(raw.description, 500) || 'Line')
+        .input('Specification', sql.NVarChar(500), cleanNullable(raw.specification, 500))
+        .input('Uom', sql.NVarChar(40), cleanNullable(raw.uom, 40) || 'EA')
+        .input('Qty', sql.Decimal(19, 4), toNum(raw.qty ?? raw.quantity, 1))
+        .input('UnitPrice', sql.Decimal(19, 4), toNum(raw.unitPrice ?? raw.unitEstimate))
+        .input('TaxRate', sql.Decimal(9, 4), toNum(raw.taxRate))
+        .input('RequiredDate', sql.Date, toDateOnly(raw.requiredDate))
+        .input('DeliveryLocation', sql.NVarChar(200), cleanNullable(raw.deliveryLocation, 200))
+        .input('SortOrder', sql.Int, sort)
+        .query(`
+          INSERT INTO [procurement].[DomainLines]
+            ([LineId], [RecordId], [ItemCode], [Description], [Specification], [Uom], [Qty], [UnitPrice], [TaxRate], [RequiredDate], [DeliveryLocation], [SortOrder])
+          VALUES
+            (@LineId, @RecordId, @ItemCode, @Description, @Specification, @Uom, @Qty, @UnitPrice, @TaxRate, @RequiredDate, @DeliveryLocation, @SortOrder)
+        `);
+      sort += 1;
+    }
+  }
+
+  return (await listDomainRecords(domain)).find((r) => r.recordId === recordId) || null;
+};
+
+export const listApprovalsQueue = async () => {
+  const [prs, rfqs, pos, contracts, cbes, domainApprovals] = await Promise.all([
+    listPurchaseRequisitions(),
+    listRfqs(),
+    listPurchaseOrders(),
+    listContracts(),
+    listCbes(),
+    listDomainRecords('approvals'),
+  ]);
+  const pending = (status: string) => {
+    const s = status.toLowerCase();
+    return s.includes('pending') || s.includes('submitted') || s.includes('under') || s.includes('review');
+  };
+  const fromPrs = prs
+    .filter((r) => pending(r.status))
+    .map((r) => ({
+      id: r.prId,
+      reference: r.prId,
+      title: r.title,
+      status: r.status,
+      transactionType: 'PR',
+      owner: r.currentWith || r.requesterName,
+      amount: r.estimatedAmount || 0,
+      currency: r.currency || 'NGN',
+      project: r.project,
+      updatedAt: r.updatedAt,
+      href: '/procurement/purchase-requisitions',
+    }));
+  const fromRfqs = rfqs
+    .filter((r) => pending(r.status) || r.status.toLowerCase() === 'draft')
+    .map((r) => ({
+      id: r.rfqId,
+      reference: r.rfqId,
+      title: r.title,
+      status: r.status,
+      transactionType: 'Sourcing',
+      owner: r.buyerName,
+      amount: 0,
+      currency: 'NGN',
+      project: r.prId,
+      updatedAt: r.updatedAt,
+      href: '/procurement/sourcing',
+    }));
+  const fromCbes = cbes
+    .filter((r) => {
+      const s = String(r.status || '').toLowerCase();
+      return s.includes('recommendation') || s.includes('approval') || s.includes('pending');
+    })
+    .map((r) => ({
+      id: r.cbeId,
+      reference: r.cbeId,
+      title: r.title,
+      status: r.status,
+      transactionType: 'Award',
+      owner: r.buyerName,
+      amount: 0,
+      currency: r.currency || 'NGN',
+      project: r.project,
+      updatedAt: r.updatedAt,
+      href: `/procurement/cbe/${r.cbeId}`,
+    }));
+  const fromPos = pos
+    .filter((r) => pending(r.status))
+    .map((r) => ({
+      id: r.poId,
+      reference: r.poId,
+      title: r.title,
+      status: r.status,
+      transactionType: 'PO / Contract',
+      owner: r.supplierName,
+      amount: r.amount || 0,
+      currency: r.currency || 'NGN',
+      project: r.project,
+      updatedAt: r.updatedAt,
+      href: '/procurement/purchase-orders',
+    }));
+  const fromContracts = contracts
+    .filter((r) => pending(r.status) || r.status.toLowerCase() === 'draft')
+    .map((r) => ({
+      id: r.contractId,
+      reference: r.contractId,
+      title: r.title,
+      status: r.status,
+      transactionType: 'PO / Contract',
+      owner: r.supplierName,
+      amount: r.value || 0,
+      currency: r.currency || 'NGN',
+      project: r.poId,
+      updatedAt: r.updatedAt,
+      href: '/procurement/contracts',
+    }));
+  const manual = domainApprovals.map((r) => ({
+    id: r.recordId,
+    reference: r.reference,
+    title: r.title,
+    status: r.status,
+    transactionType: String(r.transactionType || 'Waiver'),
+    owner: r.ownerName,
+    amount: r.amount || 0,
+    currency: r.currency || 'NGN',
+    project: r.project,
+    updatedAt: r.updatedAt,
+    href: '/procurement/approvals',
+  }));
+  return [...fromPrs, ...fromRfqs, ...fromCbes, ...fromPos, ...fromContracts, ...manual].sort((a, b) =>
+    String(b.updatedAt).localeCompare(String(a.updatedAt)),
+  );
 };
 
 export const seedSampleCbeIfEmpty = async (existingPool?: sql.ConnectionPool) => {

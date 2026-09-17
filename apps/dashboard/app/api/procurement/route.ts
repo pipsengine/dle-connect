@@ -33,13 +33,17 @@ import {
   updateApprovalStep,
   updateCbeHeader,
   upsertContract,
+  upsertDomainRecord,
   upsertPurchaseOrder,
   upsertPurchaseRequisition,
   upsertRfq,
   upsertSetting,
   upsertSupplier,
   syncSageSuppliersFromX3,
+  listDomainRecords,
+  listApprovalsQueue,
 } from '@/lib/procurement-store';
+import { PROCUREMENT_DOMAINS } from '@/lib/procurement/catalog';
 
 const ok = (data: unknown) => NextResponse.json({ status: 'success', data });
 const err = (status: number, error: string) => NextResponse.json({ status: 'error', error }, { status });
@@ -74,6 +78,7 @@ export async function GET(request: NextRequest) {
       case 'purchase-requisitions':
         return ok(await listPurchaseRequisitions());
       case 'rfqs':
+      case 'sourcing':
         return ok(await listRfqs());
       case 'purchase-orders':
         return ok(await listPurchaseOrders());
@@ -91,7 +96,10 @@ export async function GET(request: NextRequest) {
         return ok(detail);
       }
       case 'reports':
+      case 'analytics':
         return ok(await buildProcurementReports());
+      case 'approvals-queue':
+        return ok(await listApprovalsQueue());
       case 'lookups': {
         const kind = searchParams.get('kind') || 'employees';
         if (kind === 'departments') return ok(await listProcurementLookupDepartments());
@@ -103,8 +111,11 @@ export async function GET(request: NextRequest) {
           ),
         );
       }
-      default:
+      default: {
+        const domain = PROCUREMENT_DOMAINS.find((d) => d.resource === resource || `domain-${d.id}` === resource);
+        if (domain) return ok(await listDomainRecords(domain.id));
         return err(400, `Unknown resource: ${resource}`);
+      }
     }
   } catch (error) {
     console.error('[procurement GET]', error);
@@ -140,6 +151,11 @@ export async function POST(request: NextRequest) {
         return ok(await upsertContract(body.payload || body, actor));
       case 'upsert-setting':
         return ok(await upsertSetting(body.payload || body, actor));
+      case 'upsert-domain': {
+        const domain = String(body.domain || body.payload?.domain || '');
+        if (!domain) return err(400, 'domain required');
+        return ok(await upsertDomainRecord(domain, body.payload || body, actor));
+      }
       case 'create-cbe':
         return ok(await createCbe(body.payload || body, actor));
       case 'update-cbe': {

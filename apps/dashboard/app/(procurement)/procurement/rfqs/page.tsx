@@ -1,7 +1,5 @@
-﻿import { RfqsClient } from '../_components/RfqsClient';
-
-export const metadata = { title: 'RFQs' };
+﻿import { redirect } from 'next/navigation';
 
 export default function Page() {
-  return <RfqsClient />;
+  redirect('/procurement/sourcing');
 }

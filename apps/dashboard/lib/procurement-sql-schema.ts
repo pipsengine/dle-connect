@@ -316,4 +316,140 @@ CREATE TABLE [procurement].[Settings] (
   [UpdatedAt] DATETIME2(0) NOT NULL CONSTRAINT [DF_ProcSettings_UpdatedAt] DEFAULT SYSUTCDATETIME(),
   [UpdatedBy] NVARCHAR(120) NULL
 );
+
+IF COL_LENGTH(N'[procurement].[PurchaseRequisitions]', N'RequestType') IS NULL
+  ALTER TABLE [procurement].[PurchaseRequisitions] ADD [RequestType] NVARCHAR(40) NULL;
+IF COL_LENGTH(N'[procurement].[PurchaseRequisitions]', N'CostCentre') IS NULL
+  ALTER TABLE [procurement].[PurchaseRequisitions] ADD [CostCentre] NVARCHAR(100) NULL;
+IF COL_LENGTH(N'[procurement].[PurchaseRequisitions]', N'BudgetLine') IS NULL
+  ALTER TABLE [procurement].[PurchaseRequisitions] ADD [BudgetLine] NVARCHAR(120) NULL;
+IF COL_LENGTH(N'[procurement].[PurchaseRequisitions]', N'BusinessJustification') IS NULL
+  ALTER TABLE [procurement].[PurchaseRequisitions] ADD [BusinessJustification] NVARCHAR(MAX) NULL;
+IF COL_LENGTH(N'[procurement].[PurchaseRequisitions]', N'DeliveryLocation') IS NULL
+  ALTER TABLE [procurement].[PurchaseRequisitions] ADD [DeliveryLocation] NVARCHAR(200) NULL;
+IF COL_LENGTH(N'[procurement].[PurchaseRequisitions]', N'Priority') IS NULL
+  ALTER TABLE [procurement].[PurchaseRequisitions] ADD [Priority] NVARCHAR(20) NULL;
+
+IF COL_LENGTH(N'[procurement].[PurchaseRequisitionLines]', N'ItemCode') IS NULL
+  ALTER TABLE [procurement].[PurchaseRequisitionLines] ADD [ItemCode] NVARCHAR(80) NULL;
+IF COL_LENGTH(N'[procurement].[PurchaseRequisitionLines]', N'Specification') IS NULL
+  ALTER TABLE [procurement].[PurchaseRequisitionLines] ADD [Specification] NVARCHAR(500) NULL;
+IF COL_LENGTH(N'[procurement].[PurchaseRequisitionLines]', N'TaxRate') IS NULL
+  ALTER TABLE [procurement].[PurchaseRequisitionLines] ADD [TaxRate] DECIMAL(9,4) NOT NULL CONSTRAINT [DF_ProcPRLines_Tax] DEFAULT 0;
+IF COL_LENGTH(N'[procurement].[PurchaseRequisitionLines]', N'RequiredDate') IS NULL
+  ALTER TABLE [procurement].[PurchaseRequisitionLines] ADD [RequiredDate] DATE NULL;
+IF COL_LENGTH(N'[procurement].[PurchaseRequisitionLines]', N'DeliveryLocation') IS NULL
+  ALTER TABLE [procurement].[PurchaseRequisitionLines] ADD [DeliveryLocation] NVARCHAR(200) NULL;
+
+IF COL_LENGTH(N'[procurement].[Rfqs]', N'RfxType') IS NULL
+  ALTER TABLE [procurement].[Rfqs] ADD [RfxType] NVARCHAR(20) NULL;
+IF COL_LENGTH(N'[procurement].[Rfqs]', N'ProcurementMethod') IS NULL
+  ALTER TABLE [procurement].[Rfqs] ADD [ProcurementMethod] NVARCHAR(80) NULL;
+IF COL_LENGTH(N'[procurement].[Rfqs]', N'EvaluationMethod') IS NULL
+  ALTER TABLE [procurement].[Rfqs] ADD [EvaluationMethod] NVARCHAR(120) NULL;
+IF COL_LENGTH(N'[procurement].[Rfqs]', N'TechnicalWeight') IS NULL
+  ALTER TABLE [procurement].[Rfqs] ADD [TechnicalWeight] DECIMAL(9,4) NULL;
+IF COL_LENGTH(N'[procurement].[Rfqs]', N'CommercialWeight') IS NULL
+  ALTER TABLE [procurement].[Rfqs] ADD [CommercialWeight] DECIMAL(9,4) NULL;
+IF COL_LENGTH(N'[procurement].[Rfqs]', N'Instructions') IS NULL
+  ALTER TABLE [procurement].[Rfqs] ADD [Instructions] NVARCHAR(MAX) NULL;
+
+IF COL_LENGTH(N'[procurement].[PurchaseOrders]', N'AwardRef') IS NULL
+  ALTER TABLE [procurement].[PurchaseOrders] ADD [AwardRef] NVARCHAR(80) NULL;
+IF COL_LENGTH(N'[procurement].[PurchaseOrders]', N'ContractId') IS NULL
+  ALTER TABLE [procurement].[PurchaseOrders] ADD [ContractId] NVARCHAR(40) NULL;
+IF COL_LENGTH(N'[procurement].[PurchaseOrders]', N'PaymentTerms') IS NULL
+  ALTER TABLE [procurement].[PurchaseOrders] ADD [PaymentTerms] NVARCHAR(200) NULL;
+IF COL_LENGTH(N'[procurement].[PurchaseOrders]', N'DeliveryTerms') IS NULL
+  ALTER TABLE [procurement].[PurchaseOrders] ADD [DeliveryTerms] NVARCHAR(200) NULL;
+IF COL_LENGTH(N'[procurement].[PurchaseOrders]', N'DeliveryLocation') IS NULL
+  ALTER TABLE [procurement].[PurchaseOrders] ADD [DeliveryLocation] NVARCHAR(200) NULL;
+IF COL_LENGTH(N'[procurement].[PurchaseOrders]', N'QuoteRef') IS NULL
+  ALTER TABLE [procurement].[PurchaseOrders] ADD [QuoteRef] NVARCHAR(120) NULL;
+IF COL_LENGTH(N'[procurement].[PurchaseOrders]', N'Project') IS NULL
+  ALTER TABLE [procurement].[PurchaseOrders] ADD [Project] NVARCHAR(180) NULL;
+IF COL_LENGTH(N'[procurement].[PurchaseOrders]', N'CostCentre') IS NULL
+  ALTER TABLE [procurement].[PurchaseOrders] ADD [CostCentre] NVARCHAR(100) NULL;
+
+IF OBJECT_ID(N'[procurement].[PurchaseOrderLines]', N'U') IS NULL
+CREATE TABLE [procurement].[PurchaseOrderLines] (
+  [LineId] NVARCHAR(40) NOT NULL CONSTRAINT [PK_ProcPOLines] PRIMARY KEY,
+  [PoId] NVARCHAR(40) NOT NULL,
+  [ItemCode] NVARCHAR(80) NULL,
+  [Description] NVARCHAR(500) NOT NULL,
+  [Specification] NVARCHAR(500) NULL,
+  [Uom] NVARCHAR(40) NULL,
+  [Qty] DECIMAL(19,4) NOT NULL CONSTRAINT [DF_ProcPOLines_Qty] DEFAULT 1,
+  [UnitPrice] DECIMAL(19,4) NOT NULL CONSTRAINT [DF_ProcPOLines_Unit] DEFAULT 0,
+  [TaxRate] DECIMAL(9,4) NOT NULL CONSTRAINT [DF_ProcPOLines_Tax] DEFAULT 0,
+  [RequiredDate] DATE NULL,
+  [DeliveryLocation] NVARCHAR(200) NULL,
+  [SortOrder] INT NOT NULL CONSTRAINT [DF_ProcPOLines_Sort] DEFAULT 0
+);
+
+IF COL_LENGTH(N'[procurement].[Contracts]', N'ContractType') IS NULL
+  ALTER TABLE [procurement].[Contracts] ADD [ContractType] NVARCHAR(80) NULL;
+IF COL_LENGTH(N'[procurement].[Contracts]', N'Currency') IS NULL
+  ALTER TABLE [procurement].[Contracts] ADD [Currency] NVARCHAR(10) NULL;
+IF COL_LENGTH(N'[procurement].[Contracts]', N'PaymentTerms') IS NULL
+  ALTER TABLE [procurement].[Contracts] ADD [PaymentTerms] NVARCHAR(200) NULL;
+IF COL_LENGTH(N'[procurement].[Contracts]', N'PerformanceSecurity') IS NULL
+  ALTER TABLE [procurement].[Contracts] ADD [PerformanceSecurity] NVARCHAR(200) NULL;
+IF COL_LENGTH(N'[procurement].[Contracts]', N'Warranty') IS NULL
+  ALTER TABLE [procurement].[Contracts] ADD [Warranty] NVARCHAR(200) NULL;
+
+IF COL_LENGTH(N'[procurement].[Suppliers]', N'Category') IS NULL
+  ALTER TABLE [procurement].[Suppliers] ADD [Category] NVARCHAR(120) NULL;
+IF COL_LENGTH(N'[procurement].[Suppliers]', N'PrequalificationStatus') IS NULL
+  ALTER TABLE [procurement].[Suppliers] ADD [PrequalificationStatus] NVARCHAR(80) NULL;
+IF COL_LENGTH(N'[procurement].[Suppliers]', N'RiskRating') IS NULL
+  ALTER TABLE [procurement].[Suppliers] ADD [RiskRating] NVARCHAR(40) NULL;
+IF COL_LENGTH(N'[procurement].[Suppliers]', N'PerformanceScore') IS NULL
+  ALTER TABLE [procurement].[Suppliers] ADD [PerformanceScore] DECIMAL(9,2) NULL;
+IF COL_LENGTH(N'[procurement].[Suppliers]', N'ComplianceExpiry') IS NULL
+  ALTER TABLE [procurement].[Suppliers] ADD [ComplianceExpiry] DATE NULL;
+
+IF OBJECT_ID(N'[procurement].[DomainRecords]', N'U') IS NULL
+CREATE TABLE [procurement].[DomainRecords] (
+  [RecordId] NVARCHAR(40) NOT NULL CONSTRAINT [PK_ProcDomain] PRIMARY KEY,
+  [Domain] NVARCHAR(60) NOT NULL,
+  [Reference] NVARCHAR(80) NOT NULL,
+  [Title] NVARCHAR(300) NOT NULL,
+  [Status] NVARCHAR(40) NOT NULL,
+  [Priority] NVARCHAR(20) NULL,
+  [Project] NVARCHAR(180) NULL,
+  [CostCentre] NVARCHAR(100) NULL,
+  [OwnerName] NVARCHAR(220) NULL,
+  [Currency] NVARCHAR(10) NULL,
+  [Amount] DECIMAL(19,2) NULL,
+  [DueDate] DATETIME2(0) NULL,
+  [PayloadJson] NVARCHAR(MAX) NULL,
+  [CreatedAt] DATETIME2(0) NOT NULL CONSTRAINT [DF_ProcDomain_CreatedAt] DEFAULT SYSUTCDATETIME(),
+  [UpdatedAt] DATETIME2(0) NOT NULL CONSTRAINT [DF_ProcDomain_UpdatedAt] DEFAULT SYSUTCDATETIME(),
+  [CreatedBy] NVARCHAR(120) NULL,
+  [UpdatedBy] NVARCHAR(120) NULL
+);
+
+IF OBJECT_ID(N'[procurement].[DomainLines]', N'U') IS NULL
+CREATE TABLE [procurement].[DomainLines] (
+  [LineId] NVARCHAR(40) NOT NULL CONSTRAINT [PK_ProcDomainLines] PRIMARY KEY,
+  [RecordId] NVARCHAR(40) NOT NULL,
+  [ItemCode] NVARCHAR(80) NULL,
+  [Description] NVARCHAR(500) NOT NULL,
+  [Specification] NVARCHAR(500) NULL,
+  [Uom] NVARCHAR(40) NULL,
+  [Qty] DECIMAL(19,4) NOT NULL CONSTRAINT [DF_ProcDomainLines_Qty] DEFAULT 1,
+  [UnitPrice] DECIMAL(19,4) NOT NULL CONSTRAINT [DF_ProcDomainLines_Unit] DEFAULT 0,
+  [TaxRate] DECIMAL(9,4) NOT NULL CONSTRAINT [DF_ProcDomainLines_Tax] DEFAULT 0,
+  [RequiredDate] DATE NULL,
+  [DeliveryLocation] NVARCHAR(200) NULL,
+  [SortOrder] INT NOT NULL CONSTRAINT [DF_ProcDomainLines_Sort] DEFAULT 0
+);
+
+BEGIN TRY
+  IF NOT EXISTS (
+    SELECT 1 FROM sys.indexes WHERE name = N'IX_ProcDomain_DomainUpdated' AND object_id = OBJECT_ID(N'[procurement].[DomainRecords]')
+  )
+    EXEC(N'CREATE INDEX [IX_ProcDomain_DomainUpdated] ON [procurement].[DomainRecords]([Domain], [UpdatedAt] DESC)');
+END TRY BEGIN CATCH END CATCH;
 `;

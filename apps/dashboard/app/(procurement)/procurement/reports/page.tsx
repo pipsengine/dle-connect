@@ -36,8 +36,8 @@ export default function ProcurementReportsPage() {
     <div className="space-y-4">
       <div className="flex items-center justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-black text-slate-900">Procurement Reports</h1>
-          <p className="mt-1 text-sm text-slate-600">Aggregates from DLE_Enterprise procurement tables.</p>
+          <h1 className="text-2xl font-black text-slate-900">Procurement Analytics</h1>
+          <p className="mt-1 text-sm text-slate-600">Spend, supplier concentration and evaluation pipeline from live procurement records.</p>
         </div>
         <button type="button" onClick={() => void load()} className="inline-flex h-10 items-center gap-2 rounded-md border bg-white px-3 text-sm font-semibold">
           <RefreshCw className="h-4 w-4" /> Refresh

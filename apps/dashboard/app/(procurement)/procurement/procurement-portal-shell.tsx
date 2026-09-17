@@ -16,12 +16,23 @@ type Props = { children: ReactNode };
 
 function searchPlaceholder(pathname: string) {
   if (pathname.includes('/purchase-requisitions')) return 'Search purchase requisitions…';
-  if (pathname.includes('/rfqs')) return 'Search RFQs…';
+  if (pathname.includes('/sourcing') || pathname.includes('/rfqs')) return 'Search sourcing events…';
   if (pathname.includes('/cbe')) return 'Search CBEs…';
   if (pathname.includes('/purchase-orders')) return 'Search purchase orders…';
   if (pathname.includes('/suppliers')) return 'Search suppliers…';
   if (pathname.includes('/contracts')) return 'Search contracts…';
-  if (pathname.includes('/reports')) return 'Search reports…';
+  if (pathname.includes('/plans')) return 'Search procurement plans…';
+  if (pathname.includes('/tenders')) return 'Search tenders…';
+  if (pathname.includes('/expediting')) return 'Search expediting milestones…';
+  if (pathname.includes('/receiving')) return 'Search goods receipts…';
+  if (pathname.includes('/commercial')) return 'Search commercial deals…';
+  if (pathname.includes('/customer-orders')) return 'Search customer orders…';
+  if (pathname.includes('/delivery')) return 'Search deliveries…';
+  if (pathname.includes('/costing')) return 'Search costings…';
+  if (pathname.includes('/approvals')) return 'Search approvals queue…';
+  if (pathname.includes('/compliance')) return 'Search compliance exceptions…';
+  if (pathname.includes('/documents')) return 'Search documents…';
+  if (pathname.includes('/analytics') || pathname.includes('/reports')) return 'Search analytics…';
   return 'Search procurement…';
 }
 

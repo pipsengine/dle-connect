@@ -36,6 +36,7 @@ import {
   primaryBtnClass,
   secondaryBtnClass,
   selectClass,
+  toDateInput,
 } from './proc-ui';
 
 type SupplierRow = {
@@ -64,6 +65,11 @@ type SupplierRow = {
   taxId?: string | null;
   registrationNo?: string | null;
   notes: string | null;
+  category?: string | null;
+  prequalificationStatus?: string | null;
+  riskRating?: string | null;
+  performanceScore?: number | null;
+  complianceExpiry?: string | null;
   isActive: boolean;
   isBlacklisted: boolean;
   updatedAt: string;
@@ -94,6 +100,11 @@ type SupplierForm = {
   isActive: boolean;
   isBlacklisted: boolean;
   notes: string;
+  category: string;
+  prequalificationStatus: string;
+  riskRating: string;
+  performanceScore: string;
+  complianceExpiry: string;
   source?: string;
 };
 
@@ -147,6 +158,11 @@ const emptyForm = (code = ''): SupplierForm => ({
   isActive: true,
   isBlacklisted: false,
   notes: '',
+  category: '',
+  prequalificationStatus: '',
+  riskRating: '',
+  performanceScore: '',
+  complianceExpiry: '',
   source: 'LOCAL',
 });
 
@@ -303,6 +319,11 @@ export function SuppliersClient() {
       isActive: row.isActive,
       isBlacklisted: row.isBlacklisted,
       notes: row.notes || '',
+      category: row.category || '',
+      prequalificationStatus: row.prequalificationStatus || '',
+      riskRating: row.riskRating || '',
+      performanceScore: row.performanceScore == null ? '' : String(row.performanceScore),
+      complianceExpiry: toDateInput(row.complianceExpiry),
       source: row.source || 'LOCAL',
     });
     setError('');
@@ -346,6 +367,11 @@ export function SuppliersClient() {
           isActive: form.isActive,
           isBlacklisted: form.isBlacklisted,
           notes: form.notes.trim() || null,
+          category: form.category.trim() || null,
+          prequalificationStatus: form.prequalificationStatus || null,
+          riskRating: form.riskRating || null,
+          performanceScore: form.performanceScore === '' ? null : Number(form.performanceScore),
+          complianceExpiry: form.complianceExpiry || null,
           source: form.source || 'LOCAL',
         },
       });
@@ -879,6 +905,36 @@ export function SuppliersClient() {
                   value={form.deliveryPeriod}
                   onChange={(e) => setForm((f) => ({ ...f, deliveryPeriod: e.target.value }))}
                 />
+              </div>
+              <div>
+                <label className={labelClass}>Procurement category</label>
+                <input className={inputClass} value={form.category} onChange={(e) => setForm((f) => ({ ...f, category: e.target.value }))} />
+              </div>
+              <div>
+                <label className={labelClass}>Prequalification status</label>
+                <select className={selectClass} value={form.prequalificationStatus} onChange={(e) => setForm((f) => ({ ...f, prequalificationStatus: e.target.value }))}>
+                  <option value="">Select…</option>
+                  {['Prequalified', 'Conditional', 'Expired', 'Not Prequalified'].map((s) => (
+                    <option key={s} value={s}>{s}</option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className={labelClass}>Risk rating</label>
+                <select className={selectClass} value={form.riskRating} onChange={(e) => setForm((f) => ({ ...f, riskRating: e.target.value }))}>
+                  <option value="">Select…</option>
+                  {['Low', 'Medium', 'High', 'Critical'].map((s) => (
+                    <option key={s} value={s}>{s}</option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className={labelClass}>Performance score</label>
+                <input type="number" className={inputClass} value={form.performanceScore} onChange={(e) => setForm((f) => ({ ...f, performanceScore: e.target.value }))} />
+              </div>
+              <div>
+                <label className={labelClass}>Compliance expiry</label>
+                <input type="date" className={inputClass} value={form.complianceExpiry} onChange={(e) => setForm((f) => ({ ...f, complianceExpiry: e.target.value }))} />
               </div>
               <div className="md:col-span-2">
                 <label className={labelClass}>Notes</label>

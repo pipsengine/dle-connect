@@ -15,6 +15,8 @@ import {
 } from 'lucide-react';
 import { procurementGet, procurementPost } from '../lib/procurement-api';
 import { DepartmentLookup, EmployeeLookup } from './proc-lookups';
+import { LineItemsEditor } from './LineItemsEditor';
+import { PROCUREMENT_CURRENCIES, PROCUREMENT_PRIORITIES, PROCUREMENT_REQUEST_TYPES, linesTotal, type ProcLineItem } from '@/lib/procurement/catalog';
 import {
   FilterBar,
   KpiCard,
@@ -47,10 +49,27 @@ export type PurchaseRequisitionRow = {
   estimatedAmount: number | null;
   requiredDate: string | null;
   currentWith: string | null;
+  requestType?: string | null;
+  costCentre?: string | null;
+  budgetLine?: string | null;
+  businessJustification?: string | null;
+  deliveryLocation?: string | null;
+  priority?: string | null;
   updatedAt: string;
+  lines?: Array<{
+    lineId?: string;
+    description: string;
+    qty?: number;
+    quantity?: number;
+    uom?: string | null;
+    unitEstimate?: number | null;
+    unitPrice?: number;
+    taxRate?: number;
+    requiredDate?: string | null;
+  }>;
 };
 
-const PR_STATUSES = ['Draft', 'Submitted', 'Under Review', 'Approved', 'Returned', 'Rejected'] as const;
+const PR_STATUSES = ['Draft', 'Submitted', 'Under Approval', 'Returned', 'Approved', 'Rejected', 'Processing', 'Closed', 'Cancelled'] as const;
 
 type PrForm = {
   prId?: string;
@@ -64,6 +83,12 @@ type PrForm = {
   estimatedAmount: string;
   requiredDate: string;
   currentWith: string;
+  requestType: string;
+  costCentre: string;
+  budgetLine: string;
+  businessJustification: string;
+  deliveryLocation: string;
+  priority: string;
 };
 
 const emptyForm = (): PrForm => ({
@@ -77,6 +102,12 @@ const emptyForm = (): PrForm => ({
   estimatedAmount: '',
   requiredDate: '',
   currentWith: '',
+  requestType: 'Goods',
+  costCentre: '',
+  budgetLine: '',
+  businessJustification: '',
+  deliveryLocation: '',
+  priority: 'Medium',
 });
 
 function statusNorm(s: string) {
@@ -98,6 +129,7 @@ export function PurchaseRequisitionsClient() {
   const [dateTo, setDateTo] = useState('');
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
+  const [lines, setLines] = useState<ProcLineItem[]>([]);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -120,7 +152,7 @@ export function PurchaseRequisitionsClient() {
     return {
       total: rows.length,
       draft: count((s) => s === 'draft'),
-      submitted: count((s) => s === 'submitted' || s === 'under review'),
+      submitted: count((s) => s === 'submitted' || s === 'under review' || s === 'under approval'),
       approved: count((s) => s === 'approved'),
       returned: count((s) => s === 'returned'),
       rejected: count((s) => s === 'rejected'),
@@ -159,6 +191,7 @@ export function PurchaseRequisitionsClient() {
 
   const openCreate = () => {
     setForm(emptyForm());
+    setLines([]);
     setError('');
     setModalOpen(true);
   };
@@ -176,7 +209,25 @@ export function PurchaseRequisitionsClient() {
       estimatedAmount: row.estimatedAmount == null ? '' : String(row.estimatedAmount),
       requiredDate: toDateInput(row.requiredDate),
       currentWith: row.currentWith || '',
+      requestType: row.requestType || 'Goods',
+      costCentre: row.costCentre || '',
+      budgetLine: row.budgetLine || '',
+      businessJustification: row.businessJustification || row.description || '',
+      deliveryLocation: row.deliveryLocation || '',
+      priority: row.priority || 'Medium',
     });
+    setLines(
+      (row.lines || []).map((line) => ({
+        id: line.lineId || crypto.randomUUID(),
+        lineId: line.lineId,
+        description: line.description,
+        quantity: Number(line.quantity ?? line.qty ?? 1),
+        uom: line.uom || 'EA',
+        unitPrice: Number(line.unitPrice ?? line.unitEstimate ?? 0),
+        taxRate: Number(line.taxRate ?? 0),
+        requiredDate: line.requiredDate ? String(line.requiredDate).slice(0, 10) : '',
+      })),
+    );
     setError('');
     setModalOpen(true);
   };
@@ -199,9 +250,25 @@ export function PurchaseRequisitionsClient() {
           requesterName: form.requesterName.trim() || null,
           status: form.status,
           currency: form.currency || 'NGN',
-          estimatedAmount: form.estimatedAmount === '' ? null : Number(form.estimatedAmount),
           requiredDate: form.requiredDate || null,
           currentWith: form.currentWith.trim() || null,
+          requestType: form.requestType || null,
+          costCentre: form.costCentre.trim() || null,
+          budgetLine: form.budgetLine.trim() || null,
+          businessJustification: form.businessJustification.trim() || null,
+          deliveryLocation: form.deliveryLocation.trim() || null,
+          priority: form.priority,
+          estimatedAmount: form.estimatedAmount === '' ? (lines.length ? linesTotal(lines) : null) : Number(form.estimatedAmount),
+          lines: lines.map((line, index) => ({
+            lineId: line.lineId,
+            description: line.description,
+            qty: line.quantity,
+            uom: line.uom,
+            unitEstimate: line.unitPrice,
+            taxRate: line.taxRate,
+            requiredDate: line.requiredDate || null,
+            sortOrder: index,
+          })),
         },
       });
       setModalOpen(false);
@@ -219,7 +286,7 @@ export function PurchaseRequisitionsClient() {
         <div>
           <h1 className="text-2xl font-black text-slate-900">Purchase Requisitions</h1>
           <p className="mt-1 text-sm text-slate-600">
-            Raise, track, and approve purchase requests across departments and projects.
+            Raise, track and approve purchase requests with line items, budget line and business justification.
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
@@ -401,6 +468,22 @@ export function PurchaseRequisitionsClient() {
             <label className={labelClass}>Description</label>
             <textarea className={`${inputClass} min-h-[80px] py-2`} value={form.description} onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))} />
           </div>
+          <div>
+            <label className={labelClass}>Request type</label>
+            <select className={selectClass} value={form.requestType} onChange={(e) => setForm((f) => ({ ...f, requestType: e.target.value }))}>
+              {PROCUREMENT_REQUEST_TYPES.map((s) => (
+                <option key={s} value={s}>{s}</option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label className={labelClass}>Priority</label>
+            <select className={selectClass} value={form.priority} onChange={(e) => setForm((f) => ({ ...f, priority: e.target.value }))}>
+              {PROCUREMENT_PRIORITIES.map((s) => (
+                <option key={s} value={s}>{s}</option>
+              ))}
+            </select>
+          </div>
           <DepartmentLookup value={form.department} onChange={(name) => setForm((f) => ({ ...f, department: name }))} />
           <div>
             <label className={labelClass}>Project</label>
@@ -420,9 +503,25 @@ export function PurchaseRequisitionsClient() {
             </select>
           </div>
           <div>
+            <label className={labelClass}>Cost centre</label>
+            <input className={inputClass} value={form.costCentre} onChange={(e) => setForm((f) => ({ ...f, costCentre: e.target.value }))} />
+          </div>
+          <div>
+            <label className={labelClass}>Budget line</label>
+            <input className={inputClass} value={form.budgetLine} onChange={(e) => setForm((f) => ({ ...f, budgetLine: e.target.value }))} />
+          </div>
+          <div>
+            <label className={labelClass}>Delivery location</label>
+            <input className={inputClass} value={form.deliveryLocation} onChange={(e) => setForm((f) => ({ ...f, deliveryLocation: e.target.value }))} />
+          </div>
+          <div className="md:col-span-2">
+            <label className={labelClass}>Business justification</label>
+            <textarea className={`${inputClass} min-h-[80px] py-2`} value={form.businessJustification} onChange={(e) => setForm((f) => ({ ...f, businessJustification: e.target.value }))} />
+          </div>
+          <div>
             <label className={labelClass}>Currency</label>
             <select className={selectClass} value={form.currency} onChange={(e) => setForm((f) => ({ ...f, currency: e.target.value }))}>
-              {['NGN', 'USD', 'EUR', 'GBP'].map((c) => (
+              {PROCUREMENT_CURRENCIES.map((c) => (
                 <option key={c} value={c}>{c}</option>
               ))}
             </select>
@@ -439,6 +538,9 @@ export function PurchaseRequisitionsClient() {
             <label className={labelClass}>Current with</label>
             <input className={inputClass} value={form.currentWith} onChange={(e) => setForm((f) => ({ ...f, currentWith: e.target.value }))} />
           </div>
+        </div>
+        <div className="mt-6">
+          <LineItemsEditor lines={lines} onChange={setLines} />
         </div>
       </ProcModal>
     </div>

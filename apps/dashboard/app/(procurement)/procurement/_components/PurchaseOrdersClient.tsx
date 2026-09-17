@@ -12,6 +12,8 @@ import {
 } from 'lucide-react';
 import { procurementGet, procurementPost } from '../lib/procurement-api';
 import { SearchableSelect } from './proc-lookups';
+import { LineItemsEditor } from './LineItemsEditor';
+import { linesTotal, type ProcLineItem } from '@/lib/procurement/catalog';
 import {
   FilterBar,
   KpiCard,
@@ -42,7 +44,25 @@ type PurchaseOrderRow = {
   amount: number | null;
   orderDate: string | null;
   expectedDate: string | null;
+  awardRef?: string | null;
+  contractId?: string | null;
+  paymentTerms?: string | null;
+  deliveryTerms?: string | null;
+  deliveryLocation?: string | null;
+  quoteRef?: string | null;
+  project?: string | null;
+  costCentre?: string | null;
   updatedAt: string;
+  lines?: Array<{
+    lineId?: string;
+    description: string;
+    qty?: number;
+    quantity?: number;
+    uom?: string | null;
+    unitPrice?: number;
+    taxRate?: number;
+    requiredDate?: string | null;
+  }>;
 };
 
 type SupplierRow = {
@@ -78,6 +98,14 @@ type PoForm = {
   amount: string;
   orderDate: string;
   expectedDate: string;
+  awardRef: string;
+  contractId: string;
+  paymentTerms: string;
+  deliveryTerms: string;
+  deliveryLocation: string;
+  quoteRef: string;
+  project: string;
+  costCentre: string;
 };
 
 const emptyForm = (): PoForm => ({
@@ -90,6 +118,14 @@ const emptyForm = (): PoForm => ({
   amount: '',
   orderDate: '',
   expectedDate: '',
+  awardRef: '',
+  contractId: '',
+  paymentTerms: '',
+  deliveryTerms: '',
+  deliveryLocation: '',
+  quoteRef: '',
+  project: '',
+  costCentre: '',
 });
 
 function statusNorm(s: string) {
@@ -109,6 +145,7 @@ export function PurchaseOrdersClient() {
   const [statusFilter, setStatusFilter] = useState('');
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
+  const [lines, setLines] = useState<ProcLineItem[]>([]);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -183,6 +220,7 @@ export function PurchaseOrdersClient() {
 
   const openCreate = () => {
     setForm(emptyForm());
+    setLines([]);
     setError('');
     setModalOpen(true);
   };
@@ -199,7 +237,27 @@ export function PurchaseOrdersClient() {
       amount: row.amount == null ? '' : String(row.amount),
       orderDate: toDateInput(row.orderDate),
       expectedDate: toDateInput(row.expectedDate),
+      awardRef: row.awardRef || '',
+      contractId: row.contractId || '',
+      paymentTerms: row.paymentTerms || '',
+      deliveryTerms: row.deliveryTerms || '',
+      deliveryLocation: row.deliveryLocation || '',
+      quoteRef: row.quoteRef || '',
+      project: row.project || '',
+      costCentre: row.costCentre || '',
     });
+    setLines(
+      (row.lines || []).map((line) => ({
+        id: line.lineId || crypto.randomUUID(),
+        lineId: line.lineId,
+        description: line.description,
+        quantity: Number(line.quantity ?? line.qty ?? 1),
+        uom: line.uom || 'EA',
+        unitPrice: Number(line.unitPrice ?? 0),
+        taxRate: Number(line.taxRate ?? 0),
+        requiredDate: line.requiredDate ? String(line.requiredDate).slice(0, 10) : '',
+      })),
+    );
     setError('');
     setModalOpen(true);
   };
@@ -221,9 +279,27 @@ export function PurchaseOrdersClient() {
           cbeId: form.cbeId || null,
           status: form.status,
           currency: form.currency || 'NGN',
-          amount: form.amount === '' ? null : Number(form.amount),
+          amount: form.amount === '' ? (lines.length ? linesTotal(lines) : null) : Number(form.amount),
           orderDate: form.orderDate || null,
           expectedDate: form.expectedDate || null,
+          awardRef: form.awardRef.trim() || null,
+          contractId: form.contractId.trim() || null,
+          paymentTerms: form.paymentTerms.trim() || null,
+          deliveryTerms: form.deliveryTerms.trim() || null,
+          deliveryLocation: form.deliveryLocation.trim() || null,
+          quoteRef: form.quoteRef.trim() || null,
+          project: form.project.trim() || null,
+          costCentre: form.costCentre.trim() || null,
+          lines: lines.map((line, index) => ({
+            lineId: line.lineId,
+            description: line.description,
+            qty: line.quantity,
+            uom: line.uom,
+            unitPrice: line.unitPrice,
+            taxRate: line.taxRate,
+            requiredDate: line.requiredDate || null,
+            sortOrder: index,
+          })),
         },
       });
       setModalOpen(false);
@@ -241,7 +317,7 @@ export function PurchaseOrdersClient() {
         <div>
           <h1 className="text-2xl font-black text-slate-900">Purchase Orders</h1>
           <p className="mt-1 text-sm text-slate-600">
-            Create and track purchase orders linked to suppliers and awarded CBEs.
+            Issue purchase orders from awarded CBEs or contracts, with payment terms, delivery terms and line items.
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
@@ -433,6 +509,37 @@ export function PurchaseOrdersClient() {
             <label className={labelClass}>Expected date</label>
             <input type="date" className={inputClass} value={form.expectedDate} onChange={(e) => setForm((f) => ({ ...f, expectedDate: e.target.value }))} />
           </div>
+          <div>
+            <label className={labelClass}>Award / contract reference</label>
+            <input className={inputClass} value={form.awardRef} onChange={(e) => setForm((f) => ({ ...f, awardRef: e.target.value }))} />
+          </div>
+          <div>
+            <label className={labelClass}>Project</label>
+            <input className={inputClass} value={form.project} onChange={(e) => setForm((f) => ({ ...f, project: e.target.value }))} />
+          </div>
+          <div>
+            <label className={labelClass}>Cost centre</label>
+            <input className={inputClass} value={form.costCentre} onChange={(e) => setForm((f) => ({ ...f, costCentre: e.target.value }))} />
+          </div>
+          <div>
+            <label className={labelClass}>Payment terms</label>
+            <input className={inputClass} value={form.paymentTerms} onChange={(e) => setForm((f) => ({ ...f, paymentTerms: e.target.value }))} />
+          </div>
+          <div>
+            <label className={labelClass}>Delivery terms / Incoterm</label>
+            <input className={inputClass} value={form.deliveryTerms} onChange={(e) => setForm((f) => ({ ...f, deliveryTerms: e.target.value }))} />
+          </div>
+          <div>
+            <label className={labelClass}>Delivery location</label>
+            <input className={inputClass} value={form.deliveryLocation} onChange={(e) => setForm((f) => ({ ...f, deliveryLocation: e.target.value }))} />
+          </div>
+          <div>
+            <label className={labelClass}>Supplier quote reference</label>
+            <input className={inputClass} value={form.quoteRef} onChange={(e) => setForm((f) => ({ ...f, quoteRef: e.target.value }))} />
+          </div>
+        </div>
+        <div className="mt-6">
+          <LineItemsEditor lines={lines} onChange={setLines} />
         </div>
       </ProcModal>
     </div>
