@@ -158,6 +158,7 @@ export function ProcModal({
   footer,
   wide,
   extraWide,
+  landscape,
 }: {
   open: boolean;
   title: string;
@@ -167,11 +168,18 @@ export function ProcModal({
   footer?: ReactNode;
   wide?: boolean;
   extraWide?: boolean;
+  landscape?: boolean;
 }) {
   if (!open) return null;
-  const width = extraWide ? 'max-w-4xl' : wide ? 'max-w-3xl' : 'max-w-xl';
+  const width = landscape
+    ? 'max-w-[min(96vw,88rem)]'
+    : extraWide
+      ? 'max-w-4xl'
+      : wide
+        ? 'max-w-3xl'
+        : 'max-w-xl';
   return (
-    <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-slate-900/50 p-4 sm:p-8">
+    <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-slate-900/50 p-4 sm:p-6">
       <button type="button" className="absolute inset-0 cursor-default" aria-label="Close dialog" onClick={onClose} />
       <div
         className={`relative z-10 w-full overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl ${width}`}
@@ -179,7 +187,7 @@ export function ProcModal({
         aria-modal="true"
         aria-label={title}
       >
-        <div className="flex items-start justify-between gap-4 border-b border-slate-100 bg-gradient-to-r from-slate-50 to-white px-6 py-5">
+        <div className="flex items-start justify-between gap-4 border-b border-slate-100 bg-gradient-to-r from-slate-50 to-white px-6 py-4">
           <div>
             <h2 className="text-lg font-black tracking-tight text-slate-900">{title}</h2>
             {subtitle ? <p className="mt-1 text-sm leading-5 text-slate-500">{subtitle}</p> : null}
@@ -188,7 +196,7 @@ export function ProcModal({
             <X className="h-4 w-4" />
           </button>
         </div>
-        <div className={`${extraWide ? 'px-6 py-5' : 'max-h-[70vh] overflow-y-auto px-6 py-5'}`}>{children}</div>
+        <div className={`${landscape ? 'max-h-[min(78vh,820px)] overflow-y-auto px-6 py-5' : extraWide ? 'px-6 py-5' : 'max-h-[70vh] overflow-y-auto px-6 py-5'}`}>{children}</div>
         {footer ? (
           <div className="flex flex-wrap items-center justify-end gap-2 border-t border-slate-100 bg-slate-50/80 px-6 py-4">{footer}</div>
         ) : null}

@@ -44,7 +44,7 @@ const SETTINGS_KEY = 'default';
 
 const defaultSettings = (): InternshipReviewSettings => ({
   eligibilityMonths: 12,
-  workflow: 'Line Manager → HOD (if present) → HR Manager → MD',
+  workflow: 'Line Manager → Department Head (if distinct) → HR Manager → MD',
   reminderSchedule: '3 days and 1 day before due date',
   lockAfterSubmission: true,
 });
@@ -101,11 +101,14 @@ const personLabel = (employee: DleEmployeeDirectoryRow | null, fallback: string)
 const personCode = (employee: DleEmployeeDirectoryRow | null) =>
   employee ? compact(employee.employeeCode || employee.employeeId) : '';
 
+const DEPARTMENT_HEAD_STEP = 'Department Head';
+
 const defaultApprovals = (input: {
   lineManager: string;
   lineManagerCode?: string;
   hod?: string;
   hodCode?: string;
+  hodSkipReason?: string;
   hrManager: string;
   hrManagerCode?: string;
   md: string;
@@ -113,8 +116,8 @@ const defaultApprovals = (input: {
 }): InternshipApproval[] => [
   { step: 'Line Manager Evaluation', approver: input.lineManager, approverCode: input.lineManagerCode || '', role: 'LINE_MANAGER', status: 'Pending' },
   input.hod
-    ? { step: 'HOD / Functional Manager', approver: input.hod, approverCode: input.hodCode || '', role: 'HOD', status: 'Pending' }
-    : { step: 'HOD / Functional Manager', approver: '', approverCode: '', role: 'HOD', status: 'Skipped', comment: 'No HOD configured' },
+    ? { step: DEPARTMENT_HEAD_STEP, approver: input.hod, approverCode: input.hodCode || '', role: 'HOD', status: 'Pending' }
+    : { step: DEPARTMENT_HEAD_STEP, approver: '', approverCode: '', role: 'HOD', status: 'Skipped', comment: input.hodSkipReason || 'No Department Head configured' },
   { step: 'HR Manager Review', approver: input.hrManager, approverCode: input.hrManagerCode || '', role: 'HR_MANAGER', status: 'Pending' },
   { step: 'MD Final Approval', approver: input.md, approverCode: input.mdCode || '', role: 'MD', status: 'Pending' },
 ];
@@ -136,6 +139,116 @@ const codesEqual = (left?: string | null, right?: string | null) => {
 const isActiveDirectoryEmployee = (employee: DleEmployeeDirectoryRow) => {
   const status = compact(employee.status).toLowerCase();
   return !['resigned', 'terminated', 'retired', 'inactive'].includes(status);
+};
+
+const sameDepartment = (left?: string | null, right?: string | null) =>
+  compact(left).toLowerCase().replace(/\s+/g, ' ') === compact(right).toLowerCase().replace(/\s+/g, ' ');
+
+const mostCommonValue = (values: string[]) => {
+  const counts = new Map<string, number>();
+  for (const value of values) {
+    const key = compact(value);
+    if (!key) continue;
+    counts.set(key, (counts.get(key) || 0) + 1);
+  }
+  return [...counts.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))[0]?.[0] || '';
+};
+
+const resolveInternshipDepartmentHead = (
+  employee: Pick<DleEmployeeDirectoryRow, 'department' | 'departmentHead' | 'managerName' | 'employeeCode' | 'fullName'>,
+  employees: DleEmployeeDirectoryRow[],
+  lineManagerCode?: string | null,
+) => {
+  const peers = employees.filter((item) => isActiveDirectoryEmployee(item) && sameDepartment(item.department, employee.department));
+  const refs = [
+    compact(employee.departmentHead),
+    mostCommonValue(peers.map((item) => compact(item.departmentHead))),
+  ].filter((value, index, list) => value && list.indexOf(value) === index);
+  let head: DleEmployeeDirectoryRow | null = null;
+  let ref = '';
+  for (const candidate of refs) {
+    const match = findPerson(employees, candidate);
+    if (match) {
+      head = match;
+      ref = candidate;
+      break;
+    }
+    if (!ref) ref = candidate;
+  }
+  if (!head) {
+    head = peers.find((item) => HOD_ROLE_PATTERN.test(`${item.jobTitle || ''} ${item.designation || ''}`)) || null;
+  }
+  const manager = findPerson(employees, compact(employee.managerName)) || findPerson(employees, compact(lineManagerCode));
+  const headCode = personCode(head) || compact(employeeCodeFromReference(ref));
+  const managerCode = personCode(manager) || compact(lineManagerCode) || compact(employeeCodeFromReference(compact(employee.managerName)));
+  const name = personLabel(head, ref);
+  if (name && managerCode && (codesEqual(headCode, managerCode) || compact(name).toLowerCase() === compact(manager?.fullName || employee.managerName).toLowerCase())) {
+    return {
+      name,
+      code: headCode || managerCode,
+      skip: true,
+      skipReason: 'Department Head is the same person as the line manager',
+    };
+  }
+  if (!name) {
+    return { name: '', code: '', skip: true, skipReason: 'No Department Head on the intern job record or department' };
+  }
+  return { name, code: headCode, skip: false, skipReason: '' };
+};
+
+const hydrateDepartmentHeadApproval = (review: InternshipReview, employees: DleEmployeeDirectoryRow[]) => {
+  const intern = findPerson(employees, review.employee.code);
+  const resolved = intern
+    ? resolveInternshipDepartmentHead(intern, employees, review.employee.lineManagerCode || review.supervisorCode)
+    : resolveInternshipDepartmentHead({
+      department: review.employee.department,
+      departmentHead: review.employee.hod,
+      managerName: review.employee.lineManager,
+      employeeCode: review.employee.code,
+      fullName: review.employee.name,
+    }, employees, review.employee.lineManagerCode || review.supervisorCode);
+  const step = review.approvals.find((item) => item.role === 'HOD');
+  if (!step) return false;
+  let changed = false;
+  if (step.step !== DEPARTMENT_HEAD_STEP) {
+    step.step = DEPARTMENT_HEAD_STEP;
+    changed = true;
+  }
+  const laterActed = review.approvals.some((item) =>
+    (item.role === 'HR_MANAGER' || item.role === 'MD') && (item.status === 'Approved' || item.status === 'Returned'),
+  );
+  const lineManagerApproved = review.approvals.some((item) => item.role === 'LINE_MANAGER' && item.status === 'Approved');
+  if (resolved.skip) {
+    if (resolved.name && step.approver !== resolved.name) {
+      step.approver = resolved.name;
+      step.approverCode = resolved.code;
+      changed = true;
+    }
+    if (step.status === 'Skipped' && resolved.skipReason && step.comment !== resolved.skipReason) {
+      step.comment = resolved.skipReason;
+      changed = true;
+    }
+    return changed;
+  }
+  if (review.employee.hod !== resolved.name || review.employee.hodCode !== resolved.code) {
+    review.employee.hod = resolved.name;
+    review.employee.hodCode = resolved.code;
+    changed = true;
+  }
+  if (!step.at && (!step.approver || !codesEqual(step.approverCode, resolved.code))) {
+    step.approver = resolved.name;
+    step.approverCode = resolved.code;
+    changed = true;
+  }
+  if (step.status === 'Skipped' && !laterActed) {
+    step.status = 'Pending';
+    step.comment = undefined;
+    changed = true;
+    if (lineManagerApproved && (review.status === 'Pending HR Manager' || review.status === 'In Evaluation' || review.status === 'Assigned')) {
+      review.status = 'Pending HOD';
+    }
+  }
+  return changed;
 };
 
 const resolveManagingDirector = (employees: DleEmployeeDirectoryRow[]) => {
@@ -372,8 +485,11 @@ export const listInternshipReviews = async (): Promise<InternshipReview[]> => {
   const reviews = (result.recordset || [])
     .map((row: { ReviewJson?: string }) => parseReview(row.ReviewJson))
     .filter((item): item is InternshipReview => Boolean(item));
+  const employees = await directoryEmployees().catch(() => [] as DleEmployeeDirectoryRow[]);
   for (const review of reviews) {
-    if (applyCanonicalMd(review)) {
+    const mdFixed = applyCanonicalMd(review);
+    const hodFixed = employees.length ? hydrateDepartmentHeadApproval(review, employees) : false;
+    if (mdFixed || hodFixed) {
       await persistReview(review).catch(() => null);
     }
   }
@@ -448,14 +564,7 @@ export const listEligibleInternshipInterns = async (): Promise<InternshipEligibl
     const start = compact(employee.dateJoined || employee.contractStartDate).slice(0, 10);
     const monthsCompleted = monthsBetween(start || nowIsoDate());
     const manager = findPerson(employees, compact(employee.managerName));
-    const hodRef = compact(
-      compact(employee.departmentHead) && compact(employee.departmentHead) !== compact(employee.managerName)
-        ? employee.departmentHead
-        : compact(employee.functionalManager) && compact(employee.functionalManager) !== compact(employee.managerName)
-          ? employee.functionalManager
-          : '',
-    );
-    const hod = findPerson(employees, hodRef);
+    const departmentHead = resolveInternshipDepartmentHead(employee, employees, personCode(manager));
     return {
       code: compact(employee.employeeCode || employee.employeeId),
       name: employee.fullName,
@@ -465,8 +574,8 @@ export const listEligibleInternshipInterns = async (): Promise<InternshipEligibl
       internshipStart: start || nowIsoDate(),
       lineManager: personLabel(manager, compact(employee.managerName)),
       lineManagerCode: personCode(manager) || compact(employeeCodeFromReference(compact(employee.managerName))),
-      hod: personLabel(hod, compact(hodRef)) || undefined,
-      hodCode: personCode(hod) || compact(employeeCodeFromReference(hodRef)) || undefined,
+      hod: departmentHead.skip ? undefined : departmentHead.name || undefined,
+      hodCode: departmentHead.skip ? undefined : departmentHead.code || undefined,
       monthsCompleted,
       eligible: monthsCompleted >= settings.eligibilityMonths,
     } satisfies InternshipEligibleIntern;
@@ -533,7 +642,7 @@ export const internshipReviewAnalytics = (reviews: InternshipReview[]) => {
     })),
     turnaround: [
       { stage: 'Line Manager', days: averageStageDays(reviews, 'LINE_MANAGER') },
-      { stage: 'HOD / Functional Manager', days: averageStageDays(reviews, 'HOD') },
+      { stage: DEPARTMENT_HEAD_STEP, days: averageStageDays(reviews, 'HOD') },
       { stage: 'HR Manager', days: averageStageDays(reviews, 'HR_MANAGER') },
       { stage: 'MD Final Approval', days: averageStageDays(reviews, 'MD') },
     ],
@@ -591,6 +700,19 @@ export const initiateInternshipReview = async (
     const md = resolveManagingDirector(employees);
     const hrManager = hrManagers[0] || null;
     const hod = intern.hod || input.hod || '';
+    const hodSkipReason = intern.hod
+      ? ''
+      : resolveInternshipDepartmentHead(
+        findPerson(employees, intern.code) || {
+          department: intern.department,
+          departmentHead: intern.hod,
+          managerName: intern.lineManager,
+          employeeCode: intern.code,
+          fullName: intern.name,
+        },
+        employees,
+        intern.lineManagerCode,
+      ).skipReason;
     const review: InternshipReview = {
       id: await nextReviewId(reviews),
       employee: intern,
@@ -610,6 +732,7 @@ export const initiateInternshipReview = async (
         lineManagerCode: intern.lineManagerCode,
         hod,
         hodCode: intern.hodCode,
+        hodSkipReason,
         hrManager: personLabel(hrManager, 'HR Manager'),
         hrManagerCode: personCode(hrManager),
         md: personLabel(md, CANONICAL_MD_NAME),
@@ -630,7 +753,7 @@ export const initiateInternshipReview = async (
       ],
     };
     if (!hod) {
-      review.audit.push(audit('System', 'HOD stage skipped', 'No HOD / Functional Manager resolved from organization hierarchy'));
+      review.audit.push(audit('System', 'Department Head stage skipped', hodSkipReason || 'No Department Head resolved from Job Information'));
     }
     await persistReview(review);
     if (input.notifyManager !== false) {

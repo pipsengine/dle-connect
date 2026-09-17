@@ -617,7 +617,7 @@ export function PurchaseRequisitionsClient() {
         open={modalOpen}
         title={form.prId ? `Edit ${form.prId}` : 'New Purchase Requisition'}
         onClose={() => setModalOpen(false)}
-        wide
+        landscape
         footer={
           <>
             <button type="button" className={secondaryBtnClass} onClick={() => setModalOpen(false)}>Cancel</button>
@@ -706,10 +706,11 @@ export function PurchaseRequisitionsClient() {
             <label className={labelClass}>Workflow status</label>
             <input className={`${inputClass} bg-slate-50`} readOnly value={form.status} />
           </div>
-          <div>
-            <label className={labelClass}>Cost centre</label>
-            <input className={inputClass} value={form.costCentre} onChange={(e) => setForm((f) => ({ ...f, costCentre: e.target.value }))} />
-          </div>
+          <DepartmentLookup
+            label="Cost Centre"
+            value={form.costCentre}
+            onChange={(name) => setForm((f) => ({ ...f, costCentre: name }))}
+          />
           <div>
             <label className={labelClass}>Budget line</label>
             <input className={inputClass} value={form.budgetLine} onChange={(e) => setForm((f) => ({ ...f, budgetLine: e.target.value }))} />

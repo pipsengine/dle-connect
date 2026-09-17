@@ -11,7 +11,7 @@ const review = {
   status: 'In Evaluation',
   approvals: [
     { step: 'Line Manager Evaluation', approver: 'Chris', role: 'LINE_MANAGER', status: 'Pending' },
-    { step: 'HOD / Functional Manager', approver: '', role: 'HOD', status: 'Skipped', comment: 'No HOD configured' },
+    { step: 'Department Head', approver: '', role: 'HOD', status: 'Skipped', comment: 'No Department Head configured' },
     { step: 'HR Manager Review', approver: 'HR Manager', role: 'HR_MANAGER', status: 'Pending' },
     { step: 'MD Final Approval', approver: 'Managing Director', role: 'MD', status: 'Pending' },
   ],
@@ -49,7 +49,7 @@ const hodReview = {
   status: 'Pending HOD',
   approvals: [
     { step: 'Line Manager Evaluation', approver: 'Chris', approverCode: 'P100', role: 'LINE_MANAGER', status: 'Approved' },
-    { step: 'HOD / Functional Manager', approver: 'Head IT', approverCode: 'P200', role: 'HOD', status: 'Pending' },
+    { step: 'Department Head', approver: 'Head IT', approverCode: 'P200', role: 'HOD', status: 'Pending' },
     { step: 'HR Manager Review', approver: 'HR Manager', role: 'HR_MANAGER', status: 'Pending' },
     { step: 'MD Final Approval', approver: 'Managing Director', role: 'MD', status: 'Pending' },
   ],

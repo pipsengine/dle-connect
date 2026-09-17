@@ -628,7 +628,7 @@ function InitiateForm({
         </div>
         <div className="infoGrid">
           <label>Line Manager<input value={intern?.lineManager || ''} placeholder="Auto-populated" readOnly /></label>
-          <label>HOD / Functional Manager<input value={intern?.hod || ''} placeholder="Optional — bypassed if absent" readOnly /></label>
+          <label>Department Head<input value={intern?.hod || ''} placeholder="From Job Information — bypassed if blank or same as line manager" readOnly /></label>
           <label>HR Manager<input value={intern ? 'HR Manager' : ''} readOnly /></label>
           <label>Final Approver<input value={intern ? 'Managing Director' : ''} readOnly /></label>
           <label>Review due date<input type="date" value={dueDate} onChange={(event) => setDueDate(event.target.value)} /></label>

@@ -303,15 +303,17 @@ export function DepartmentLookup({
     };
   }, []);
 
-  const options = useMemo<LookupOption[]>(
-    () =>
-      rows.map((d) => ({
-        value: d.name,
-        label: d.name,
-        sub: [d.code, d.location].filter(Boolean).join(' · ') || undefined,
-      })),
-    [rows],
-  );
+  const options = useMemo<LookupOption[]>(() => {
+    const list = rows.map((d) => ({
+      value: d.name,
+      label: d.name,
+      sub: [d.code, d.location].filter(Boolean).join(' · ') || undefined,
+    }));
+    if (value && !list.some((option) => option.value === value)) {
+      list.unshift({ value, label: value, sub: undefined });
+    }
+    return list;
+  }, [rows, value]);
 
   return (
     <SearchableSelect

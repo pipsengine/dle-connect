@@ -2266,7 +2266,7 @@ export default function PaymentRequestsClient({
 
       {composerOpen ? (
         <div className="fixed inset-0 z-50 flex items-end justify-center bg-slate-900/40 p-0 sm:items-center sm:p-4">
-                <div className="flex max-h-[min(92vh,100dvh)] w-full max-w-2xl flex-col overflow-hidden rounded-t-2xl bg-white shadow-2xl sm:max-h-[92vh] sm:rounded-2xl">
+                <div className="flex max-h-[min(92vh,100dvh)] w-full max-w-3xl flex-col overflow-hidden rounded-t-2xl bg-white shadow-2xl sm:max-h-[92vh] sm:rounded-2xl">
             <div className="flex items-start justify-between gap-3 border-b border-slate-100 px-4 py-3 sm:px-5 sm:py-4">
               <div className="min-w-0">
                 <p className="text-xs font-semibold uppercase tracking-[0.12em] text-[#008FD5]">
@@ -2416,7 +2416,7 @@ export default function PaymentRequestsClient({
                     </label>
                   </div>
 
-                  <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                  <div className="grid gap-3 sm:grid-cols-2">
                     <SearchableSelect
                       label="Department"
                       required
@@ -2647,7 +2647,7 @@ export default function PaymentRequestsClient({
                       </div>
                     )}
                   </div>
-                  <div className="grid gap-3 sm:grid-cols-3">
+                  <div className="grid gap-3 sm:grid-cols-2">
                     <label className="block text-sm">
                       <span className="mb-1 block font-medium text-slate-700">VAT</span>
                       <input type="number" value={form.vatAmount} onChange={(e) => setForm((prev) => ({ ...prev, vatAmount: e.target.value }))} className="w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-[#DBEAFE]" />
@@ -2661,7 +2661,7 @@ export default function PaymentRequestsClient({
                       <input type="number" value={form.retentionAmount} onChange={(e) => setForm((prev) => ({ ...prev, retentionAmount: e.target.value }))} className="w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-[#DBEAFE]" />
                     </label>
                   </div>
-                  <div className="grid gap-3 sm:grid-cols-3">
+                  <div className="grid gap-3 sm:grid-cols-2">
                     <SearchableSelect
                       label="Department"
                       required
@@ -2687,16 +2687,16 @@ export default function PaymentRequestsClient({
                       projects={lookups?.projects}
                       onChange={(value) => setForm((prev) => ({ ...prev, projectCode: value }))}
                     />
+                    <SearchableSelect
+                      label="Location"
+                      value={form.location}
+                      placeholder="Search location"
+                      options={(lookups?.locations || []).concat(
+                        form.location && !(lookups?.locations || []).includes(form.location) ? [form.location] : [],
+                      ).map((item) => ({ value: item, label: item }))}
+                      onChange={(value) => setForm((prev) => ({ ...prev, location: value }))}
+                    />
                   </div>
-                  <SearchableSelect
-                    label="Location"
-                    value={form.location}
-                    placeholder="Search location"
-                    options={(lookups?.locations || []).concat(
-                      form.location && !(lookups?.locations || []).includes(form.location) ? [form.location] : [],
-                    ).map((item) => ({ value: item, label: item }))}
-                    onChange={(value) => setForm((prev) => ({ ...prev, location: value }))}
-                  />
                   <div className="rounded-xl border border-slate-200 bg-slate-50/70 p-3">
                     <div className="flex items-start justify-between gap-3">
                       <div>
