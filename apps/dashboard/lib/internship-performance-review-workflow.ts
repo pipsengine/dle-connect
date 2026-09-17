@@ -32,6 +32,18 @@ export function internshipAverage(values: number[]) {
   return values.length ? Math.round((values.reduce((sum, value) => sum + value, 0) / values.length) * 10) / 10 : 0;
 }
 
+/** Convert a 5-point overall rating to a 0–100 score. */
+export function internshipScoreOutOf100(overall?: number | null) {
+  const value = Number(overall || 0);
+  if (!(value > 0)) return 0;
+  return Math.round((value / 5) * 100);
+}
+
+export function formatInternshipOverallScore(overall?: number | null, empty = 'Pending') {
+  const pct = internshipScoreOutOf100(overall);
+  return pct > 0 ? `${pct}% / 100` : empty;
+}
+
 export function internshipEvaluationLocked(status: InternshipReviewStatus) {
   return !['Draft', 'Assigned', 'In Evaluation', 'Returned'].includes(status);
 }

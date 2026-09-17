@@ -24,7 +24,7 @@ import type {
   InternshipRecommendation,
   InternshipReview,
 } from '@/lib/internship-performance-review-types';
-import { internshipCanApprove, internshipCanEvaluate } from '@/lib/internship-performance-review-workflow';
+import { internshipCanApprove, internshipCanEvaluate, formatInternshipOverallScore, internshipScoreOutOf100 } from '@/lib/internship-performance-review-workflow';
 import { EssCard, EssEmptyState } from './ess-portal-ui';
 
 type EssInternshipWorkspace = {
@@ -328,7 +328,7 @@ function EvaluateForm({
       <div className="flex items-start justify-between gap-3 rounded-[16px] border border-[#DBEAFE] bg-[#EFF6FF] p-4 text-[13px] text-[#1E40AF]">
         <Info className="mt-0.5 h-4 w-4 shrink-0" />
         <p className="m-0">Complete every criterion before submission. Approvers cannot edit these ratings.</p>
-        <span className="rounded-full bg-white px-3 py-1 text-[12px] font-bold">{avg} / 5.0</span>
+        <span className="rounded-full bg-white px-3 py-1 text-[12px] font-bold">{internshipScoreOutOf100(Number(avg))}% / 100</span>
       </div>
       {review.instructions ? (
         <div className="rounded-[16px] border border-[#E2E8F0] bg-white p-4 text-[13px] text-[#475569]">
@@ -437,7 +437,7 @@ function DetailReadOnly({ review }: { review: InternshipReview }) {
           ['Intern', `${review.employee.name} (${review.employee.code})`],
           ['Department', review.employee.department],
           ['Due', formatDay(review.dueDate)],
-          ['Score', review.overall ? `${review.overall.toFixed(1)} / 5.0` : 'Pending'],
+          ['Score', review.overall ? formatInternshipOverallScore(review.overall) : 'Pending'],
         ].map(([label, value]) => (
           <div key={label} className="rounded-[14px] border border-[#E2E8F0] bg-white p-3">
             <p className="m-0 text-[11px] font-semibold uppercase tracking-wide text-[#94A3B8]">{label}</p>

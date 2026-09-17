@@ -44,6 +44,7 @@ import type {
   InternshipReview,
   InternshipReviewSettings,
 } from '@/lib/internship-performance-review-types';
+import { formatInternshipOverallScore } from '@/lib/internship-performance-review-workflow';
 import './internship-review.css';
 import InternshipKpiCard from './KpiCard';
 import InternshipReviewShell from './Shell';
@@ -371,7 +372,7 @@ function DashboardScreen({
     return true;
   });
   const exportCsv = () => {
-    const rows = [['Review ID', 'Intern', 'Code', 'Department', 'Line manager', 'Due date', 'Status', 'Score'], ...filtered.map((review) => [review.id, review.employee.name, review.employee.code, review.employee.department, review.supervisor, review.dueDate, review.status, review.overall || ''])];
+    const rows = [['Review ID', 'Intern', 'Code', 'Department', 'Line manager', 'Due date', 'Status', 'Score'], ...filtered.map((review) => [review.id, review.employee.name, review.employee.code, review.employee.department, review.supervisor, review.dueDate, review.status, review.overall ? formatInternshipOverallScore(review.overall, '') : ''])];
     const csv = rows.map((row) => row.map((value) => `"${String(value).replace(/"/g, '""')}"`).join(',')).join('\n');
     const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
     const url = URL.createObjectURL(blob);
@@ -473,7 +474,7 @@ function DashboardScreen({
                     <td>{review.supervisor}</td>
                     <td>{formatDay(review.dueDate)}</td>
                     <td><InternshipStatusBadge status={review.status} /></td>
-                    <td><b>{review.overall ? review.overall.toFixed(1) : '—'}</b></td>
+                    <td><b>{review.overall ? formatInternshipOverallScore(review.overall, '—') : '—'}</b></td>
                     <td>
                       <button type="button" className="view" onClick={() => onOpen(review)}>
                         {review.status === 'Approved' ? 'HR action' : 'Open'}
@@ -689,7 +690,7 @@ function DetailBody({ review, onHrAction }: { review: InternshipReview; onHrActi
         <div><User /><span>Line manager<b>{review.supervisor}</b></span></div>
         <div><Building2 /><span>Department<b>{review.employee.department}</b></span></div>
         <div><Calendar /><span>Due date<b>{formatDay(review.dueDate)}</b></span></div>
-        <div><Star /><span>Overall score<b>{review.overall ? `${review.overall.toFixed(1)} / 5.0` : 'Pending'}</b></span></div>
+        <div><Star /><span>Overall score<b>{review.overall ? formatInternshipOverallScore(review.overall) : 'Pending'}</b></span></div>
       </div>
       <section className="panel">
         <div className="panelHead">
@@ -927,7 +928,7 @@ function ReportsScreen({ workspace }: { workspace: Workspace | null }) {
           <div className="miniKpi"><Users /><b>{analytics?.ytd ?? 0}</b><span>Reviews YTD</span></div>
           <div className="miniKpi"><CheckCircle2 /><b>{analytics?.completed ?? 0}</b><span>Completed</span></div>
           <div className="miniKpi"><TrendingUp /><b>{analytics?.recommendedPct ?? 0}%</b><span>Recommended</span></div>
-          <div className="miniKpi"><BarChart3 /><b>{analytics?.averageScore ?? 0}</b><span>Average score</span></div>
+          <div className="miniKpi"><BarChart3 /><b>{analytics?.averageScore ? formatInternshipOverallScore(analytics.averageScore) : '0% / 100'}</b><span>Average score</span></div>
         </div>
         <div className="twoCol">
           <section className="panel">

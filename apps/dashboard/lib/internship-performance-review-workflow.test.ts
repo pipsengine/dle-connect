@@ -3,7 +3,7 @@
  * Run: npx tsx --tsconfig apps/dashboard/tsconfig.json apps/dashboard/lib/internship-performance-review-workflow.test.ts
  */
 import assert from 'node:assert/strict';
-import { internshipAverage, internshipCanApprove, internshipCanEvaluate, internshipEvaluationLocked, internshipNextStatus, internshipTasksForSession } from './internship-performance-review-workflow.ts';
+import { internshipAverage, internshipCanApprove, internshipCanEvaluate, internshipEvaluationLocked, internshipNextStatus, internshipScoreOutOf100, internshipTasksForSession, formatInternshipOverallScore } from './internship-performance-review-workflow.ts';
 import type { InternshipReview } from './internship-performance-review-types.ts';
 import { INTERNSHIP_REVIEW_CRITERIA, compareEmployeeCodesSerial } from './internship-performance-review-constants.ts';
 
@@ -25,6 +25,9 @@ assert.equal(internshipEvaluationLocked('Pending MD'), true);
 assert.equal(internshipEvaluationLocked('Returned'), false);
 assert.equal(INTERNSHIP_REVIEW_CRITERIA.length, 11);
 assert.equal(internshipAverage([5, 4, 4]), 4.3);
+assert.equal(internshipScoreOutOf100(4.7), 94);
+assert.equal(formatInternshipOverallScore(4.7), '94% / 100');
+assert.equal(formatInternshipOverallScore(0), 'Pending');
 
 assert.ok(compareEmployeeCodesSerial('IT1', 'IT10') < 0);
 assert.ok(compareEmployeeCodesSerial('NYSC0002', 'NYSC0010') < 0);

@@ -261,7 +261,6 @@ function SupplierSearchFields({
   name,
   suppliers,
   onSelect,
-  onCodeChange,
   onNameChange,
 }: {
   codeLabel: string;
@@ -271,11 +270,10 @@ function SupplierSearchFields({
   name: string;
   suppliers: PaymentSupplierOption[];
   onSelect: (supplier: PaymentSupplierOption) => void;
-  onCodeChange: (value: string) => void;
   onNameChange: (value: string) => void;
 }) {
-  const [open, setOpen] = useState<'code' | 'name' | null>(null);
-  const query = (open === 'code' ? code : name).trim().toLowerCase();
+  const [open, setOpen] = useState(false);
+  const query = name.trim().toLowerCase();
   const filtered = useMemo(() => {
     if (!query) return suppliers.slice(0, 12);
     return suppliers
@@ -287,59 +285,16 @@ function SupplierSearchFields({
       .slice(0, 12);
   }, [suppliers, query]);
 
-  const dropdown = (field: 'code' | 'name') => (
-    open === field ? (
-      <div className="absolute z-30 mt-1 max-h-52 w-full overflow-auto rounded-xl border border-slate-200 bg-white shadow-lg">
-        {filtered.length ? filtered.map((supplier) => (
-          <button
-            key={supplier.supplierId || supplier.code}
-            type="button"
-            onMouseDown={(e) => e.preventDefault()}
-            onClick={() => {
-              onSelect(supplier);
-              setOpen(null);
-            }}
-            className="block w-full px-3 py-2.5 text-left hover:bg-slate-50"
-          >
-            <span className="block text-sm font-semibold text-slate-900">{field === 'code' ? supplier.code : supplier.name}</span>
-            <span className="block text-xs text-slate-500">
-              {field === 'code'
-                ? supplier.name
-                : [supplier.code, supplier.sageCode && supplier.sageCode !== supplier.code ? `Sage ${supplier.sageCode}` : '']
-                  .filter(Boolean)
-                  .join(' · ')}
-            </span>
-          </button>
-        )) : (
-          <p className="px-3 py-3 text-xs text-slate-500">
-            {suppliers.length ? 'No suppliers match that search.' : 'No suppliers are loaded from the register yet.'}
-          </p>
-        )}
-      </div>
-    ) : null
-  );
-
   return (
     <div className="grid gap-3 sm:grid-cols-2">
-      <label className="relative block text-sm">
+      <label className="block text-sm">
         <span className="mb-1 block font-medium text-slate-700">{codeLabel}</span>
-        <div className="relative">
-          <Search className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
-          <input
-            value={code}
-            onChange={(e) => {
-              onCodeChange(e.target.value);
-              setOpen('code');
-            }}
-            onFocus={() => setOpen('code')}
-            onBlur={() => window.setTimeout(() => setOpen(null), 150)}
-            placeholder="Search supplier code"
-            className="w-full rounded-xl border border-slate-200 py-2.5 pl-9 pr-3 text-sm outline-none focus:ring-2 focus:ring-[#DBEAFE]"
-            autoComplete="off"
-            inputMode="search"
-          />
-        </div>
-        {dropdown('code')}
+        <input
+          value={code}
+          readOnly
+          placeholder="Filled from supplier"
+          className="w-full cursor-default rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm text-slate-600"
+        />
       </label>
       <label className="relative block text-sm">
         <span className="mb-1 block font-medium text-slate-700">{nameLabel}</span>
@@ -349,17 +304,43 @@ function SupplierSearchFields({
             value={name}
             onChange={(e) => {
               onNameChange(e.target.value);
-              setOpen('name');
+              setOpen(true);
             }}
-            onFocus={() => setOpen('name')}
-            onBlur={() => window.setTimeout(() => setOpen(null), 150)}
+            onFocus={() => setOpen(true)}
+            onBlur={() => window.setTimeout(() => setOpen(false), 150)}
             placeholder={namePlaceholder}
             className="w-full rounded-xl border border-slate-200 py-2.5 pl-9 pr-3 text-sm outline-none focus:ring-2 focus:ring-[#DBEAFE]"
             autoComplete="off"
             inputMode="search"
           />
         </div>
-        {dropdown('name')}
+        {open ? (
+          <div className="absolute z-30 mt-1 max-h-52 w-full overflow-auto rounded-xl border border-slate-200 bg-white shadow-lg">
+            {filtered.length ? filtered.map((supplier) => (
+              <button
+                key={supplier.supplierId || supplier.code}
+                type="button"
+                onMouseDown={(e) => e.preventDefault()}
+                onClick={() => {
+                  onSelect(supplier);
+                  setOpen(false);
+                }}
+                className="block w-full px-3 py-2.5 text-left hover:bg-slate-50"
+              >
+                <span className="block text-sm font-semibold text-slate-900">{supplier.name}</span>
+                <span className="block text-xs text-slate-500">
+                  {[supplier.code, supplier.sageCode && supplier.sageCode !== supplier.code ? `Sage ${supplier.sageCode}` : '']
+                    .filter(Boolean)
+                    .join(' · ')}
+                </span>
+              </button>
+            )) : (
+              <p className="px-3 py-3 text-xs text-slate-500">
+                {suppliers.length ? 'No suppliers match that search.' : 'No suppliers are loaded from the register yet.'}
+              </p>
+            )}
+          </div>
+        ) : null}
       </label>
     </div>
   );
@@ -2591,17 +2572,6 @@ export default function PaymentRequestsClient({
                     name={form.beneficiaryName}
                     suppliers={lookups?.suppliers || []}
                     onSelect={selectSupplier}
-                    onCodeChange={(value) => {
-                      const match = (lookups?.suppliers || []).find((row) => row.code.toLowerCase() === value.trim().toLowerCase());
-                      setForm((prev) => ({
-                        ...prev,
-                        beneficiaryCode: value,
-                        ...(match ? {
-                          beneficiaryName: match.name,
-                          currencyCode: match.currency || prev.currencyCode,
-                        } : {}),
-                      }));
-                    }}
                     onNameChange={(value) => {
                       const match = (lookups?.suppliers || []).find((row) => row.name.toLowerCase() === value.trim().toLowerCase());
                       setForm((prev) => ({
@@ -2610,7 +2580,7 @@ export default function PaymentRequestsClient({
                         ...(match ? {
                           beneficiaryCode: match.code,
                           currencyCode: match.currency || prev.currencyCode,
-                        } : {}),
+                        } : { beneficiaryCode: '' }),
                       }));
                     }}
                   />
