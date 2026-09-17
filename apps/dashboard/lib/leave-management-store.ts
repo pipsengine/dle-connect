@@ -1,10 +1,9 @@
-import { readFile } from 'node:fs/promises';
-import path from 'node:path';
 import sql from 'mssql';
 import { buildLeaveAllowanceApplicationStatus, buildLeaveAllowanceExceptions, type LeaveAllowanceExceptionRow, type LeaveApplicationLike } from '@/lib/leave-allowance-policy';
 import { reconcilePayrollLeaveAllowanceEvents, syncSageLeaveAllowanceEvents } from '@/lib/payroll-leave-allowance-store';
 import { getDleEnterpriseDbPool, type DleEmployeeDirectoryRow } from '@/lib/dle-enterprise-db';
 import { HRIS_LEAVE_SOURCE } from '@/lib/hris-leave-read';
+import { readHrisDataFile } from '@/lib/hris-data-paths';
 import { readPayrollEmployees } from '@/lib/payroll-employee-source';
 import {
   approvalStatusForEss,
@@ -234,12 +233,6 @@ export type LeavePayload = {
 
 const nowIso = () => new Date().toISOString();
 const moneyFmt = new Intl.NumberFormat('en-NG', { style: 'currency', currency: 'NGN', maximumFractionDigits: 0 });
-const resolveDashboardRoot = () => {
-  const cwd = process.cwd();
-  const dashboardSuffix = path.join('apps', 'dashboard');
-  return cwd.endsWith(dashboardSuffix) ? cwd : path.join(cwd, dashboardSuffix);
-};
-const ESS_REQUESTS_PATH = path.join(resolveDashboardRoot(), 'data', 'hris', 'ess-requests.json');
 
 const adminRoles: LeaveRole[] = ['Leave Administrator', 'HR Officer', 'HR Manager', 'System Administrator', 'Super Administrator'];
 const managerRoles: LeaveRole[] = ['Department Manager', 'Supervisor', 'HR Manager', 'Executive', 'Super Administrator'];
@@ -896,7 +889,9 @@ type EssLeaveRequest = {
 
 const readEssLeaveRequests = async () => {
   try {
-    const parsed = JSON.parse(await readFile(ESS_REQUESTS_PATH, 'utf8')) as EssLeaveRequest[];
+    const stored = await readHrisDataFile('ess-requests.json');
+    if (!stored?.text) return [];
+    const parsed = JSON.parse(stored.text) as EssLeaveRequest[];
     return Array.isArray(parsed)
       ? parsed.filter((request) => isLeaveEssRequest(request))
       : [];

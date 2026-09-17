@@ -5,6 +5,13 @@ import { readUsers } from '@/lib/auth/auth-store';
 import type { SessionPayload } from '@/lib/auth/session';
 import { getDleEnterpriseDbPool, type DleEmployeeDirectoryRow } from '@/lib/dle-enterprise-db';
 import {
+  isIisPackageDataPath,
+  readHrisDataFile,
+  resolveDurableHrisDataDir,
+  resolvePreferredHrisDataFile,
+  writeHrisDataFile,
+} from '@/lib/hris-data-paths';
+import {
   dormantLongPolicy,
   isConfirmedPermanent,
   isFourteenDayPaidLeaveEmployee,
@@ -94,45 +101,26 @@ export type EssLeaveRequest = {
   workflow?: Array<{ stage: string; owner: string; status: string; actedAt?: string | null; comment?: string | null }>;
 };
 
+const compact = (value: unknown) => String(value || '').trim();
+const clean = compact;
+
 const resolveDashboardRoot = () => {
   const cwd = process.cwd();
   const dashboardSuffix = path.join('apps', 'dashboard');
   return cwd.endsWith(dashboardSuffix) ? cwd : path.join(cwd, dashboardSuffix);
 };
 
-const DATA_DIR = process.env.DLE_HRIS_DATA_DIR
-  ? path.resolve(process.env.DLE_HRIS_DATA_DIR)
-  : path.join(resolveDashboardRoot(), 'data', 'hris');
-const uniquePaths = (paths: Array<string | null | undefined>) => Array.from(new Set(paths.reduce<string[]>((items, item) => {
-  if (item) items.push(path.normalize(item));
-  return items;
-}, [])));
-const repoMirrorPath = (file: string) => {
-  const normalizedFile = path.normalize(file);
-  const markers = [
-    path.normalize(path.join('deployment', 'iis', 'site', 'apps', 'dashboard', 'data', 'hris')),
-    path.normalize(path.join('deployment', 'iis', 'site-publish', 'apps', 'dashboard', 'data', 'hris')),
-  ];
-  const marker = markers.find((candidate) => normalizedFile.toLowerCase().lastIndexOf(candidate.toLowerCase()) !== -1);
-  if (!marker) return null;
-  const markerIndex = normalizedFile.toLowerCase().lastIndexOf(marker.toLowerCase());
-  const repoRoot = normalizedFile.slice(0, markerIndex);
-  return path.join(repoRoot, 'apps', 'dashboard', 'data', 'hris', path.basename(normalizedFile));
-};
-const essRequestsFile = path.join(DATA_DIR, 'ess-requests.json');
-const ESS_REQUESTS_PATHS = uniquePaths([
-  essRequestsFile,
-  repoMirrorPath(essRequestsFile),
-  path.join(resolveDashboardRoot(), 'data', 'hris', 'ess-requests.json'),
-  path.join(process.cwd(), 'apps', 'dashboard', 'data', 'hris', 'ess-requests.json'),
-]);
+const DATA_DIR = (() => {
+  const fromEnv = compact(process.env.DLE_HRIS_DATA_DIR);
+  if (fromEnv && !isIisPackageDataPath(fromEnv)) return path.resolve(fromEnv);
+  return resolveDurableHrisDataDir() || path.join(resolveDashboardRoot(), 'data', 'hris');
+})();
+const ESS_REQUESTS_FILE = 'ess-requests.json';
 
-export const ESS_REQUESTS_PATH = essRequestsFile;
+export const ESS_REQUESTS_PATH = resolvePreferredHrisDataFile(ESS_REQUESTS_FILE);
 export const LEAVE_ATTACHMENTS_ROOT = path.join(DATA_DIR, 'leave-attachments');
 export const LEAVE_CALENDAR_CONFIG_PATH = path.join(DATA_DIR, 'leave-calendar-config.json');
 
-const compact = (value: unknown) => String(value || '').trim();
-const clean = compact;
 const round2 = (value: number) => Math.round(value * 100) / 100;
 const workflowDeadlineDays = 5;
 
@@ -163,19 +151,22 @@ const essRequestTimestamp = (item: EssLeaveRequest) => {
 /** Merge every known ESS JSON store so IIS read-only deploy copies cannot hide new submissions. */
 export const readAllEssRequests = async (): Promise<EssLeaveRequest[]> => {
   const merged = new Map<string, EssLeaveRequest>();
-  for (const file of ESS_REQUESTS_PATHS) {
-    try {
-      const parsed = JSON.parse(await readFile(file, 'utf8'));
-      if (!Array.isArray(parsed)) continue;
-      for (const item of parsed as EssLeaveRequest[]) {
-        if (!item?.id) continue;
-        const existing = merged.get(item.id);
-        if (!existing || essRequestTimestamp(item) >= essRequestTimestamp(existing)) {
-          merged.set(item.id, item);
-        }
+  const ingest = (parsed: unknown) => {
+    if (!Array.isArray(parsed)) return;
+    for (const item of parsed as EssLeaveRequest[]) {
+      if (!item?.id) continue;
+      const existing = merged.get(item.id);
+      if (!existing || essRequestTimestamp(item) >= essRequestTimestamp(existing)) {
+        merged.set(item.id, item);
       }
+    }
+  };
+  const stored = await readHrisDataFile(ESS_REQUESTS_FILE, ESS_REQUESTS_PATH || undefined);
+  if (stored?.text) {
+    try {
+      ingest(JSON.parse(stored.text));
     } catch {
-      // Try the next candidate path.
+      // Ignore a corrupt JSON copy and keep going from SQL.
     }
   }
   return [...merged.values()].sort((left, right) => essRequestTimestamp(right) - essRequestTimestamp(left));
@@ -183,19 +174,12 @@ export const readAllEssRequests = async (): Promise<EssLeaveRequest[]> => {
 
 export const writeAllEssRequests = async (requests: EssLeaveRequest[]) => {
   const content = JSON.stringify(requests, null, 2);
-  let lastError: unknown = null;
-  let wrote = false;
-  for (const file of ESS_REQUESTS_PATHS) {
-    try {
-      await mkdir(path.dirname(file), { recursive: true });
-      await writeFile(file, content, 'utf8');
-      wrote = true;
-    } catch (error) {
-      lastError = error;
-      console.warn('[leave-workflow] unable to write ESS requests store', { file, error });
-    }
+  try {
+    await writeHrisDataFile(ESS_REQUESTS_FILE, content, ESS_REQUESTS_PATH || undefined);
+  } catch (error) {
+    console.warn('[leave-workflow] unable to write ESS requests store', error);
+    throw new Error('Leave requests could not be saved to a writable data folder. Leave already stored in SQL is still available.');
   }
-  if (!wrote && lastError) throw lastError;
   invalidateEssPortalCache();
 };
 
@@ -563,7 +547,9 @@ export const expireStaleLeaveRequests = async (requests: EssLeaveRequest[]) => {
       ),
     };
   });
-  if (changed) await writeAllEssRequests(next);
+  if (changed) await writeAllEssRequests(next).catch((error) => {
+    console.warn('[leave-workflow] stale leave expiry could not persist ESS JSON', error);
+  });
   return next;
 };
 

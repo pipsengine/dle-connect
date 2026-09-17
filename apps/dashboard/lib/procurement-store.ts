@@ -185,7 +185,20 @@ const seedDefaults = async (pool: sql.ConnectionPool) => {
     }
   }
 
+  await retireSeededPurchaseRequisitions(pool);
   await seedSampleCbeIfEmpty(pool);
+};
+
+const retireSeededPurchaseRequisitions = async (pool: sql.ConnectionPool) => {
+  await pool.request().query(`
+    DELETE FROM [procurement].[PurchaseRequisitionLines]
+    WHERE [PrId] = N'PR-2026-0154'
+       OR [LineId] LIKE N'PRL-SEED-%';
+
+    DELETE FROM [procurement].[PurchaseRequisitions]
+    WHERE [PrId] = N'PR-2026-0154'
+       OR ([CreatedBy] = N'John Adeyemi' AND [Title] = N'Supply of Additional Bolt & Gasket' AND [RequesterName] = N'Mary Samuel');
+  `);
 };
 
 const textCol = (row: Record<string, unknown>, key: string) =>
@@ -2538,54 +2551,6 @@ export const seedSampleCbeIfEmpty = async (existingPool?: sql.ConnectionPool) =>
             @SupplierId, @Name, @Code, 1, @Currency, @PaymentTerms, @DeliveryPeriod,
             @DeliveryLocation, @Outstanding, @CreatedBy, @UpdatedBy
           )
-      `);
-  }
-
-  await pool
-    .request()
-    .input('PrId', sql.NVarChar(40), prId)
-    .input('Title', sql.NVarChar(300), 'Supply of Additional Bolt & Gasket')
-    .input('Department', sql.NVarChar(180), 'Mechanical Dept.')
-    .input('Project', sql.NVarChar(180), 'Ajaokuta Project')
-    .input('RequesterName', sql.NVarChar(220), 'Mary Samuel')
-    .input('Status', sql.NVarChar(40), 'Approved')
-    .input('Currency', sql.NVarChar(10), 'NGN')
-    .input('EstimatedAmount', sql.Decimal(19, 2), 2000000)
-    .input('CreatedBy', sql.NVarChar(120), actor)
-    .input('UpdatedBy', sql.NVarChar(120), actor)
-    .query(`
-      IF NOT EXISTS (SELECT 1 FROM [procurement].[PurchaseRequisitions] WHERE [PrId]=@PrId)
-        INSERT INTO [procurement].[PurchaseRequisitions] (
-          [PrId], [Title], [Department], [Project], [RequesterName], [Status], [Currency],
-          [EstimatedAmount], [CreatedBy], [UpdatedBy]
-        ) VALUES (
-          @PrId, @Title, @Department, @Project, @RequesterName, @Status, @Currency,
-          @EstimatedAmount, @CreatedBy, @UpdatedBy
-        )
-    `);
-
-  const prLines = [
-    ['PRL-SEED-1', 'M66 × 475 Long Stud Bolt, Nuts & Washers (Each Set)', 'Set', 8, 85000],
-    ['PRL-SEED-2', 'Gasket, M66 (Each)', 'Pcs', 10, 60000],
-    ['PRL-SEED-3', '90 mm Socket', 'Pcs', 1, 600000],
-  ] as const;
-  for (let i = 0; i < prLines.length; i++) {
-    const [lineId, description, uom, qty, unitEstimate] = prLines[i];
-    await pool
-      .request()
-      .input('LineId', sql.NVarChar(40), lineId)
-      .input('PrId', sql.NVarChar(40), prId)
-      .input('Description', sql.NVarChar(500), description)
-      .input('Uom', sql.NVarChar(40), uom)
-      .input('Qty', sql.Decimal(19, 4), qty)
-      .input('UnitEstimate', sql.Decimal(19, 2), unitEstimate)
-      .input('SortOrder', sql.Int, i + 1)
-      .query(`
-        IF NOT EXISTS (SELECT 1 FROM [procurement].[PurchaseRequisitionLines] WHERE [LineId]=@LineId)
-          INSERT INTO [procurement].[PurchaseRequisitionLines]
-            ([LineId], [PrId], [Description], [Uom], [Qty], [UnitEstimate], [SortOrder])
-          VALUES
-            (@LineId, @PrId, @Description, @Uom, @Qty, @UnitEstimate, @SortOrder)
       `);
   }
 
