@@ -94,6 +94,12 @@ import { resolveMailProvider, verifyMailConnection, resolveEmployeeMailbox, send
 import { buildEssPayslipPdf, buildEssPayslipPdfBundle } from '@/lib/ess-payslip-pdf';
 import type { PayrollHistoryRow } from '@/app/workforce-portal/ess-payslip-shared';
 import { resolveWorkflowLinkOriginFromRequest } from '@/lib/public-app-url';
+import {
+  findCelebrationMoment,
+  listTodaysCelebrationMoments,
+  todayIsoLocal,
+} from '@/lib/celebration-moments';
+import { listCelebrationWishesForDate, upsertCelebrationWish } from '@/lib/celebration-wish-store';
 
 type EssRequest = {
   id: string;
@@ -128,6 +134,15 @@ type EssRequest = {
 const ok = <T,>(data: T) => NextResponse.json({ status: 'success', data });
 const err = (status: number, error: string) => NextResponse.json({ status: 'error', error }, { status });
 const compact = (value: unknown) => String(value || '').trim();
+
+const withCelebrationWishes = async <T extends Record<string, unknown>>(payload: T, date?: string) => {
+  try {
+    return { ...payload, celebrationWishes: await listCelebrationWishesForDate(date || todayIsoLocal()) };
+  } catch {
+    return { ...payload, celebrationWishes: [] };
+  }
+};
+
 const linkedEmployeePhotoUrl = (employee: DleEmployeeDirectoryRow) => {
   const code = compact(employee.employeeCode || employee.employeeId);
   if (!code) return '';
@@ -622,7 +637,7 @@ export async function GET(request: Request) {
     const cached = request.headers.get('x-ess-refresh') === '1'
       ? null
       : readEssPortalResponseCache(cacheKey);
-    if (cached) return ok(cached);
+    if (cached) return ok(await withCelebrationWishes(cached as Record<string, unknown>));
     const [employeeSource, rawRequests, loanApplications, loansConfig, taxConfig, pensionConfig, identityByKey] = await Promise.all([
       readPayrollEmployees(),
       loadWorkflowLeaveRequests({ repair: false }),
@@ -1570,7 +1585,7 @@ export async function GET(request: Request) {
       })(),
     };
     writeEssPortalResponseCache(cacheKey, payload);
-    return ok(payload);
+    return ok(await withCelebrationWishes(payload));
   } catch (error) {
     console.error('Workforce portal API failed', error);
     return err(500, error instanceof Error ? error.message : 'Unable to load workforce portal.');
@@ -1593,6 +1608,35 @@ export async function POST(request: Request) {
       successorCodesFromIdentities(identityByKey.values()),
     );
     if (!employee) return err(403, 'Employee identity is not linked to the logged-in account.');
+
+    if (action === 'post-celebration-wish') {
+      const celebrationDate = compact(body.celebrationDate).slice(0, 10) || todayIsoLocal();
+      if (celebrationDate !== todayIsoLocal()) {
+        return err(400, 'Wishes can be posted on the celebration day.');
+      }
+      const honoreeCode = compact(body.honoreeCode || body.employeeCode);
+      const honoreeKind = compact(body.honoreeKind || body.kind).toLowerCase();
+      const moments = listTodaysCelebrationMoments(employeeSource.employees, celebrationDate);
+      const honoree = findCelebrationMoment(moments, honoreeCode, honoreeKind);
+      if (!honoree) return err(404, 'This colleague is not celebrating today.');
+      try {
+        const wish = await upsertCelebrationWish({
+          celebrationDate,
+          honoree,
+          authorCode: compact(employee.employeeCode || employee.employeeId),
+          authorName: compact(employee.fullName || session.fullName || session.username),
+          message: compact(body.message || body.comment),
+        });
+        const wishes = await listCelebrationWishesForDate(celebrationDate);
+        return ok({
+          wish,
+          wishes,
+          message: `Your wish for ${honoree.fullName} has been posted.`,
+        });
+      } catch (error) {
+        return err(400, error instanceof Error ? error.message : 'Unable to post this wish.');
+      }
+    }
 
     if (action === 'retry-leave-notification') {
       const requestId = compact(body.requestId || body.id);

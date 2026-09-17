@@ -9,4 +9,6 @@ export async function registerNodeInstrumentation() {
   ensurePaymentReminderSchedulerStarted();
   const { ensurePayrollReminderSchedulerStarted } = await import('@/lib/payroll-approval-reminder-scheduler');
   ensurePayrollReminderSchedulerStarted();
+  const { ensureCelebrationSchedulerStarted } = await import('@/lib/celebration-scheduler');
+  ensureCelebrationSchedulerStarted();
 }

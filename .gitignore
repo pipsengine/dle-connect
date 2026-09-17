@@ -13,6 +13,7 @@ deployment/iis/runtime-data-backup/
 backups/
 apps/dashboard/data/hris/july-2026-*-diff.json
 apps/dashboard/data/hris/july-2026-*-gaps.json
+apps/dashboard/data/enterprise/celebrations.json
 apps/dashboard/scripts/_diagnose-*.mts
 apps/dashboard/scripts/_check-*.mts
 apps/dashboard/scripts/_peek-*.mts

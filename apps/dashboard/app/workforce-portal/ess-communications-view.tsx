@@ -203,9 +203,11 @@ function PanelCard({
 export function EssCommunicationsView({
   payload,
   onNavigate,
+  onWish,
 }: {
   payload: EssCommunicationsPayload | null;
   onNavigate?: (tab: EssTab | string, options?: { leaveSection?: string }) => void;
+  onWish?: (person: { employeeCode?: string; employeeId?: string; kind: 'birthday' | 'anniversary' }) => void;
 }) {
   const [activeTab, setActiveTab] = useState<HubTab>('Overview');
   const [filter, setFilter] = useState<(typeof FILTERS)[number]>('All');
@@ -547,8 +549,11 @@ export function EssCommunicationsView({
     <PanelCard title={title} action={activeTab !== 'Recognition' ? { label: 'View all →', onClick: () => setActiveTab('Recognition') } : undefined}>
       {celebrationTimeline.length ? (
         <div className="space-y-2.5">
-          {celebrationTimeline.slice(0, limit).map((item, index) => (
-            <div key={item.id} className="grid grid-cols-[auto_auto_minmax(0,1fr)_auto] items-center gap-2 rounded-xl border border-[#EFF3F8] bg-[#FAFCFF] px-2.5 py-2.5">
+          {celebrationTimeline.slice(0, limit).map((item, index) => {
+            const canWish = item.until === 'Today' && (item.kind === 'birthday' || item.kind === 'anniversary') && onWish;
+            const rowClass = 'grid grid-cols-[auto_auto_minmax(0,1fr)_auto] items-center gap-2 rounded-xl border border-[#EFF3F8] bg-[#FAFCFF] px-2.5 py-2.5 text-left';
+            const content = (
+              <>
               <div className={`grid h-11 w-[38px] place-items-center rounded-[9px] text-white ${celebrationTone(item.kind, index)}`}>
                 <span className="text-[8px] leading-none">{item.month}</span>
                 <strong className="-mt-1 text-[15px] font-bold leading-none">{item.day}</strong>
@@ -577,10 +582,25 @@ export function EssCommunicationsView({
                 <span className="mt-0.5 block text-[9px] text-[#75829A]">{item.subtitle}</span>
               </div>
               <em className={`rounded-full px-1.5 py-1 text-[8px] not-italic ${item.until === 'Today' ? 'bg-[#FEF3C7] text-[#B45309]' : 'bg-[#EEF3FF] text-[#3864B2]'}`}>
-                {item.until}
+                {canWish ? 'Wish' : item.until}
               </em>
-            </div>
-          ))}
+              </>
+            );
+            return canWish ? (
+              <button
+                key={item.id}
+                type="button"
+                className={`${rowClass} hover:border-[#DB2777]/40`}
+                onClick={() => onWish?.({ employeeCode: item.employeeCode, employeeId: item.employeeId, kind: item.kind })}
+              >
+                {content}
+              </button>
+            ) : (
+              <div key={item.id} className={rowClass}>
+                {content}
+              </div>
+            );
+          })}
         </div>
       ) : (
         <EmptyPanel title="No upcoming celebrations" detail="Birthdays, anniversaries, and calendar moments for your peers will appear here." />
@@ -608,8 +628,11 @@ export function EssCommunicationsView({
     <PanelCard title={title} action={{ label: 'View all →', onClick: () => setActiveTab('Recognition') }}>
       {items.length ? (
         <div className="space-y-2.5">
-          {items.map((item, index) => (
-            <div key={item.id} className="grid grid-cols-[auto_auto_minmax(0,1fr)_auto] items-center gap-2 rounded-xl border border-[#EFF3F8] bg-[#FAFCFF] px-2.5 py-2">
+          {items.map((item, index) => {
+            const canWish = item.until === 'Today' && onWish;
+            const rowClass = 'grid grid-cols-[auto_auto_minmax(0,1fr)_auto] items-center gap-2 rounded-xl border border-[#EFF3F8] bg-[#FAFCFF] px-2.5 py-2 text-left';
+            const content = (
+              <>
               <div className={`grid h-11 w-[38px] place-items-center rounded-[9px] text-white ${tone === 'birthday' ? 'bg-gradient-to-br from-[#F472B6] to-[#DB2777]' : eventTone(index)}`}>
                 <span className="text-[8px] leading-none">{item.month}</span>
                 <strong className="-mt-1 text-[15px] font-bold leading-none">{item.day}</strong>
@@ -631,10 +654,25 @@ export function EssCommunicationsView({
                 </span>
               </div>
               <em className={`rounded-full px-1.5 py-1 text-[8px] not-italic ${item.until === 'Today' ? 'bg-[#FEF3C7] text-[#B45309]' : 'bg-[#EEF3FF] text-[#3864B2]'}`}>
-                {item.until}
+                {canWish ? 'Wish' : item.until}
               </em>
-            </div>
-          ))}
+              </>
+            );
+            return canWish ? (
+              <button
+                key={item.id}
+                type="button"
+                className={`${rowClass} hover:border-[#DB2777]/40`}
+                onClick={() => onWish?.({ employeeCode: item.employeeCode, employeeId: item.employeeId, kind: tone })}
+              >
+                {content}
+              </button>
+            ) : (
+              <div key={item.id} className={rowClass}>
+                {content}
+              </div>
+            );
+          })}
         </div>
       ) : (
         <EmptyPanel

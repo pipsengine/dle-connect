@@ -8,7 +8,7 @@ import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
 import EmployeeAvatar from '@/components/hris/EmployeeAvatar';
 import { EnterpriseUserProfile } from '@hris/components/layout/enterprise-user-profile';
 import { EssDashboardView, EssRightPanel } from './ess-dashboard-view';
-import { EssCelebrationFlyerModal, buildTodaysCelebrations } from './ess-celebrations';
+import { EssCelebrationFlyerModal, EssCelebrationWishWall, buildTodaysCelebrations, type EssCelebrationMoment, type EssCelebrationWish } from './ess-celebrations';
 import { EssLeaveDashboardView, type EssLeavePayload, type LeaveWorkspaceTab } from './ess-leave-dashboard-view';
 import { EssLeaveApprovalsView, type EssLeaveApprovalsPayload } from './ess-leave-approvals-view';
 import { EssServicesView, type EssServicesPayload } from './ess-services-view';
@@ -159,6 +159,7 @@ type Payload = {
   anniversaries: Array<{ id: string; fullName: string; years: number; date: string; department?: string; employeeId?: string; employeeCode?: string; hasPhoto?: boolean }>;
   todaysBirthdays?: Array<{ id: string; fullName: string; department: string; date: string; employeeId?: string; employeeCode?: string; hasPhoto?: boolean }>;
   todaysAnniversaries?: Array<{ id: string; fullName: string; years: number; date: string; department?: string; employeeId?: string; employeeCode?: string; hasPhoto?: boolean }>;
+  celebrationWishes?: EssCelebrationWish[];
   events: Array<{ id: string; label: string; date: string; type: string }>;
   documents: Array<{ id: string; title: string; category: string; version: string; status: string; uploadedAt?: string | null; expiresAt?: string | null; mimeType?: string; sizeBytes?: number; verifiedAt?: string | null; acknowledgement?: string; accessScope?: string }>;
   documentGovernance?: Array<{ id: string; documentId: string; title: string; category: string; version: string; accessScope: string; acknowledgement: string; status: string; lastUpdated: string }>;
@@ -1366,6 +1367,12 @@ export default function WorkforcePortalClient({ initialNow }: { initialNow: stri
   const [internshipReviewId, setInternshipReviewId] = useState<string | null>(null);
   const [internshipAction, setInternshipAction] = useState<string | null>(null);
   const [forceCelebrationOpen, setForceCelebrationOpen] = useState(false);
+  const [wishOpen, setWishOpen] = useState(false);
+  const [wishCode, setWishCode] = useState<string | null>(null);
+  const [wishKind, setWishKind] = useState<string | null>(null);
+  const [wishError, setWishError] = useState('');
+  const [wishSaving, setWishSaving] = useState(false);
+  const [celebrationWishes, setCelebrationWishes] = useState<EssCelebrationWish[]>([]);
 
   const navigateTab = (next: Tab, options?: { leaveSection?: string; performanceSection?: string }) => {
     setTab(next);
@@ -1401,6 +1408,7 @@ export default function WorkforcePortalClient({ initialNow }: { initialNow: stri
       const json = await parseJsonResponse(res, 'Workforce portal API') as ApiResponse<Payload>;
       if (!res.ok || json.status !== 'success' || !json.data) throw new Error(json.error || `Workforce portal request failed (${res.status})`);
       setPayload(json.data);
+      setCelebrationWishes(json.data.celebrationWishes || []);
       if (json.data.serviceCatalog?.length) {
         const validIds = new Set(json.data.serviceCatalog.map((item) => item.id));
         if (!validIds.has(requestServiceId)) setRequestServiceId(json.data.serviceCatalog[0]?.id || 'profile-update');
@@ -1426,11 +1434,18 @@ export default function WorkforcePortalClient({ initialNow }: { initialNow: stri
     const requestedPerformanceSection = searchParams.get('performanceSection');
     const requestedInternshipId = searchParams.get('internshipReviewId');
     const requestedInternshipAction = searchParams.get('internshipAction');
+    const requestedCelebrate = searchParams.get('celebrate');
+    const requestedCelebrateKind = searchParams.get('kind');
     if (requestedTab && navItems.some((item) => item.id === requestedTab)) setTab(requestedTab);
     if (requestedLeaveSection) setLeaveSection(requestedLeaveSection);
     if (requestedPerformanceSection === 'internship' || requestedPerformanceSection === 'cycle') setPerformanceSection(requestedPerformanceSection);
     setInternshipReviewId(requestedInternshipId);
     setInternshipAction(requestedInternshipAction);
+    if (requestedCelebrate) {
+      setWishCode(requestedCelebrate);
+      setWishKind(requestedCelebrateKind);
+      setWishOpen(true);
+    }
   }, [searchParams]);
 
   const submitRequest = async () => {
@@ -1737,6 +1752,72 @@ export default function WorkforcePortalClient({ initialNow }: { initialNow: stri
     [payload?.anniversaries, payload?.birthdays, payload?.todaysAnniversaries, payload?.todaysBirthdays],
   );
 
+  const openWish = (person: { employeeCode?: string; employeeId?: string; kind?: string }) => {
+    const code = String(person.employeeCode || person.employeeId || '').trim();
+    if (!code) return;
+    setWishCode(code);
+    setWishKind(person.kind || null);
+    setWishError('');
+    setWishOpen(true);
+    if (typeof window !== 'undefined') {
+      const url = new URL(window.location.href);
+      url.searchParams.set('celebrate', code);
+      if (person.kind) url.searchParams.set('kind', person.kind);
+      else url.searchParams.delete('kind');
+      window.history.replaceState({}, '', url);
+    }
+  };
+
+  const closeWish = () => {
+    setWishOpen(false);
+    setWishError('');
+    if (typeof window !== 'undefined') {
+      const url = new URL(window.location.href);
+      url.searchParams.delete('celebrate');
+      url.searchParams.delete('kind');
+      url.searchParams.delete('celebrateDate');
+      window.history.replaceState({}, '', url);
+    }
+  };
+
+  const submitWish = async (message: string) => {
+    const honoree = todaysCelebrations.find((item) => {
+      const code = String(item.employeeCode || item.employeeId || '').trim().toLowerCase();
+      if (code !== String(wishCode || '').trim().toLowerCase()) return false;
+      if (wishKind === 'birthday' || wishKind === 'anniversary') return item.kind === wishKind;
+      return true;
+    }) || todaysCelebrations[0];
+    if (!honoree) {
+      setWishError('This celebration is not available today.');
+      return false;
+    }
+    setWishSaving(true);
+    setWishError('');
+    try {
+      const res = await fetch('/api/workforce-portal', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          action: 'post-celebration-wish',
+          honoreeCode: honoree.employeeCode || honoree.employeeId,
+          honoreeKind: honoree.kind,
+          celebrationDate: honoree.date,
+          message,
+        }),
+      });
+      const json = await parseJsonResponse(res, 'Celebration wish') as ApiResponse<{ wishes?: EssCelebrationWish[]; message?: string }>;
+      if (!res.ok || json.status !== 'success') throw new Error(json.error || 'Unable to post this wish.');
+      setCelebrationWishes(json.data?.wishes || []);
+      setToast(json.data?.message || 'Wish posted.');
+      return true;
+    } catch (err) {
+      setWishError(err instanceof Error ? err.message : 'Unable to post this wish.');
+      return false;
+    } finally {
+      setWishSaving(false);
+    }
+  };
+
   return (
     <EssPortalShell
       tab={tab}
@@ -1755,6 +1836,7 @@ export default function WorkforcePortalClient({ initialNow }: { initialNow: stri
           payload={payload}
           onNavigate={navigateTab}
           onOpenCelebrations={() => setForceCelebrationOpen(true)}
+          onWish={openWish}
         />
       ) : undefined}
     >
@@ -1763,6 +1845,20 @@ export default function WorkforcePortalClient({ initialNow }: { initialNow: stri
         viewer={employee}
         forceOpen={forceCelebrationOpen}
         onForceOpenHandled={() => setForceCelebrationOpen(false)}
+        onWish={openWish}
+      />
+      <EssCelebrationWishWall
+        open={wishOpen}
+        moments={todaysCelebrations}
+        wishes={celebrationWishes}
+        viewer={employee}
+        selectedCode={wishCode}
+        selectedKind={wishKind}
+        saving={wishSaving}
+        error={wishError}
+        onSelect={(moment: EssCelebrationMoment) => openWish(moment)}
+        onClose={closeWish}
+        onSubmit={submitWish}
       />
       <EssMobileNav tab={tab} onTabChange={navigateTab} />
 
@@ -1806,7 +1902,11 @@ export default function WorkforcePortalClient({ initialNow }: { initialNow: stri
       )}
 
       {tab === 'communication' && (
-        <EssCommunicationsView payload={payload as unknown as EssCommunicationsPayload | null} onNavigate={(nextTab, options) => navigateTab(nextTab as EssTab, options)} />
+        <EssCommunicationsView
+          payload={payload as unknown as EssCommunicationsPayload | null}
+          onNavigate={(nextTab, options) => navigateTab(nextTab as EssTab, options)}
+          onWish={openWish}
+        />
       )}
 
       {tab === 'travel' && (

@@ -11,6 +11,7 @@ import type { EmployeeLeaveSummary } from '@/lib/hris-leave-read';
 import { ensureEmployeeLeaveFromHris } from '@/lib/hris-leave-read';
 import type { PayslipEmployeeIdentity } from '@/lib/payroll-payslip-identity-store';
 import { resolveReportingManagerDisplay } from '@/lib/reporting-manager-match';
+import { listTodaysCelebrationMoments } from '@/lib/celebration-moments';
 
 const compact = (value: unknown) => String(value || '').trim();
 const round = (value: number) => Math.round((Number.isFinite(value) ? value : 0) * 10) / 10;
@@ -226,35 +227,6 @@ const toAnniversaryCard = (item: CelebrationPerson) => ({
   hasPhoto: item.hasPhoto,
 });
 
-const celebrationsForToday = (
-  employees: DleEmployeeDirectoryRow[],
-  field: 'dateOfBirth' | 'dateJoined',
-) => {
-  const today = todayIsoLocal();
-  const [, todayMonth, todayDay] = today.split('-');
-  const results: CelebrationPerson[] = [];
-  for (const person of employees) {
-    const raw = field === 'dateOfBirth' ? person.dateOfBirth : person.dateJoined || person.contractStartDate;
-    const base = isoDate(raw);
-    if (!base) continue;
-    const [, month, day] = base.split('-');
-    if (month !== todayMonth || day !== todayDay) continue;
-    const years = field === 'dateJoined' ? yearsOfService(person) : undefined;
-    if (field === 'dateJoined' && (years || 0) < 1) continue;
-    results.push({
-      id: `${field}-${person.employeeId}-${today}`,
-      fullName: person.fullName,
-      department: person.department || 'Unassigned',
-      date: today,
-      years,
-      employeeId: String(person.employeeId || ''),
-      employeeCode: String(person.employeeCode || person.employeeId || ''),
-      hasPhoto: person.hasPhoto === true,
-    });
-  }
-  return results.sort((a, b) => a.fullName.localeCompare(b.fullName));
-};
-
 const readEmployeeDocuments = async (employeeDbId: number) => {
   const pool = await getDleEnterpriseDbPool();
   if (!pool || !employeeDbId) return [];
@@ -410,8 +382,9 @@ export async function buildEssDashboardContext(input: {
       .filter((item) => (item.years || 0) >= 1 && !seen.has(item.id));
     return [...fromPeers, ...extras].slice(0, 12).map(toAnniversaryCard);
   })();
-  const todaysBirthdays = celebrationsForToday(companyPool, 'dateOfBirth').map(toBirthdayCard);
-  const todaysAnniversaries = celebrationsForToday(companyPool, 'dateJoined').map(toAnniversaryCard);
+  const todaysMoments = listTodaysCelebrationMoments(companyPool);
+  const todaysBirthdays = todaysMoments.filter((item) => item.kind === 'birthday').map(toBirthdayCard);
+  const todaysAnniversaries = todaysMoments.filter((item) => item.kind === 'anniversary').map(toAnniversaryCard);
 
   const ownAnniversary = isoDate(employee.dateJoined || employee.contractStartDate);
   const events: EssDashboardContext['events'] = [];

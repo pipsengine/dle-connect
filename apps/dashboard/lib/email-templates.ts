@@ -42,6 +42,7 @@ export type DleEmailTemplateInput = {
   logoUrl?: string;
   details?: DleEmailDetailRow[];
   note?: string;
+  bodyHtml?: string;
   actions?: DleEmailAction[];
   footerNote?: string;
   preheader?: string;
@@ -187,6 +188,7 @@ export const buildDleEmailHtml = (input: DleEmailTemplateInput) => {
               <p style="margin:0 0 12px;font-size:15px;line-height:1.6">Dear <strong>${escapeHtml(input.recipientName)}</strong>,</p>
               <p style="margin:0 0 16px;font-size:15px;line-height:1.7;color:${BRAND.text}">${escapeHtml(input.intro)}</p>
               ${input.statusBadge ? `<div style="margin:0 0 18px">${statusBadgeHtml(input.statusBadge, tone)}</div>` : ''}
+              ${input.bodyHtml || ''}
               ${detailTableHtml(input.details || [])}
               ${noteBlock}
               ${actionsHtml(input.actions || [])}

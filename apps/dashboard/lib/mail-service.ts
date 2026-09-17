@@ -128,6 +128,7 @@ export const sendTransactionalEmail = async (input: {
   text: string;
   html?: string;
   fileAttachments?: Array<{ filename: string; contentType?: string; content: Buffer | string }>;
+  inlineAttachments?: Array<{ filename: string; contentType?: string; content: Buffer; cid: string }>;
 }): Promise<MailSendResult> => {
   const to = compact(input.to);
   if (!to) return { sent: false, reason: 'No recipient email.' };
@@ -140,20 +141,46 @@ export const sendTransactionalEmail = async (input: {
 
   const replyTo = compact(process.env.DLE_SMTP_REPLY_TO) || undefined;
   const logoAttachment = input.html ? await buildEmailBrandLogoAttachment() : null;
-  const inlineAttachments = logoAttachment
-    ? [{
-        filename: logoAttachment.filename,
-        content: logoAttachment.content,
-        cid: logoAttachment.cid,
-        contentType: logoAttachment.contentType,
-        contentDisposition: 'inline' as const,
-      }]
-    : [];
+  const extraInline = (input.inlineAttachments || []).filter((item) => item.content?.length && compact(item.cid));
+  const inlineAttachments = [
+    ...(logoAttachment
+      ? [{
+          filename: logoAttachment.filename,
+          content: logoAttachment.content,
+          cid: logoAttachment.cid,
+          contentType: logoAttachment.contentType,
+          contentDisposition: 'inline' as const,
+        }]
+      : []),
+    ...extraInline.map((attachment) => ({
+      filename: attachment.filename,
+      content: attachment.content,
+      cid: attachment.cid,
+      contentType: attachment.contentType || 'image/jpeg',
+      contentDisposition: 'inline' as const,
+    })),
+  ];
   const fileAttachments = (input.fileAttachments || []).map((attachment) => ({
     filename: attachment.filename,
     content: attachment.content,
     contentType: attachment.contentType || 'application/octet-stream',
   }));
+  const graphInline = [
+    ...(logoAttachment
+      ? [{
+          name: logoAttachment.filename,
+          contentType: logoAttachment.contentType,
+          contentBytes: logoAttachment.contentBytes,
+          contentId: logoAttachment.contentId,
+        }]
+      : []),
+    ...extraInline.map((attachment) => ({
+      name: attachment.filename,
+      contentType: attachment.contentType || 'image/jpeg',
+      contentBytes: attachment.content.toString('base64'),
+      contentId: attachment.cid,
+    })),
+  ];
 
   if (provider === 'graph') {
     try {
@@ -163,14 +190,7 @@ export const sendTransactionalEmail = async (input: {
         text: input.text,
         html: input.html,
         replyTo,
-        inlineAttachments: logoAttachment
-          ? [{
-              name: logoAttachment.filename,
-              contentType: logoAttachment.contentType,
-              contentBytes: logoAttachment.contentBytes,
-              contentId: logoAttachment.contentId,
-            }]
-          : [],
+        inlineAttachments: graphInline,
         fileAttachments: fileAttachments.map((attachment) => ({
           name: attachment.filename,
           contentType: attachment.contentType,

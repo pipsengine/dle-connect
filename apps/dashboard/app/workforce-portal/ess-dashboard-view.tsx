@@ -500,10 +500,12 @@ export function EssRightPanel({
   payload,
   onNavigate,
   onOpenCelebrations,
+  onWish,
 }: {
   payload: EssDashboardPayload | null;
   onNavigate: (tab: EssTab, options?: { leaveSection?: string }) => void;
   onOpenCelebrations?: () => void;
+  onWish?: (person: { employeeCode?: string; employeeId?: string; kind: 'birthday' | 'anniversary' }) => void;
 }) {
   const employee = payload?.employee;
   const manager = payload?.managerMetrics;
@@ -565,6 +567,7 @@ export function EssRightPanel({
         anniversaries={payload?.anniversaries}
         onNavigate={onNavigate}
         onOpenToday={onOpenCelebrations}
+        onWish={onWish}
       />
 
       <EssCard className="p-3">
