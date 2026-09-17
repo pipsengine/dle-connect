@@ -1607,9 +1607,6 @@ export default function WorkforcePortalClient({ initialNow }: { initialNow: stri
         throw new Error(json.error || 'Unable to submit leave application');
       }
       const submitted = json.data.request;
-      if (json.data.deliveryWarnings?.length) {
-        setError(json.data.deliveryWarnings.join(' '));
-      }
       setToast(
         json.data.message
         || `Leave application submitted successfully. Reference ${submitted.id}. Status: ${submitted.status}.`,

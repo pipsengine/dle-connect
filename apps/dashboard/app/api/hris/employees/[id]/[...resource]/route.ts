@@ -2698,7 +2698,14 @@ const persistHrisProfileToEnterprise = async (rec: EmployeeRecord, options?: { r
         rehireEligibility: rec.profile.employmentDetails?.rehireEligibility ?? null,
       },
     });
-    if (synced) invalidateHrisEmployeeCaches();
+    if (synced) {
+      invalidateHrisEmployeeCaches();
+      const mailbox = String(rec.profile.contacts?.officialEmail || '').trim();
+      if (mailbox) {
+        const { syncPortalMailboxForEmployee } = await import('@/lib/auth/auth-store');
+        await syncPortalMailboxForEmployee(employeeCode, mailbox).catch(() => undefined);
+      }
+    }
   } catch (error) {
     console.error('Failed to persist HRIS profile to DLE_Enterprise', error);
   }

@@ -536,6 +536,25 @@ export const readUsers = async () => {
   }));
 };
 
+export const syncPortalMailboxForEmployee = async (employeeCode: string, email: string) => {
+  const code = compact(employeeCode).toUpperCase();
+  const mailbox = compact(email).toLowerCase();
+  if (!code || !mailbox) return false;
+  const users = await readUsersStoreRaw();
+  const target = users.find((user) =>
+    [user.employeeCode, user.employeeId, user.username]
+      .map((value) => compact(value).toUpperCase())
+      .includes(code),
+  );
+  if (!target) return false;
+  if (compact(target.email).toLowerCase() === mailbox) return true;
+  const updated: UserAccount = { ...target, email: mailbox, updatedAt: nowIso() };
+  const pool = await authDb();
+  if (pool) await upsertDbUser(pool, updated);
+  await writeJson(USERS_PATH, users.map((user) => (user.id === updated.id ? updated : user))).catch(() => undefined);
+  return true;
+};
+
 export const readUsersForAccessControl = async () => {
   const stored = await readUsersStoreRaw();
   const activeUsers = stored.filter((user) => !user.deleted);

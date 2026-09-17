@@ -1666,7 +1666,7 @@ export async function POST(request: Request) {
         });
         invalidateEssPortalCache();
         return ok({
-          message: 'Approval email resent to the line manager.',
+          message: 'Approval email resent to the line manager, and applicant confirmation emailed.',
           delivery,
         });
       } catch (error) {
@@ -1828,7 +1828,12 @@ export async function POST(request: Request) {
         invalidateEssPortalCache();
         return ok(result);
       } catch (error) {
-        return err(409, error instanceof Error ? error.message : `Unable to ${action.replace('-', ' ')}.`);
+        const message = error instanceof Error
+          ? error.message
+          : (error && typeof error === 'object' && 'message' in error
+            ? String((error as { message?: unknown }).message || '').trim()
+            : '');
+        return err(409, message || `Unable to ${action.replace('-', ' ')}.`);
       }
     }
 

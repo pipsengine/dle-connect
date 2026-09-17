@@ -73,13 +73,32 @@ const formatSubtitle = (record: AttendanceRecord) => {
   return `${times} · ${source}`;
 };
 
+const gpsFailureMessage = (event: unknown) => {
+  const geo = event as GeolocationPositionError | null;
+  if (geo && typeof geo.code === 'number') {
+    if (geo.code === 1) return 'Location permission is required. Allow GPS access so the system can verify your remote site.';
+    if (geo.code === 2) return 'GPS position is unavailable. Move to an open area and try again.';
+    if (geo.code === 3) return 'GPS timed out. Try clocking in again.';
+    if (typeof geo.message === 'string' && geo.message.trim()) return geo.message.trim();
+  }
+  if (event instanceof Error && event.message) return event.message;
+  if (typeof event === 'string' && event.trim()) return event.trim();
+  if (event && typeof event === 'object' && 'message' in event) {
+    const message = String((event as { message?: unknown }).message || '').trim();
+    if (message) return message;
+  }
+  return '';
+};
+
 const resolveGps = () =>
   new Promise<GeolocationPosition>((resolve, reject) => {
     if (typeof navigator === 'undefined' || !navigator.geolocation) {
       reject(new Error('Geolocation is not supported on this device.'));
       return;
     }
-    navigator.geolocation.getCurrentPosition(resolve, reject, {
+    navigator.geolocation.getCurrentPosition(resolve, (event) => {
+      reject(new Error(gpsFailureMessage(event) || 'Unable to read GPS location.'));
+    }, {
       enableHighAccuracy: true,
       timeout: 20000,
       maximumAge: 0,
@@ -156,7 +175,7 @@ export function EssTimeView({
       setNotice(json.data?.message || `Successfully completed ${action.replace('-', ' ')}.`);
       onRefresh();
     } catch (event) {
-      setError(event instanceof Error ? event.message : `Unable to ${action.replace('-', ' ')}.`);
+      setError(gpsFailureMessage(event) || `Unable to ${action.replace('-', ' ')}.`);
     } finally {
       setBusy('');
     }

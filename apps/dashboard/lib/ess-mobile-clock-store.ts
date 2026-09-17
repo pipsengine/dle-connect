@@ -75,26 +75,34 @@ const ensureDb = async () => {
   if (!pool) throw new Error('DLE Enterprise database connection is not available.');
   if (!dbReady.value) {
     await pool.request().query(`
+IF SCHEMA_ID(N'hris') IS NULL EXEC(N'CREATE SCHEMA [hris]');
 IF OBJECT_ID(N'[hris].[EssMobileClockSessions]', N'U') IS NULL
-CREATE TABLE [hris].[EssMobileClockSessions] (
-  [Id] NVARCHAR(120) NOT NULL CONSTRAINT [PK_EssMobileClockSessions] PRIMARY KEY,
-  [EmployeeCode] NVARCHAR(80) NOT NULL,
-  [EmployeeName] NVARCHAR(180) NOT NULL,
-  [WorkDate] DATE NOT NULL,
-  [ClockInAt] DATETIME2 NOT NULL,
-  [ClockOutAt] DATETIME2 NULL,
-  [ClockInLatitude] DECIMAL(10,7) NOT NULL,
-  [ClockInLongitude] DECIMAL(10,7) NOT NULL,
-  [ClockOutLatitude] DECIMAL(10,7) NULL,
-  [ClockOutLongitude] DECIMAL(10,7) NULL,
-  [LocationLabel] NVARCHAR(220) NOT NULL,
-  [SiteName] NVARCHAR(120) NOT NULL,
-  [GpsAccuracyMeters] DECIMAL(8,2) NULL,
-  [GeofenceResult] NVARCHAR(40) NOT NULL,
-  [Source] NVARCHAR(60) NOT NULL CONSTRAINT [DF_EssMobileClockSessions_Source] DEFAULT ('ESS Mobile'),
-  [CreatedAt] DATETIME2 NOT NULL CONSTRAINT [DF_EssMobileClockSessions_CreatedAt] DEFAULT SYSUTCDATETIME(),
-  [UpdatedAt] DATETIME2 NOT NULL CONSTRAINT [DF_EssMobileClockSessions_UpdatedAt] DEFAULT SYSUTCDATETIME()
-);
+BEGIN
+  CREATE TABLE [hris].[EssMobileClockSessions] (
+    [Id] NVARCHAR(120) NOT NULL CONSTRAINT [PK_EssMobileClockSessions] PRIMARY KEY,
+    [EmployeeCode] NVARCHAR(80) NOT NULL,
+    [EmployeeName] NVARCHAR(180) NOT NULL,
+    [WorkDate] DATE NOT NULL,
+    [ClockInAt] DATETIME2 NOT NULL,
+    [ClockOutAt] DATETIME2 NULL,
+    [ClockInLatitude] DECIMAL(10,7) NOT NULL,
+    [ClockInLongitude] DECIMAL(10,7) NOT NULL,
+    [ClockOutLatitude] DECIMAL(10,7) NULL,
+    [ClockOutLongitude] DECIMAL(10,7) NULL,
+    [LocationLabel] NVARCHAR(220) NOT NULL,
+    [SiteName] NVARCHAR(120) NOT NULL,
+    [GpsAccuracyMeters] DECIMAL(8,2) NULL,
+    [GeofenceResult] NVARCHAR(40) NOT NULL,
+    [Source] NVARCHAR(60) NOT NULL CONSTRAINT [DF_EssMobileClockSessions_Source] DEFAULT ('ESS Mobile'),
+    [CreatedAt] DATETIME2 NOT NULL CONSTRAINT [DF_EssMobileClockSessions_CreatedAt] DEFAULT SYSUTCDATETIME(),
+    [UpdatedAt] DATETIME2 NOT NULL CONSTRAINT [DF_EssMobileClockSessions_UpdatedAt] DEFAULT SYSUTCDATETIME()
+  );
+END;
+IF NOT EXISTS (
+  SELECT 1 FROM sys.indexes
+  WHERE name = N'IX_EssMobileClockSessions_EmployeeDate'
+    AND object_id = OBJECT_ID(N'[hris].[EssMobileClockSessions]')
+)
 CREATE INDEX [IX_EssMobileClockSessions_EmployeeDate] ON [hris].[EssMobileClockSessions]([EmployeeCode],[WorkDate]);
 `);
     dbReady.value = true;

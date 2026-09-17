@@ -1055,6 +1055,62 @@ export const officialEmailAlreadyUsedMessage = (
 ) =>
   `Official email ${email} is already used by ${owner.employeeCode}${owner.fullName ? ` (${owner.fullName})` : ''}. Open that employee profile instead of creating a new record.`;
 
+export const readEmployeeMailboxFromDb = async (employeeCode: string) => {
+  const code = str(employeeCode);
+  if (!code) return '';
+  const p = await pool();
+  if (!p) return '';
+  const rs = await p
+    .request()
+    .input('code', sql.NVarChar(50), code)
+    .query(`
+      SELECT TOP (1)
+        c.official_email,
+        c.personal_email
+      FROM [hris].[Employees] e
+      LEFT JOIN [hris].[EmployeeContactInfo] c ON c.employee_id = e.employee_id
+      WHERE e.employee_code = @code
+    `);
+  const row = rs.recordset?.[0];
+  return normalizeOfficialEmail(row?.official_email) || normalizeOfficialEmail(row?.personal_email) || '';
+};
+
+export const upsertEmployeeOfficialEmailInDb = async (employeeCode: string, officialEmail: string) => {
+  const code = str(employeeCode);
+  const email = normalizeOfficialEmail(officialEmail);
+  if (!code || !email) {
+    return { ok: false as const, reason: 'Employee code and official email are required.' };
+  }
+  const p = await pool();
+  if (!p) return { ok: false as const, reason: 'HRIS database is not available.' };
+
+  const owner = await findEmployeeByOfficialEmailInDb(email);
+  if (owner && owner.employeeCode.toUpperCase() !== code.toUpperCase()) {
+    return { ok: false as const, reason: officialEmailAlreadyUsedMessage(owner, email), owner };
+  }
+
+  const lookup = await p.request()
+    .input('employee_code', sql.NVarChar(50), code)
+    .query(`SELECT employee_id FROM [hris].[Employees] WHERE employee_code = @employee_code;`);
+  const employeeId = Number(lookup.recordset?.[0]?.employee_id || 0);
+  if (!employeeId) return { ok: false as const, reason: `Employee ${code} was not found.` };
+
+  await p.request()
+    .input('employee_id', sql.BigInt, employeeId)
+    .input('official_email', sql.NVarChar(320), email)
+    .query(`
+      MERGE [hris].[EmployeeContactInfo] AS target
+      USING (SELECT @employee_id AS employee_id) AS source
+      ON target.employee_id = source.employee_id
+      WHEN MATCHED THEN UPDATE SET
+        official_email = @official_email,
+        modified_at = SYSUTCDATETIME()
+      WHEN NOT MATCHED THEN INSERT (employee_id, official_email)
+      VALUES (@employee_id, @official_email);
+    `);
+  return { ok: true as const, employeeCode: code, officialEmail: email };
+};
+
 export const humanizeEmployeeCreateDbError = async (error: unknown) => {
   const message = error instanceof Error ? error.message : String(error || '');
   const emailMatch = message.match(/duplicate key value is \(([^)]+)\)/i);
@@ -3390,6 +3446,25 @@ export const syncHrisEmployeeProfileToDb = async (input: HrisEmployeeProfileSync
       `);
 
     const officialEmail = nullable(String(contacts.officialEmail || '').trim().replace(/^[^a-zA-Z0-9]+/, '').toLowerCase());
+    if (officialEmail) {
+      const ownerRs = await new sql.Request(tx)
+        .input('official_email', sql.NVarChar(320), officialEmail)
+        .input('employee_id', sql.BigInt, employeeId)
+        .query(`
+          SELECT TOP (1) e.employee_code AS employeeCode, e.full_name AS fullName
+          FROM [hris].[EmployeeContactInfo] c
+          INNER JOIN [hris].[Employees] e ON e.employee_id = c.employee_id
+          WHERE LOWER(LTRIM(RTRIM(c.official_email))) = @official_email
+            AND c.employee_id <> @employee_id
+        `);
+      const owner = ownerRs.recordset?.[0];
+      if (owner?.employeeCode) {
+        throw new Error(officialEmailAlreadyUsedMessage(
+          { employeeCode: str(owner.employeeCode), fullName: str(owner.fullName) },
+          officialEmail,
+        ));
+      }
+    }
     await new sql.Request(tx)
       .input('employee_id', sql.BigInt, employeeId)
       .input('official_email', sql.NVarChar(320), officialEmail)
@@ -3409,13 +3484,7 @@ export const syncHrisEmployeeProfileToDb = async (input: HrisEmployeeProfileSync
         USING (SELECT @employee_id AS employee_id) AS source
         ON target.employee_id = source.employee_id
         WHEN MATCHED THEN UPDATE SET
-          official_email = CASE
-            WHEN @official_email IS NOT NULL AND EXISTS (
-              SELECT 1 FROM [hris].[EmployeeContactInfo] c
-              WHERE c.official_email = @official_email AND c.employee_id <> @employee_id
-            ) THEN target.official_email
-            ELSE COALESCE(@official_email, target.official_email)
-          END,
+          official_email = COALESCE(@official_email, target.official_email),
           personal_email = COALESCE(@personal_email, target.personal_email),
           primary_phone = COALESCE(@primary_phone, target.primary_phone),
           alternate_phone = COALESCE(@alternate_phone, target.alternate_phone),
@@ -3433,7 +3502,7 @@ export const syncHrisEmployeeProfileToDb = async (input: HrisEmployeeProfileSync
           residential_address, permanent_address, nearest_bus_stop, city, state, country, postal_code
         ) VALUES (
           @employee_id,
-          CASE WHEN @official_email IS NOT NULL AND EXISTS (SELECT 1 FROM [hris].[EmployeeContactInfo] c WHERE c.official_email = @official_email) THEN NULL ELSE @official_email END,
+          @official_email,
           @personal_email, @primary_phone, @alternate_phone, @office_extension,
           @residential_address, @permanent_address, @nearest_bus_stop, @city, @state, @country, @postal_code
         );

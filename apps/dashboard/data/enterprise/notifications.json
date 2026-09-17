@@ -2,6 +2,98 @@
   "schemaVersion": 1,
   "notifications": [
     {
+      "id": "ntf-1789641410616-7rd4g8",
+      "recipientUserId": "L1547",
+      "recipientUsername": "L1547",
+      "recipientEmployeeCode": "L1547",
+      "recipientRoles": [],
+      "kind": "Approval",
+      "module": "Leave Management",
+      "title": "Leave request submitted",
+      "body": "CONTRACT LEAVE — PHILIP KANAYOCHUKWU EZENWA has been submitted and routed to Mr AGAH BASSEY. It must be approved within 5 working days.",
+      "severity": "success",
+      "status": "Unread",
+      "href": "/workforce-portal?tab=leave",
+      "createdAt": "2026-09-17T10:36:50.616Z",
+      "actor": "Leave Workflow Repair",
+      "channels": [
+        "In-App",
+        "Email"
+      ],
+      "metadata": {
+        "requestId": "ess-1789639491954-rfvttf"
+      }
+    },
+    {
+      "id": "ntf-1789641409871-u0ofax",
+      "recipientUserId": "L2792",
+      "recipientUsername": "L2792",
+      "recipientEmployeeCode": "L2792",
+      "recipientRoles": [],
+      "kind": "Approval",
+      "module": "Leave Management",
+      "title": "Leave request awaiting your approval",
+      "body": "PHILIP KANAYOCHUKWU EZENWA submitted CONTRACT LEAVE — PHILIP KANAYOCHUKWU EZENWA (2026-09-21 to 2026-09-29). Review in ESS Approvals within 5 working days.",
+      "severity": "warning",
+      "status": "Unread",
+      "href": "/workforce-portal?tab=leave&leaveSection=Approvals",
+      "createdAt": "2026-09-17T10:36:49.871Z",
+      "actor": "Leave Workflow Repair",
+      "channels": [
+        "In-App",
+        "Email"
+      ],
+      "metadata": {
+        "requestId": "ess-1789639491954-rfvttf"
+      }
+    },
+    {
+      "id": "ntf-1789641408967-h2ginl",
+      "recipientUserId": "L2067",
+      "recipientUsername": "L2067",
+      "recipientEmployeeCode": "L2067",
+      "recipientRoles": [],
+      "kind": "Approval",
+      "module": "Leave Management",
+      "title": "Leave request submitted",
+      "body": "Annual Leave — OLAYIWOLA SERIKI has been submitted and routed to Mr AGAH BASSEY. It must be approved within 5 working days.",
+      "severity": "success",
+      "status": "Unread",
+      "href": "/workforce-portal?tab=leave",
+      "createdAt": "2026-09-17T10:36:48.967Z",
+      "actor": "Leave Workflow Repair",
+      "channels": [
+        "In-App",
+        "Email"
+      ],
+      "metadata": {
+        "requestId": "ess-1789036047964-nrxnkw"
+      }
+    },
+    {
+      "id": "ntf-1789641406065-tmp1m8",
+      "recipientUserId": "L2792",
+      "recipientUsername": "L2792",
+      "recipientEmployeeCode": "L2792",
+      "recipientRoles": [],
+      "kind": "Approval",
+      "module": "Leave Management",
+      "title": "Leave request awaiting your approval",
+      "body": "OLAYIWOLA SERIKI submitted Annual Leave — OLAYIWOLA SERIKI (2026-09-11 to 2026-09-18). Review in ESS Approvals within 5 working days.",
+      "severity": "warning",
+      "status": "Unread",
+      "href": "/workforce-portal?tab=leave&leaveSection=Approvals",
+      "createdAt": "2026-09-17T10:36:46.065Z",
+      "actor": "Leave Workflow Repair",
+      "channels": [
+        "In-App",
+        "Email"
+      ],
+      "metadata": {
+        "requestId": "ess-1789036047964-nrxnkw"
+      }
+    },
+    {
       "id": "ntf-1789562104733-12h8a3",
       "recipientUserId": "P0146",
       "recipientUsername": "P0146",

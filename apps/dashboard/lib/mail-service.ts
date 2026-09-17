@@ -1,7 +1,7 @@
 import { buildEmailBrandLogoAttachment } from '@/lib/email-brand-assets';
 import nodemailer from 'nodemailer';
-import { readUsers } from '@/lib/auth/auth-store';
-import type { DleEmployeeDirectoryRow } from '@/lib/dle-enterprise-db';
+import { readUsers, syncPortalMailboxForEmployee } from '@/lib/auth/auth-store';
+import { readEmployeeMailboxFromDb, type DleEmployeeDirectoryRow } from '@/lib/dle-enterprise-db';
 import type { LeaveEmailApproverKind } from '@/lib/leave-email-action-token';
 import type { EssLeaveRequest } from '@/lib/leave-workflow-service';
 import {
@@ -112,6 +112,11 @@ export const resolveEmployeeMailbox = async (employee?: DleEmployeeDirectoryRow 
   if (!employee) return '';
   const code = compact(employee.employeeCode || employee.employeeId || employee.sourceEmployeeId);
   if (!code) return '';
+  const fromDb = normalizeMailboxAddress(await readEmployeeMailboxFromDb(code).catch(() => ''));
+  if (fromDb) {
+    await syncPortalMailboxForEmployee(code, fromDb).catch(() => undefined);
+    return fromDb;
+  }
   const users = await readUsers();
   const normalized = code.toUpperCase();
   const match = users.find((user) =>

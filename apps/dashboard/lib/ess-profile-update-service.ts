@@ -1,4 +1,4 @@
-import { readUsers } from '@/lib/auth/auth-store';
+import { readUsers, syncPortalMailboxForEmployee } from '@/lib/auth/auth-store';
 import type { SessionPayload } from '@/lib/auth/session';
 import type { DleEmployeeDirectoryRow } from '@/lib/dle-enterprise-db';
 import { syncHrisEmployeeProfileToDb } from '@/lib/dle-enterprise-db';
@@ -16,7 +16,7 @@ import {
   sendProfileUpdateDecisionEmail,
 } from '@/lib/mail-service';
 import { getNigeriaLgas, getNigeriaStates, getRegionForState } from '@/lib/nigeria-locations';
-import { readPayrollEmployees } from '@/lib/payroll-employee-source';
+import { invalidatePayrollEmployeeCache, readPayrollEmployees } from '@/lib/payroll-employee-source';
 import { resolveWorkflowLinkOrigin } from '@/lib/public-app-url';
 
 export type EssProfileFieldMeta = {
@@ -650,6 +650,11 @@ export const transitionEssProfileUpdate = async (input: {
     emergencyContacts: syncPayload.emergencyContacts,
   });
   if (!applied) throw new Error('Unable to apply profile changes to HRIS.');
+  invalidatePayrollEmployeeCache();
+  const mailbox = String(syncPayload.contacts?.officialEmail || '').trim();
+  if (mailbox) {
+    await syncPortalMailboxForEmployee(syncPayload.employeeCode, mailbox).catch(() => undefined);
+  }
 
   const next: EssProfileUpdateRequest = {
     ...current,
