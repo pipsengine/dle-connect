@@ -68,6 +68,13 @@ export type PurchaseRequisitionRow = {
   deliveryLocation?: string | null;
   location?: string | null;
   site?: string | null;
+  requesterCode?: string | null;
+  currentStage?: string | null;
+  lineManagerName?: string | null;
+  lineManagerCode?: string | null;
+  assignedBuyer?: string | null;
+  assignedBuyerCode?: string | null;
+  workflow?: Array<{ at: string; action: string; actor: string; actorCode?: string; stage?: string; comment?: string }>;
   priority?: string | null;
   attachments?: PrAttachment[];
   updatedAt: string;
@@ -86,7 +93,15 @@ export type PurchaseRequisitionRow = {
   }>;
 };
 
-const PR_STATUSES = ['Draft', 'Submitted', 'Under Approval', 'Returned', 'Approved', 'Rejected', 'Processing', 'Closed', 'Cancelled'] as const;
+const PR_STATUSES = ['Draft', 'Submitted', 'Line Manager Review', 'Procurement Manager Review', 'Returned', 'Approved', 'Rejected', 'Processing', 'Closed', 'Cancelled'] as const;
+
+type PrWorkflowContext = {
+  actor: string;
+  actorCode: string;
+  isProcurementManager: boolean;
+  isSuper: boolean;
+  buyers: Array<{ code: string; name: string; department: string }>;
+};
 
 type PrForm = {
   prId?: string;
@@ -94,7 +109,10 @@ type PrForm = {
   department: string;
   project: string;
   requesterName: string;
+  requesterCode: string;
   status: string;
+  assignedBuyer: string;
+  assignedBuyerCode: string;
   currency: string;
   estimatedAmount: string;
   requiredDate: string;
@@ -113,7 +131,10 @@ const emptyForm = (): PrForm => ({
   department: '',
   project: '',
   requesterName: '',
+  requesterCode: '',
   status: 'Draft',
+  assignedBuyer: '',
+  assignedBuyerCode: '',
   currency: 'NGN',
   estimatedAmount: '',
   requiredDate: '',
@@ -169,12 +190,20 @@ export function PurchaseRequisitionsClient() {
   const [pageSize, setPageSize] = useState(10);
   const [lines, setLines] = useState<ProcLineItem[]>([]);
   const [attachments, setAttachments] = useState<Array<PrAttachment & { contentBase64?: string }>>([]);
+  const [workflowCtx, setWorkflowCtx] = useState<PrWorkflowContext | null>(null);
+  const [workflowComment, setWorkflowComment] = useState('');
+  const [workflowEvents, setWorkflowEvents] = useState<NonNullable<PurchaseRequisitionRow['workflow']>>([]);
 
   const load = useCallback(async () => {
     setLoading(true);
     setError('');
     try {
-      setRows(await procurementGet<PurchaseRequisitionRow[]>('purchase-requisitions'));
+      const [prs, ctx] = await Promise.all([
+        procurementGet<PurchaseRequisitionRow[]>('purchase-requisitions'),
+        procurementGet<PrWorkflowContext>('pr-workflow-context').catch(() => null),
+      ]);
+      setRows(prs);
+      if (ctx) setWorkflowCtx(ctx);
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed to load purchase requisitions');
     } finally {
@@ -191,7 +220,7 @@ export function PurchaseRequisitionsClient() {
     return {
       total: rows.length,
       draft: count((s) => s === 'draft'),
-      submitted: count((s) => s === 'submitted' || s === 'under review' || s === 'under approval'),
+      submitted: count((s) => s === 'submitted' || s === 'under review' || s === 'under approval' || s.includes('line manager') || s.includes('procurement manager')),
       approved: count((s) => s === 'approved'),
       returned: count((s) => s === 'returned'),
       rejected: count((s) => s === 'rejected'),
@@ -232,6 +261,8 @@ export function PurchaseRequisitionsClient() {
     setForm(emptyForm());
     setLines([emptyLine()]);
     setAttachments([]);
+    setWorkflowEvents([]);
+    setWorkflowComment('');
     setError('');
     setModalOpen(true);
   };
@@ -243,7 +274,10 @@ export function PurchaseRequisitionsClient() {
       department: row.department || '',
       project: row.project || '',
       requesterName: row.requesterName || '',
+      requesterCode: row.requesterCode || '',
       status: row.status || 'Draft',
+      assignedBuyer: row.assignedBuyer || '',
+      assignedBuyerCode: row.assignedBuyerCode || '',
       currency: row.currency || 'NGN',
       estimatedAmount: row.estimatedAmount == null ? '' : String(row.estimatedAmount),
       requiredDate: toDateInput(row.requiredDate),
@@ -271,6 +305,8 @@ export function PurchaseRequisitionsClient() {
       })),
     );
     setAttachments(row.attachments || []);
+    setWorkflowEvents(row.workflow || []);
+    setWorkflowComment('');
     setError('');
     setModalOpen(true);
   };
@@ -303,23 +339,24 @@ export function PurchaseRequisitionsClient() {
     if (next.length) setAttachments((current) => [...current, ...next]);
   };
 
-  const save = async () => {
+  const save = async (submitAfter = false) => {
     if (!form.title.trim()) {
       setError('Title is required');
-      return;
+      return null;
     }
     setSaving(true);
     setError('');
     try {
-      await procurementPost('upsert-pr', {
+      const saved = await procurementPost<{ prId: string }>('upsert-pr', {
         payload: {
           prId: form.prId,
           title: form.title.trim(),
           description: null,
           department: form.department.trim() || null,
           project: form.project.trim() || null,
-          requesterName: form.requesterName.trim() || null,
-          status: form.status,
+          requesterName: form.requesterName.trim() || workflowCtx?.actor || null,
+          requesterCode: form.requesterCode.trim() || workflowCtx?.actorCode || null,
+          status: /draft|returned/i.test(form.status) || !form.prId ? 'Draft' : form.status,
           currency: form.currency || 'NGN',
           requiredDate: form.requiredDate || null,
           currentWith: form.currentWith.trim() || null,
@@ -331,6 +368,8 @@ export function PurchaseRequisitionsClient() {
           deliveryLocation: form.location.trim() || null,
           site: form.site || null,
           priority: form.priority,
+          assignedBuyer: form.assignedBuyer || null,
+          assignedBuyerCode: form.assignedBuyerCode || null,
           estimatedAmount: form.estimatedAmount === '' ? (lines.length ? linesTotal(lines) : null) : Number(form.estimatedAmount),
           attachments,
           lines: lines
@@ -349,14 +388,55 @@ export function PurchaseRequisitionsClient() {
             })),
         },
       });
+      const prId = saved?.prId || form.prId;
+      if (submitAfter && prId) {
+        await procurementPost('submit-pr', { prId });
+      }
       setModalOpen(false);
       await load();
+      return prId;
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Save failed');
+      return null;
     } finally {
       setSaving(false);
     }
   };
+
+  const runWorkflow = async (decision: 'approve' | 'reject' | 'return' | 'assign-buyer' | 'acknowledge') => {
+    if (!form.prId) return;
+    if ((decision === 'reject' || decision === 'return') && !workflowComment.trim()) {
+      setError('Add a comment when rejecting or returning this PR.');
+      return;
+    }
+    if ((decision === 'assign-buyer' || decision === 'acknowledge') && !form.assignedBuyerCode) {
+      setError('Assign a buyer from the procurement team before acknowledging.');
+      return;
+    }
+    setSaving(true);
+    setError('');
+    try {
+      await procurementPost('action-pr', {
+        prId: form.prId,
+        decision,
+        comment: workflowComment.trim() || undefined,
+        assignedBuyer: form.assignedBuyer || undefined,
+        assignedBuyerCode: form.assignedBuyerCode || undefined,
+      });
+      setModalOpen(false);
+      await load();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Workflow action failed');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const stage = form.status;
+  const canEditHeader = !form.prId || /draft|returned/i.test(stage);
+  const showBuyerField = /procurement manager|approved/i.test(stage);
+  const canLineManagerAct = /line manager|^submitted$/i.test(stage);
+  const canProcurementAct = /procurement manager/i.test(stage) && Boolean(workflowCtx?.isProcurementManager || workflowCtx?.isSuper);
 
   return (
     <div className="space-y-5">
@@ -364,7 +444,7 @@ export function PurchaseRequisitionsClient() {
         <div>
           <h1 className="text-2xl font-black text-slate-900">Purchase Requisitions</h1>
           <p className="mt-1 text-sm text-slate-600">
-            Raise, track and approve purchase requests with project, site, location, Excel/MTO import and line-item detail.
+            Raise, submit and approve purchase requests. Line manager approves first; Procurement Manager then assigns a buyer and acknowledges.
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
@@ -438,7 +518,7 @@ export function PurchaseRequisitionsClient() {
         onExport={() =>
           exportCsv(
             'purchase-requisitions.csv',
-            ['PR No', 'Title', 'Department', 'Project', 'Site', 'Location', 'Requester', 'Estimate', 'Required', 'Status', 'Current With', 'Updated'],
+            ['PR No', 'Title', 'Department', 'Project', 'Site', 'Location', 'Requester', 'Estimate', 'Required', 'Status', 'Assigned Buyer', 'Current With', 'Updated'],
             filtered.map((r) => [
               r.prId,
               r.title,
@@ -450,6 +530,7 @@ export function PurchaseRequisitionsClient() {
               r.estimatedAmount,
               formatDate(r.requiredDate),
               r.status,
+              /procurement manager|approved/i.test(r.status) ? r.assignedBuyer : '',
               r.currentWith,
               formatWhen(r.updatedAt),
             ]),
@@ -474,6 +555,7 @@ export function PurchaseRequisitionsClient() {
                     <th className="px-3 py-3 text-left">Estimate</th>
                     <th className="px-3 py-3 text-left">Required</th>
                     <th className="px-3 py-3 text-left">Status</th>
+                    <th className="px-3 py-3 text-left">Assigned buyer</th>
                     <th className="px-3 py-3 text-left">Current With</th>
                     <th className="px-3 py-3 text-left">Updated</th>
                     <th className="px-3 py-3 text-left">Actions</th>
@@ -505,6 +587,9 @@ export function PurchaseRequisitionsClient() {
                       <td className="px-3 py-3 tabular-nums text-slate-800">{moneyPlain(row.estimatedAmount, row.currency || 'NGN')}</td>
                       <td className="px-3 py-3 text-slate-600">{formatDate(row.requiredDate)}</td>
                       <td className="px-3 py-3"><StatusBadge status={row.status} /></td>
+                      <td className="px-3 py-3 text-slate-700">
+                        {/procurement manager|approved/i.test(row.status) ? (row.assignedBuyer || '—') : '—'}
+                      </td>
                       <td className="px-3 py-3 text-slate-700">{row.currentWith || '—'}</td>
                       <td className="px-3 py-3 text-slate-600">{formatWhen(row.updatedAt)}</td>
                       <td className="px-3 py-3">
@@ -536,17 +621,48 @@ export function PurchaseRequisitionsClient() {
         footer={
           <>
             <button type="button" className={secondaryBtnClass} onClick={() => setModalOpen(false)}>Cancel</button>
-            <button type="button" className={primaryBtnClass} disabled={saving} onClick={() => void save()}>
-              {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
-              {saving ? 'Saving…' : form.prId ? 'Update' : 'Create'}
-            </button>
+            {canEditHeader ? (
+              <>
+                <button type="button" className={secondaryBtnClass} disabled={saving} onClick={() => void save(false)}>
+                  {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+                  Save draft
+                </button>
+                <button type="button" className={primaryBtnClass} disabled={saving} onClick={() => void save(true)}>
+                  {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+                  Submit for approval
+                </button>
+              </>
+            ) : null}
+            {canLineManagerAct ? (
+              <>
+                <button type="button" className={secondaryBtnClass} disabled={saving} onClick={() => void runWorkflow('return')}>Return</button>
+                <button type="button" className={secondaryBtnClass} disabled={saving} onClick={() => void runWorkflow('reject')}>Reject</button>
+                <button type="button" className={primaryBtnClass} disabled={saving} onClick={() => void runWorkflow('approve')}>
+                  {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+                  Line manager approve
+                </button>
+              </>
+            ) : null}
+            {canProcurementAct ? (
+              <>
+                <button type="button" className={secondaryBtnClass} disabled={saving} onClick={() => void runWorkflow('return')}>Return</button>
+                <button type="button" className={secondaryBtnClass} disabled={saving} onClick={() => void runWorkflow('reject')}>Reject</button>
+                <button type="button" className={secondaryBtnClass} disabled={saving || !form.assignedBuyerCode} onClick={() => void runWorkflow('assign-buyer')}>
+                  Assign buyer
+                </button>
+                <button type="button" className={primaryBtnClass} disabled={saving || !form.assignedBuyerCode} onClick={() => void runWorkflow('acknowledge')}>
+                  {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+                  Acknowledge
+                </button>
+              </>
+            ) : null}
           </>
         }
       >
         {error && modalOpen ? (
           <div className="mb-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{error}</div>
         ) : null}
-        <div className="grid gap-3 md:grid-cols-2">
+        <div className={`grid gap-3 md:grid-cols-2 ${canEditHeader ? '' : 'pointer-events-none opacity-80'}`}>
           <div className="md:col-span-2">
             <label className={labelClass}>Title *</label>
             <input className={inputClass} value={form.title} onChange={(e) => setForm((f) => ({ ...f, title: e.target.value }))} />
@@ -584,15 +700,11 @@ export function PurchaseRequisitionsClient() {
           <EmployeeLookup
             label="Requester"
             value={form.requesterName}
-            onChange={(name) => setForm((f) => ({ ...f, requesterName: name }))}
+            onChange={(name, employee) => setForm((f) => ({ ...f, requesterName: name, requesterCode: employee?.employeeCode || f.requesterCode }))}
           />
           <div>
-            <label className={labelClass}>Status</label>
-            <select className={selectClass} value={form.status} onChange={(e) => setForm((f) => ({ ...f, status: e.target.value }))}>
-              {PR_STATUSES.map((s) => (
-                <option key={s} value={s}>{s}</option>
-              ))}
-            </select>
+            <label className={labelClass}>Workflow status</label>
+            <input className={`${inputClass} bg-slate-50`} readOnly value={form.status} />
           </div>
           <div>
             <label className={labelClass}>Cost centre</label>
@@ -624,11 +736,36 @@ export function PurchaseRequisitionsClient() {
           </div>
           <div>
             <label className={labelClass}>Current with</label>
-            <input className={inputClass} value={form.currentWith} onChange={(e) => setForm((f) => ({ ...f, currentWith: e.target.value }))} />
+            <input className={`${inputClass} bg-slate-50`} readOnly value={form.currentWith} />
           </div>
         </div>
-        <div className="mt-6">
-          <LineItemsEditor lines={lines} onChange={setLines} onImported={onImported} />
+        {showBuyerField ? (
+          <div className="mt-4">
+            <label className={labelClass}>Assigned buyer *</label>
+            {canProcurementAct ? (
+              <select
+                className={selectClass}
+                value={form.assignedBuyerCode}
+                onChange={(e) => {
+                  const buyer = workflowCtx?.buyers.find((item) => item.code === e.target.value);
+                  setForm((f) => ({ ...f, assignedBuyerCode: e.target.value, assignedBuyer: buyer?.name || '' }));
+                }}
+              >
+                <option value="">Select a buyer from the procurement team</option>
+                {(workflowCtx?.buyers || []).map((buyer) => (
+                  <option key={buyer.code} value={buyer.code}>
+                    {buyer.name} ({buyer.code})
+                  </option>
+                ))}
+              </select>
+            ) : (
+              <input className={`${inputClass} bg-slate-50`} readOnly value={form.assignedBuyer || 'Not assigned yet'} />
+            )}
+            <p className="mt-1 text-xs text-slate-500">Visible after line manager approval. Procurement Manager must assign a buyer before acknowledging.</p>
+          </div>
+        ) : null}
+        <div className={`mt-6 ${canEditHeader ? '' : 'pointer-events-none opacity-80'}`}>
+          <LineItemsEditor lines={lines} onChange={setLines} onImported={onImported} allowImport={canEditHeader} />
         </div>
         <div className="mt-6">
           <div className="mb-3 flex items-center justify-between gap-3">
@@ -636,6 +773,7 @@ export function PurchaseRequisitionsClient() {
               <div className="text-sm font-black text-slate-900">Supporting files</div>
               <p className="text-xs text-slate-500">Upload drawings, quotes or the source MTO. Line detail lives on each item, not a header description.</p>
             </div>
+            {canEditHeader ? (
             <label className={secondaryBtnClass}>
               <Upload className="h-4 w-4" /> Upload files
               <input
@@ -648,6 +786,7 @@ export function PurchaseRequisitionsClient() {
                 }}
               />
             </label>
+            ) : null}
           </div>
           {attachments.length ? (
             <ul className="space-y-2">
@@ -658,9 +797,11 @@ export function PurchaseRequisitionsClient() {
                     <span className="truncate">{file.name}</span>
                     <span className="text-xs text-slate-500">{file.size ? `${Math.max(1, Math.round(file.size / 1024))} KB` : ''}</span>
                   </span>
+                  {canEditHeader ? (
                   <button type="button" className="rounded-md p-1 hover:bg-slate-100" onClick={() => setAttachments((current) => current.filter((item) => item.id !== file.id))} aria-label={`Remove ${file.name}`}>
                     <Trash2 className="h-4 w-4 text-slate-500" />
                   </button>
+                  ) : null}
                 </li>
               ))}
             </ul>
@@ -670,6 +811,34 @@ export function PurchaseRequisitionsClient() {
             </div>
           )}
         </div>
+        {canLineManagerAct || canProcurementAct ? (
+          <div className="mt-6">
+            <label className={labelClass}>Decision comment</label>
+            <textarea
+              className={`${inputClass} min-h-[72px] py-2`}
+              value={workflowComment}
+              onChange={(e) => setWorkflowComment(e.target.value)}
+              placeholder="Required when returning or rejecting. Optional for approve / acknowledge."
+            />
+          </div>
+        ) : null}
+        {workflowEvents.length ? (
+          <div className="mt-6">
+            <div className="mb-2 text-sm font-black text-slate-900">Workflow history</div>
+            <ol className="space-y-2">
+              {workflowEvents.map((event, index) => (
+                <li key={`${event.at}-${index}`} className="rounded-lg border border-slate-200 px-3 py-2 text-sm">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <span className="font-semibold text-slate-900">{event.action}</span>
+                    <span className="text-xs text-slate-500">{formatWhen(event.at)}</span>
+                  </div>
+                  <div className="text-xs text-slate-600">{event.actor}{event.stage ? ` · ${event.stage}` : ''}</div>
+                  {event.comment ? <div className="mt-1 text-slate-700">{event.comment}</div> : null}
+                </li>
+              ))}
+            </ol>
+          </div>
+        ) : null}
       </ProcModal>
     </div>
   );

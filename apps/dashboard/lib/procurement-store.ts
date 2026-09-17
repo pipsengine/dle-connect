@@ -276,6 +276,16 @@ const persistPrAttachments = async (prId: string, raw: unknown): Promise<PrAttac
 
 const mapPr = (row: Record<string, unknown>) => {
   const location = textCol(row, 'Location') || textCol(row, 'DeliveryLocation');
+  const parseWorkflow = (value: unknown) => {
+    if (Array.isArray(value)) return value;
+    if (typeof value !== 'string' || !value.trim()) return [];
+    try {
+      const parsed = JSON.parse(value);
+      return Array.isArray(parsed) ? parsed : [];
+    } catch {
+      return [];
+    }
+  };
   return {
     prId: String(row.PrId),
     title: String(row.Title),
@@ -283,11 +293,18 @@ const mapPr = (row: Record<string, unknown>) => {
     department: row.Department == null ? null : String(row.Department),
     project: row.Project == null ? null : String(row.Project),
     requesterName: row.RequesterName == null ? null : String(row.RequesterName),
+    requesterCode: textCol(row, 'RequesterCode'),
     status: String(row.Status),
     currency: row.Currency == null ? null : String(row.Currency),
     estimatedAmount: row.EstimatedAmount == null ? null : toNum(row.EstimatedAmount),
     requiredDate: toIso(row.RequiredDate),
     currentWith: row.CurrentWith == null ? null : String(row.CurrentWith),
+    currentStage: textCol(row, 'CurrentStage') || String(row.Status),
+    lineManagerName: textCol(row, 'LineManagerName'),
+    lineManagerCode: textCol(row, 'LineManagerCode'),
+    assignedBuyer: textCol(row, 'AssignedBuyer'),
+    assignedBuyerCode: textCol(row, 'AssignedBuyerCode'),
+    workflow: parseWorkflow(row.WorkflowJson),
     requestType: textCol(row, 'RequestType'),
     costCentre: textCol(row, 'CostCentre'),
     budgetLine: textCol(row, 'BudgetLine'),
@@ -709,6 +726,8 @@ export const upsertPurchaseRequisition = async (input: Record<string, unknown>, 
   const location = cleanNullable(input.location || input.deliveryLocation, 200);
   const hasAttachments = input.attachments !== undefined;
   const attachments = hasAttachments ? await persistPrAttachments(prId, input.attachments) : [];
+  const workflowJson = Array.isArray(input.workflow) ? JSON.stringify(input.workflow) : (typeof input.workflowJson === 'string' ? String(input.workflowJson) : null);
+  const hasWorkflow = input.workflow !== undefined || input.workflowJson !== undefined;
   await pool
     .request()
     .input('PrId', sql.NVarChar(40), prId)
@@ -717,11 +736,19 @@ export const upsertPurchaseRequisition = async (input: Record<string, unknown>, 
     .input('Department', sql.NVarChar(180), cleanNullable(input.department, 180))
     .input('Project', sql.NVarChar(180), cleanNullable(input.project, 180))
     .input('RequesterName', sql.NVarChar(220), cleanNullable(input.requesterName, 220) || actor)
+    .input('RequesterCode', sql.NVarChar(40), cleanNullable(input.requesterCode, 40))
     .input('Status', sql.NVarChar(40), clean(input.status || 'Draft', 40))
     .input('Currency', sql.NVarChar(10), cleanNullable(input.currency, 10) || 'NGN')
     .input('EstimatedAmount', sql.Decimal(19, 2), input.estimatedAmount == null ? null : toNum(input.estimatedAmount))
     .input('RequiredDate', sql.Date, toDateOnly(input.requiredDate))
     .input('CurrentWith', sql.NVarChar(120), cleanNullable(input.currentWith, 120))
+    .input('CurrentStage', sql.NVarChar(80), cleanNullable(input.currentStage || input.status, 80))
+    .input('LineManagerName', sql.NVarChar(220), cleanNullable(input.lineManagerName, 220))
+    .input('LineManagerCode', sql.NVarChar(40), cleanNullable(input.lineManagerCode, 40))
+    .input('AssignedBuyer', sql.NVarChar(220), cleanNullable(input.assignedBuyer, 220))
+    .input('AssignedBuyerCode', sql.NVarChar(40), cleanNullable(input.assignedBuyerCode, 40))
+    .input('WorkflowJson', sql.NVarChar(sql.MAX), workflowJson)
+    .input('HasWorkflow', sql.Bit, hasWorkflow ? 1 : 0)
     .input('RequestType', sql.NVarChar(40), cleanNullable(input.requestType, 40))
     .input('CostCentre', sql.NVarChar(100), cleanNullable(input.costCentre, 100))
     .input('BudgetLine', sql.NVarChar(120), cleanNullable(input.budgetLine, 120))
@@ -738,8 +765,14 @@ export const upsertPurchaseRequisition = async (input: Record<string, unknown>, 
       IF EXISTS (SELECT 1 FROM [procurement].[PurchaseRequisitions] WHERE [PrId]=@PrId)
         UPDATE [procurement].[PurchaseRequisitions] SET
           [Title]=@Title, [Description]=@Description, [Department]=@Department, [Project]=@Project,
-          [RequesterName]=@RequesterName, [Status]=@Status, [Currency]=@Currency,
+          [RequesterName]=@RequesterName, [RequesterCode]=COALESCE(@RequesterCode, [RequesterCode]), [Status]=@Status, [Currency]=@Currency,
           [EstimatedAmount]=@EstimatedAmount, [RequiredDate]=@RequiredDate, [CurrentWith]=@CurrentWith,
+          [CurrentStage]=COALESCE(@CurrentStage, [CurrentStage]),
+          [LineManagerName]=COALESCE(@LineManagerName, [LineManagerName]),
+          [LineManagerCode]=COALESCE(@LineManagerCode, [LineManagerCode]),
+          [AssignedBuyer]=CASE WHEN @AssignedBuyer IS NULL THEN [AssignedBuyer] ELSE @AssignedBuyer END,
+          [AssignedBuyerCode]=CASE WHEN @AssignedBuyerCode IS NULL THEN [AssignedBuyerCode] ELSE @AssignedBuyerCode END,
+          [WorkflowJson]=CASE WHEN @HasWorkflow=1 THEN @WorkflowJson ELSE [WorkflowJson] END,
           [RequestType]=@RequestType, [CostCentre]=@CostCentre, [BudgetLine]=@BudgetLine,
           [BusinessJustification]=@BusinessJustification, [DeliveryLocation]=@DeliveryLocation, [Priority]=@Priority,
           [Site]=@Site, [Location]=@Location,
@@ -748,13 +781,15 @@ export const upsertPurchaseRequisition = async (input: Record<string, unknown>, 
         WHERE [PrId]=@PrId
       ELSE
         INSERT INTO [procurement].[PurchaseRequisitions] (
-          [PrId], [Title], [Description], [Department], [Project], [RequesterName], [Status],
-          [Currency], [EstimatedAmount], [RequiredDate], [CurrentWith], [RequestType], [CostCentre],
+          [PrId], [Title], [Description], [Department], [Project], [RequesterName], [RequesterCode], [Status],
+          [Currency], [EstimatedAmount], [RequiredDate], [CurrentWith], [CurrentStage], [LineManagerName], [LineManagerCode],
+          [AssignedBuyer], [AssignedBuyerCode], [WorkflowJson], [RequestType], [CostCentre],
           [BudgetLine], [BusinessJustification], [DeliveryLocation], [Priority], [Site], [Location],
           [AttachmentsJson], [CreatedBy], [UpdatedBy]
         ) VALUES (
-          @PrId, @Title, @Description, @Department, @Project, @RequesterName, @Status,
-          @Currency, @EstimatedAmount, @RequiredDate, @CurrentWith, @RequestType, @CostCentre,
+          @PrId, @Title, @Description, @Department, @Project, @RequesterName, @RequesterCode, @Status,
+          @Currency, @EstimatedAmount, @RequiredDate, @CurrentWith, @CurrentStage, @LineManagerName, @LineManagerCode,
+          @AssignedBuyer, @AssignedBuyerCode, @WorkflowJson, @RequestType, @CostCentre,
           @BudgetLine, @BusinessJustification, @DeliveryLocation, @Priority, @Site, @Location,
           @AttachmentsJson, @CreatedBy, @UpdatedBy
         )

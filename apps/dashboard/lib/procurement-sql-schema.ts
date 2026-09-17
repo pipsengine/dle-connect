@@ -335,6 +335,20 @@ IF COL_LENGTH(N'[procurement].[PurchaseRequisitions]', N'Location') IS NULL
   ALTER TABLE [procurement].[PurchaseRequisitions] ADD [Location] NVARCHAR(200) NULL;
 IF COL_LENGTH(N'[procurement].[PurchaseRequisitions]', N'AttachmentsJson') IS NULL
   ALTER TABLE [procurement].[PurchaseRequisitions] ADD [AttachmentsJson] NVARCHAR(MAX) NULL;
+IF COL_LENGTH(N'[procurement].[PurchaseRequisitions]', N'RequesterCode') IS NULL
+  ALTER TABLE [procurement].[PurchaseRequisitions] ADD [RequesterCode] NVARCHAR(40) NULL;
+IF COL_LENGTH(N'[procurement].[PurchaseRequisitions]', N'CurrentStage') IS NULL
+  ALTER TABLE [procurement].[PurchaseRequisitions] ADD [CurrentStage] NVARCHAR(80) NULL;
+IF COL_LENGTH(N'[procurement].[PurchaseRequisitions]', N'LineManagerName') IS NULL
+  ALTER TABLE [procurement].[PurchaseRequisitions] ADD [LineManagerName] NVARCHAR(220) NULL;
+IF COL_LENGTH(N'[procurement].[PurchaseRequisitions]', N'LineManagerCode') IS NULL
+  ALTER TABLE [procurement].[PurchaseRequisitions] ADD [LineManagerCode] NVARCHAR(40) NULL;
+IF COL_LENGTH(N'[procurement].[PurchaseRequisitions]', N'AssignedBuyer') IS NULL
+  ALTER TABLE [procurement].[PurchaseRequisitions] ADD [AssignedBuyer] NVARCHAR(220) NULL;
+IF COL_LENGTH(N'[procurement].[PurchaseRequisitions]', N'AssignedBuyerCode') IS NULL
+  ALTER TABLE [procurement].[PurchaseRequisitions] ADD [AssignedBuyerCode] NVARCHAR(40) NULL;
+IF COL_LENGTH(N'[procurement].[PurchaseRequisitions]', N'WorkflowJson') IS NULL
+  ALTER TABLE [procurement].[PurchaseRequisitions] ADD [WorkflowJson] NVARCHAR(MAX) NULL;
 
 IF COL_LENGTH(N'[procurement].[PurchaseRequisitionLines]', N'Description') IS NOT NULL
   AND COL_LENGTH(N'[procurement].[PurchaseRequisitionLines]', N'Description') BETWEEN 1 AND 3999

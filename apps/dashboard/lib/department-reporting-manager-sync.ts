@@ -275,6 +275,22 @@ const resolveDepartmentSupervisor = (
   return { supervisor: null, resolution: 'No supervisor resolved' };
 };
 
+export const resolveDepartmentLineManager = async (department: string) => {
+  const name = clean(department);
+  if (!name) return null;
+  const employees = (await readEmployeeDirectoryFromDb()) || [];
+  const orgLeaders = await readOrganizationDepartmentLeaders();
+  const inDepartment = employees.filter((employee) => normalizeDepartment(employee.department) === normalizeDepartment(name));
+  const { supervisor, resolution } = resolveDepartmentSupervisor(name, inDepartment, employees, orgLeaders);
+  if (!supervisor) return null;
+  return {
+    code: clean(supervisor.employeeCode || supervisor.employeeId),
+    name: supervisor.fullName,
+    employee: supervisor,
+    resolution,
+  };
+};
+
 export async function auditDepartmentReportingManagers(): Promise<DepartmentReportingSyncResult> {
   const employees = (await readEmployeeDirectoryFromDb()) || [];
   return await buildDepartmentReportingSyncPlan(employees, true);

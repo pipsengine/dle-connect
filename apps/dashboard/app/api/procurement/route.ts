@@ -78,6 +78,10 @@ export async function GET(request: NextRequest) {
         return ok({ code: await nextSupplierCode() });
       case 'purchase-requisitions':
         return ok(await listPurchaseRequisitions());
+      case 'pr-workflow-context': {
+        const { buildPrWorkflowContext } = await import('@/lib/procurement/pr-workflow');
+        return ok(await buildPrWorkflowContext(session, permissions));
+      }
       case 'rfqs':
       case 'sourcing':
         return ok(await listRfqs());
@@ -129,13 +133,16 @@ export async function POST(request: NextRequest) {
   const session = await sessionFrom(request);
   if (!session) return err(401, 'Unauthorized');
   const permissions = await permissionsFrom(session);
-  if (!canCreateProcurement(permissions, session.isGlobalAdmin) && !canEditProcurement(permissions, session.isGlobalAdmin)) {
-    return err(403, 'Forbidden');
-  }
 
   const actor = actorFrom(session);
   const body = await request.json().catch(() => ({}));
   const action = String(body.action || '');
+  const workflowAction = action === 'submit-pr' || action === 'action-pr';
+  if (workflowAction) {
+    if (!canViewProcurement(permissions, session.isGlobalAdmin)) return err(403, 'Forbidden');
+  } else if (!canCreateProcurement(permissions, session.isGlobalAdmin) && !canEditProcurement(permissions, session.isGlobalAdmin)) {
+    return err(403, 'Forbidden');
+  }
 
   try {
     switch (action) {
@@ -145,6 +152,25 @@ export async function POST(request: NextRequest) {
         return ok(await syncSageSuppliersFromX3(actor));
       case 'upsert-pr':
         return ok(await upsertPurchaseRequisition(body.payload || body, actor));
+      case 'submit-pr': {
+        const prId = String(body.prId || body.payload?.prId || '');
+        if (!prId) return err(400, 'prId required');
+        const { submitPurchaseRequisition } = await import('@/lib/procurement/pr-workflow');
+        return ok(await submitPurchaseRequisition(prId, session, body.comment ? String(body.comment) : undefined));
+      }
+      case 'action-pr': {
+        const payload = (body.payload || body) as Record<string, unknown>;
+        const prId = String(payload.prId || '');
+        if (!prId) return err(400, 'prId required');
+        const { actionPurchaseRequisition } = await import('@/lib/procurement/pr-workflow');
+        return ok(await actionPurchaseRequisition({
+          prId,
+          action: String(payload.decision || ''),
+          comment: payload.comment ? String(payload.comment) : undefined,
+          assignedBuyer: payload.assignedBuyer ? String(payload.assignedBuyer) : undefined,
+          assignedBuyerCode: payload.assignedBuyerCode ? String(payload.assignedBuyerCode) : undefined,
+        }, session, permissions));
+      }
       case 'parse-pr-import': {
         const fileName = String(body.fileName || body.payload?.fileName || 'import.xlsx');
         const content = String(body.content || body.contentBase64 || body.payload?.content || '');

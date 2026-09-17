@@ -106,6 +106,7 @@ type ComposerForm = {
   department: string;
   location: string;
   projectCode: string;
+  costCentre: string;
   paymentSiteCode: string;
   expenseCode: string;
   title: string;
@@ -140,6 +141,7 @@ const emptyForm = (): ComposerForm => ({
   department: '',
   location: '',
   projectCode: '',
+  costCentre: '',
   paymentSiteCode: '',
   expenseCode: '',
   title: '',
@@ -1098,6 +1100,7 @@ export default function PaymentRequestsClient({
       employeeCode: type === 'Cash Advance Payment' ? row.beneficiaryCode || row.requesterCode : '',
       employeeName: type === 'Cash Advance Payment' ? row.beneficiaryName || row.requesterName : '',
       department: row.department || '',
+      costCentre: row.costCentre || '',
       location: row.location || '',
       projectCode: row.projectCode || '',
       paymentSiteCode: row.paymentSiteCode || row.companyCode || '',
@@ -1203,6 +1206,7 @@ export default function PaymentRequestsClient({
       employeeCode: employee.employeeCode,
       employeeName: employee.fullName,
       department: preferredDept || resolvedDepartment || employee.department || prev.department,
+      costCentre: prev.costCentre || preferredDept || resolvedDepartment || employee.department || prev.costCentre,
       location: employee.location || prev.location,
       beneficiaryCode: employee.employeeCode,
       beneficiaryName: employee.fullName,
@@ -1226,6 +1230,7 @@ export default function PaymentRequestsClient({
     if (composerType === 'Cash Advance Payment') {
       if (!form.employeeCode.trim()) errors.push('Select an employee.');
       if (!form.department.trim()) errors.push('Department is required.');
+      if (!form.costCentre.trim()) errors.push('Cost Centre is required.');
       if (!form.location.trim()) errors.push('Location is required.');
       if (!form.paymentSiteCode.trim()) errors.push('Payment site is required.');
       if (!form.expenseCode.trim()) errors.push('Request title is required.');
@@ -1247,6 +1252,7 @@ export default function PaymentRequestsClient({
       if (composerType === 'Expense Payment' && !form.expenseNature.trim()) {
         errors.push('Select the expense nature (e.g. Utility, LAWMA).');
       }
+      if (!form.costCentre.trim()) errors.push('Cost Centre is required.');
     }
     setFormErrors(errors);
     return errors.length === 0;
@@ -1265,6 +1271,7 @@ export default function PaymentRequestsClient({
     if (composerType === 'Cash Advance Payment') {
       if (!form.employeeCode.trim()) errors.push('Select an employee.');
       if (!form.department.trim()) errors.push('Department is required.');
+      if (!form.costCentre.trim()) errors.push('Cost Centre is required.');
       if (!form.location.trim()) errors.push('Location is required.');
       if (!form.paymentSiteCode.trim()) errors.push('Payment site is required.');
       if (!form.expenseCode.trim()) errors.push('Request title is required.');
@@ -1286,6 +1293,7 @@ export default function PaymentRequestsClient({
       if (composerType === 'Expense Payment' && !form.expenseNature.trim()) {
         errors.push('Select the expense nature (e.g. Utility, LAWMA).');
       }
+      if (!form.costCentre.trim()) errors.push('Cost Centre is required.');
     }
     setFormErrors(errors);
     if (errors.length) return;
@@ -1323,6 +1331,7 @@ export default function PaymentRequestsClient({
           paymentSiteName: selectedSite?.siteName,
           companyCode: form.paymentSiteCode,
           department: form.department,
+          costCentre: form.costCentre,
           location: form.location,
           projectCode: form.projectCode,
           requesterCode: signedInRequester?.employeeCode || undefined,
@@ -2407,7 +2416,7 @@ export default function PaymentRequestsClient({
                     </label>
                   </div>
 
-                  <div className="grid gap-3 sm:grid-cols-3">
+                  <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
                     <SearchableSelect
                       label="Department"
                       required
@@ -2416,7 +2425,17 @@ export default function PaymentRequestsClient({
                       options={(lookups?.departments || []).concat(
                         form.department && !(lookups?.departments || []).includes(form.department) ? [form.department] : [],
                       ).map((item) => ({ value: item, label: item }))}
-                      onChange={(value) => setForm((prev) => ({ ...prev, department: value }))}
+                      onChange={(value) => setForm((prev) => ({ ...prev, department: value, costCentre: prev.costCentre || value }))}
+                    />
+                    <SearchableSelect
+                      label="Cost Centre"
+                      required
+                      value={form.costCentre}
+                      placeholder="Search cost centre / department"
+                      options={(lookups?.departments || []).concat(
+                        form.costCentre && !(lookups?.departments || []).includes(form.costCentre) ? [form.costCentre] : [],
+                      ).map((item) => ({ value: item, label: item }))}
+                      onChange={(value) => setForm((prev) => ({ ...prev, costCentre: value }))}
                     />
                     <SearchableSelect
                       label="Location"
@@ -2642,7 +2661,7 @@ export default function PaymentRequestsClient({
                       <input type="number" value={form.retentionAmount} onChange={(e) => setForm((prev) => ({ ...prev, retentionAmount: e.target.value }))} className="w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-[#DBEAFE]" />
                     </label>
                   </div>
-                  <div className="grid gap-3 sm:grid-cols-2">
+                  <div className="grid gap-3 sm:grid-cols-3">
                     <SearchableSelect
                       label="Department"
                       required
@@ -2651,7 +2670,17 @@ export default function PaymentRequestsClient({
                       options={(lookups?.departments || []).concat(
                         form.department && !(lookups?.departments || []).includes(form.department) ? [form.department] : [],
                       ).map((item) => ({ value: item, label: item }))}
-                      onChange={(value) => setForm((prev) => ({ ...prev, department: value }))}
+                      onChange={(value) => setForm((prev) => ({ ...prev, department: value, costCentre: prev.costCentre || value }))}
+                    />
+                    <SearchableSelect
+                      label="Cost Centre"
+                      required
+                      value={form.costCentre}
+                      placeholder="Search cost centre / department"
+                      options={(lookups?.departments || []).concat(
+                        form.costCentre && !(lookups?.departments || []).includes(form.costCentre) ? [form.costCentre] : [],
+                      ).map((item) => ({ value: item, label: item }))}
+                      onChange={(value) => setForm((prev) => ({ ...prev, costCentre: value }))}
                     />
                     <PaymentProjectField
                       projectCode={form.projectCode}

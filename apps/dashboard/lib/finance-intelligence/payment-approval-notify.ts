@@ -25,6 +25,7 @@ export type PaymentNotifyRequest = {
   netAmount: number;
   currencyCode: string;
   department?: string;
+  costCentre?: string;
   projectCode?: string;
   paymentSiteCode?: string;
   paymentSiteName?: string;
@@ -116,9 +117,10 @@ const findEmployeeByProjectManagerText = (
 
 const roleFallbacksForStage = (stage: string): string[] => {
   const value = compact(stage).toLowerCase();
-  if (/reporting manager|line manager|supervisor|lead/.test(value)) {
+  if (/reporting manager|line manager|supervisor|lead/.test(value) && !/cost\s*centre/.test(value)) {
     return ['Line Manager', 'Supervisor', 'Lead', 'Department Head'];
   }
+  if (/cost\s*centre\s*manager/.test(value)) return ['Department Head', 'Cost Centre Manager'];
   if (/project manager/.test(value)) return ['Project Manager'];
   if (/cost controller/.test(value)) return ['Cost Controller'];
   if (/hr\s*manager/.test(value)) return ['HR Manager'];
@@ -144,6 +146,7 @@ export const resolvePaymentStageApprover = async (input: {
   requesterCode?: string | null;
   projectCode?: string | null;
   department?: string | null;
+  costCentre?: string | null;
   supervisorName?: string | null;
   paymentType?: string | null;
   /** When true, return the directory principal and skip active delegation. */
@@ -162,7 +165,14 @@ export const resolvePaymentStageApprover = async (input: {
   let matched: DleEmployeeDirectoryRow | null = null;
   const stageKey = stage.toLowerCase();
 
-  if (/reporting manager|line manager|supervisor|lead/.test(stageKey)) {
+  if (/cost\s*centre\s*manager/.test(stageKey)) {
+    const { resolveDepartmentLineManager } = await import('@/lib/department-reporting-manager-sync');
+    const manager = await resolveDepartmentLineManager(input.costCentre || input.department || '');
+    matched = manager?.employee || null;
+    if (!matched && manager?.name) {
+      return { code: manager.code, name: manager.name, employee: null, roles };
+    }
+  } else if (/reporting manager|line manager|supervisor|lead/.test(stageKey)) {
     const hat = resolvePaymentDepartmentHat({
       employeeCode: input.requesterCode,
       department: input.department,
@@ -375,6 +385,7 @@ export const notifyPaymentApprovalRequired = async (input: {
     requesterCode: input.request.requesterCode,
     projectCode: input.request.projectCode,
     department: input.request.department,
+    costCentre: input.request.costCentre,
     supervisorName: input.request.supervisorName,
     paymentType: input.request.paymentType,
   });

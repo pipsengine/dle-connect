@@ -52,6 +52,7 @@ import {
   isTravellingExpenseNature,
   type SupplierInvoiceCategory,
 } from '@/lib/finance-intelligence/payment-invoice-category';
+import { applyCostCentreManagerStage, isCostCentreManagerStage } from '@/lib/finance-intelligence/payment-cost-centre';
 
 /** Supplier invoice (PO) or expense (no PO) — both pay a vendor/supplier. */
 export const isVendorPaymentType = (paymentType?: string | null) =>
@@ -340,8 +341,14 @@ const resolveInitialStage = async (
     requesterCode?: string;
     supervisorName?: string;
     expenseNature?: string;
+    costCentre?: string;
   },
 ) => {
+  const withCostCentre = (stages: string[]) => applyCostCentreManagerStage(stages, {
+    costCentre: context?.costCentre,
+    requesterCode: context?.requesterCode,
+    department: context?.department,
+  });
   try {
     const matched = await resolveApprovalChain({
       amount,
@@ -352,7 +359,7 @@ const resolveInitialStage = async (
       supervisorName: context?.supervisorName,
     });
     if (matched) {
-      const stages = applyHrManagerAfterReportingManager(matched.stages, context?.expenseNature);
+      const stages = await withCostCentre(applyHrManagerAfterReportingManager(matched.stages, context?.expenseNature));
       return {
         stage: stages[0] || matched.currentStage,
         status: 'Pending Approval' as const,
@@ -367,6 +374,7 @@ const resolveInitialStage = async (
       };
     }
   } catch (error) {
+    if (error instanceof Error && /cost centre/i.test(error.message)) throw error;
     console.error('[payment-requests] approval chain resolve failed; using fallback stage', error);
   }
 
@@ -422,6 +430,7 @@ const resolveInitialStage = async (
     paymentType,
   });
   fallbackStages = applyHrManagerAfterReportingManager(fallbackStages, context?.expenseNature);
+  fallbackStages = await withCostCentre(fallbackStages);
   return {
     stage: fallbackStages[0],
     status: 'Pending Approval' as const,
@@ -831,6 +840,7 @@ const assignCurrentApprover = async (input: {
   requesterCode?: string;
   projectCode?: string;
   department?: string;
+  costCentre?: string;
   supervisorName?: string;
   paymentType?: string;
 }) => {
@@ -839,6 +849,7 @@ const assignCurrentApprover = async (input: {
     requesterCode: input.requesterCode,
     projectCode: input.projectCode,
     department: input.department,
+    costCentre: input.costCentre,
     supervisorName: input.supervisorName,
     paymentType: input.paymentType,
   });
@@ -970,13 +981,21 @@ const ensureApprovalStages = async (row: PaymentRequestRow): Promise<string[]> =
       supervisorName: row.supervisorName,
     });
     if (matched?.stages?.length) {
-      matchedStages = applyHrManagerAfterReportingManager(
+      let nextStages = applyHrManagerAfterReportingManager(
         matched.stages,
         compact(row.payload?.expenseNature),
       );
+      if (compact(row.costCentre)) {
+        nextStages = await applyCostCentreManagerStage(nextStages, {
+          costCentre: row.costCentre,
+          requesterCode: row.requesterCode,
+          department: row.department,
+        }).catch(() => nextStages);
+      }
+      matchedStages = nextStages;
       matchedMeta = {
         matrixRuleName: matched.ruleName,
-        approvalLevel: matchedStages.length || matched.approvalLevel,
+        approvalLevel: nextStages.length || matched.approvalLevel,
         pathType: matched.pathType,
         amountNgn: matched.amountNgn,
         fxRate: matched.fxRate,
@@ -1114,6 +1133,7 @@ WHERE [RequestId] = @RequestId
       requesterCode: row.requesterCode,
       projectCode: row.projectCode,
       department: row.department,
+      costCentre: row.costCentre,
       supervisorName: row.supervisorName,
       paymentType: row.paymentType,
     });
@@ -1237,6 +1257,7 @@ WHERE [RequestId] = @RequestId
       requesterCode: row.requesterCode,
       projectCode: row.projectCode,
       department: row.department,
+      costCentre: row.costCentre,
       supervisorName: row.supervisorName,
       paymentType: row.paymentType,
     });
@@ -1346,6 +1367,7 @@ WHERE [RequestId] = @RequestId
       requesterCode: row.requesterCode,
       projectCode: row.projectCode,
       department: row.department,
+      costCentre: row.costCentre,
       supervisorName: row.supervisorName,
       paymentType: row.paymentType,
     });
@@ -1432,6 +1454,7 @@ WHERE [RequestId] = @RequestId
       requesterCode: row.requesterCode,
       projectCode: row.projectCode,
       department: procurementHat.department,
+      costCentre: row.costCentre,
       supervisorName: row.supervisorName,
       paymentType: row.paymentType,
     });
@@ -2253,6 +2276,10 @@ export const createPaymentRequest = async (input: CreatePaymentRequestInput) => 
     input.currencyCode = currency;
   }
 
+  if (!compact(input.costCentre)) {
+    throw new Error('Cost Centre is required. Select a department as the cost centre.');
+  }
+
   if (input.paymentType === 'Supplier Invoice Payment') {
     if (!compact(input.invoiceNumber)) throw new Error('Invoice number is required for supplier payments.');
     if (!beneficiaryCode && !beneficiaryName) throw new Error('Select a supplier from the supplier master.');
@@ -2320,6 +2347,7 @@ export const createPaymentRequest = async (input: CreatePaymentRequestInput) => 
       requesterCode: compact(input.requesterCode) || beneficiaryCode,
       supervisorName: compact(input.supervisorName),
       expenseNature: input.paymentType === 'Expense Payment' ? compact(input.expenseNature) : undefined,
+      costCentre: compact(input.costCentre),
     })
     : {
       stage: 'Draft',
@@ -2447,6 +2475,7 @@ INSERT INTO [finance].[PaymentRequests] (
       requesterCode: compact(input.requesterCode) || beneficiaryCode,
       projectCode: compact(input.projectCode),
       department: compact(input.department),
+      costCentre: compact(input.costCentre),
       supervisorName: compact(input.supervisorName),
       paymentType: input.paymentType,
     });
@@ -2539,6 +2568,9 @@ export const updateReturnedPaymentRequest = async (input: UpdateReturnedPaymentR
   if (!title) throw new Error('Request title is required.');
   if (!beneficiaryName) throw new Error('Employee / beneficiary is required.');
   if (!(amount > 0)) throw new Error('Amount must be greater than zero.');
+  if (!compact(input.costCentre) && !compact(existing.costCentre)) {
+    throw new Error('Cost Centre is required. Select a department as the cost centre.');
+  }
 
   if (existing.paymentType === 'Cash Advance Payment') {
     if (!beneficiaryCode) throw new Error('Employee code is required.');
@@ -2624,6 +2656,7 @@ export const updateReturnedPaymentRequest = async (input: UpdateReturnedPaymentR
       expenseNature: (existing.paymentType === 'Expense Payment' || isExpenseNoPoPayment(existing))
         ? expenseNature
         : undefined,
+      costCentre: compact(input.costCentre) || existing.costCentre,
     })
     : wasDraft
       ? {
@@ -2784,6 +2817,7 @@ WHERE [RequestId] = @RequestId
       requesterCode: compact(input.requesterCode) || existing.requesterCode || beneficiaryCode,
       projectCode: compact(input.projectCode) || existing.projectCode,
       department: compact(input.department) || existing.department,
+      costCentre: compact(input.costCentre) || existing.costCentre,
       supervisorName: compact(input.supervisorName) || existing.supervisorName,
       paymentType: existing.paymentType,
     });
@@ -3419,6 +3453,7 @@ WHERE [RequestId] = @RequestId
       requesterCode: existing.requesterCode,
       projectCode: existing.projectCode,
       department: existing.department,
+      costCentre: existing.costCentre,
       supervisorName: existing.supervisorName,
       paymentType: existing.paymentType,
     });
