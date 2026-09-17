@@ -550,7 +550,8 @@ export function EssCommunicationsView({
       {celebrationTimeline.length ? (
         <div className="space-y-2.5">
           {celebrationTimeline.slice(0, limit).map((item, index) => {
-            const canWish = item.until === 'Today' && (item.kind === 'birthday' || item.kind === 'anniversary') && onWish;
+            const wishKind = item.kind === 'birthday' || item.kind === 'anniversary' ? item.kind : null;
+            const canWish = item.until === 'Today' && Boolean(wishKind) && Boolean(onWish);
             const rowClass = 'grid grid-cols-[auto_auto_minmax(0,1fr)_auto] items-center gap-2 rounded-xl border border-[#EFF3F8] bg-[#FAFCFF] px-2.5 py-2.5 text-left';
             const content = (
               <>
@@ -591,7 +592,7 @@ export function EssCommunicationsView({
                 key={item.id}
                 type="button"
                 className={`${rowClass} hover:border-[#DB2777]/40`}
-                onClick={() => onWish?.({ employeeCode: item.employeeCode, employeeId: item.employeeId, kind: item.kind })}
+                onClick={() => wishKind && onWish?.({ employeeCode: item.employeeCode, employeeId: item.employeeId, kind: wishKind })}
               >
                 {content}
               </button>
