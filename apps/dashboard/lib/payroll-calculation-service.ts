@@ -4,7 +4,7 @@ import { payrollDataSourceInfo, readDirectoryEmployees, readPayrollEmployees } f
 import { mergeTimesheetDayRateEarnings, calculatePayrollEarnings, resolvePayrollEarningProfile } from '@/lib/payroll-earnings-engine';
 import { isNonPermanentPayrollEmployee, payrollActiveEmployees } from '@/lib/payroll-employee-classification';
 import { registerPayrollAdjustmentsChangeHandler, adjustmentsFileMtime } from '@/lib/payroll-period-earning-adjustments-store';
-import { contractEmployeeCode, isDailyRatePayrollEmployee, isEmployeeExcludedFromPayrollRun, payrollRunPackShortLabel, type PayrollRunExclusionEmployee } from '@/lib/payroll-employee-classification';
+import { contractEmployeeCode, isEmployeeExcludedFromPayrollRun, isTimesheetWagePayrollEmployee, payrollRunPackShortLabel, type PayrollRunExclusionEmployee } from '@/lib/payroll-employee-classification';
 import { enterprisePayrollSourceLabel, isEnterprisePayrollPeriod } from '@/lib/payroll-enterprise-source';
 import { activeTaxVersion, calculatePayrollTax, payrollInputFromEmployee, readPayrollTaxConfig } from '@/lib/payroll-tax-engine';
 import { activePensionVersion, calculatePension, pensionInputFromEmployee, readPayrollPensionConfig } from '@/lib/payroll-pension-engine';
@@ -21,6 +21,7 @@ import { normalizePayrollMatchKey } from '@/lib/sage-people-payroll-store';
 import { buildTimesheetHoursMapForPayrollPeriod } from '@/lib/timesheet-entry-store';
 import { dayrateBookedHours } from '@/lib/dayrate-schedule-xlsx';
 import { findDayrateScheduleOverrideRow, readAppliedDayrateScheduleOverride } from '@/lib/dayrate-schedule-override-read';
+import { explicitPayrollDayRate, payrollExcelAmountOverlayApplies } from '@/lib/payroll-source-of-truth';
 import { normalizeBankSortCode, withNormalizedBankCodes } from '@/lib/payroll-bank-constants';
 import { isDleUsdPayrollEmployee } from '@/lib/payroll-bank-schedule-packs';
 import { resolvePayCurrency } from '@/lib/payroll-currency';
@@ -276,23 +277,10 @@ const contractPayrollCode = (employee: DleEmployeeDirectoryRow) => {
 const skipSageVarianceCheck = (employee: DleEmployeeDirectoryRow, dailyRateEmployee: boolean, toleranceMode: boolean, enterpriseSourceActive: boolean) =>
   enterpriseSourceActive || toleranceMode || dailyRateEmployee || contractPayrollCode(employee);
 
-const dailyRateValues = (employee: DleEmployeeDirectoryRow, dailyRateEmployee: boolean) => {
-  const hoursPerDay = Number(employee.hoursPerDay || 8) || 8;
+const dailyRateValues = (employee: DleEmployeeDirectoryRow, _dailyRateEmployee: boolean) => {
   const hoursPerPeriod = Number(employee.hoursPerPeriod || 0);
+  const { ratePerDay, ratePerHour, hoursPerDay } = explicitPayrollDayRate(employee);
   const workingDays = hoursPerPeriod > 0 && hoursPerDay > 0 ? hoursPerPeriod / hoursPerDay : 22;
-  const explicitDayRate = Number(employee.ratePerDay || 0);
-  const explicitHourRate = Number(employee.ratePerHour || 0);
-  const periodSalary = Number(employee.periodSalary || 0);
-  const ratePerDay = explicitDayRate > 0
-    ? explicitDayRate
-    : explicitHourRate > 0
-      ? explicitHourRate * hoursPerDay
-      : dailyRateEmployee && periodSalary > 0
-        ? periodSalary > 50000
-          ? periodSalary / workingDays
-          : periodSalary
-        : 0;
-  const ratePerHour = explicitHourRate > 0 ? explicitHourRate : ratePerDay > 0 ? ratePerDay / hoursPerDay : 0;
   return { ratePerDay, ratePerHour, hoursPerDay, workingDays };
 };
 
@@ -317,16 +305,16 @@ const applyDailyRateFromTimesheets = (
   period: string,
 ) => {
   const profileId = resolvePayrollEarningProfile(employee);
-  const rates = dailyRateValues(employee, true);
-  const contractDayRateEmployee = contractEmployeeCode(employee) && (rates.ratePerDay > 0 || rates.ratePerHour > 0);
-  if (!isDailyRatePayrollEmployee(employee, profileId) && !contractDayRateEmployee) return amounts;
+  if (!isTimesheetWagePayrollEmployee(employee, profileId)) return amounts;
 
+  const rates = dailyRateValues(employee, true);
   const timesheet = resolveTimesheetHoursForEmployee(employee, timesheetHours);
-  const excel = findDayrateScheduleOverrideRow(period, employee);
-  const appliedSchedule = readAppliedDayrateScheduleOverride(period);
+  const excel = payrollExcelAmountOverlayApplies(period) ? findDayrateScheduleOverrideRow(period, employee) : null;
+  const appliedSchedule = payrollExcelAmountOverlayApplies(period) ? readAppliedDayrateScheduleOverride(period) : null;
   // Once HR applies a dayrate schedule it defines the payable roster as well as the
   // amounts, so anyone absent from the sheet is out of this run. The Excel export
   // already builds its roster from the sheet; the run has to agree with it.
+  // From 2026-09 the timesheet is the roster — Excel no longer excludes staff.
   if (appliedSchedule?.rows?.length && !excel) {
     return {
       ...amounts,
@@ -351,7 +339,7 @@ const applyDailyRateFromTimesheets = (
       : (timesheet.bookedHours > 0 ? timesheet.bookedHours / rates.hoursPerDay : 0);
   }
   // Daily-rate staff are timesheet-driven only — no hoursPerPeriod / package fallback.
-  // An HR Excel overlay can still pay OT/weekend hours when weekday days are zero.
+  // An HR Excel overlay can still pay OT/weekend hours when weekday days are zero (pre-2026-09).
   if (daysWorked <= 0 && !(excel && dayrateBookedHours(excel) > 0)) {
     return {
       ...amounts,
@@ -369,6 +357,21 @@ const applyDailyRateFromTimesheets = (
   }
 
   const ratePerDay = rates.ratePerDay || (rates.ratePerHour > 0 ? rates.ratePerHour * rates.hoursPerDay : 0);
+  if (ratePerDay <= 0) {
+    return {
+      ...amounts,
+      periodPackageGross: 0,
+      grossPay: 0,
+      basePay: 0,
+      allowances: 0,
+      taxablePay: 0,
+      nonTaxablePay: 0,
+      earningLines: [],
+      paidEarningLines: [],
+      annualBenefitLines: amounts.annualBenefitLines || [],
+      profileName: 'Daily Rate (No Rate — Blocked)',
+    };
+  }
   const merged = mergeTimesheetDayRateEarnings(employee, { ratePerDay, daysWorked, period });
   return {
     ...merged,
@@ -947,14 +950,15 @@ const computePayrollForPeriod = async (requestedPeriod: string): Promise<Payroll
     const calculationEmployee = variant.calculationEmployee;
     const baseAmounts = calculatePayrollEarnings(calculationEmployee, calculationOptions);
     const amounts = applyDailyRateFromTimesheets(employee, baseAmounts, timesheetHours, requestedPeriod);
-    const dailyRatePreview = isDailyRatePayrollEmployee(employee, amounts.profileId);
+    const dailyRatePreview = isTimesheetWagePayrollEmployee(employee, amounts.profileId);
     const dailyRateEmployee = dailyRatePreview;
     const timesheetPreview = resolveTimesheetHoursForEmployee(employee, timesheetHours);
     const hasBookedTimesheet = Boolean(
       timesheetPreview && (Number(timesheetPreview.daysWorked || 0) > 0 || Number(timesheetPreview.bookedHours || 0) > 0),
     );
-    // Daily-rate: no booked timesheet and/or zero gross → not computed, not included in payroll.
-    if (dailyRatePreview && (!hasBookedTimesheet || Number(amounts.grossPay || 0) <= 0)) {
+    // Daily-rate with no booked timesheet is not in this run. Missing rate with
+    // timesheet days stays in the run as Blocked instead of inventing a salary rate.
+    if (dailyRatePreview && !hasBookedTimesheet) {
       return [];
     }
     const pension = calculatePension(pensionInputFromEmployee(calculationEmployee, calculationOptions), pensionVersion);
@@ -1028,7 +1032,8 @@ const computePayrollForPeriod = async (requestedPeriod: string): Promise<Payroll
       ...dailyRateEmployee && timesheet && Number(timesheet.daysWorked || 0) <= 0 && Number(timesheet.bookedHours || 0) <= 0
         ? ['Approved timesheet hours are not available for daily-rate payroll']
         : [],
-      ...dailyRateEmployee && amounts.grossPay <= 0 ? ['Daily-rate gross is zero — excluded from payroll'] : [],
+      ...dailyRateEmployee && rates.ratePerDay <= 0 && rates.ratePerHour <= 0 ? ['Daily or hourly rate is missing'] : [],
+      ...dailyRateEmployee && amounts.grossPay <= 0 ? ['Daily-rate gross is zero'] : [],
       ...(variant.payCurrency === 'USD' ? [] : pensionIssues.map((issue) => `Pension: ${issue}`)),
       ...(variant.payCurrency === 'USD' ? [] : statutoryIssues.map((issue) => `Statutory: ${issue}`)),
       ...loans.flatMap((loan) => loan.issues.filter((issue) => issue !== 'Loan is not approved for payroll recovery').map((issue) => `Loan: ${issue}`)),

@@ -1,5 +1,6 @@
 import { ensureFinanceDb } from '@/lib/finance-intelligence/store';
 import { readDirectoryEmployees } from '@/lib/payroll-employee-source';
+import { listSuppliers } from '@/lib/procurement-store';
 import { readProjects } from '@/lib/timesheet-entry-store';
 import { readSystemDepartmentsFromOrganizationDb } from '@/lib/organization-departments-store';
 import { PAYMENT_REQUEST_CANONICAL_DEPARTMENTS } from '@/lib/finance-intelligence/payment-request-departments';
@@ -25,6 +26,14 @@ export type PaymentEmployeeOption = {
   reportingManager: string;
 };
 
+export type PaymentSupplierOption = {
+  supplierId: string;
+  code: string;
+  sageCode: string;
+  name: string;
+  currency: string;
+};
+
 export type PaymentRequestLookups = {
   paymentSites: PaymentSite[];
   expenseCodes: ExpenseCodeOption[];
@@ -32,6 +41,7 @@ export type PaymentRequestLookups = {
   locations: string[];
   projects: Array<{ code: string; name: string; label: string; projectManager: string }>;
   employees: PaymentEmployeeOption[];
+  suppliers: PaymentSupplierOption[];
 };
 
 const compact = (value: unknown) => String(value ?? '').trim();
@@ -154,7 +164,7 @@ ORDER BY [SortOrder], [ExpenseCode]
 };
 
 export const buildPaymentRequestLookups = async (): Promise<PaymentRequestLookups> => {
-  const [paymentSites, expenseCodes, directory, projects, organizationDepartments] = await Promise.all([
+  const [paymentSites, expenseCodes, directory, projects, organizationDepartments, supplierRows] = await Promise.all([
     listPaymentSites(),
     listExpenseCodes(),
     readDirectoryEmployees().catch(() => ({ employees: [] as Awaited<ReturnType<typeof readDirectoryEmployees>>['employees'] })),
@@ -162,6 +172,7 @@ export const buildPaymentRequestLookups = async (): Promise<PaymentRequestLookup
     readSystemDepartmentsFromOrganizationDb()
       .then((payload) => (payload.departments || []).map((department) => compact(department.name)).filter(Boolean))
       .catch(() => [] as string[]),
+    listSuppliers().catch(() => [] as Awaited<ReturnType<typeof listSuppliers>>),
   ]);
 
   const employees: PaymentEmployeeOption[] = (directory.employees || [])
@@ -183,6 +194,18 @@ export const buildPaymentRequestLookups = async (): Promise<PaymentRequestLookup
     ...employees.map((employee) => employee.department),
   ]);
 
+  const suppliers: PaymentSupplierOption[] = (supplierRows || [])
+    .filter((row) => row.isActive !== false && row.isBlacklisted !== true)
+    .map((row) => ({
+      supplierId: compact(row.supplierId),
+      code: compact(row.code || row.sageCode || row.supplierId),
+      sageCode: compact(row.sageCode),
+      name: compact(row.name),
+      currency: compact(row.currency),
+    }))
+    .filter((row) => row.name && row.code)
+    .sort((a, b) => a.name.localeCompare(b.name));
+
   return {
     paymentSites,
     expenseCodes,
@@ -198,6 +221,7 @@ export const buildPaymentRequestLookups = async (): Promise<PaymentRequestLookup
       }))
       .sort((a, b) => a.code.localeCompare(b.code)),
     employees,
+    suppliers,
   };
 };
 

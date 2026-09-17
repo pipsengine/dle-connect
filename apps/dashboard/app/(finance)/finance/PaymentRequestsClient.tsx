@@ -58,7 +58,7 @@ import {
   supplierInvoiceCategoryLabel,
   type SupplierInvoiceCategory,
 } from '@/lib/finance-intelligence/payment-invoice-category';
-import type { PaymentRequestLookups } from '@/lib/finance-intelligence/payment-request-lookups';
+import type { PaymentRequestLookups, PaymentSupplierOption } from '@/lib/finance-intelligence/payment-request-lookups';
 import {
   CORPORATE_PROJECT_LABEL,
   formatPaymentProjectLabel,
@@ -250,6 +250,118 @@ function SearchableSelect({
         </div>
       ) : null}
     </label>
+  );
+}
+
+function SupplierSearchFields({
+  codeLabel,
+  nameLabel,
+  namePlaceholder,
+  code,
+  name,
+  suppliers,
+  onSelect,
+  onCodeChange,
+  onNameChange,
+}: {
+  codeLabel: string;
+  nameLabel: string;
+  namePlaceholder: string;
+  code: string;
+  name: string;
+  suppliers: PaymentSupplierOption[];
+  onSelect: (supplier: PaymentSupplierOption) => void;
+  onCodeChange: (value: string) => void;
+  onNameChange: (value: string) => void;
+}) {
+  const [open, setOpen] = useState<'code' | 'name' | null>(null);
+  const query = (open === 'code' ? code : name).trim().toLowerCase();
+  const filtered = useMemo(() => {
+    if (!query) return suppliers.slice(0, 12);
+    return suppliers
+      .filter((row) =>
+        row.name.toLowerCase().includes(query)
+        || row.code.toLowerCase().includes(query)
+        || row.sageCode.toLowerCase().includes(query)
+        || row.supplierId.toLowerCase().includes(query))
+      .slice(0, 12);
+  }, [suppliers, query]);
+
+  const dropdown = (field: 'code' | 'name') => (
+    open === field ? (
+      <div className="absolute z-30 mt-1 max-h-52 w-full overflow-auto rounded-xl border border-slate-200 bg-white shadow-lg">
+        {filtered.length ? filtered.map((supplier) => (
+          <button
+            key={supplier.supplierId || supplier.code}
+            type="button"
+            onMouseDown={(e) => e.preventDefault()}
+            onClick={() => {
+              onSelect(supplier);
+              setOpen(null);
+            }}
+            className="block w-full px-3 py-2.5 text-left hover:bg-slate-50"
+          >
+            <span className="block text-sm font-semibold text-slate-900">{field === 'code' ? supplier.code : supplier.name}</span>
+            <span className="block text-xs text-slate-500">
+              {field === 'code'
+                ? supplier.name
+                : [supplier.code, supplier.sageCode && supplier.sageCode !== supplier.code ? `Sage ${supplier.sageCode}` : '']
+                  .filter(Boolean)
+                  .join(' · ')}
+            </span>
+          </button>
+        )) : (
+          <p className="px-3 py-3 text-xs text-slate-500">
+            {suppliers.length ? 'No suppliers match that search.' : 'No suppliers are loaded from the register yet.'}
+          </p>
+        )}
+      </div>
+    ) : null
+  );
+
+  return (
+    <div className="grid gap-3 sm:grid-cols-2">
+      <label className="relative block text-sm">
+        <span className="mb-1 block font-medium text-slate-700">{codeLabel}</span>
+        <div className="relative">
+          <Search className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
+          <input
+            value={code}
+            onChange={(e) => {
+              onCodeChange(e.target.value);
+              setOpen('code');
+            }}
+            onFocus={() => setOpen('code')}
+            onBlur={() => window.setTimeout(() => setOpen(null), 150)}
+            placeholder="Search supplier code"
+            className="w-full rounded-xl border border-slate-200 py-2.5 pl-9 pr-3 text-sm outline-none focus:ring-2 focus:ring-[#DBEAFE]"
+            autoComplete="off"
+            inputMode="search"
+          />
+        </div>
+        {dropdown('code')}
+      </label>
+      <label className="relative block text-sm">
+        <span className="mb-1 block font-medium text-slate-700">{nameLabel}</span>
+        <div className="relative">
+          <Search className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
+          <input
+            value={name}
+            onChange={(e) => {
+              onNameChange(e.target.value);
+              setOpen('name');
+            }}
+            onFocus={() => setOpen('name')}
+            onBlur={() => window.setTimeout(() => setOpen(null), 150)}
+            placeholder={namePlaceholder}
+            className="w-full rounded-xl border border-slate-200 py-2.5 pl-9 pr-3 text-sm outline-none focus:ring-2 focus:ring-[#DBEAFE]"
+            autoComplete="off"
+            inputMode="search"
+          />
+        </div>
+        {dropdown('name')}
+      </label>
+    </div>
   );
 }
 
@@ -1117,6 +1229,15 @@ export default function PaymentRequestsClient({
     setEmployeeSearch(employee.fullName);
     setEmployeePickerOpen(false);
     void loadEligibility(employee.employeeCode);
+  };
+
+  const selectSupplier = (supplier: PaymentSupplierOption) => {
+    setForm((prev) => ({
+      ...prev,
+      beneficiaryCode: supplier.code,
+      beneficiaryName: supplier.name,
+      currencyCode: supplier.currency || prev.currencyCode || 'NGN',
+    }));
   };
 
   const validateComposer = () => {
@@ -2462,20 +2583,37 @@ export default function PaymentRequestsClient({
                       onChange={(value) => setForm((prev) => ({ ...prev, currencyCode: value || 'NGN' }))}
                     />
                   </div>
-                  <div className="grid gap-3 sm:grid-cols-2">
-                    <label className="block text-sm">
-                      <span className="mb-1 block font-medium text-slate-700">
-                        {composerType === 'Expense Payment' ? 'Payee code' : 'Supplier code'}
-                      </span>
-                      <input value={form.beneficiaryCode} onChange={(e) => setForm((prev) => ({ ...prev, beneficiaryCode: e.target.value }))} className="w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-[#DBEAFE]" />
-                    </label>
-                    <label className="block text-sm">
-                      <span className="mb-1 block font-medium text-slate-700">
-                        {composerType === 'Expense Payment' ? 'Payee / supplier name *' : 'Supplier name *'}
-                      </span>
-                      <input value={form.beneficiaryName} onChange={(e) => setForm((prev) => ({ ...prev, beneficiaryName: e.target.value }))} className="w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-[#DBEAFE]" placeholder={composerType === 'Expense Payment' ? 'Enter payee name' : 'Search / enter supplier'} />
-                    </label>
-                  </div>
+                  <SupplierSearchFields
+                    codeLabel={composerType === 'Expense Payment' ? 'Payee code' : 'Supplier code'}
+                    nameLabel={composerType === 'Expense Payment' ? 'Payee / supplier name *' : 'Supplier name *'}
+                    namePlaceholder={composerType === 'Expense Payment' ? 'Search supplier or enter payee name' : 'Search / select supplier'}
+                    code={form.beneficiaryCode}
+                    name={form.beneficiaryName}
+                    suppliers={lookups?.suppliers || []}
+                    onSelect={selectSupplier}
+                    onCodeChange={(value) => {
+                      const match = (lookups?.suppliers || []).find((row) => row.code.toLowerCase() === value.trim().toLowerCase());
+                      setForm((prev) => ({
+                        ...prev,
+                        beneficiaryCode: value,
+                        ...(match ? {
+                          beneficiaryName: match.name,
+                          currencyCode: match.currency || prev.currencyCode,
+                        } : {}),
+                      }));
+                    }}
+                    onNameChange={(value) => {
+                      const match = (lookups?.suppliers || []).find((row) => row.name.toLowerCase() === value.trim().toLowerCase());
+                      setForm((prev) => ({
+                        ...prev,
+                        beneficiaryName: value,
+                        ...(match ? {
+                          beneficiaryCode: match.code,
+                          currencyCode: match.currency || prev.currencyCode,
+                        } : {}),
+                      }));
+                    }}
+                  />
                   <SearchableSelect
                     label="Payment site"
                     value={form.paymentSiteCode}

@@ -11,6 +11,7 @@ import {
   type DayrateScheduleRow,
 } from '@/lib/dayrate-schedule-xlsx';
 import { withPayrollCompany, type PayrollCompany } from '@/lib/payroll-schedule-scope';
+import { payrollExcelAmountOverlayApplies } from '@/lib/payroll-source-of-truth';
 import { normalizePayrollMatchKey } from '@/lib/sage-people-payroll-store';
 
 const roundMoney = (value: number) => Math.round((Number.isFinite(value) ? value : 0) * 100) / 100;
@@ -118,6 +119,7 @@ export const applyDayrateScheduleOverrideToRecords = (
   period: string,
   schedule?: { rows: DayrateScheduleRow[] } | null,
 ): PayrollCalculationRecord[] => {
+  if (!payrollExcelAmountOverlayApplies(period)) return records;
   const applied = schedule || readAppliedDayrateScheduleOverride(period);
   if (!applied?.rows?.length) return records;
 

@@ -16,6 +16,7 @@ import {
   findDayrateScheduleOverrideRow,
   isHrDayrateScheduleOverrideSource,
 } from '@/lib/dayrate-schedule-override-read';
+import { payrollExcelAmountOverlayApplies } from '@/lib/payroll-source-of-truth';
 import {
   hrisDataFileCandidates,
   hrisDataFileMtime,
@@ -546,8 +547,9 @@ export const buildDailyRateSupplementalEarnings = (
   // the HRIS salary package must not add to it. Codes such as SATURDAY_OVT or
   // NNDMEAL do not canonicalise onto the schedule's SATEARN / MEAL, so leaving
   // them in paid the same weekend, holiday and allowance amounts twice.
-  const scheduleIsAuthority = Boolean(options?.excelDayrateOverride)
-    || employeeHasAppliedDayrateScheduleOverride(normalizedPeriod(options?.period), employee);
+  const scheduleIsAuthority = payrollExcelAmountOverlayApplies(options?.period)
+    && (Boolean(options?.excelDayrateOverride)
+      || employeeHasAppliedDayrateScheduleOverride(normalizedPeriod(options?.period), employee));
   const paidEarningLines = scheduleIsAuthority
     ? adjustmentLines
     : mergeConfiguredPackageSupplements(employee, adjustmentLines, { includeOneOff: true });
@@ -687,10 +689,10 @@ export const mergeTimesheetDayRateEarnings = (
   employee: DleEmployeeDirectoryRow,
   input: { ratePerDay: number; daysWorked: number; period?: string },
 ): PayrollEarningsResult => {
-  const excel = findDayrateScheduleOverrideRow(input.period, employee);
-  // When HR has applied a dayrate schedule, the sheet is the authority for the
-  // day rate and meal allowance too — not just the hours. Otherwise payroll
-  // totals drift away from the signed schedule that HR pays from.
+  const excel = payrollExcelAmountOverlayApplies(input.period) ? findDayrateScheduleOverrideRow(input.period, employee) : null;
+  // When HR has applied a dayrate schedule (2026-08 and earlier), the sheet is the
+  // authority for the day rate and meal allowance too — not just the hours.
+  // From 2026-09, approved timesheet days × profile ratePerDay are the authority.
   const timesheetBase = excel
     ? contractDayRatePayrollResult({
         ratePerDay: num(excel.excelDailyRate) > 0 ? num(excel.excelDailyRate) : input.ratePerDay,
@@ -1034,7 +1036,8 @@ const periodAdjustmentLines = (employee: DleEmployeeDirectoryRow, options?: Payr
   const salaryGrade = normalizedTextKey(employee.salaryGrade || employee.jobGrade);
   const profileId = resolvePayrollEarningProfile(employee);
   const structuralFamily = sageStructuralGradeFamily(employee, period);
-  const excelOverride = Boolean(options?.excelDayrateOverride) || employeeHasAppliedDayrateScheduleOverride(period, employee);
+  const excelOverride = payrollExcelAmountOverlayApplies(period)
+    && (Boolean(options?.excelDayrateOverride) || employeeHasAppliedDayrateScheduleOverride(period, employee));
   const matchedRows = periodAdjustmentRowsForPeriod(period)
     .filter((row) => {
       if (isSageDayrateScheduleSource(row.source)) return false;
@@ -1209,9 +1212,8 @@ export const calculatePayrollEarnings = (employee: DleEmployeeDirectoryRow, opti
   }
   if (profileId === 'contract-day-rate') {
     const ratePerDay = num(employee.ratePerDay) || (num(employee.ratePerHour) > 0 ? num(employee.ratePerHour) * (num(employee.hoursPerDay) || 8) : 0);
-    const weekdayDays = ratePerDay > 0 ? gross / ratePerDay : (num(employee.hoursPerPeriod) > 0 && (num(employee.hoursPerDay) || 8) > 0 ? num(employee.hoursPerPeriod) / (num(employee.hoursPerDay) || 8) : 0);
-    const resolvedRatePerDay = ratePerDay || (weekdayDays > 0 ? gross / weekdayDays : 0);
-    const baseAmounts = contractDayRatePayrollResult({ ratePerDay: resolvedRatePerDay, daysWorked: weekdayDays });
+    // Days come from the approved timesheet merge, never from monthly package / periodSalary.
+    const baseAmounts = contractDayRatePayrollResult({ ratePerDay, daysWorked: 0 });
     const supplemental = buildDailyRateSupplementalEarnings(employee, options);
     return supplemental.paidEarningLines.length
       ? mergeDailySupplementalEarnings(baseAmounts, supplemental)

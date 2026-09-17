@@ -116,12 +116,12 @@ const salarySplit = applySalaryScheduleOverrideToRecords(
     blankRecord({ employeeCode: 'P0100', employeeId: 'P0100', companyCode: 'DLE' }),
     blankRecord({ employeeCode: 'P0200', employeeId: 'P0200', companyCode: 'DLE', location: 'Agege' }),
   ],
-  '2099-01',
+  '2026-08',
   {
-    period: '2099-01',
+    period: '2026-08',
     fileName: 'salary.xlsx',
     title: 'Salary',
-    appliedAt: '2099-01-01',
+    appliedAt: '2026-08-01',
     appliedBy: 'test',
     parsed: {
       title: 'Salary',
@@ -203,7 +203,7 @@ const dayrateSplit = applyDayrateScheduleOverrideToRecords(
       grossPay: 8000,
     }),
   ],
-  '2099-01',
+  '2026-08',
   {
     rows: [
       dayrateRow({ employeeCode: 'C1001', company: 'DLE', excelGross: 32000 }),
@@ -270,5 +270,40 @@ if (officialSalaryBook) {
   assert(fromFile?.netPay === 91831140.22, 'Official August workbook DLE Summary net is 91,831,140.22');
   assert(fromFile?.employees === 139, 'Official August workbook DLE headcount is 139');
 }
+
+const septemberSalary = applySalaryScheduleOverrideToRecords(
+  [blankRecord({ employeeCode: 'P0100', employeeId: 'P0100', grossPay: 100, netPay: 100 })],
+  '2026-09',
+  {
+    period: '2026-09',
+    fileName: 'salary.xlsx',
+    title: 'Salary',
+    appliedAt: '2026-09-01',
+    appliedBy: 'test',
+    parsed: {
+      title: 'Salary',
+      rows: [salaryRow({ employeeCode: 'P0100', company: 'DLENG - DLENG', grossPay: 999, netPay: 999 })],
+      byKind: { perm: [], cont: [], usd: [] },
+      summary: {
+        permCount: 1, contCount: 0, usdCount: 0,
+        permGross: 999, contGross: 0, usdGross: 0,
+        permNet: 999, contNet: 0, usdNet: 0,
+      },
+      skipped: [],
+      sheets: [],
+      costSummary: [],
+      pivotTotals: { dleStaffGross: 0, dleContractGross: 0, dlpcStaffGross: 0, dlpcContractGross: 0 },
+    },
+  },
+);
+assert(septemberSalary.length === 1 && septemberSalary[0].grossPay === 100, 'From 2026-09 salary Excel does not overlay profile amounts');
+
+const septemberDayrate = applyDayrateScheduleOverrideToRecords(
+  [blankRecord({ employeeCode: 'C1001', employeeId: 'C1001', isDailyRate: true, companyCode: 'DLE', grossPay: 15000 })],
+  '2026-09',
+  { rows: [dayrateRow({ employeeCode: 'C1001', company: 'DLPC', excelGross: 1 })] },
+);
+assert(septemberDayrate.length === 1 && septemberDayrate[0].grossPay === 15000, 'From 2026-09 day-rate Excel does not overlay timesheet amounts');
+assert(septemberDayrate[0].companyCode === 'DLE', 'From 2026-09 day-rate Excel does not restamp company');
 
 console.log('payroll-schedule-company tests passed');

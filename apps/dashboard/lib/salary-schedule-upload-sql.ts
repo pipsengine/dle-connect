@@ -8,6 +8,7 @@ import { getDleEnterpriseDbPool } from '@/lib/dle-enterprise-db';
 import { ensurePayrollSqlSchema } from '@/lib/payroll-sql-schema';
 import type { SalaryScheduleParseResult, SalaryScheduleRow } from '@/lib/salary-schedule-xlsx';
 import { parseSalaryScheduleWorkbook } from '@/lib/salary-schedule-xlsx';
+import { payrollExcelAmountOverlayApplies } from '@/lib/payroll-source-of-truth';
 
 const compact = (value: unknown) => String(value || '').trim();
 const num = (value: unknown) => {
@@ -165,6 +166,7 @@ export const ensureSalaryScheduleOverrideLoaded = async (period: string) => {
 export const assertStoredSalaryScheduleVisible = async (period: string) => {
   const normalized = String(period || '').replace(/\//g, '-').replace(/^per-/i, '').slice(0, 7);
   if (!normalized) return;
+  if (!payrollExcelAmountOverlayApplies(normalized)) return;
   if (!(await salaryScheduleUploadExistsInSql(normalized))) return;
   if (readAppliedSalaryScheduleOverride(normalized)) return;
   throw new Error(

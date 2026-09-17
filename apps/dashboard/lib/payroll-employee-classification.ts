@@ -137,6 +137,20 @@ export const isDailyRatePayrollEmployee = (employee: DleEmployeeDirectoryRow, pr
   return false;
 };
 
+/**
+ * Live wages from approved timesheets. Permanent / lumpsum / NYSC / IT stay on
+ * the profile even if a job title or category string looks like "daily".
+ */
+export const isTimesheetWagePayrollEmployee = (employee: DleEmployeeDirectoryRow, profileId?: string) => {
+  const resolved = profileId || resolvePayrollEarningProfile(employee);
+  if (resolved === 'contract-lumpsum' || resolved === 'stipend-non-taxable') return false;
+  const code = employeeCodeText(employee);
+  if (/^P\d+/.test(code) || /^L\d+/.test(code)) return false;
+  if (isStipendPayrollEmployeeCode(employee)) return false;
+  if (isPermanentPayrollEmployee(employee) && resolved !== 'contract-day-rate') return false;
+  return isDailyRatePayrollEmployee(employee, resolved);
+};
+
 /** C-coded staff who are not on daily-rate payroll should be inactive and excluded from payroll runs. */
 export const isInactiveNonDailyContractEmployee = (employee: DleEmployeeDirectoryRow, profileId?: string) =>
   contractEmployeeCode(employee) && !isDailyRatePayrollEmployee(employee, profileId);
@@ -203,7 +217,7 @@ export const payrollRunPackLabel = payrollRunPackShortLabel;
 export const resolvePayrollRunPackForEmployee = (
   employee: DleEmployeeDirectoryRow,
   profileId?: string,
-): PayrollRunPack => (isDailyRatePayrollEmployee(employee, profileId) ? 'daily-rate' : 'salaried');
+): PayrollRunPack => (isTimesheetWagePayrollEmployee(employee, profileId) ? 'daily-rate' : 'salaried');
 
 export const employeeBelongsToPayrollPack = (
   employee: DleEmployeeDirectoryRow,

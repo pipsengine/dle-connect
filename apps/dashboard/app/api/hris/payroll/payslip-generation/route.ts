@@ -47,11 +47,11 @@ const num = (value: unknown) => {
   const n = Number(value);
   return Number.isFinite(n) ? n : 0;
 };
-import { isDailyRatePayrollEmployee } from '@/lib/payroll-employee-classification';
+import { isTimesheetWagePayrollEmployee } from '@/lib/payroll-employee-classification';
 
 const activeEmployee = (employee: DleEmployeeDirectoryRow) => !compact(employee.status).toLowerCase().match(/terminated|resigned|retired|inactive|deceased/);
 const isDailyRateEmployee = (employee: DleEmployeeDirectoryRow, earningProfileId?: string) =>
-  isDailyRatePayrollEmployee(employee, earningProfileId);
+  isTimesheetWagePayrollEmployee(employee, earningProfileId);
 const isPermanentEmployee = (employee: DleEmployeeDirectoryRow) => {
   const text = [employee.employmentType, employee.employeeCategory, employee.staffCategory, employee.payrollGroup]
     .map(compact)
@@ -239,7 +239,7 @@ const buildPayload = async (request: Request, requestedPeriod = monthPeriod()) =
       : { ...standardOptions, ignoreHrisPackageLines: true as const };
     const standardAmounts = calculatePayrollEarnings(payrollEmployee, earningsOptions);
     const dailyRateEmployee = isDailyRateEmployee(employee, standardAmounts.profileId);
-    const ratePerDay = Number(employee.ratePerDay || 0) || (Number(employee.ratePerHour || 0) > 0 ? Number(employee.ratePerHour) * Number(employee.hoursPerDay || 8) : 0) || (dailyRateEmployee ? Number(employee.periodSalary || 0) : 0);
+    const ratePerDay = Number(employee.ratePerDay || 0) || (Number(employee.ratePerHour || 0) > 0 ? Number(employee.ratePerHour) * Number(employee.hoursPerDay || 8) : 0);
     const ratePerHour = Number(employee.ratePerHour || 0) || (ratePerDay > 0 ? ratePerDay / Number(employee.hoursPerDay || 8) : 0);
     const dailyAttendance = dailyRateEmployee ? dailyAttendanceForEmployee(employee, dailyAttendanceByKey) : emptyDailyAttendance();
     const dailyTimesheetAmounts = dailyRateEmployee

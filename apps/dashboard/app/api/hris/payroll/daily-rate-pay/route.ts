@@ -1,10 +1,11 @@
 import { NextResponse } from 'next/server';
 import { updateEmployeeDailyRatePayInDb } from '@/lib/dle-enterprise-db';
 import { payrollDataSourceInfo, readPayrollEmployees } from '@/lib/payroll-employee-source';
-import { isDailyRatePayrollEmployee } from '@/lib/payroll-employee-classification';
+import { isTimesheetWagePayrollEmployee } from '@/lib/payroll-employee-classification';
 import { calculateTimesheetPeriod, aggregateEmployeeAttendanceForHeaders, canonicalTimesheetEmployeeKey, isTimesheetCountableForPayroll, readTimesheetData, readTimesheetPayrollUpdates, readTimesheetPeriods } from '@/lib/timesheet-entry-store';
 import { normalizePayrollMatchKey } from '@/lib/sage-people-payroll-store';
 import { mergeTimesheetDayRateEarnings } from '@/lib/payroll-earnings-engine';
+import { explicitPayrollDayRate } from '@/lib/payroll-source-of-truth';
 import { activePayrollPeriod, payrollPeriodLabel } from '@/lib/payroll-periods';
 import { activeTaxVersion, calculatePayrollTax, payrollInputFromEmployee, readPayrollTaxConfig } from '@/lib/payroll-tax-engine';
 
@@ -31,17 +32,8 @@ const inclusiveDays = (startDate: string, endDate: string) => {
   if (!Number.isFinite(start) || !Number.isFinite(end) || end < start) return 31;
   return Math.floor((end - start) / 86400000) + 1;
 };
-const derivedDailyRate = (employee: { ratePerDay?: number | null; ratePerHour?: number | null; periodSalary?: number | null; hoursPerDay?: number | null; hoursPerPeriod?: number | null }) => {
-  const hoursPerDay = num(employee.hoursPerDay) || 8;
-  const hoursPerPeriod = num(employee.hoursPerPeriod);
-  const workingDays = hoursPerPeriod > 0 && hoursPerDay > 0 ? hoursPerPeriod / hoursPerDay : 22;
-  const explicitDayRate = num(employee.ratePerDay);
-  const explicitHourRate = num(employee.ratePerHour);
-  const periodSalary = num(employee.periodSalary);
-  const ratePerDay = explicitDayRate || (explicitHourRate ? explicitHourRate * hoursPerDay : 0) || (periodSalary ? (periodSalary > 50000 ? periodSalary / workingDays : periodSalary) : 0);
-  const ratePerHour = explicitHourRate || (ratePerDay && hoursPerDay ? ratePerDay / hoursPerDay : 0);
-  return { ratePerDay, ratePerHour, hoursPerDay };
-};
+const derivedDailyRate = (employee: { ratePerDay?: number | null; ratePerHour?: number | null; hoursPerDay?: number | null }) =>
+  explicitPayrollDayRate(employee);
 
 const getRole = (request: Request): Role => {
   const value = request.headers.get('x-hris-role');
@@ -69,7 +61,7 @@ const buildPayload = async (request: Request) => {
   const perms = permissions(role);
   const employeeSource = await readPayrollEmployees();
   const employees = employeeSource.employees;
-  const dailyEmployees = employees.filter((employee) => isDailyRatePayrollEmployee(employee));
+  const dailyEmployees = employees.filter((employee) => isTimesheetWagePayrollEmployee(employee));
   const { headers, lines } = await readTimesheetData();
   const payrollUpdates = await readTimesheetPayrollUpdates();
   const period = (await readTimesheetPeriods()).find((item) => item.id === periodId) || calculateTimesheetPeriod(new Date(`${payrollPeriod}-15T00:00:00`));

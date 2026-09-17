@@ -15,6 +15,7 @@ import {
   type DayrateScheduleParseResult,
   type DayrateScheduleRow,
 } from '@/lib/dayrate-schedule-xlsx';
+import { payrollExcelAmountOverlayApplies } from '@/lib/payroll-source-of-truth';
 
 export const HR_DAYRATE_SCHEDULE_OVERRIDE_SOURCE = 'HR Dayrate Schedule Override';
 
@@ -144,6 +145,7 @@ export const applyDayrateScheduleOverrideToHoursMap = (
   period: string,
   map: Map<string, { daysWorked: number; bookedHours: number }>,
 ) => {
+  if (!payrollExcelAmountOverlayApplies(period)) return map;
   const applied = readAppliedDayrateScheduleOverride(period);
   if (!applied?.rows.length) return map;
 

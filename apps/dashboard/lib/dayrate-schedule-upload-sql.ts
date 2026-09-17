@@ -12,6 +12,7 @@ import {
   type DayrateScheduleOverrideRecord,
 } from '@/lib/dayrate-schedule-override-read';
 import type { DayrateScheduleParseResult, DayrateScheduleRow } from '@/lib/dayrate-schedule-xlsx';
+import { payrollExcelAmountOverlayApplies } from '@/lib/payroll-source-of-truth';
 
 const compact = (value: unknown) => String(value || '').trim();
 const num = (value: unknown) => {
@@ -234,6 +235,7 @@ export const ensureDayrateScheduleOverrideLoaded = async (period: string) => {
 export const assertStoredDayrateScheduleVisible = async (period: string) => {
   const normalized = String(period || '').replace(/\//g, '-').replace(/^per-/i, '').slice(0, 7);
   if (!normalized) return;
+  if (!payrollExcelAmountOverlayApplies(normalized)) return;
   if (!(await dayrateScheduleUploadExistsInSql(normalized))) return;
   if (readAppliedDayrateScheduleOverride(normalized)) return;
   throw new Error(

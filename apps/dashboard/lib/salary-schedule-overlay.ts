@@ -15,6 +15,7 @@ import {
   readAppliedSalaryScheduleOverride,
   type SalaryScheduleUploadRecord,
 } from '@/lib/salary-schedule-upload-sql';
+import { payrollExcelAmountOverlayApplies } from '@/lib/payroll-source-of-truth';
 
 const roundMoney = (value: number) => Math.round((Number.isFinite(value) ? value : 0) * 100) / 100;
 const compact = (value: unknown) => String(value || '').trim();
@@ -171,6 +172,7 @@ export const applySalaryScheduleOverrideToRecords = (
   period: string,
   schedule?: SalaryScheduleUploadRecord | null,
 ): PayrollCalculationRecord[] => {
+  if (!payrollExcelAmountOverlayApplies(period)) return records;
   const applied = schedule || readAppliedSalaryScheduleOverride(period);
   if (!applied?.parsed?.rows?.length) return records;
 
@@ -323,7 +325,7 @@ export const applySalaryScheduleCompanionPay = (
   records: PayrollCalculationRecord[],
   period: string,
 ): PayrollCalculationRecord[] => {
-  const applied = readAppliedSalaryScheduleOverride(period);
+  const applied = payrollExcelAmountOverlayApplies(period) ? readAppliedSalaryScheduleOverride(period) : null;
   const companions = (applied?.parsed?.rows || []).filter(isSplitSheetNgnCompanion);
   if (!companions.length && !records.some((record) => isDleUsdPayrollEmployee(record))) return records;
   return attachCompanionNgnPay(records, companions);
