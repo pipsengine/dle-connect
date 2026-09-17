@@ -329,11 +329,23 @@ IF COL_LENGTH(N'[procurement].[PurchaseRequisitions]', N'DeliveryLocation') IS N
   ALTER TABLE [procurement].[PurchaseRequisitions] ADD [DeliveryLocation] NVARCHAR(200) NULL;
 IF COL_LENGTH(N'[procurement].[PurchaseRequisitions]', N'Priority') IS NULL
   ALTER TABLE [procurement].[PurchaseRequisitions] ADD [Priority] NVARCHAR(20) NULL;
+IF COL_LENGTH(N'[procurement].[PurchaseRequisitions]', N'Site') IS NULL
+  ALTER TABLE [procurement].[PurchaseRequisitions] ADD [Site] NVARCHAR(20) NULL;
+IF COL_LENGTH(N'[procurement].[PurchaseRequisitions]', N'Location') IS NULL
+  ALTER TABLE [procurement].[PurchaseRequisitions] ADD [Location] NVARCHAR(200) NULL;
+IF COL_LENGTH(N'[procurement].[PurchaseRequisitions]', N'AttachmentsJson') IS NULL
+  ALTER TABLE [procurement].[PurchaseRequisitions] ADD [AttachmentsJson] NVARCHAR(MAX) NULL;
+
+IF COL_LENGTH(N'[procurement].[PurchaseRequisitionLines]', N'Description') IS NOT NULL
+  AND COL_LENGTH(N'[procurement].[PurchaseRequisitionLines]', N'Description') BETWEEN 1 AND 3999
+  ALTER TABLE [procurement].[PurchaseRequisitionLines] ALTER COLUMN [Description] NVARCHAR(2000) NOT NULL;
 
 IF COL_LENGTH(N'[procurement].[PurchaseRequisitionLines]', N'ItemCode') IS NULL
   ALTER TABLE [procurement].[PurchaseRequisitionLines] ADD [ItemCode] NVARCHAR(80) NULL;
 IF COL_LENGTH(N'[procurement].[PurchaseRequisitionLines]', N'Specification') IS NULL
-  ALTER TABLE [procurement].[PurchaseRequisitionLines] ADD [Specification] NVARCHAR(500) NULL;
+  ALTER TABLE [procurement].[PurchaseRequisitionLines] ADD [Specification] NVARCHAR(2000) NULL;
+ELSE IF COL_LENGTH(N'[procurement].[PurchaseRequisitionLines]', N'Specification') BETWEEN 1 AND 3999
+  ALTER TABLE [procurement].[PurchaseRequisitionLines] ALTER COLUMN [Specification] NVARCHAR(2000) NULL;
 IF COL_LENGTH(N'[procurement].[PurchaseRequisitionLines]', N'TaxRate') IS NULL
   ALTER TABLE [procurement].[PurchaseRequisitionLines] ADD [TaxRate] DECIMAL(9,4) NOT NULL CONSTRAINT [DF_ProcPRLines_Tax] DEFAULT 0;
 IF COL_LENGTH(N'[procurement].[PurchaseRequisitionLines]', N'RequiredDate') IS NULL

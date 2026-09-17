@@ -7,16 +7,28 @@ import {
   FileText,
   Loader2,
   MoreHorizontal,
+  Paperclip,
   Plus,
   RefreshCw,
   RotateCcw,
   Send,
+  Trash2,
+  Upload,
   XCircle,
 } from 'lucide-react';
 import { procurementGet, procurementPost } from '../lib/procurement-api';
-import { DepartmentLookup, EmployeeLookup } from './proc-lookups';
+import { DepartmentLookup, EmployeeLookup, LocationLookup, ProjectLookup } from './proc-lookups';
 import { LineItemsEditor } from './LineItemsEditor';
-import { PROCUREMENT_CURRENCIES, PROCUREMENT_PRIORITIES, PROCUREMENT_REQUEST_TYPES, linesTotal, type ProcLineItem } from '@/lib/procurement/catalog';
+import {
+  PROCUREMENT_CURRENCIES,
+  PROCUREMENT_PRIORITIES,
+  PROCUREMENT_REQUEST_TYPES,
+  PROCUREMENT_SITES,
+  linesTotal,
+  type ProcLineItem,
+} from '@/lib/procurement/catalog';
+import type { PrAttachment } from '@/lib/procurement/pr-attachment-storage';
+import type { PrImportResult } from '@/lib/procurement/pr-line-import';
 import {
   FilterBar,
   KpiCard,
@@ -54,11 +66,16 @@ export type PurchaseRequisitionRow = {
   budgetLine?: string | null;
   businessJustification?: string | null;
   deliveryLocation?: string | null;
+  location?: string | null;
+  site?: string | null;
   priority?: string | null;
+  attachments?: PrAttachment[];
   updatedAt: string;
   lines?: Array<{
     lineId?: string;
     description: string;
+    specification?: string | null;
+    itemCode?: string | null;
     qty?: number;
     quantity?: number;
     uom?: string | null;
@@ -74,7 +91,6 @@ const PR_STATUSES = ['Draft', 'Submitted', 'Under Approval', 'Returned', 'Approv
 type PrForm = {
   prId?: string;
   title: string;
-  description: string;
   department: string;
   project: string;
   requesterName: string;
@@ -87,13 +103,13 @@ type PrForm = {
   costCentre: string;
   budgetLine: string;
   businessJustification: string;
-  deliveryLocation: string;
+  location: string;
+  site: string;
   priority: string;
 };
 
 const emptyForm = (): PrForm => ({
   title: '',
-  description: '',
   department: '',
   project: '',
   requesterName: '',
@@ -106,9 +122,31 @@ const emptyForm = (): PrForm => ({
   costCentre: '',
   budgetLine: '',
   businessJustification: '',
-  deliveryLocation: '',
+  location: '',
+  site: '',
   priority: 'Medium',
 });
+
+const emptyLine = (): ProcLineItem => ({
+  id: crypto.randomUUID(),
+  description: '',
+  quantity: 1,
+  uom: 'EA',
+  unitPrice: 0,
+  taxRate: 0,
+});
+
+const fileToBase64 = (file: File) =>
+  new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const result = String(reader.result || '');
+      const comma = result.indexOf(',');
+      resolve(comma >= 0 ? result.slice(comma + 1) : result);
+    };
+    reader.onerror = () => reject(new Error('Unable to read that file.'));
+    reader.readAsDataURL(file);
+  });
 
 function statusNorm(s: string) {
   return s.trim().toLowerCase();
@@ -130,6 +168,7 @@ export function PurchaseRequisitionsClient() {
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
   const [lines, setLines] = useState<ProcLineItem[]>([]);
+  const [attachments, setAttachments] = useState<Array<PrAttachment & { contentBase64?: string }>>([]);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -177,7 +216,7 @@ export function PurchaseRequisitionsClient() {
       if (dateFrom && r.requiredDate && new Date(r.requiredDate) < new Date(dateFrom)) return false;
       if (dateTo && r.requiredDate && new Date(r.requiredDate) > new Date(`${dateTo}T23:59:59`)) return false;
       if (!q) return true;
-      return [r.prId, r.title, r.description, r.department, r.project, r.requesterName, r.status, r.currentWith]
+      return [r.prId, r.title, r.department, r.project, r.requesterName, r.status, r.currentWith, r.site, r.location]
         .filter(Boolean)
         .some((v) => String(v).toLowerCase().includes(q));
     });
@@ -191,7 +230,8 @@ export function PurchaseRequisitionsClient() {
 
   const openCreate = () => {
     setForm(emptyForm());
-    setLines([]);
+    setLines([emptyLine()]);
+    setAttachments([]);
     setError('');
     setModalOpen(true);
   };
@@ -200,7 +240,6 @@ export function PurchaseRequisitionsClient() {
     setForm({
       prId: row.prId,
       title: row.title,
-      description: row.description || '',
       department: row.department || '',
       project: row.project || '',
       requesterName: row.requesterName || '',
@@ -212,8 +251,9 @@ export function PurchaseRequisitionsClient() {
       requestType: row.requestType || 'Goods',
       costCentre: row.costCentre || '',
       budgetLine: row.budgetLine || '',
-      businessJustification: row.businessJustification || row.description || '',
-      deliveryLocation: row.deliveryLocation || '',
+      businessJustification: row.businessJustification || '',
+      location: row.location || row.deliveryLocation || '',
+      site: row.site || '',
       priority: row.priority || 'Medium',
     });
     setLines(
@@ -221,6 +261,8 @@ export function PurchaseRequisitionsClient() {
         id: line.lineId || crypto.randomUUID(),
         lineId: line.lineId,
         description: line.description,
+        specification: line.specification || undefined,
+        itemCode: line.itemCode || undefined,
         quantity: Number(line.quantity ?? line.qty ?? 1),
         uom: line.uom || 'EA',
         unitPrice: Number(line.unitPrice ?? line.unitEstimate ?? 0),
@@ -228,8 +270,37 @@ export function PurchaseRequisitionsClient() {
         requiredDate: line.requiredDate ? String(line.requiredDate).slice(0, 10) : '',
       })),
     );
+    setAttachments(row.attachments || []);
     setError('');
     setModalOpen(true);
+  };
+
+  const onImported = (result: PrImportResult) => {
+    setForm((current) => ({
+      ...current,
+      title: current.title.trim() || result.meta.suggestedTitle || current.title,
+      project: current.project.trim() || result.meta.suggestedProject || current.project,
+    }));
+  };
+
+  const addAttachments = async (files: FileList | null) => {
+    if (!files?.length) return;
+    const next: Array<PrAttachment & { contentBase64?: string }> = [];
+    for (const file of Array.from(files)) {
+      if (file.size > 8 * 1024 * 1024) {
+        setError(`${file.name} is larger than 8 MB.`);
+        continue;
+      }
+      next.push({
+        id: crypto.randomUUID(),
+        name: file.name,
+        size: file.size,
+        contentType: file.type || 'application/octet-stream',
+        uploadedAt: new Date().toISOString(),
+        contentBase64: await fileToBase64(file),
+      });
+    }
+    if (next.length) setAttachments((current) => [...current, ...next]);
   };
 
   const save = async () => {
@@ -244,7 +315,7 @@ export function PurchaseRequisitionsClient() {
         payload: {
           prId: form.prId,
           title: form.title.trim(),
-          description: form.description.trim() || null,
+          description: null,
           department: form.department.trim() || null,
           project: form.project.trim() || null,
           requesterName: form.requesterName.trim() || null,
@@ -256,19 +327,26 @@ export function PurchaseRequisitionsClient() {
           costCentre: form.costCentre.trim() || null,
           budgetLine: form.budgetLine.trim() || null,
           businessJustification: form.businessJustification.trim() || null,
-          deliveryLocation: form.deliveryLocation.trim() || null,
+          location: form.location.trim() || null,
+          deliveryLocation: form.location.trim() || null,
+          site: form.site || null,
           priority: form.priority,
           estimatedAmount: form.estimatedAmount === '' ? (lines.length ? linesTotal(lines) : null) : Number(form.estimatedAmount),
-          lines: lines.map((line, index) => ({
-            lineId: line.lineId,
-            description: line.description,
-            qty: line.quantity,
-            uom: line.uom,
-            unitEstimate: line.unitPrice,
-            taxRate: line.taxRate,
-            requiredDate: line.requiredDate || null,
-            sortOrder: index,
-          })),
+          attachments,
+          lines: lines
+            .filter((line) => String(line.description || '').trim())
+            .map((line, index) => ({
+              lineId: line.lineId,
+              description: line.description,
+              specification: line.specification || null,
+              itemCode: line.itemCode || null,
+              qty: line.quantity,
+              uom: line.uom,
+              unitEstimate: line.unitPrice,
+              taxRate: line.taxRate,
+              requiredDate: line.requiredDate || null,
+              sortOrder: index,
+            })),
         },
       });
       setModalOpen(false);
@@ -286,7 +364,7 @@ export function PurchaseRequisitionsClient() {
         <div>
           <h1 className="text-2xl font-black text-slate-900">Purchase Requisitions</h1>
           <p className="mt-1 text-sm text-slate-600">
-            Raise, track and approve purchase requests with line items, budget line and business justification.
+            Raise, track and approve purchase requests with project, site, location, Excel/MTO import and line-item detail.
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
@@ -360,12 +438,14 @@ export function PurchaseRequisitionsClient() {
         onExport={() =>
           exportCsv(
             'purchase-requisitions.csv',
-            ['PR No', 'Title', 'Department', 'Project', 'Requester', 'Estimate', 'Required', 'Status', 'Current With', 'Updated'],
+            ['PR No', 'Title', 'Department', 'Project', 'Site', 'Location', 'Requester', 'Estimate', 'Required', 'Status', 'Current With', 'Updated'],
             filtered.map((r) => [
               r.prId,
               r.title,
               r.department,
               r.project,
+              r.site,
+              r.location || r.deliveryLocation,
               r.requesterName,
               r.estimatedAmount,
               formatDate(r.requiredDate),
@@ -387,8 +467,9 @@ export function PurchaseRequisitionsClient() {
                 <thead className="bg-slate-50 text-xs font-bold uppercase tracking-wide text-slate-500">
                   <tr>
                     <th className="px-3 py-3 text-left">PR No</th>
-                    <th className="px-3 py-3 text-left">Request / Description</th>
+                    <th className="px-3 py-3 text-left">Request</th>
                     <th className="px-3 py-3 text-left">Dept / Project</th>
+                    <th className="px-3 py-3 text-left">Site / Location</th>
                     <th className="px-3 py-3 text-left">Requester</th>
                     <th className="px-3 py-3 text-left">Estimate</th>
                     <th className="px-3 py-3 text-left">Required</th>
@@ -408,11 +489,17 @@ export function PurchaseRequisitionsClient() {
                       </td>
                       <td className="px-3 py-3">
                         <div className="font-semibold text-slate-900">{row.title}</div>
-                        {row.description ? <div className="mt-0.5 line-clamp-1 text-xs text-slate-500">{row.description}</div> : null}
+                        {row.lines?.length ? (
+                          <div className="mt-0.5 text-xs text-slate-500">{row.lines.length} line item{row.lines.length === 1 ? '' : 's'}</div>
+                        ) : null}
                       </td>
                       <td className="px-3 py-3 text-slate-700">
                         <div>{row.department || '—'}</div>
                         <div className="text-xs text-slate-500">{row.project || '—'}</div>
+                      </td>
+                      <td className="px-3 py-3 text-slate-700">
+                        <div>{row.site || '—'}</div>
+                        <div className="text-xs text-slate-500">{row.location || row.deliveryLocation || '—'}</div>
                       </td>
                       <td className="px-3 py-3"><PersonCell name={row.requesterName} /></td>
                       <td className="px-3 py-3 tabular-nums text-slate-800">{moneyPlain(row.estimatedAmount, row.currency || 'NGN')}</td>
@@ -464,10 +551,6 @@ export function PurchaseRequisitionsClient() {
             <label className={labelClass}>Title *</label>
             <input className={inputClass} value={form.title} onChange={(e) => setForm((f) => ({ ...f, title: e.target.value }))} />
           </div>
-          <div className="md:col-span-2">
-            <label className={labelClass}>Description</label>
-            <textarea className={`${inputClass} min-h-[80px] py-2`} value={form.description} onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))} />
-          </div>
           <div>
             <label className={labelClass}>Request type</label>
             <select className={selectClass} value={form.requestType} onChange={(e) => setForm((f) => ({ ...f, requestType: e.target.value }))}>
@@ -485,10 +568,19 @@ export function PurchaseRequisitionsClient() {
             </select>
           </div>
           <DepartmentLookup value={form.department} onChange={(name) => setForm((f) => ({ ...f, department: name }))} />
+          <ProjectLookup value={form.project} onChange={(value) => setForm((f) => ({ ...f, project: value }))} />
           <div>
-            <label className={labelClass}>Project</label>
-            <input className={inputClass} value={form.project} onChange={(e) => setForm((f) => ({ ...f, project: e.target.value }))} />
+            <label className={labelClass}>Site</label>
+            <select className={selectClass} value={form.site} onChange={(e) => setForm((f) => ({ ...f, site: e.target.value }))}>
+              <option value="">Select site</option>
+              {PROCUREMENT_SITES.map((site) => (
+                <option key={site.code} value={site.code}>
+                  {site.code} — {site.name}
+                </option>
+              ))}
+            </select>
           </div>
+          <LocationLookup value={form.location} onChange={(name) => setForm((f) => ({ ...f, location: name }))} />
           <EmployeeLookup
             label="Requester"
             value={form.requesterName}
@@ -509,10 +601,6 @@ export function PurchaseRequisitionsClient() {
           <div>
             <label className={labelClass}>Budget line</label>
             <input className={inputClass} value={form.budgetLine} onChange={(e) => setForm((f) => ({ ...f, budgetLine: e.target.value }))} />
-          </div>
-          <div>
-            <label className={labelClass}>Delivery location</label>
-            <input className={inputClass} value={form.deliveryLocation} onChange={(e) => setForm((f) => ({ ...f, deliveryLocation: e.target.value }))} />
           </div>
           <div className="md:col-span-2">
             <label className={labelClass}>Business justification</label>
@@ -540,7 +628,47 @@ export function PurchaseRequisitionsClient() {
           </div>
         </div>
         <div className="mt-6">
-          <LineItemsEditor lines={lines} onChange={setLines} />
+          <LineItemsEditor lines={lines} onChange={setLines} onImported={onImported} />
+        </div>
+        <div className="mt-6">
+          <div className="mb-3 flex items-center justify-between gap-3">
+            <div>
+              <div className="text-sm font-black text-slate-900">Supporting files</div>
+              <p className="text-xs text-slate-500">Upload drawings, quotes or the source MTO. Line detail lives on each item, not a header description.</p>
+            </div>
+            <label className={secondaryBtnClass}>
+              <Upload className="h-4 w-4" /> Upload files
+              <input
+                type="file"
+                multiple
+                className="hidden"
+                onChange={(e) => {
+                  void addAttachments(e.target.files);
+                  e.currentTarget.value = '';
+                }}
+              />
+            </label>
+          </div>
+          {attachments.length ? (
+            <ul className="space-y-2">
+              {attachments.map((file) => (
+                <li key={file.id} className="flex items-center justify-between gap-3 rounded-lg border border-slate-200 px-3 py-2 text-sm">
+                  <span className="flex min-w-0 items-center gap-2">
+                    <Paperclip className="h-4 w-4 shrink-0 text-slate-500" />
+                    <span className="truncate">{file.name}</span>
+                    <span className="text-xs text-slate-500">{file.size ? `${Math.max(1, Math.round(file.size / 1024))} KB` : ''}</span>
+                  </span>
+                  <button type="button" className="rounded-md p-1 hover:bg-slate-100" onClick={() => setAttachments((current) => current.filter((item) => item.id !== file.id))} aria-label={`Remove ${file.name}`}>
+                    <Trash2 className="h-4 w-4 text-slate-500" />
+                  </button>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <div className="rounded-xl border border-dashed border-slate-200 px-4 py-6 text-center text-sm text-slate-500">
+              No files attached. Import Excel into line items above, or upload supporting documents here.
+            </div>
+          )}
         </div>
       </ProcModal>
     </div>

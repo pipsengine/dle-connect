@@ -21,6 +21,7 @@ import {
   listProcurementLookupDepartments,
   listProcurementLookupEmployees,
   listProcurementLookupLocations,
+  listProcurementLookupProjects,
   listPurchaseOrders,
   listPurchaseRequisitions,
   listRfqs,
@@ -104,6 +105,7 @@ export async function GET(request: NextRequest) {
         const kind = searchParams.get('kind') || 'employees';
         if (kind === 'departments') return ok(await listProcurementLookupDepartments());
         if (kind === 'locations') return ok(await listProcurementLookupLocations());
+        if (kind === 'projects') return ok(await listProcurementLookupProjects());
         return ok(
           await listProcurementLookupEmployees(
             searchParams.get('q') || '',
@@ -143,6 +145,19 @@ export async function POST(request: NextRequest) {
         return ok(await syncSageSuppliersFromX3(actor));
       case 'upsert-pr':
         return ok(await upsertPurchaseRequisition(body.payload || body, actor));
+      case 'parse-pr-import': {
+        const fileName = String(body.fileName || body.payload?.fileName || 'import.xlsx');
+        const content = String(body.content || body.contentBase64 || body.payload?.content || '');
+        if (!content) return err(400, 'file content is required');
+        const { parsePrImportWorkbook } = await import('@/lib/procurement/parse-pr-workbook');
+        return ok(
+          await parsePrImportWorkbook(
+            fileName,
+            Buffer.from(content, 'base64'),
+            Boolean(body.consolidate || body.payload?.consolidate),
+          ),
+        );
+      }
       case 'upsert-rfq':
         return ok(await upsertRfq(body.payload || body, actor));
       case 'upsert-po':

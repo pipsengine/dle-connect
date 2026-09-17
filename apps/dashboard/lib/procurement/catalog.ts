@@ -1,6 +1,11 @@
 export const PROCUREMENT_CURRENCIES = ['NGN', 'USD', 'EUR', 'GBP'] as const;
 export const PROCUREMENT_PRIORITIES = ['Low', 'Medium', 'High', 'Critical'] as const;
 export const PROCUREMENT_REQUEST_TYPES = ['Goods', 'Services', 'Works', 'CAPEX'] as const;
+export const PROCUREMENT_SITES = [
+  { code: 'DLE', name: 'Dorman Long Engineering Limited' },
+  { code: 'DLPC', name: 'Dorman Long Protective Coatings' },
+] as const;
+export const PROCUREMENT_UOMS = ['EA', 'PCS', 'SET', 'MT', 'KG', 'M', 'BOX', 'ROLL', 'LOT'] as const;
 export const PROCUREMENT_METHODS = ['Competitive', 'Restricted', 'Single Source', 'Framework Call-off'] as const;
 export const PROCUREMENT_RFX_TYPES = ['RFI', 'RFQ', 'RFP', 'Tender'] as const;
 export const PROCUREMENT_EVALUATION_METHODS = [

@@ -34,6 +34,15 @@ export type LocationLookupRow = {
   recordType: string;
 };
 
+export type ProjectLookupRow = {
+  id: string;
+  code: string;
+  name: string;
+  client: string;
+  location: string;
+  status: string;
+};
+
 export function SearchableSelect({
   label,
   required,
@@ -368,6 +377,78 @@ export function LocationLookup({
       placeholder={loaded ? 'Search or type a city / site' : 'Type a city or site — suggestions load in the background'}
       onChange={(v) => onChange(v)}
       allowCustom
+    />
+  );
+}
+
+export function ProjectLookup({
+  label = 'Project',
+  value,
+  onChange,
+  required,
+}: {
+  label?: string;
+  value: string;
+  onChange: (value: string, project?: ProjectLookupRow) => void;
+  required?: boolean;
+}) {
+  const [rows, setRows] = useState<ProjectLookupRow[]>([]);
+  const [loaded, setLoaded] = useState(false);
+
+  useEffect(() => {
+    let active = true;
+    void (async () => {
+      try {
+        const data = await procurementGet<ProjectLookupRow[]>('lookups', { kind: 'projects' });
+        if (active) {
+          setRows(data);
+          setLoaded(true);
+        }
+      } catch {
+        if (active) setLoaded(true);
+      }
+    })();
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  const options = useMemo<LookupOption[]>(() => {
+    const mapped = rows.map((project) => {
+      const label = project.code && project.name && project.code !== project.name
+        ? `${project.code} — ${project.name}`
+        : project.code || project.name;
+      return {
+        value: label,
+        label,
+        sub: [project.client, project.location, project.status].filter(Boolean).join(' · ') || undefined,
+      };
+    });
+    if (value && !mapped.some((option) => option.value === value)) {
+      mapped.unshift({ value, label: value, sub: 'Current value' });
+    }
+    return mapped;
+  }, [rows, value]);
+
+  return (
+    <SearchableSelect
+      label={label}
+      required={required}
+      value={value}
+      options={options}
+      placeholder={loaded ? 'Search projects…' : 'Loading projects…'}
+      onChange={(next, option) => {
+        const match = rows.find((project) => {
+          const label = project.code && project.name && project.code !== project.name
+            ? `${project.code} — ${project.name}`
+            : project.code || project.name;
+          return label === next;
+        });
+        onChange(next, match);
+        void option;
+      }}
+      allowCustom
+      disabled={!loaded && !options.length}
     />
   );
 }

@@ -1,6 +1,7 @@
 import sql from 'mssql';
 import { getDleEnterpriseDbPool } from '@/lib/dle-enterprise-db';
 import { ensureProcurementSchemaSql } from '@/lib/procurement-sql-schema';
+import { parsePrAttachments, savePrAttachmentFile, type PrAttachment } from '@/lib/procurement/pr-attachment-storage';
 
 const dbReady = { value: false };
 
@@ -229,29 +230,79 @@ const mapSupplier = (row: Record<string, unknown>) => ({
   updatedBy: row.UpdatedBy == null ? null : String(row.UpdatedBy),
 });
 
-const mapPr = (row: Record<string, unknown>) => ({
-  prId: String(row.PrId),
-  title: String(row.Title),
-  description: row.Description == null ? null : String(row.Description),
-  department: row.Department == null ? null : String(row.Department),
-  project: row.Project == null ? null : String(row.Project),
-  requesterName: row.RequesterName == null ? null : String(row.RequesterName),
-  status: String(row.Status),
-  currency: row.Currency == null ? null : String(row.Currency),
-  estimatedAmount: row.EstimatedAmount == null ? null : toNum(row.EstimatedAmount),
-  requiredDate: toIso(row.RequiredDate),
-  currentWith: row.CurrentWith == null ? null : String(row.CurrentWith),
-  requestType: textCol(row, 'RequestType'),
-  costCentre: textCol(row, 'CostCentre'),
-  budgetLine: textCol(row, 'BudgetLine'),
-  businessJustification: row.BusinessJustification == null ? null : String(row.BusinessJustification),
-  deliveryLocation: textCol(row, 'DeliveryLocation'),
-  priority: textCol(row, 'Priority'),
-  createdAt: toIso(row.CreatedAt) || nowProcIso(),
-  updatedAt: toIso(row.UpdatedAt) || nowProcIso(),
-  createdBy: row.CreatedBy == null ? null : String(row.CreatedBy),
-  updatedBy: row.UpdatedBy == null ? null : String(row.UpdatedBy),
-});
+const persistPrAttachments = async (prId: string, raw: unknown): Promise<PrAttachment[]> => {
+  const incoming = Array.isArray(raw) ? raw : parsePrAttachments(raw);
+  const saved: PrAttachment[] = [];
+  for (const item of incoming as Array<PrAttachment & { contentBase64?: string }>) {
+    const id = clean(item.id, 40) || newId('ATT');
+    const name = clean(item.name, 180) || 'attachment.bin';
+    const contentType = clean(item.contentType, 120) || 'application/octet-stream';
+    const uploadedAt = clean(item.uploadedAt, 40) || nowProcIso();
+    if (item.contentBase64) {
+      try {
+        const bytes = Buffer.from(String(item.contentBase64), 'base64');
+        const stored = await savePrAttachmentFile(prId, name, bytes);
+        saved.push({
+          id,
+          name,
+          size: bytes.length,
+          contentType,
+          storedName: stored.fileName,
+          uploadedAt,
+        });
+        continue;
+      } catch {
+        saved.push({
+          id,
+          name,
+          size: toNum(item.size),
+          contentType,
+          uploadedAt,
+        });
+        continue;
+      }
+    }
+    saved.push({
+      id,
+      name,
+      size: toNum(item.size),
+      contentType,
+      storedName: item.storedName,
+      uploadedAt,
+    });
+  }
+  return saved;
+};
+
+const mapPr = (row: Record<string, unknown>) => {
+  const location = textCol(row, 'Location') || textCol(row, 'DeliveryLocation');
+  return {
+    prId: String(row.PrId),
+    title: String(row.Title),
+    description: row.Description == null ? null : String(row.Description),
+    department: row.Department == null ? null : String(row.Department),
+    project: row.Project == null ? null : String(row.Project),
+    requesterName: row.RequesterName == null ? null : String(row.RequesterName),
+    status: String(row.Status),
+    currency: row.Currency == null ? null : String(row.Currency),
+    estimatedAmount: row.EstimatedAmount == null ? null : toNum(row.EstimatedAmount),
+    requiredDate: toIso(row.RequiredDate),
+    currentWith: row.CurrentWith == null ? null : String(row.CurrentWith),
+    requestType: textCol(row, 'RequestType'),
+    costCentre: textCol(row, 'CostCentre'),
+    budgetLine: textCol(row, 'BudgetLine'),
+    businessJustification: row.BusinessJustification == null ? null : String(row.BusinessJustification),
+    deliveryLocation: location,
+    location,
+    site: textCol(row, 'Site'),
+    priority: textCol(row, 'Priority'),
+    attachments: parsePrAttachments(row.AttachmentsJson),
+    createdAt: toIso(row.CreatedAt) || nowProcIso(),
+    updatedAt: toIso(row.UpdatedAt) || nowProcIso(),
+    createdBy: row.CreatedBy == null ? null : String(row.CreatedBy),
+    updatedBy: row.UpdatedBy == null ? null : String(row.UpdatedBy),
+  };
+};
 
 const mapPrLine = (row: Record<string, unknown>) => ({
   lineId: String(row.LineId),
@@ -655,6 +706,9 @@ export const upsertPurchaseRequisition = async (input: Record<string, unknown>, 
   const pool = await ensureProcurementDb();
   const prId =
     clean(input.prId, 40) || (await nextSequentialId(pool, 'PurchaseRequisitions', 'PrId', yearPrefix('PR')));
+  const location = cleanNullable(input.location || input.deliveryLocation, 200);
+  const hasAttachments = input.attachments !== undefined;
+  const attachments = hasAttachments ? await persistPrAttachments(prId, input.attachments) : [];
   await pool
     .request()
     .input('PrId', sql.NVarChar(40), prId)
@@ -672,7 +726,11 @@ export const upsertPurchaseRequisition = async (input: Record<string, unknown>, 
     .input('CostCentre', sql.NVarChar(100), cleanNullable(input.costCentre, 100))
     .input('BudgetLine', sql.NVarChar(120), cleanNullable(input.budgetLine, 120))
     .input('BusinessJustification', sql.NVarChar(sql.MAX), cleanNullable(input.businessJustification || input.description, 8000))
-    .input('DeliveryLocation', sql.NVarChar(200), cleanNullable(input.deliveryLocation, 200))
+    .input('DeliveryLocation', sql.NVarChar(200), location)
+    .input('Location', sql.NVarChar(200), location)
+    .input('Site', sql.NVarChar(20), cleanNullable(input.site, 20))
+    .input('AttachmentsJson', sql.NVarChar(sql.MAX), attachments.length ? JSON.stringify(attachments) : null)
+    .input('HasAttachments', sql.Bit, hasAttachments ? 1 : 0)
     .input('Priority', sql.NVarChar(20), cleanNullable(input.priority, 20) || 'Medium')
     .input('CreatedBy', sql.NVarChar(120), clean(actor, 120))
     .input('UpdatedBy', sql.NVarChar(120), clean(actor, 120))
@@ -684,17 +742,21 @@ export const upsertPurchaseRequisition = async (input: Record<string, unknown>, 
           [EstimatedAmount]=@EstimatedAmount, [RequiredDate]=@RequiredDate, [CurrentWith]=@CurrentWith,
           [RequestType]=@RequestType, [CostCentre]=@CostCentre, [BudgetLine]=@BudgetLine,
           [BusinessJustification]=@BusinessJustification, [DeliveryLocation]=@DeliveryLocation, [Priority]=@Priority,
+          [Site]=@Site, [Location]=@Location,
+          [AttachmentsJson]=CASE WHEN @HasAttachments=1 THEN @AttachmentsJson ELSE [AttachmentsJson] END,
           [UpdatedAt]=SYSUTCDATETIME(), [UpdatedBy]=@UpdatedBy
         WHERE [PrId]=@PrId
       ELSE
         INSERT INTO [procurement].[PurchaseRequisitions] (
           [PrId], [Title], [Description], [Department], [Project], [RequesterName], [Status],
           [Currency], [EstimatedAmount], [RequiredDate], [CurrentWith], [RequestType], [CostCentre],
-          [BudgetLine], [BusinessJustification], [DeliveryLocation], [Priority], [CreatedBy], [UpdatedBy]
+          [BudgetLine], [BusinessJustification], [DeliveryLocation], [Priority], [Site], [Location],
+          [AttachmentsJson], [CreatedBy], [UpdatedBy]
         ) VALUES (
           @PrId, @Title, @Description, @Department, @Project, @RequesterName, @Status,
           @Currency, @EstimatedAmount, @RequiredDate, @CurrentWith, @RequestType, @CostCentre,
-          @BudgetLine, @BusinessJustification, @DeliveryLocation, @Priority, @CreatedBy, @UpdatedBy
+          @BudgetLine, @BusinessJustification, @DeliveryLocation, @Priority, @Site, @Location,
+          @AttachmentsJson, @CreatedBy, @UpdatedBy
         )
     `);
 
@@ -708,9 +770,9 @@ export const upsertPurchaseRequisition = async (input: Record<string, unknown>, 
         .request()
         .input('LineId', sql.NVarChar(40), clean(raw.lineId, 40) || newId('PRL'))
         .input('PrId', sql.NVarChar(40), prId)
-        .input('Description', sql.NVarChar(500), clean(raw.description, 500))
+        .input('Description', sql.NVarChar(2000), clean(raw.description, 2000))
         .input('ItemCode', sql.NVarChar(80), cleanNullable(raw.itemCode, 80))
-        .input('Specification', sql.NVarChar(500), cleanNullable(raw.specification, 500))
+        .input('Specification', sql.NVarChar(2000), cleanNullable(raw.specification, 2000))
         .input('Uom', sql.NVarChar(40), cleanNullable(raw.uom, 40))
         .input('Qty', sql.Decimal(19, 4), toNum(raw.qty ?? raw.quantity, 1))
         .input('UnitEstimate', sql.Decimal(19, 2), raw.unitEstimate == null && raw.unitPrice == null ? null : toNum(raw.unitEstimate ?? raw.unitPrice))
@@ -1924,6 +1986,23 @@ export const listProcurementLookupDepartments = async () => {
     code: d.code || '',
     location: d.location || '',
   }));
+};
+
+export const listProcurementLookupProjects = async () => {
+  try {
+    const { listAllProjects } = await import('@/lib/projects-engineering/project-store');
+    const projects = await listAllProjects();
+    return projects.map((project) => ({
+      id: project.id || project.code,
+      code: project.code,
+      name: project.name,
+      client: project.client || '',
+      location: project.location || '',
+      status: project.status || '',
+    }));
+  } catch {
+    return [];
+  }
 };
 
 export const listProcurementLookupLocations = async () => {
