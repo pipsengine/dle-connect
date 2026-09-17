@@ -14,7 +14,8 @@ import { managementPermissions, payrollSessionContext, processingPermissions } f
 import { executePayrollWorkflowAction } from '@/lib/payroll-workflow-service';
 import { resolveWorkflowLinkOriginFromRequest } from '@/lib/public-app-url';
 import { FINANCE_ONLY_PAYROLL_ACTIONS, hasPayrollSalaryReviewAccess, isFinancePayrollOnlyUser } from '@/lib/access/payroll-access';
-import { buildExcelHtml, buildExcelWorkbookXml, excelMimeType } from '@/lib/excel-export';
+import { buildExcelHtml, buildExcelWorkbookXml, excelMimeType, tableExportResponse } from '@/lib/excel-export';
+import { buildStatutoryHubExportTable, isStatutoryHubReport } from '@/lib/statutory-tab-export';
 import { buildSageJournalCsv, buildSageJournalExportRows, savePayrollJournalMappings } from '@/lib/payroll-journal-service';
 import { buildSalarySetupExportReport } from '@/lib/payroll-salary-setup-export';
 import { buildPayrollReviewExportReport, previousPayrollPeriod } from '@/lib/payroll-review-export';
@@ -103,6 +104,9 @@ const reportTitle = (report: string) => ({
   'payroll-review': 'Payroll Review (Month-on-Month)',
   'journal-sage': 'Sage Payroll Journal',
   'payroll-journal': 'Payroll Journal',
+  'statutory-overview': 'Statutory Overview',
+  'statutory-compliance': 'Statutory Compliance',
+  'statutory-exceptions': 'Statutory Exceptions',
 }[report] || 'Payroll Register');
 
 const loadReviewRecordsForPeriod = async (period: string) => {
@@ -368,6 +372,21 @@ export async function GET(request: Request) {
     const payload = await buildManagementPayload(request, period, requestedPack === 'all' ? 'salaried' : requestedPack, requestedCompany);
     const report = compact(url.searchParams.get('report')) || 'payroll-register';
     const format = compact(url.searchParams.get('format')).toLowerCase();
+    if (isStatutoryHubReport(report)) {
+      if (!payload.permissions.canExport) return jsonErr(403, 'Permission denied');
+      const table = buildStatutoryHubExportTable({
+        report,
+        periodLabel: payload.periodLabel,
+        employeesInScope: payload.summary.totalEmployees || payload.records.length,
+        runStatus: payload.currentRun?.status || payload.workflow?.currentStatus || payload.periodRecord?.status || 'Draft',
+        schedulesGenerated: Boolean(payload.currentRun?.statutorySchedulesGeneratedAt),
+        schedulesGeneratedAt: payload.currentRun?.statutorySchedulesGeneratedAt || null,
+        exceptions: payload.exceptions || [],
+      });
+      if (format === 'csv' || format === 'xls' || format === 'excel') {
+        return tableExportResponse(format, table);
+      }
+    }
     const currencyParam = compact(url.searchParams.get('currency'));
     // Excel defaults to NGN salaried/stipend only — DLE_USD is a separate export (currency=usd).
     const currencyScope = currencyParam || ((format === 'xls' || format === 'excel') ? 'ngn' : 'all');

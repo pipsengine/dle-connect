@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { payrollDataSourceInfo, readPayrollEmployees } from '@/lib/payroll-employee-source';
 import { activeTaxVersion, calculatePayrollTax, CONTRACT_FLAT_PAYE_RATE, payrollInputFromEmployee, readPayrollTaxConfig, usesContractFlatPaye, writePayrollTaxConfig, type PayrollTaxConfig, type PayrollTaxVersion } from '@/lib/payroll-tax-engine';
 import { activePayrollPeriod } from '@/lib/payroll-periods';
+import { tableExportResponse } from '@/lib/excel-export';
 
 type Role = 'Super Admin' | 'HR Director' | 'HR Manager' | 'Payroll Officer' | 'Finance Controller' | 'Executive Management' | 'Auditor' | 'Employee';
 
@@ -135,32 +136,26 @@ const buildPayload = async (request: Request) => {
   };
 };
 
-const csv = (records: any[]) => {
-  const headers = ['Employee ID', 'Employee Code', 'Name', 'Department', 'Payroll Group', 'Tax State', 'Tax Method', 'Monthly Gross', 'Annual Gross', 'Pre-tax Deductions', 'Reliefs', 'Chargeable Income', 'Annual PAYE', 'Monthly PAYE', 'Status', 'Issues'];
-  const lines = records.map((record) =>
-    [
-      record.employeeId,
-      record.employeeCode,
-      record.fullName,
-      record.department,
-      record.payrollGroup,
-      record.taxState,
-      record.payeMethodLabel,
-      record.monthlyGrossPay,
-      record.annualGrossIncome,
-      record.payeMethod === 'contract-flat' ? '' : record.annualPreTaxDeductions,
-      record.payeMethod === 'contract-flat' ? '' : record.annualReliefs,
-      record.payeMethod === 'contract-flat' ? '' : record.annualChargeableIncome,
-      record.annualPaye,
-      record.monthlyPaye,
-      record.status,
-      record.issues.join('; '),
-    ]
-      .map((value) => `"${String(value ?? '').replace(/"/g, '""')}"`)
-      .join(',')
-  );
-  return [headers.join(','), ...lines].join('\n');
-};
+const payeTable = (records: any[]) => ({
+  columns: ['Employee ID', 'Employee Code', 'Name', 'Department', 'Payroll Group', 'Tax State', 'Tax Method', 'Gross Income', 'Pre-tax Deductions', 'Reliefs', 'Chargeable Income', 'Annual PAYE', 'Monthly PAYE', 'Status', 'Issues'],
+  rows: records.map((record) => [
+    record.employeeId,
+    record.employeeCode,
+    record.fullName,
+    record.department,
+    record.payrollGroup,
+    record.taxState,
+    record.payeMethodLabel,
+    record.monthlyGrossPay,
+    record.payeMethod === 'contract-flat' ? '' : record.annualPreTaxDeductions,
+    record.payeMethod === 'contract-flat' ? '' : record.annualReliefs,
+    record.payeMethod === 'contract-flat' ? '' : record.annualChargeableIncome,
+    record.annualPaye,
+    record.monthlyPaye,
+    record.status,
+    (record.issues || []).join('; '),
+  ]),
+});
 
 const validateConfig = (config: PayrollTaxConfig) => {
   if (!config || typeof config !== 'object') return 'Configuration body is required';
@@ -179,13 +174,17 @@ export async function GET(request: Request) {
   try {
     const payload = await buildPayload(request);
     const { searchParams } = new URL(request.url);
-    if (searchParams.get('format') === 'csv') {
+    const format = compact(searchParams.get('format')).toLowerCase();
+    if (format === 'csv' || format === 'xls' || format === 'excel') {
       if (!payload.permissions.canExport) return err(403, 'Permission denied');
-      return new Response(csv(payload.records), {
-        headers: {
-          'content-type': 'text/csv; charset=utf-8',
-          'content-disposition': `attachment; filename="tax-paye-${payload.period}.csv"`,
-        },
+      const table = payeTable(payload.records);
+      return tableExportResponse(format, {
+        title: `PAYE Schedule - ${payload.periodLabel}`,
+        subtitle: `${payload.records.length} employees`,
+        sheetName: 'PAYE',
+        columns: table.columns,
+        rows: table.rows,
+        fileName: `tax-paye-${payload.period}`,
       });
     }
     return ok(payload);

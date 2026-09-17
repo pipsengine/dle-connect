@@ -9,6 +9,7 @@ import PaySetupHub, { type PaySetupTabId } from './PaySetupHub';
 import EarningsManagementHub, { type EarningsTabId } from './EarningsManagementHub';
 import DeductionsManagementHub, { type DeductionsTabId } from './DeductionsManagementHub';
 import StatutoryComplianceHub, { type StatutoryTabId } from './StatutoryComplianceHub';
+import { statutoryTabExportTarget } from '@/lib/statutory-tab-export';
 import BankFinanceHub, { type BankFinanceTabId } from './BankFinanceHub';
 import PayrollReportsHub, { type ReportsTabId } from './PayrollReportsHub';
 import PayrollApprovalClient from '../payroll/payroll-approval/PayrollApprovalClient';
@@ -5038,6 +5039,21 @@ export default function PayrollManagementClient({
   const exportExcel = () => exportReportExcel('payroll-register');
   const exportPdf = () => exportReportPdf('payroll-register');
 
+  const exportStatutoryTab = (tab: StatutoryTabId, format: 'csv' | 'xls') => {
+    if (!ensureCanExport()) return;
+    const target = statutoryTabExportTarget(tab);
+    if (target.kind === 'api') {
+      const params = new URLSearchParams({ format });
+      if (target.query) {
+        for (const [key, value] of Object.entries(target.query)) params.set(key, value);
+      }
+      window.location.href = `${target.path}?${params.toString()}`;
+      return;
+    }
+    if (format === 'csv') exportReportCsv(target.report);
+    else exportReportExcel(target.report);
+  };
+
   const navigateFromCommandCenter = (tab: CommandCenterNavTab) => {
     const targets: Record<CommandCenterNavTab, { section: SectionId; tab?: string } | null> = {
       overview: null,
@@ -5305,8 +5321,8 @@ export default function PayrollManagementClient({
           lastLoaded={lastLoaded}
           viewPeriod={viewPeriod}
           onRefresh={() => void load()}
-          onExportCsv={exportCsv}
-          onExportExcel={exportExcel}
+          onExportCsv={() => exportStatutoryTab(statutoryActiveTab, 'csv')}
+          onExportExcel={() => exportStatutoryTab(statutoryActiveTab, 'xls')}
           onSelectTab={(tab) => {
             setActiveTabs((prev) => ({ ...prev, 'compliance-statutory-management': tab }));
             window.history.pushState(null, '', sectionHref('compliance-statutory-management'));

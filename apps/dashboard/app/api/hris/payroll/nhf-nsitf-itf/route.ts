@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { payrollDataSourceInfo, readPayrollEmployees } from '@/lib/payroll-employee-source';
 import { activeStatutoryFundsVersion, calculateStatutoryFunds, readStatutoryFundsConfig, statutoryFundInputFromEmployee, writeStatutoryFundsConfig, type StatutoryFundsConfig } from '@/lib/payroll-statutory-funds-engine';
 import { activePayrollPeriod } from '@/lib/payroll-periods';
+import { tableExportResponse } from '@/lib/excel-export';
 
 type Role = 'Super Admin' | 'HR Director' | 'HR Manager' | 'Payroll Officer' | 'Finance Controller' | 'Executive Management' | 'Auditor' | 'Employee';
 
@@ -132,14 +133,51 @@ const buildPayload = async (request: Request) => {
   };
 };
 
-const csv = (records: any[]) => {
-  const headers = ['Employee ID', 'Name', 'Department', 'Payroll Group', 'Monthly Gross', 'NHF', 'NSITF', 'ITF Monthly Accrual', 'Employee Deductions', 'Employer Costs', 'Total Monthly Funds', 'Status', 'Issues'];
-  const lines = records.map((record) =>
-    [record.employeeId, record.fullName, record.department, record.payrollGroup, record.monthlyGross, record.nhf?.monthlyAmount, record.nsitf?.monthlyAmount, record.itf?.monthlyAmount, record.employeeDeductions, record.employerCosts, record.totalMonthlyStatutoryFunds, record.status, record.issues.join('; ')]
-      .map((value) => `"${String(value ?? '').replace(/"/g, '""')}"`)
-      .join(',')
-  );
-  return [headers.join(','), ...lines].join('\n');
+const fundTable = (records: any[], fund?: string) => {
+  const selected = compact(fund).toLowerCase();
+  if (selected === 'nhf' || selected === 'nsitf' || selected === 'itf') {
+    const label = selected.toUpperCase();
+    return {
+      columns: ['Employee ID', 'Name', 'Department', 'Payroll Group', `${label} Amount`, 'Rate', 'Payer', 'Status', 'Issues'],
+      rows: records.map((record) => {
+        const item = record[selected];
+        return [
+          record.employeeId,
+          record.fullName,
+          record.department,
+          record.payrollGroup,
+          item?.monthlyAmount ?? '',
+          item?.rate ?? '',
+          item?.payer || '',
+          record.status,
+          (record.issues || []).join('; '),
+        ];
+      }),
+      sheetName: label,
+      titlePrefix: `${label} Remittance`,
+      filePrefix: selected,
+    };
+  }
+  return {
+    columns: ['Employee ID', 'Name', 'Department', 'Payroll Group', 'NHF', 'NSITF', 'ITF Monthly Accrual', 'Employee Deductions', 'Employer Costs', 'Total Monthly Funds', 'Status', 'Issues'],
+    rows: records.map((record) => [
+      record.employeeId,
+      record.fullName,
+      record.department,
+      record.payrollGroup,
+      record.nhf?.monthlyAmount,
+      record.nsitf?.monthlyAmount,
+      record.itf?.monthlyAmount,
+      record.employeeDeductions,
+      record.employerCosts,
+      record.totalMonthlyStatutoryFunds,
+      record.status,
+      (record.issues || []).join('; '),
+    ]),
+    sheetName: 'Statutory Funds',
+    titlePrefix: 'NHF NSITF ITF',
+    filePrefix: 'nhf-nsitf-itf',
+  };
 };
 
 const validateConfig = (config: StatutoryFundsConfig) => {
@@ -157,13 +195,17 @@ export async function GET(request: Request) {
   try {
     const payload = await buildPayload(request);
     const { searchParams } = new URL(request.url);
-    if (searchParams.get('format') === 'csv') {
+    const format = compact(searchParams.get('format')).toLowerCase();
+    if (format === 'csv' || format === 'xls' || format === 'excel') {
       if (!payload.permissions.canExport) return err(403, 'Permission denied');
-      return new Response(csv(payload.records), {
-        headers: {
-          'content-type': 'text/csv; charset=utf-8',
-          'content-disposition': `attachment; filename="nhf-nsitf-itf-${payload.period}.csv"`,
-        },
+      const table = fundTable(payload.records, searchParams.get('fund') || '');
+      return tableExportResponse(format, {
+        title: `${table.titlePrefix} - ${payload.periodLabel}`,
+        subtitle: `${payload.records.length} employees`,
+        sheetName: table.sheetName,
+        columns: table.columns,
+        rows: table.rows,
+        fileName: `${table.filePrefix}-${payload.period}`,
       });
     }
     return ok(payload);

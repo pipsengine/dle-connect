@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { payrollDataSourceInfo, readPayrollEmployees } from '@/lib/payroll-employee-source';
 import { activePensionVersion, calculatePension, pensionInputFromEmployee, readPayrollPensionConfig, writePayrollPensionConfig, type PensionConfig } from '@/lib/payroll-pension-engine';
 import { activePayrollPeriod } from '@/lib/payroll-periods';
+import { tableExportResponse } from '@/lib/excel-export';
 
 type Role = 'Super Admin' | 'HR Director' | 'HR Manager' | 'Payroll Officer' | 'Finance Controller' | 'Executive Management' | 'Auditor' | 'Employee';
 
@@ -142,15 +143,26 @@ const buildPayload = async (request: Request) => {
   };
 };
 
-const csv = (records: any[]) => {
-  const headers = ['Employee ID', 'Name', 'Department', 'Payroll Group', 'PFA', 'RSA PIN', 'Pensionable Emolument', 'Employee 8%', 'Employer 10%', 'Voluntary', 'Total Remittance', 'Combined Rate', 'Status', 'Issues'];
-  const lines = records.map((record) =>
-    [record.employeeId, record.fullName, record.department, record.payrollGroup, record.providerName, record.rsaPin, record.pensionableEmolument, record.employeeContribution, record.employerContribution, record.voluntaryContribution, record.totalContribution, record.combinedRate, record.status, record.issues.join('; ')]
-      .map((value) => `"${String(value ?? '').replace(/"/g, '""')}"`)
-      .join(',')
-  );
-  return [headers.join(','), ...lines].join('\n');
-};
+const pensionTable = (records: any[]) => ({
+  columns: ['Employee ID', 'Name', 'Department', 'Payroll Group', 'PFA', 'Custodian', 'RSA PIN', 'Pensionable Emolument', 'Employee 8%', 'Employer 10%', 'Voluntary', 'Total Remittance', 'Combined Rate', 'Status', 'Issues'],
+  rows: records.map((record) => [
+    record.employeeId,
+    record.fullName,
+    record.department,
+    record.payrollGroup,
+    record.providerName,
+    record.custodian,
+    record.rsaPin,
+    record.pensionableEmolument,
+    record.employeeContribution,
+    record.employerContribution,
+    record.voluntaryContribution,
+    record.totalContribution,
+    record.combinedRate,
+    record.status,
+    (record.issues || []).join('; '),
+  ]),
+});
 
 const validateConfig = (config: PensionConfig) => {
   if (!config?.activeVersionId) return 'activeVersionId is required';
@@ -167,13 +179,17 @@ export async function GET(request: Request) {
   try {
     const payload = await buildPayload(request);
     const { searchParams } = new URL(request.url);
-    if (searchParams.get('format') === 'csv') {
+    const format = compact(searchParams.get('format')).toLowerCase();
+    if (format === 'csv' || format === 'xls' || format === 'excel') {
       if (!payload.permissions.canExport) return err(403, 'Permission denied');
-      return new Response(csv(payload.records), {
-        headers: {
-          'content-type': 'text/csv; charset=utf-8',
-          'content-disposition': `attachment; filename="pension-${payload.period}.csv"`,
-        },
+      const table = pensionTable(payload.records);
+      return tableExportResponse(format, {
+        title: `Pension Remittance - ${payload.periodLabel}`,
+        subtitle: `${payload.records.length} employees`,
+        sheetName: 'Pension',
+        columns: table.columns,
+        rows: table.rows,
+        fileName: `pension-${payload.period}`,
       });
     }
     return ok(payload);

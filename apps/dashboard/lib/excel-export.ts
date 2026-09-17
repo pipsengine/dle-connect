@@ -93,6 +93,41 @@ export const buildExcelHtml = ({ title, sheetName, columns, rows, generatedAt, s
 
 export const excelMimeType = 'application/vnd.ms-excel;charset=utf-8';
 
+export const csvFromTable = (columns: string[], rows: ExcelCell[][]) => {
+  const line = (cells: ExcelCell[]) =>
+    cells
+      .map((value) => `"${String(value ?? '').replace(/"/g, '""')}"`)
+      .join(',');
+  return [line(columns), ...rows.map((row) => line(columns.map((_, index) => row[index])))].join('\n');
+};
+
+export const isExcelDownloadFormat = (format: string) => {
+  const value = String(format || '').toLowerCase();
+  return value === 'xls' || value === 'excel';
+};
+
+export const isCsvDownloadFormat = (format: string) => String(format || '').toLowerCase() === 'csv';
+
+export const tableExportResponse = (format: string, input: ExcelWorksheetInput & { fileName: string }) => {
+  const fileName = input.fileName.replace(/\.(csv|xls|xlsx)$/i, '');
+  if (isExcelDownloadFormat(format)) {
+    return new Response(buildExcelHtml(input), {
+      headers: {
+        'content-type': excelMimeType,
+        'content-disposition': `attachment; filename="${fileName}.xls"`,
+        'cache-control': 'no-store',
+      },
+    });
+  }
+  return new Response(csvFromTable(input.columns, input.rows), {
+    headers: {
+      'content-type': 'text/csv; charset=utf-8',
+      'content-disposition': `attachment; filename="${fileName}.csv"`,
+      'cache-control': 'no-store',
+    },
+  });
+};
+
 const escapeXml = (value: unknown) =>
   String(value ?? '')
     // XML 1.0 disallows most C0 controls; leaving them in makes Excel report the file as corrupt.
