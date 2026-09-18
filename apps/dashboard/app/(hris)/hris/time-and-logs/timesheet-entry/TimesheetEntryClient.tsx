@@ -577,16 +577,18 @@ export default function TimesheetEntryClient({ variant = 'admin' }: { variant?: 
       setSelectedWorkCenter((current) => {
         const locationName = location || suggestedLocation || selectedLocation || dbLocationNames[0] || '';
         const dbWorkCenterNames = workCenterNamesForLocation(dbWorkCenters, locationName);
-        if (isOffshoreWorkCenterName(workCenter)) return workCenter;
+        const requested = String(workCenter || '').trim();
+        const headerWorkCenter = String(data.header?.workCenterName || '').trim();
+        if (isOffshoreWorkCenterName(requested)) return requested;
         if (isOffshoreWorkCenterName(current) && dbWorkCenterNames.includes(current)) return current;
-        if (headerId && data.header?.workCenterName) return data.header.workCenterName;
-        if (!workCenter) {
+        if (headerId && headerWorkCenter) return headerWorkCenter;
+        if (!requested) {
           if (suggestedWorkCenter && dbWorkCenterNames.includes(suggestedWorkCenter)) return suggestedWorkCenter;
-          if (data.header?.workCenterName && dbWorkCenterNames.includes(data.header.workCenterName)) return data.header.workCenterName;
+          if (headerWorkCenter && dbWorkCenterNames.includes(headerWorkCenter)) return headerWorkCenter;
           return dbWorkCenterNames[0] || '';
         }
-        if (dbWorkCenterNames.includes(workCenter)) return workCenter;
-        if (data.header?.workCenterName && dbWorkCenterNames.includes(data.header.workCenterName)) return data.header.workCenterName;
+        if (dbWorkCenterNames.includes(requested)) return requested;
+        if (headerWorkCenter && dbWorkCenterNames.includes(headerWorkCenter)) return headerWorkCenter;
         if (current && dbWorkCenterNames.includes(current)) return current;
         if (suggestedWorkCenter && dbWorkCenterNames.includes(suggestedWorkCenter)) return suggestedWorkCenter;
         return dbWorkCenterNames[0] || '';
