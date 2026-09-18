@@ -128,6 +128,37 @@ export const mobilizationMatchesSupervisor = (item: TimesheetMobilization, super
     || Boolean(name && selectedKey.includes(name));
 };
 
+export const mobilizationMatchesOffshoreSheet = (
+  item: TimesheetMobilization,
+  input: { supervisorId: string; projectCode?: string; workCenterName?: string; crewCodes?: string[] },
+) => {
+  const projectCode = clean(input.projectCode).toUpperCase();
+  const workCenterName = clean(input.workCenterName);
+  const projectMatch = !projectCode
+    || item.projectCode === projectCode
+    || Boolean(workCenterName && item.workCenterName === workCenterName);
+  if (!projectMatch) return false;
+  if (mobilizationMatchesSupervisor(item, input.supervisorId)) return true;
+  const crew = new Set((input.crewCodes || []).map((code) => clean(code).toLowerCase()).filter(Boolean));
+  return crew.has(item.employeeCode.toLowerCase());
+};
+
+/** Offshore sheets list mobilized crew plus the supervisor's assigned people so booking is never empty. */
+export const resolveOffshoreTimesheetRoster = <T extends { employeeCode?: string | null }>(
+  mobilizedCrew: T[],
+  assignedCrew: T[],
+) => {
+  const seen = new Set<string>();
+  const roster: T[] = [];
+  for (const row of [...mobilizedCrew, ...assignedCrew]) {
+    const key = String(row.employeeCode || '').trim().toLowerCase();
+    if (!key || seen.has(key)) continue;
+    seen.add(key);
+    roster.push(row);
+  }
+  return roster;
+};
+
 export async function readTimesheetMobilizations(filters: {
   date?: string;
   supervisorId?: string;

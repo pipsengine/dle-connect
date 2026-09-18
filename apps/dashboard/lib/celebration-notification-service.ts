@@ -10,6 +10,7 @@ import { generateCelebrationFlyerCopy } from '@/lib/celebration-copy';
 import { buildCelebrationEmail } from '@/lib/celebration-email';
 import {
   beginCelebrationSendDay,
+  claimCelebrationRecipient,
   honoreeKeysForMoments,
   readCelebrationSendLedger,
   recordCelebrationSendProgress,
@@ -96,10 +97,22 @@ export const processDailyCelebrationEmails = async (input?: { date?: string; for
   }
 
   const existing = await readCelebrationSendLedger(date);
-  if (existing?.completedAt && !input?.force) {
+  if (existing?.completedAt && !input?.resend) {
     return {
       skipped: true as const,
       reason: 'Already sent for today.',
+      date,
+      honorees: moments.length,
+      sent: existing.sentCount,
+      failed: existing.failedCount,
+    };
+  }
+  if (existing && !input?.resend && !(existing.recipientEmailsSent || []).length) {
+    // A previous tick already opened today (and used to retry the whole list every 30 minutes).
+    await recordCelebrationSendProgress({ date, completed: true });
+    return {
+      skipped: true as const,
+      reason: 'Already processed for today.',
       date,
       honorees: moments.length,
       sent: existing.sentCount,
@@ -147,6 +160,9 @@ export const processDailyCelebrationEmails = async (input?: { date?: string; for
   });
 
   await mapPool(queue, SEND_CONCURRENCY, async (recipient) => {
+    const claimed = await claimCelebrationRecipient(date, recipient.email);
+    if (!claimed) return;
+
     const mail = buildCelebrationEmail({
       moments,
       recipient: recipient.employee,
@@ -164,12 +180,23 @@ export const processDailyCelebrationEmails = async (input?: { date?: string; for
     });
     if (result.sent) {
       sent += 1;
-      await recordCelebrationSendProgress({ date, sentEmails: [recipient.email], sentDelta: 1 });
+      await recordCelebrationSendProgress({
+        date,
+        sentEmails: [recipient.email],
+        sentDelta: 1,
+        recipientStatus: 'sent',
+      });
       return;
     }
     failed += 1;
     lastError = result.reason || 'Send failed.';
-    await recordCelebrationSendProgress({ date, failedDelta: 1, lastError });
+    await recordCelebrationSendProgress({
+      date,
+      sentEmails: [recipient.email],
+      failedDelta: 1,
+      lastError,
+      recipientStatus: 'failed',
+    });
   });
 
   const refreshed = await readCelebrationSendLedger(date);

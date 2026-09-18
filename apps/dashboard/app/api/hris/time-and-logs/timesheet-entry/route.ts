@@ -75,7 +75,7 @@ import { normalizeIdleAllocations, normalizeProjectAllocations, reconcileTimeshe
 import { displaceUncommittedBookingsOnOtherDrafts, findSameDayBookingConflicts, releaseLinesAlreadyBookedElsewhere, type TimesheetAlreadyBookedSkip } from '@/lib/timesheet-booking-clash';
 import { assertTimesheetRecaptureAllowed, reopenTimesheetForRecapture } from '@/lib/timesheet-recapture';
 import { submitTimesheetForApproval } from '@/lib/timesheet-submit';
-import { mobilizationCoversDate, mobilizationMatchesSupervisor, readTimesheetMobilizations, type TimesheetMobilization } from '@/lib/timesheet-mobilization-store';
+import { mobilizationCoversDate, mobilizationMatchesOffshoreSheet, mobilizationMatchesSupervisor, readTimesheetMobilizations, resolveOffshoreTimesheetRoster, type TimesheetMobilization } from '@/lib/timesheet-mobilization-store';
 import {
   applyAgegeBlastingSupervisorContext,
   dedupeTimesheetLocationLabels,
@@ -1037,7 +1037,7 @@ const buildPayload = async (
       });
     }
   }
-  if (hostMobilizations.length && !scopedLocations.some((location) => clean(location.name) === OFFSHORE_LOCATION_NAME)) {
+  if ((hostMobilizations.length || isOffshoreWorkCenterName(targetWorkCenter)) && !scopedLocations.some((location) => clean(location.name) === OFFSHORE_LOCATION_NAME)) {
     scopedLocations.push({
       id: 'loc-offshore',
       code: 'OFFSHORE',
@@ -1059,7 +1059,7 @@ const buildPayload = async (
       locationNames: directoryLocationNames,
       workCenterNames: workCenterNameList,
     });
-    if (forced.forced) {
+    if (forced.forced && !isOffshoreWorkCenterName(targetWorkCenter) && !isOffshoreWorkCenterName(forced.workCenterName)) {
       targetLocation = forced.locationName;
       targetWorkCenter = forced.workCenterName;
     }
@@ -1117,7 +1117,9 @@ const buildPayload = async (
       locationNames: directoryLocationNames,
       workCenterNames: workCenterNameList,
     });
-    if (agegeForced.forced) {
+    if (isOffshoreWorkCenterName(targetWorkCenter)) {
+      targetLocation = OFFSHORE_LOCATION_NAME;
+    } else if (agegeForced.forced) {
       targetLocation = agegeForced.locationName;
       targetWorkCenter = agegeForced.workCenterName;
     } else if (pinnedWorkCenter) {
@@ -1194,8 +1196,14 @@ const buildPayload = async (
     .sort((a, b) => a.fullName.localeCompare(b.fullName));
   const isOffshoreSheet = isOffshoreWorkCenterName(targetWorkCenter);
   const offshoreProjectCode = projectCodeFromOffshoreWorkCenter(targetWorkCenter);
+  const supervisorCrewCodes = selectedSupervisorAllDirectReports.flatMap((employee) => [employee.employeeCode, employee.employeeId]).map((value) => clean(value)).filter(Boolean);
   const sheetMobilizations = isOffshoreSheet
-    ? hostMobilizations.filter((item) => !offshoreProjectCode || item.projectCode === offshoreProjectCode || item.workCenterName === targetWorkCenter)
+    ? dateMobilizations.filter((item) => mobilizationMatchesOffshoreSheet(item, {
+      supervisorId: targetSupervisor,
+      projectCode: offshoreProjectCode,
+      workCenterName: targetWorkCenter,
+      crewCodes: supervisorCrewCodes,
+    }))
     : [];
   const employeeIsMobilizedAway = (code: string) =>
     dateMobilizations.some((item) =>
@@ -1206,22 +1214,45 @@ const buildPayload = async (
     supervisorCodesMatch(item.employeeCode, line.employeeNo)
     || supervisorCodesMatch(item.employeeCode, line.employeeId)
     || timesheetEmployeeRecordsMatch({ employeeNo: item.employeeCode, employeeName: item.employeeName }, line);
-  const offshoreRosterEmployees = sheetMobilizations.map((item) => {
-    const employee = employeesByCode.get(item.employeeCode.toLowerCase());
-    return {
-      employeeId: clean(employee?.employeeId) || item.employeeCode,
-      employeeCode: item.employeeCode,
-      fullName: clean(employee?.fullName) || item.employeeName || item.employeeCode,
-      jobTitle: clean(employee?.jobTitle) || 'Offshore crew',
-      department: clean(employee?.department) || item.projectCode,
-      location: OFFSHORE_LOCATION_NAME,
-      managerEmployeeCode: null,
-      managerName: targetSupervisor,
-      status: clean(employee?.status) || 'Active',
-    };
-  }).sort((a, b) => a.fullName.localeCompare(b.fullName));
   const homeSupervisorEmployees = (selectedSupervisorEmployeesFromDirectory.length ? selectedSupervisorEmployeesFromDirectory : selectedSupervisorEmployeesFromRecords)
     .filter((employee) => !employeeIsMobilizedAway(employee.employeeCode) && !employeeIsMobilizedAway(employee.employeeId));
+  const toOffshoreRosterEmployee = (employee: {
+    employeeId?: string | null;
+    employeeCode?: string | null;
+    fullName?: string | null;
+    jobTitle?: string | null;
+    department?: string | null;
+    status?: string | null;
+  }) => ({
+    employeeId: clean(employee.employeeId) || clean(employee.employeeCode),
+    employeeCode: clean(employee.employeeCode),
+    fullName: clean(employee.fullName) || clean(employee.employeeCode),
+    jobTitle: clean(employee.jobTitle) || 'Offshore crew',
+    department: clean(employee.department),
+    location: OFFSHORE_LOCATION_NAME,
+    managerEmployeeCode: null as string | null,
+    managerName: targetSupervisor,
+    status: clean(employee.status) || 'Active',
+  });
+  const mobilizedOffshoreEmployees = sheetMobilizations.map((item) => {
+    const employee = employeesByCode.get(item.employeeCode.toLowerCase());
+    return toOffshoreRosterEmployee({
+      employeeId: employee?.employeeId || item.employeeCode,
+      employeeCode: item.employeeCode,
+      fullName: employee?.fullName || item.employeeName,
+      jobTitle: employee?.jobTitle,
+      department: employee?.department || item.projectCode,
+      status: employee?.status,
+    });
+  }).sort((a, b) => a.fullName.localeCompare(b.fullName));
+  const assignedOffshoreFallback = selectedSupervisorAllDirectReports
+    .map((employee) => toOffshoreRosterEmployee(employee))
+    .filter((employee, index, rows) => {
+      const key = employee.employeeCode.toLowerCase();
+      return key && rows.findIndex((row) => row.employeeCode.toLowerCase() === key) === index;
+    })
+    .sort((a, b) => a.fullName.localeCompare(b.fullName));
+  const offshoreRosterEmployees = resolveOffshoreTimesheetRoster(mobilizedOffshoreEmployees, assignedOffshoreFallback);
   const selectedSupervisorEmployees = isOffshoreSheet ? offshoreRosterEmployees : homeSupervisorEmployees;
   let targetShiftForSheet = targetShiftLabel;
   if (isOffshoreSheet) targetShiftForSheet = DEFAULT_TIMESHEET_SHIFT_LABEL;
@@ -1321,7 +1352,7 @@ const buildPayload = async (
         activeProjects.map((project) => project.code),
       ),
     );
-  if (!requestedHeader || !isOffshoreSheet) {
+  if (!isOffshoreSheet) {
     lines = lines.filter(lineBelongsToSelectedCrew);
   }
 
@@ -1526,7 +1557,7 @@ const buildPayload = async (
       ...activeEmployees.map(employeeLocation),
       ...locations.flatMap((location) => [location.name, location.site]),
       ...scopedLocations.flatMap((location) => [location.name, location.site]),
-      ...(hostMobilizations.length ? [OFFSHORE_LOCATION_NAME] : []),
+      ...(hostMobilizations.length || isOffshoreSheet ? [OFFSHORE_LOCATION_NAME] : []),
     ],
   ).filter((name) => !isTimesheetTradeLabelLocation(name, workCenterNameList));
   lines = dedupeTimesheetLinesByEmployee(lines).lines;

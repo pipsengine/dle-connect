@@ -36,7 +36,7 @@ export const runCelebrationSchedulerTick = async (input?: { force?: boolean; res
   tickInFlight = true;
   lastTickAt = new Date().toISOString();
   try {
-    const result = await processDailyCelebrationEmails({ force: input?.force, resend: input?.resend });
+    const result = await processDailyCelebrationEmails({ resend: input?.resend });
     lastTickSummary = result.skipped
       ? `${result.reason} honorees=${result.honorees} sent=${result.sent}`
       : `honorees=${result.honorees} sent=${result.sent} failed=${result.failed} remaining=${result.remaining}`;

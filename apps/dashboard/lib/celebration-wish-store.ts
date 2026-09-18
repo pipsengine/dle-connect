@@ -1,5 +1,7 @@
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
+import sql from 'mssql';
+import { getDleEnterpriseDbPool } from '@/lib/dle-enterprise-db';
 import {
   celebrationEmployeeKey,
   codesMatch,
@@ -104,6 +106,132 @@ const writeStore = async (store: CelebrationStoreFile) => {
   return pruned;
 };
 
+let celebrationSendSchemaPromise: Promise<void> | null = null;
+
+const celebrationDb = async () => {
+  const pool = await getDleEnterpriseDbPool();
+  if (!pool) return null;
+  if (!celebrationSendSchemaPromise) {
+    celebrationSendSchemaPromise = pool.request().query(`
+IF SCHEMA_ID(N'hris') IS NULL EXEC(N'CREATE SCHEMA [hris]');
+IF OBJECT_ID(N'[hris].[CelebrationSendDays]', N'U') IS NULL
+CREATE TABLE [hris].[CelebrationSendDays] (
+  [SendDate] DATE NOT NULL CONSTRAINT [PK_CelebrationSendDays] PRIMARY KEY,
+  [HonoreeKeysJson] NVARCHAR(MAX) NOT NULL CONSTRAINT [DF_CelebrationSendDays_Honorees] DEFAULT N'[]',
+  [SentCount] INT NOT NULL CONSTRAINT [DF_CelebrationSendDays_Sent] DEFAULT 0,
+  [FailedCount] INT NOT NULL CONSTRAINT [DF_CelebrationSendDays_Failed] DEFAULT 0,
+  [CompletedAt] DATETIME2(0) NULL,
+  [LastError] NVARCHAR(600) NULL,
+  [UpdatedAt] DATETIME2(0) NOT NULL CONSTRAINT [DF_CelebrationSendDays_UpdatedAt] DEFAULT SYSUTCDATETIME()
+);
+IF OBJECT_ID(N'[hris].[CelebrationSendRecipients]', N'U') IS NULL
+CREATE TABLE [hris].[CelebrationSendRecipients] (
+  [SendDate] DATE NOT NULL,
+  [Email] NVARCHAR(320) NOT NULL,
+  [Status] NVARCHAR(20) NOT NULL,
+  [ClaimedAt] DATETIME2(0) NOT NULL CONSTRAINT [DF_CelebrationSendRecipients_ClaimedAt] DEFAULT SYSUTCDATETIME(),
+  [SentAt] DATETIME2(0) NULL,
+  CONSTRAINT [PK_CelebrationSendRecipients] PRIMARY KEY ([SendDate], [Email])
+);
+`).then(() => undefined).catch((error) => {
+      celebrationSendSchemaPromise = null;
+      console.warn('[celebration-email] Could not ensure send ledger tables.', error instanceof Error ? error.message : error);
+    });
+  }
+  await celebrationSendSchemaPromise;
+  return celebrationSendSchemaPromise ? pool : null;
+};
+
+const parseHonoreeKeys = (value: unknown) => {
+  if (Array.isArray(value)) return value.map((item) => compact(item)).filter(Boolean);
+  try {
+    const parsed = JSON.parse(String(value || '[]'));
+    return Array.isArray(parsed) ? parsed.map((item) => compact(item)).filter(Boolean) : [];
+  } catch {
+    return [] as string[];
+  }
+};
+
+const readSqlLedger = async (date: string): Promise<CelebrationSendLedger | null> => {
+  const pool = await celebrationDb();
+  if (!pool) return null;
+  const day = compact(date).slice(0, 10);
+  const header = await pool.request()
+    .input('SendDate', sql.VarChar(10), day)
+    .query(`SELECT * FROM [hris].[CelebrationSendDays] WHERE [SendDate]=CAST(@SendDate AS DATE)`);
+  const row = header.recordset[0] as {
+    HonoreeKeysJson?: string;
+    SentCount?: number;
+    FailedCount?: number;
+    CompletedAt?: Date | string | null;
+    LastError?: string | null;
+  } | undefined;
+  if (!row) return null;
+  const recipients = await pool.request()
+    .input('SendDate', sql.VarChar(10), day)
+    .query(`SELECT [Email], [Status] FROM [hris].[CelebrationSendRecipients] WHERE [SendDate]=CAST(@SendDate AS DATE)`);
+  const blocked = (recipients.recordset as Array<{ Email?: string; Status?: string }>)
+    .filter((item) => {
+      const status = compact(item.Status).toLowerCase();
+      return status === 'sent' || status === 'claimed' || status === 'failed';
+    })
+    .map((item) => compact(item.Email).toLowerCase())
+    .filter(Boolean);
+  return {
+    date: day,
+    honoreeKeys: parseHonoreeKeys(row.HonoreeKeysJson),
+    recipientEmailsSent: [...new Set(blocked)],
+    sentCount: Number(row.SentCount || 0),
+    failedCount: Number(row.FailedCount || 0),
+    completedAt: row.CompletedAt ? new Date(row.CompletedAt).toISOString() : undefined,
+    lastError: compact(row.LastError) || undefined,
+  };
+};
+
+const upsertSqlDay = async (ledger: CelebrationSendLedger) => {
+  const pool = await celebrationDb();
+  if (!pool) return;
+  await pool.request()
+    .input('SendDate', sql.VarChar(10), ledger.date)
+    .input('HonoreeKeysJson', sql.NVarChar(sql.MAX), JSON.stringify(ledger.honoreeKeys || []))
+    .input('SentCount', sql.Int, ledger.sentCount || 0)
+    .input('FailedCount', sql.Int, ledger.failedCount || 0)
+    .input('CompletedAt', sql.DateTime2, ledger.completedAt ? new Date(ledger.completedAt) : null)
+    .input('LastError', sql.NVarChar(600), ledger.lastError || null)
+    .query(`
+MERGE [hris].[CelebrationSendDays] AS target
+USING (SELECT CAST(@SendDate AS DATE) AS [SendDate]) AS source
+ON target.[SendDate]=source.[SendDate]
+WHEN MATCHED THEN UPDATE SET
+  [HonoreeKeysJson]=@HonoreeKeysJson,
+  [SentCount]=@SentCount,
+  [FailedCount]=@FailedCount,
+  [CompletedAt]=@CompletedAt,
+  [LastError]=@LastError,
+  [UpdatedAt]=SYSUTCDATETIME()
+WHEN NOT MATCHED THEN INSERT ([SendDate],[HonoreeKeysJson],[SentCount],[FailedCount],[CompletedAt],[LastError])
+VALUES (source.[SendDate],@HonoreeKeysJson,@SentCount,@FailedCount,@CompletedAt,@LastError);
+`);
+};
+
+const mergeLedgers = (primary: CelebrationSendLedger | null, secondary: CelebrationSendLedger | null) => {
+  if (!primary) return secondary;
+  if (!secondary) return primary;
+  const emails = [...new Set([
+    ...(primary.recipientEmailsSent || []).map((email) => email.toLowerCase()),
+    ...(secondary.recipientEmailsSent || []).map((email) => email.toLowerCase()),
+  ].filter(Boolean))];
+  return {
+    date: primary.date,
+    honoreeKeys: [...new Set([...(primary.honoreeKeys || []), ...(secondary.honoreeKeys || [])])],
+    recipientEmailsSent: emails,
+    sentCount: Math.max(primary.sentCount || 0, secondary.sentCount || 0, emails.length),
+    failedCount: Math.max(primary.failedCount || 0, secondary.failedCount || 0),
+    completedAt: primary.completedAt || secondary.completedAt,
+    lastError: primary.lastError || secondary.lastError,
+  };
+};
+
 export const listCelebrationWishesForDate = async (date = todayIsoLocal(), honoreeCode?: string, kind?: CelebrationKind) => {
   const store = await readStore();
   const day = compact(date).slice(0, 10);
@@ -162,53 +290,132 @@ export const upsertCelebrationWish = async (input: {
   return wish;
 });
 
-export const readCelebrationSendLedger = async (date = todayIsoLocal()) => {
+const readJsonLedger = async (date: string) => {
   const store = await readStore();
   return store.sendLedger.find((item) => item.date === date) || null;
+};
+
+const markSqlRecipient = async (date: string, email: string, status: 'sent' | 'failed') => {
+  const pool = await celebrationDb();
+  if (!pool) return;
+  const mailbox = compact(email).toLowerCase();
+  if (!mailbox) return;
+  await pool.request()
+    .input('SendDate', sql.VarChar(10), date)
+    .input('Email', sql.NVarChar(320), mailbox)
+    .input('Status', sql.NVarChar(20), status)
+    .query(`
+MERGE [hris].[CelebrationSendRecipients] AS target
+USING (SELECT CAST(@SendDate AS DATE) AS [SendDate], @Email AS [Email]) AS source
+ON target.[SendDate] = source.[SendDate] AND target.[Email] = source.[Email]
+WHEN MATCHED THEN UPDATE SET
+  [Status] = @Status,
+  [SentAt] = CASE WHEN @Status = N'sent' THEN SYSUTCDATETIME() ELSE [SentAt] END
+WHEN NOT MATCHED THEN INSERT ([SendDate], [Email], [Status], [ClaimedAt], [SentAt])
+VALUES (source.[SendDate], source.[Email], @Status, SYSUTCDATETIME(), CASE WHEN @Status = N'sent' THEN SYSUTCDATETIME() ELSE NULL END);
+`);
+};
+
+const sqlClaimRecipient = async (date: string, email: string) => {
+  const pool = await celebrationDb();
+  if (!pool) return null;
+  try {
+    await pool.request()
+      .input('SendDate', sql.VarChar(10), date)
+      .input('Email', sql.NVarChar(320), email)
+      .query(`
+INSERT INTO [hris].[CelebrationSendRecipients] ([SendDate], [Email], [Status], [ClaimedAt])
+VALUES (CAST(@SendDate AS DATE), @Email, N'claimed', SYSUTCDATETIME());
+`);
+    return true;
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    if (/primary key|duplicate|unique|violation/i.test(message)) return false;
+    throw error;
+  }
+};
+
+export const readCelebrationSendLedger = async (date = todayIsoLocal()) => {
+  const day = compact(date).slice(0, 10);
+  const [jsonLedger, sqlLedger] = await Promise.all([
+    readJsonLedger(day),
+    readSqlLedger(day).catch((error) => {
+      console.warn('[celebration-email] Send ledger SQL read failed.', error instanceof Error ? error.message : error);
+      return null;
+    }),
+  ]);
+  return mergeLedgers(sqlLedger, jsonLedger);
 };
 
 export const beginCelebrationSendDay = async (input: {
   date: string;
   honoreeKeys: string[];
-}) => withStoreLock(async () => {
-  const store = await readStore();
-  const existing = store.sendLedger.find((item) => item.date === input.date);
-  if (existing) return existing;
+}) => {
+  const day = compact(input.date).slice(0, 10);
+  const existing = await readCelebrationSendLedger(day);
+  if (existing) {
+    if (!existing.honoreeKeys.length && input.honoreeKeys.length) {
+      existing.honoreeKeys = [...input.honoreeKeys];
+      await upsertSqlDay(existing).catch(() => undefined);
+    }
+    return existing;
+  }
   const ledger: CelebrationSendLedger = {
-    date: input.date,
+    date: day,
     honoreeKeys: [...input.honoreeKeys],
     recipientEmailsSent: [],
     sentCount: 0,
     failedCount: 0,
   };
-  store.sendLedger.push(ledger);
-  await writeStore(store);
+  await withStoreLock(async () => {
+    const store = await readStore();
+    if (!store.sendLedger.some((item) => item.date === day)) {
+      store.sendLedger.push({ ...ledger, honoreeKeys: [...ledger.honoreeKeys] });
+      await writeStore(store);
+    }
+  });
+  await upsertSqlDay(ledger).catch((error) => {
+    console.warn('[celebration-email] Send ledger SQL begin failed.', error instanceof Error ? error.message : error);
+  });
   return ledger;
-});
+};
 
-export const resetCelebrationSendDay = async (date: string) => withStoreLock(async () => {
-  const store = await readStore();
+export const resetCelebrationSendDay = async (date: string) => {
   const day = compact(date).slice(0, 10);
-  let ledger = store.sendLedger.find((item) => item.date === day);
-  if (!ledger) {
-    ledger = {
-      date: day,
-      honoreeKeys: [],
-      recipientEmailsSent: [],
-      sentCount: 0,
-      failedCount: 0,
-    };
-    store.sendLedger.push(ledger);
-  } else {
-    ledger.recipientEmailsSent = [];
-    ledger.sentCount = 0;
-    ledger.failedCount = 0;
-    delete ledger.completedAt;
-    delete ledger.lastError;
+  const ledger = await withStoreLock(async () => {
+    const store = await readStore();
+    let dayLedger = store.sendLedger.find((item) => item.date === day);
+    if (!dayLedger) {
+      dayLedger = {
+        date: day,
+        honoreeKeys: [],
+        recipientEmailsSent: [],
+        sentCount: 0,
+        failedCount: 0,
+      };
+      store.sendLedger.push(dayLedger);
+    } else {
+      dayLedger.recipientEmailsSent = [];
+      dayLedger.sentCount = 0;
+      dayLedger.failedCount = 0;
+      delete dayLedger.completedAt;
+      delete dayLedger.lastError;
+    }
+    await writeStore(store);
+    return { ...dayLedger, honoreeKeys: [...dayLedger.honoreeKeys], recipientEmailsSent: [] };
+  });
+  const pool = await celebrationDb().catch(() => null);
+  if (pool) {
+    await pool.request()
+      .input('SendDate', sql.VarChar(10), day)
+      .query(`
+DELETE FROM [hris].[CelebrationSendRecipients] WHERE [SendDate] = CAST(@SendDate AS DATE);
+DELETE FROM [hris].[CelebrationSendDays] WHERE [SendDate] = CAST(@SendDate AS DATE);
+`);
   }
-  await writeStore(store);
+  await upsertSqlDay(ledger).catch(() => undefined);
   return ledger;
-});
+};
 
 export const recordCelebrationSendProgress = async (input: {
   date: string;
@@ -217,34 +424,89 @@ export const recordCelebrationSendProgress = async (input: {
   failedDelta?: number;
   completed?: boolean;
   lastError?: string;
-}) => withStoreLock(async () => {
-  const store = await readStore();
-  let ledger = store.sendLedger.find((item) => item.date === input.date);
-  if (!ledger) {
-    ledger = {
-      date: input.date,
-      honoreeKeys: [],
-      recipientEmailsSent: [],
-      sentCount: 0,
-      failedCount: 0,
-    };
-    store.sendLedger.push(ledger);
-  }
+  recipientStatus?: 'sent' | 'failed';
+}) => {
+  const day = compact(input.date).slice(0, 10);
   const extra = (input.sentEmails || []).map((email) => compact(email).toLowerCase()).filter(Boolean);
-  const seen = new Set(ledger.recipientEmailsSent.map((email) => email.toLowerCase()));
-  for (const email of extra) {
-    if (!seen.has(email)) {
-      ledger.recipientEmailsSent.push(email);
-      seen.add(email);
+  const ledger = await withStoreLock(async () => {
+    const store = await readStore();
+    let dayLedger = store.sendLedger.find((item) => item.date === day);
+    if (!dayLedger) {
+      dayLedger = {
+        date: day,
+        honoreeKeys: [],
+        recipientEmailsSent: [],
+        sentCount: 0,
+        failedCount: 0,
+      };
+      store.sendLedger.push(dayLedger);
     }
+    const seen = new Set(dayLedger.recipientEmailsSent.map((email) => email.toLowerCase()));
+    for (const email of extra) {
+      if (!seen.has(email)) {
+        dayLedger.recipientEmailsSent.push(email);
+        seen.add(email);
+      }
+    }
+    dayLedger.sentCount += Math.max(0, input.sentDelta || 0);
+    dayLedger.failedCount += Math.max(0, input.failedDelta || 0);
+    if (input.lastError) dayLedger.lastError = input.lastError;
+    if (input.completed) dayLedger.completedAt = nowIso();
+    await writeStore(store);
+    return {
+      ...dayLedger,
+      honoreeKeys: [...dayLedger.honoreeKeys],
+      recipientEmailsSent: [...dayLedger.recipientEmailsSent],
+    };
+  });
+  const status = input.recipientStatus || (input.sentDelta ? 'sent' : undefined);
+  if (status) {
+    await Promise.all(extra.map((email) => markSqlRecipient(day, email, status).catch(() => undefined)));
   }
-  ledger.sentCount += Math.max(0, input.sentDelta || 0);
-  ledger.failedCount += Math.max(0, input.failedDelta || 0);
-  if (input.lastError) ledger.lastError = input.lastError;
-  if (input.completed) ledger.completedAt = nowIso();
-  await writeStore(store);
+  await upsertSqlDay(ledger).catch((error) => {
+    console.warn('[celebration-email] Send ledger SQL write failed.', error instanceof Error ? error.message : error);
+  });
   return ledger;
-});
+};
+
+export const claimCelebrationRecipient = async (date: string, email: string) => {
+  const day = compact(date).slice(0, 10);
+  const mailbox = compact(email).toLowerCase();
+  if (!day || !mailbox) return false;
+
+  const jsonLedger = await readJsonLedger(day);
+  if ((jsonLedger?.recipientEmailsSent || []).some((item) => item.toLowerCase() === mailbox)) {
+    await markSqlRecipient(day, mailbox, 'sent').catch(() => undefined);
+    return false;
+  }
+
+  try {
+    const sqlClaimed = await sqlClaimRecipient(day, mailbox);
+    if (sqlClaimed === false) return false;
+  } catch (error) {
+    console.warn('[celebration-email] Recipient claim SQL failed.', error instanceof Error ? error.message : error);
+  }
+
+  return withStoreLock(async () => {
+    const store = await readStore();
+    let dayLedger = store.sendLedger.find((item) => item.date === day);
+    if (!dayLedger) {
+      dayLedger = {
+        date: day,
+        honoreeKeys: [],
+        recipientEmailsSent: [],
+        sentCount: 0,
+        failedCount: 0,
+      };
+      store.sendLedger.push(dayLedger);
+    }
+    const already = dayLedger.recipientEmailsSent.some((item) => item.toLowerCase() === mailbox);
+    if (already) return false;
+    dayLedger.recipientEmailsSent.push(mailbox);
+    await writeStore(store);
+    return true;
+  });
+};
 
 export const remainingCelebrationRecipients = (ledger: CelebrationSendLedger | null, emails: string[]) => {
   const sent = new Set((ledger?.recipientEmailsSent || []).map((email) => email.toLowerCase()));

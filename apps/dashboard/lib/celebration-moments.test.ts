@@ -91,6 +91,14 @@ assert.deepEqual(
   remainingCelebrationRecipients(ledger, ['ada@example.com', 'ben@example.com']),
   ['ben@example.com'],
 );
+assert.deepEqual(
+  remainingCelebrationRecipients({
+    ...ledger,
+    recipientEmailsSent: ['ada@example.com', 'ben@example.com'],
+    failedCount: 1,
+  }, ['ada@example.com', 'ben@example.com']),
+  [],
+);
 
 assert.equal(prettyPersonName('CHINAECHEREM STEPHEN-EHIRIM'), 'Chinaecherem Stephen-Ehirim');
 
