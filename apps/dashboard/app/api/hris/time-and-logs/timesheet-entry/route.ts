@@ -71,7 +71,7 @@ import {
   resolveOvertimeBookingOptions,
 } from '@/lib/timesheet-overtime-config';
 import { applyTimesheetLineDefaults, ensureClockedLinesHaveProjectAllocation } from '@/lib/timesheet-line-defaults';
-import { normalizeIdleAllocations, normalizeProjectAllocations, reconcileTimesheetLineHours, resolvePrimaryProjectCode, validateTimesheetLinesForPersist, TIMESHEET_SHIFT_LABELS, resolveTimesheetShift, timesheetHeaderMatchesShift, buildTimesheetHeaderId, selectTimesheetHeaderForLocation, timesheetWorkCentersMatch, isOffshoreWorkCenterName, isManualOffshoreLine, isTimesheetAbsentLine, isTimesheetInApprovalCapture, applyNightPaperClock, timesheetLineHasBookedHours, buildManualOffshoreLine, buildRosterTimesheetLine, projectCodeFromOffshoreWorkCenter, OFFSHORE_LOCATION_NAME, DEFAULT_TIMESHEET_SHIFT_LABEL, supervisorTimesheetMessage, dedupeTimesheetLinesByEmployee, isIdleTimeProjectCode, upsertMatrixProjectHours, type TimesheetDayContext } from '@/lib/timesheet-entry-shared';
+import { normalizeIdleAllocations, normalizeProjectAllocations, reconcileTimesheetLineHours, resolvePrimaryProjectCode, validateTimesheetLinesForPersist, TIMESHEET_SHIFT_LABELS, resolveTimesheetShift, timesheetHeaderMatchesShift, buildTimesheetHeaderId, selectTimesheetHeaderForLocation, timesheetWorkCentersMatch, isOffshoreWorkCenterName, isManualOffshoreLine, isTimesheetAbsentLine, isTimesheetInApprovalCapture, applyNightPaperClock, timesheetLineHasBookedHours, buildManualOffshoreLine, buildRosterTimesheetLine, projectCodeFromOffshoreWorkCenter, OFFSHORE_LOCATION_NAME, DEFAULT_TIMESHEET_SHIFT_LABEL, supervisorTimesheetMessage, dedupeTimesheetLinesByEmployee, isIdleTimeProjectCode, upsertMatrixProjectHours, markLineAsManualOffshore, canBookTimesheetHoursWithoutClock, type TimesheetDayContext } from '@/lib/timesheet-entry-shared';
 import { displaceUncommittedBookingsOnOtherDrafts, findSameDayBookingConflicts, releaseLinesAlreadyBookedElsewhere, type TimesheetAlreadyBookedSkip } from '@/lib/timesheet-booking-clash';
 import { assertTimesheetRecaptureAllowed, reopenTimesheetForRecapture } from '@/lib/timesheet-recapture';
 import { submitTimesheetForApproval } from '@/lib/timesheet-submit';
@@ -1196,11 +1196,15 @@ const buildPayload = async (
   const sheetMobilizations = isOffshoreSheet
     ? hostMobilizations.filter((item) => !offshoreProjectCode || item.projectCode === offshoreProjectCode || item.workCenterName === targetWorkCenter)
     : [];
-  const awayEmployeeCodes = new Set(
-    dateMobilizations
-      .filter((item) => !sheetMobilizations.some((sheet) => sheet.id === item.id))
-      .map((item) => item.employeeCode.toUpperCase()),
-  );
+  const employeeIsMobilizedAway = (code: string) =>
+    dateMobilizations.some((item) =>
+      !sheetMobilizations.some((sheet) => sheet.id === item.id)
+      && supervisorCodesMatch(item.employeeCode, code),
+    );
+  const lineMatchesMobilization = (line: { employeeNo?: string | null; employeeId?: string | null; employeeName?: string | null }, item: TimesheetMobilization) =>
+    supervisorCodesMatch(item.employeeCode, line.employeeNo)
+    || supervisorCodesMatch(item.employeeCode, line.employeeId)
+    || timesheetEmployeeRecordsMatch({ employeeNo: item.employeeCode, employeeName: item.employeeName }, line);
   const offshoreRosterEmployees = sheetMobilizations.map((item) => {
     const employee = employeesByCode.get(item.employeeCode.toLowerCase());
     return {
@@ -1216,7 +1220,7 @@ const buildPayload = async (
     };
   }).sort((a, b) => a.fullName.localeCompare(b.fullName));
   const homeSupervisorEmployees = (selectedSupervisorEmployeesFromDirectory.length ? selectedSupervisorEmployeesFromDirectory : selectedSupervisorEmployeesFromRecords)
-    .filter((employee) => !awayEmployeeCodes.has(employee.employeeCode.toUpperCase()));
+    .filter((employee) => !employeeIsMobilizedAway(employee.employeeCode) && !employeeIsMobilizedAway(employee.employeeId));
   const selectedSupervisorEmployees = isOffshoreSheet ? offshoreRosterEmployees : homeSupervisorEmployees;
   let targetShiftForSheet = targetShiftLabel;
   if (isOffshoreSheet) targetShiftForSheet = DEFAULT_TIMESHEET_SHIFT_LABEL;
@@ -1476,6 +1480,37 @@ const buildPayload = async (
     }
   }
 
+  const lineIsHostMobilized = (line: TimesheetLine) =>
+    hostMobilizations.some((item) => lineMatchesMobilization(line, item));
+  let persistManualStamp = false;
+  lines = lines.map((line) => {
+    if (isManualOffshoreLine(line)) return line;
+    const offshoreCrew = isOffshoreSheet || lineIsHostMobilized(line);
+    if (!offshoreCrew) return line;
+    persistManualStamp = true;
+    if (isOffshoreSheet && !timesheetLineHasBookedHours(line)) {
+      return {
+        ...buildManualOffshoreLine({
+          headerId: header?.id || line.headerId,
+          employeeId: line.employeeId,
+          employeeNo: line.employeeNo,
+          employeeName: line.employeeName,
+          projectCode: offshoreProjectCode || sheetMobilizations[0]?.projectCode || '',
+          projectName: sheetMobilizations[0]?.projectName || offshoreProjectCode || targetWorkCenter,
+        }),
+        id: line.id,
+      };
+    }
+    return markLineAsManualOffshore(line);
+  });
+  if (persistManualStamp && header && period.status === 'Open' && isTimesheetEditableStatus(header.status)) {
+    try {
+      await writeTimesheetHeaderLines(header, lines);
+    } catch (error) {
+      console.error('Offshore manual stamp persist failed; returning in-memory crew so supervisors can still book:', error);
+    }
+  }
+
   // Keep the initial page load lightweight. Attendance sync can involve biometric
   // and Sage enrichment calls, so it is only run from the explicit Fetch Punches action.
 
@@ -1579,6 +1614,7 @@ const buildPayload = async (
         count: selectedSupervisorEmployees.length,
         projectCode: offshoreProjectCode,
         workCenterName: targetWorkCenter,
+        employeeCodes: selectedSupervisorEmployees.map((employee) => employee.employeeCode),
         message: `${selectedSupervisorEmployees.length} mobilized crew — manual booking, no clock. Payroll 8h + 1h break. 4h offshore allowance is outside payroll.`,
       }
       : hostMobilizations.length
@@ -1586,7 +1622,8 @@ const buildPayload = async (
           count: hostMobilizations.length,
           projectCode: hostMobilizations[0]?.projectCode || '',
           workCenterName: hostMobilizations[0]?.workCenterName || '',
-          message: `${hostMobilizations.length} crew are mobilized offshore today. Open location OFFSHORE to book them.`,
+          employeeCodes: hostMobilizations.map((item) => item.employeeCode),
+          message: `${hostMobilizations.length} crew are mobilized offshore today. Open location OFFSHORE to book them, or book hours here without a clock.`,
         }
         : null,
     sameDayBookingConflicts: header
@@ -2049,7 +2086,7 @@ export async function PATCH(request: Request) {
       const reconciledLines = linesForSave.map((line) => applyNightPaperClock(reconcileTimesheetLineHours(line), header.shiftLabel));
       for (const line of reconciledLines) {
         const projectHours = (line.projectAllocations || []).reduce((sum, allocation) => sum + Number(allocation.hours || 0), 0);
-        if (!isNightHeader && !line.clockIn && !isManualOffshoreLine(line) && projectHours > 0.001) {
+        if (!isNightHeader && !line.clockIn && !canBookTimesheetHoursWithoutClock(line, header.workCenterName, header.shiftLabel) && projectHours > 0.001) {
           return err(400, `Absent employee ${line.employeeName} cannot receive project/productive hours.`);
         }
         const validated = validateTimesheetLine(

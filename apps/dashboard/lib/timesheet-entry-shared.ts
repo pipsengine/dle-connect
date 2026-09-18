@@ -1106,6 +1106,38 @@ export const isTimesheetAbsentLine = (line: {
 }) =>
   !String(line.clockIn || '').trim() && !isManualOffshoreLine(line);
 
+/** Offshore / night paper booking does not need a biometric clock. */
+export const canBookTimesheetHoursWithoutClock = (
+  line: {
+    clockIn?: string | null;
+    attendanceMode?: 'Biometric' | 'Manual' | null;
+    remarks?: string | null;
+  },
+  workCenterName?: string | null,
+  shiftLabel?: string | null,
+) => {
+  if (resolveTimesheetShift(shiftLabel).kind === 'Night') return true;
+  if (isManualOffshoreLine(line)) return true;
+  return isOffshoreWorkCenterName(workCenterName);
+};
+
+export const markLineAsManualOffshore = <T extends {
+  attendanceMode?: 'Biometric' | 'Manual' | null;
+  remarks?: string | null;
+  offshoreAllowanceHours?: number | null;
+}>(line: T): T => {
+  if (isManualOffshoreLine(line)) return line;
+  const remarks = [String(line.remarks || '').trim(), OFFSHORE_REMARKS_MARKER].filter(Boolean).join(' | ');
+  return {
+    ...line,
+    attendanceMode: 'Manual',
+    remarks,
+    offshoreAllowanceHours: Number(line.offshoreAllowanceHours || 0) > 0
+      ? Number(line.offshoreAllowanceHours)
+      : OFFSHORE_ALLOWANCE_HOURS,
+  };
+};
+
 export const timesheetLineHasBookedHours = (line: {
   usedHours?: number | null;
   totalHours?: number | null;

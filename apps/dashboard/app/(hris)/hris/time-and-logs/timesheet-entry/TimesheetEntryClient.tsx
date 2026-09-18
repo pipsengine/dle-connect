@@ -35,7 +35,7 @@ import {
   validateTimesheetLine,
   type OvertimeAuthorization,
 } from '@/lib/timesheet-overtime-booking';
-import { DAILY_BREAK_HOURS, STANDARD_TIMESHEET_HOURS, DEFAULT_BREAK_IDLE_REASON_ID, DEFAULT_BREAK_IDLE_REASON_NAME, normalizeIdleAllocations, normalizeProjectAllocations, canonicalProjectCode, consolidateProjectAllocationsToPrimary, resolvePrimaryProjectCode, resolveTimesheetHours, attendanceDurationFromClock, reconcileTimesheetLineHours, sumProjectAllocationHours, matrixProductiveHoursCap, upsertMatrixProjectHours, DEFAULT_TIMESHEET_SHIFT_LABEL, resolveTimesheetShift, timesheetHeaderMatchesShift, timesheetLineMatchesShift, applyNightPaperClock, buildRosterTimesheetLine, IDLE_TIME_PROJECT_CODE, IDLE_TIME_PROJECT_NAME, idleTimeProjectHours, productiveProjectHours, isIdleTimeProjectCode, isEditableTimesheetStatus, isTimesheetInApprovalCapture, isManualOffshoreLine, isTimesheetAbsentLine, isOffshoreWorkCenterName, OFFSHORE_ALLOWANCE_HOURS, supervisorTimesheetMessage, resolveAutoDistributeProjectCode, requiresMiscellaneousTimesheetConfirm, dedupeTimesheetLinesByEmployee } from '@/lib/timesheet-entry-shared';
+import { DAILY_BREAK_HOURS, STANDARD_TIMESHEET_HOURS, DEFAULT_BREAK_IDLE_REASON_ID, DEFAULT_BREAK_IDLE_REASON_NAME, normalizeIdleAllocations, normalizeProjectAllocations, canonicalProjectCode, consolidateProjectAllocationsToPrimary, resolvePrimaryProjectCode, resolveTimesheetHours, attendanceDurationFromClock, reconcileTimesheetLineHours, sumProjectAllocationHours, matrixProductiveHoursCap, upsertMatrixProjectHours, DEFAULT_TIMESHEET_SHIFT_LABEL, resolveTimesheetShift, timesheetHeaderMatchesShift, timesheetLineMatchesShift, applyNightPaperClock, buildRosterTimesheetLine, IDLE_TIME_PROJECT_CODE, IDLE_TIME_PROJECT_NAME, idleTimeProjectHours, productiveProjectHours, isIdleTimeProjectCode, isEditableTimesheetStatus, isTimesheetInApprovalCapture, isManualOffshoreLine, isTimesheetAbsentLine, isOffshoreWorkCenterName, OFFSHORE_ALLOWANCE_HOURS, supervisorTimesheetMessage, resolveAutoDistributeProjectCode, requiresMiscellaneousTimesheetConfirm, dedupeTimesheetLinesByEmployee, markLineAsManualOffshore, canBookTimesheetHoursWithoutClock } from '@/lib/timesheet-entry-shared';
 import { applyTimesheetLineDefaults } from '@/lib/timesheet-line-defaults';
 import { canBookOvertimeOnTimesheet } from '@/lib/timesheet-overtime-config';
 import {
@@ -306,6 +306,7 @@ type Payload = {
     count: number;
     projectCode: string;
     workCenterName: string;
+    employeeCodes?: string[];
     message: string;
   } | null;
   sameDayBookingConflicts?: TimesheetAlreadyBookedSkip[];
@@ -319,6 +320,19 @@ type SearchableOption = {
 };
 
 const round1 = (value: number) => Math.round(value * 10) / 10;
+
+const employeeCodeEquals = (left?: string | null, right?: string | null) => {
+  const a = String(left || '').trim().toUpperCase();
+  const b = String(right || '').trim().toUpperCase();
+  if (!a || !b) return false;
+  if (a === b) return true;
+  const aHead = a.split(' - ')[0]?.trim();
+  const bHead = b.split(' - ')[0]?.trim();
+  return Boolean(aHead && bHead && aHead === bHead);
+};
+
+const lineIsMobilizedCrew = (line: { employeeNo?: string | null; employeeId?: string | null }, codes?: string[]) =>
+  (codes || []).some((code) => employeeCodeEquals(code, line.employeeNo) || employeeCodeEquals(code, line.employeeId));
 
 const isSuperAdministratorRole = (role: string) =>
   role === 'Super Administrator' || role === 'Super Admin' || /\bsuper\b.*\badmin/i.test(role);
@@ -794,8 +808,16 @@ export default function TimesheetEntryClient({ variant = 'admin' }: { variant?: 
     if (nightShift.kind === 'Night' && bookedProjectHours > 0.001) {
       Object.assign(line, applyNightPaperClock(line, selectedShift));
     }
+    const bookWithoutClock = canBookTimesheetHoursWithoutClock(
+      line,
+      selectedWorkCenter || payload?.header?.workCenterName,
+      selectedShift,
+    ) || lineIsMobilizedCrew(line, payload?.mobilizedCrew?.employeeCodes);
+    if (bookWithoutClock && bookedProjectHours > 0.001 && !line.clockIn) {
+      Object.assign(line, markLineAsManualOffshore(line));
+    }
     const isAbsentLine = isTimesheetAbsentLine(line);
-    if (isAbsentLine && nightShift.kind !== 'Night') {
+    if (isAbsentLine && nightShift.kind !== 'Night' && !bookWithoutClock) {
       line.projectAllocations = line.projectAllocations.map((allocation) => ({ ...allocation, hours: 0 }));
     }
     line.projectAllocations = normalizeProjectAllocations(line.projectAllocations || []);
@@ -1268,7 +1290,7 @@ export default function TimesheetEntryClient({ variant = 'admin' }: { variant?: 
     }
     const isNight = resolveTimesheetShift(selectedShift).kind === 'Night';
     const next = localLines.map((line) => {
-      if (isTimesheetAbsentLine(line) && !isNight) return line;
+      if (isTimesheetAbsentLine(line) && !isNight && !canBookTimesheetHoursWithoutClock(line, selectedWorkCenter || payload?.header?.workCenterName, selectedShift)) return line;
       const projectAllocations = matrixColumns.map((col) => ({
         projectId: col.code,
         projectCode: col.code,
@@ -2308,12 +2330,17 @@ export default function TimesheetEntryClient({ variant = 'admin' }: { variant?: 
                   {filteredLines.map((line, rowIndex) => {
                     const isAbsent = isTimesheetAbsentLine(line);
                     const isNightSheet = resolveTimesheetShift(selectedShift).kind === 'Night';
-                    const canBookHours = canEditTimesheet && (!isAbsent || isNightSheet);
                     const isManual = isManualOffshoreLine(line);
+                    const offshoreBookable = isManual
+                      || isOffshoreSheet
+                      || canBookTimesheetHoursWithoutClock(line, selectedWorkCenter || payload?.header?.workCenterName, selectedShift)
+                      || lineIsMobilizedCrew(line, payload?.mobilizedCrew?.employeeCodes);
+                    const isAbsentLocked = isAbsent && !isNightSheet && !offshoreBookable;
+                    const canBookHours = canEditTimesheet && !isAbsentLocked;
                     const originalIdx = localLines.findIndex(l => l.id === line.id);
                     return (
-                      <tr key={line.id} className={`hover:bg-slate-50/80 transition-colors ${isAbsent ? 'bg-slate-50/30' : line.validationStatus === 'Valid' ? 'bg-emerald-50/30' : line.validationStatus === 'Error' ? 'bg-red-50/30' : 'bg-white'}`}>
-                        <td className={`sticky left-0 z-10 px-4 py-4 border-r border-slate-100 shadow-[2px_0_5px_rgba(0,0,0,0.03)] ${isAbsent ? 'bg-slate-50' : line.validationStatus === 'Valid' ? 'bg-[#f0fdf4]' : line.validationStatus === 'Error' ? 'bg-[#fef2f2]' : 'bg-white'}`}>
+                      <tr key={line.id} className={`hover:bg-slate-50/80 transition-colors ${isAbsentLocked ? 'bg-slate-50/30' : line.validationStatus === 'Valid' ? 'bg-emerald-50/30' : line.validationStatus === 'Error' ? 'bg-red-50/30' : 'bg-white'}`}>
+                        <td className={`sticky left-0 z-10 px-4 py-4 border-r border-slate-100 shadow-[2px_0_5px_rgba(0,0,0,0.03)] ${isAbsentLocked ? 'bg-slate-50' : line.validationStatus === 'Valid' ? 'bg-[#f0fdf4]' : line.validationStatus === 'Error' ? 'bg-[#fef2f2]' : 'bg-white'}`}>
                           <div className="flex items-center gap-3 min-w-max">
                             <span className="min-w-7 rounded-md bg-slate-100 px-2 py-1 text-center text-[10px] font-black text-slate-600">{rowIndex + 1}</span>
                             <input 
@@ -2325,17 +2352,17 @@ export default function TimesheetEntryClient({ variant = 'admin' }: { variant?: 
                               }}
                               className="h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 shrink-0"
                             />
-                            {!isAbsent && <ShieldCheck className="h-4 w-4 text-emerald-600 shrink-0" />}
+                            {!isAbsentLocked && <ShieldCheck className="h-4 w-4 text-emerald-600 shrink-0" />}
                             <div className="flex flex-col whitespace-nowrap">
                               <span className="text-[9px] font-black text-indigo-600 tracking-widest uppercase">{line.employeeNo}</span>
                               <span className="text-[13px] font-black text-slate-900 tracking-tight">{line.employeeName}</span>
                             </div>
                           </div>
                         </td>
-                        <td className="px-4 py-4 whitespace-nowrap">{isAbsent ? (isNightSheet ? <div className="flex flex-col gap-0.5"><span className="text-[10px] font-black text-amber-700">NO NIGHT CLOCK</span><span className="text-[9px] font-bold text-slate-500">Type 8h to book from roster</span></div> : <span className="text-[10px] font-black text-red-600">ABSENT</span>) : isManual ? <div className="flex flex-col gap-0.5"><span className="text-[10px] font-black text-sky-700">MANUAL · OFFSHORE</span><span className="text-[9px] font-bold text-slate-500">{OFFSHORE_ALLOWANCE_HOURS}h allowance outside payroll</span></div> : <div className="flex flex-col gap-0.5 text-[10px] font-black text-slate-700"><span>IN: {line.clockIn}</span><span>OUT: {line.clockOut || '--:--'}</span></div>}</td>
+                        <td className="px-4 py-4 whitespace-nowrap">{isAbsentLocked ? <span className="text-[10px] font-black text-red-600">ABSENT</span> : isNightSheet && isAbsent ? <div className="flex flex-col gap-0.5"><span className="text-[10px] font-black text-amber-700">NO NIGHT CLOCK</span><span className="text-[9px] font-bold text-slate-500">Type 8h to book from roster</span></div> : (isManual || offshoreBookable) && !line.clockIn ? <div className="flex flex-col gap-0.5"><span className="text-[10px] font-black text-sky-700">MANUAL · OFFSHORE</span><span className="text-[9px] font-bold text-slate-500">{OFFSHORE_ALLOWANCE_HOURS}h allowance outside payroll</span></div> : <div className="flex flex-col gap-0.5 text-[10px] font-black text-slate-700"><span>IN: {line.clockIn}</span><span>OUT: {line.clockOut || '--:--'}</span></div>}</td>
                         <td className="px-4 py-4 text-center text-[11px] font-black text-slate-600 tabular-nums">{line.attendanceDuration}h</td>
                         {matrixColumns.map((col) => (
-                          <td key={col.code} className="px-4 py-4 border-l border-slate-100"><input type="number" step="0.5" disabled={!canBookHours} value={isAbsent && !isNightSheet ? 0 : line.projectAllocations.find(p => p.projectCode === col.code)?.hours || ''} onChange={(e) => {
+                          <td key={col.code} className="px-4 py-4 border-l border-slate-100"><input type="number" step="0.5" disabled={!canBookHours} value={isAbsentLocked ? 0 : line.projectAllocations.find(p => p.projectCode === col.code)?.hours || ''} onChange={(e) => {
                             const idleHours = line.idleHours || DAILY_BREAK_HOURS;
                             const maxTotal = matrixProductiveHoursCap(line, line.usedHours, standardTimesheetHours, idleHours, selectedShift);
                             const projectAllocations = upsertMatrixProjectHours(
@@ -2346,7 +2373,7 @@ export default function TimesheetEntryClient({ variant = 'admin' }: { variant?: 
                               maxTotal,
                             );
                             handleUpdateLine(originalIdx, { projectAllocations });
-                          }} className={`w-full rounded-lg border border-slate-200 py-1.5 text-center text-xs font-black focus:border-indigo-500 ${isAbsent ? 'bg-slate-100 text-slate-400' : ''}`} /></td>
+                          }} className={`w-full rounded-lg border border-slate-200 py-1.5 text-center text-xs font-black focus:border-indigo-500 ${isAbsentLocked ? 'bg-slate-100 text-slate-400' : ''}`} /></td>
                         ))}
                         <td className="px-4 py-4 border-l border-slate-100"></td>
                         <td className="px-4 py-4 text-center font-black text-blue-700 bg-blue-50/20">{productiveProjectHours(line.projectAllocations)}</td>
@@ -2373,7 +2400,7 @@ export default function TimesheetEntryClient({ variant = 'admin' }: { variant?: 
                             step="0.5"
                             min={0}
                             disabled={!canBookHours}
-                            value={isAbsent && !isNightSheet ? 0 : idleTimeProjectHours(line.projectAllocations) || ''}
+                            value={isAbsentLocked ? 0 : idleTimeProjectHours(line.projectAllocations) || ''}
                             onChange={(e) => {
                               const idleHours = line.idleHours || DAILY_BREAK_HOURS;
                               const maxTotal = matrixProductiveHoursCap(line, line.usedHours, standardTimesheetHours, idleHours, selectedShift);
@@ -2386,7 +2413,7 @@ export default function TimesheetEntryClient({ variant = 'admin' }: { variant?: 
                               );
                               handleUpdateLine(originalIdx, { projectAllocations });
                             }}
-                            className={`w-full rounded-lg border border-orange-200 bg-orange-50/50 py-1.5 text-center text-xs font-black text-orange-800 focus:border-orange-500 ${isAbsent ? 'bg-slate-100 text-slate-400' : ''}`}
+                            className={`w-full rounded-lg border border-orange-200 bg-orange-50/50 py-1.5 text-center text-xs font-black text-orange-800 focus:border-orange-500 ${isAbsentLocked ? 'bg-slate-100 text-slate-400' : ''}`}
                             title={`${IDLE_TIME_PROJECT_CODE} ${IDLE_TIME_PROJECT_NAME}`}
                           />
                           <p className="mt-1 text-[8px] font-black uppercase tracking-widest text-orange-500">{IDLE_TIME_PROJECT_CODE}</p>
@@ -2441,8 +2468,13 @@ export default function TimesheetEntryClient({ variant = 'admin' }: { variant?: 
               const originalIdx = localLines.findIndex(l => l.id === line.id);
               const isAbsent = isTimesheetAbsentLine(line);
               const isNightSheet = resolveTimesheetShift(selectedShift).kind === 'Night';
-              const canBookHours = canEditTimesheet && (!isAbsent || isNightSheet);
               const isManual = isManualOffshoreLine(line);
+              const offshoreBookable = isManual
+                || isOffshoreSheet
+                || canBookTimesheetHoursWithoutClock(line, selectedWorkCenter || payload?.header?.workCenterName, selectedShift)
+                || lineIsMobilizedCrew(line, payload?.mobilizedCrew?.employeeCodes);
+              const isAbsentLocked = isAbsent && !isNightSheet && !offshoreBookable;
+              const canBookHours = canEditTimesheet && !isAbsentLocked;
               const displayNumber = employeeCardStart + rowIndex;
               return (
                 <div key={line.id} className={`rounded-2xl border p-5 shadow-sm ${employeeCardTone(line)}`}>
@@ -2458,26 +2490,26 @@ export default function TimesheetEntryClient({ variant = 'admin' }: { variant?: 
                         }}
                         className="h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
                       />
-                      {!isAbsent && <ShieldCheck className="h-4 w-4 text-emerald-600" />}
+                      {!isAbsentLocked && <ShieldCheck className="h-4 w-4 text-emerald-600" />}
                       <div><p className="text-[10px] font-black text-indigo-600 leading-none">{line.employeeNo}</p><h3 className="text-sm font-black text-slate-900 mt-1">{line.employeeName}</h3></div>
                     </div>
-                    <div className={`rounded-full border px-2 py-0.5 text-[9px] font-black ${employeeStatusBadgeTone(line)}`}>{isAbsent ? (isNightSheet ? 'BOOK NIGHT' : 'ABSENT') : isManual ? 'OFFSHORE' : line.validationStatus === 'Valid' ? 'COMPLETE' : line.validationStatus}</div>
+                    <div className={`rounded-full border px-2 py-0.5 text-[9px] font-black ${employeeStatusBadgeTone(line)}`}>{isAbsentLocked ? 'ABSENT' : isNightSheet && isAbsent ? 'BOOK NIGHT' : (isManual || offshoreBookable) && !line.clockIn ? 'OFFSHORE' : line.validationStatus === 'Valid' ? 'COMPLETE' : line.validationStatus}</div>
                   </div>
                   <div className="space-y-4">
-                    <div className="flex justify-between text-[11px] font-bold text-slate-500"><span>Attendance:</span><span>{isAbsent ? (isNightSheet ? 'No night clock — type 8h to book' : 'Absent') : isManual ? `Manual · ${OFFSHORE_ALLOWANCE_HOURS}h allowance outside payroll` : `${line.clockIn}-${line.clockOut || '--'} (${line.attendanceDuration}h)`}</span></div>
+                    <div className="flex justify-between text-[11px] font-bold text-slate-500"><span>Attendance:</span><span>{isAbsentLocked ? 'Absent' : isNightSheet && isAbsent ? 'No night clock — type 8h to book' : (isManual || offshoreBookable) && !line.clockIn ? `Manual · ${OFFSHORE_ALLOWANCE_HOURS}h allowance outside payroll` : `${line.clockIn}-${line.clockOut || '--'} (${line.attendanceDuration}h)`}</span></div>
                     <div className="space-y-2">
                       <p className="text-[9px] font-black uppercase text-slate-400">Projects</p>
                       {matrixColumns.map(col => (
                         <div key={col.code} className="flex items-center justify-between gap-3">
                           <span className="text-xs font-bold text-slate-600 truncate flex-1">{col.label}</span>
-                          <input type="number" step="0.5" disabled={!canBookHours} value={isAbsent && !isNightSheet ? 0 : line.projectAllocations.find(p => p.projectCode === col.code)?.hours || ''} onChange={(e) => {
+                          <input type="number" step="0.5" disabled={!canBookHours} value={isAbsentLocked ? 0 : line.projectAllocations.find(p => p.projectCode === col.code)?.hours || ''} onChange={(e) => {
                             const val = parseFloat(e.target.value) || 0;
                             const next = [...line.projectAllocations];
                             const pIdx = next.findIndex(p => p.projectCode === col.code);
                             if (pIdx >= 0) next[pIdx].hours = val;
                             else next.push({ projectId: col.code, projectCode: col.code, projectName: col.label, hours: val, remarks: null });
                             handleUpdateLine(originalIdx, { projectAllocations: next });
-                          }} className={`w-14 rounded-lg border border-slate-200 py-1 text-center text-xs font-black ${isAbsent ? 'bg-slate-100 text-slate-400' : ''}`} />
+                          }} className={`w-14 rounded-lg border border-slate-200 py-1 text-center text-xs font-black ${isAbsentLocked ? 'bg-slate-100 text-slate-400' : ''}`} />
                         </div>
                       ))}
                     </div>
@@ -2528,7 +2560,7 @@ export default function TimesheetEntryClient({ variant = 'admin' }: { variant?: 
                         step="0.5"
                         min={0}
                         disabled={!canBookHours}
-                        value={isAbsent && !isNightSheet ? 0 : idleTimeProjectHours(line.projectAllocations) || ''}
+                        value={isAbsentLocked ? 0 : idleTimeProjectHours(line.projectAllocations) || ''}
                         onChange={(e) => {
                           const idleHours = line.idleHours || DAILY_BREAK_HOURS;
                           const maxTotal = matrixProductiveHoursCap(line, line.usedHours, standardTimesheetHours, idleHours, selectedShift);
@@ -2541,7 +2573,7 @@ export default function TimesheetEntryClient({ variant = 'admin' }: { variant?: 
                           );
                           handleUpdateLine(originalIdx, { projectAllocations });
                         }}
-                        className={`w-full rounded-lg border border-orange-200 bg-orange-50/50 py-1.5 text-center text-xs font-black text-orange-800 ${isAbsent ? 'bg-slate-100 text-slate-400' : ''}`}
+                        className={`w-full rounded-lg border border-orange-200 bg-orange-50/50 py-1.5 text-center text-xs font-black text-orange-800 ${isAbsentLocked ? 'bg-slate-100 text-slate-400' : ''}`}
                       />
                     </div>
                     <div className="flex justify-between border-t border-slate-100 pt-4 text-center font-black">

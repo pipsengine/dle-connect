@@ -4,6 +4,7 @@ import {
   OFFSHORE_LOCATION_NAME,
   offshoreWorkCenterName,
 } from '@/lib/timesheet-entry-shared';
+import { supervisorCodesMatch } from '@/lib/timesheet-agege-blasting';
 
 export type MobilizationStatus = 'Planned' | 'Mobilized' | 'Demobilized' | 'Cancelled';
 
@@ -113,16 +114,18 @@ export const mobilizationCoversDate = (item: TimesheetMobilization, date: string
 };
 
 export const mobilizationMatchesSupervisor = (item: TimesheetMobilization, supervisorId: string) => {
-  const selected = clean(supervisorId).toLowerCase();
+  const selected = clean(supervisorId);
   if (!selected) return false;
+  if (supervisorCodesMatch(item.supervisorId, selected) || supervisorCodesMatch(item.supervisorName, selected)) return true;
   const id = item.supervisorId.toLowerCase();
   const name = item.supervisorName.toLowerCase();
+  const selectedKey = selected.toLowerCase();
   const code = id.split(' - ')[0]?.trim();
-  return id === selected
-    || selected.includes(id)
-    || id.includes(selected)
-    || Boolean(code && selected.includes(code))
-    || Boolean(name && selected.includes(name));
+  return id === selectedKey
+    || selectedKey.includes(id)
+    || id.includes(selectedKey)
+    || Boolean(code && selectedKey.includes(code))
+    || Boolean(name && selectedKey.includes(name));
 };
 
 export async function readTimesheetMobilizations(filters: {

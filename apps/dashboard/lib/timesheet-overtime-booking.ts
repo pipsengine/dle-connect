@@ -18,7 +18,7 @@ import {
   maxBookableProductiveHours,
   maxProductiveHoursFromBiometric,
   formatProductiveHoursDenial,
-  isManualOffshoreLine,
+  canBookTimesheetHoursWithoutClock,
   isDayRateTimesheetEmployeeCode,
   overtimeBaseHoursForDate,
   hasBiometricClockIn,
@@ -187,10 +187,10 @@ export type OvertimeValidation = {
   variance: number;
 };
 
-export const validateStrictStandardDay = (line: TimesheetLine, dayContext?: TimesheetDayContext): OvertimeValidation => {
+export const validateStrictStandardDay = (line: TimesheetLine, dayContext?: TimesheetDayContext, workCenter?: string | null): OvertimeValidation => {
   const { standardProductiveHours, grossHours, shiftKind } = resolveTimesheetHours(dayContext);
-  const isManualOffshore = isManualOffshoreLine(line);
-  const isAbsentLine = !hasBiometricClockIn(line.clockIn) && !isManualOffshore;
+  const canBookWithoutClock = canBookTimesheetHoursWithoutClock(line, workCenter, dayContext?.shiftLabel);
+  const isAbsentLine = !hasBiometricClockIn(line.clockIn) && !canBookWithoutClock;
   const projectAllocations = normalizeProjectAllocations(line.projectAllocations || []);
   const usedHours = sumProjectAllocationHours(projectAllocations);
   const idleHours = round1((line.idleAllocations || []).reduce((sum, item) => sum + Number(item.hours || 0), 0));
@@ -297,10 +297,11 @@ export const validateTimesheetLine = (
   const booking = resolveOvertimeBookingOptions(options);
   const { standardProductiveHours, grossHours, shiftKind } = resolveTimesheetHours(dayContext);
   if (!booking.enabled) {
-    return validateStrictStandardDay(line, dayContext);
+    return validateStrictStandardDay(line, dayContext, workCenter);
   }
 
-  const isAbsentLine = !hasBiometricClockIn(line.clockIn) && !isManualOffshoreLine(line);
+  const canBookWithoutClock = canBookTimesheetHoursWithoutClock(line, workCenter, dayContext?.shiftLabel);
+  const isAbsentLine = !hasBiometricClockIn(line.clockIn) && !canBookWithoutClock;
   const projectAllocations = normalizeProjectAllocations(line.projectAllocations || []);
   const usedHours = sumProjectAllocationHours(projectAllocations);
   const idleHours = round1((line.idleAllocations || []).reduce((sum, item) => sum + Number(item.hours || 0), 0));

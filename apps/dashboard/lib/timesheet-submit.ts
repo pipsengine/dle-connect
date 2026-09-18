@@ -4,8 +4,8 @@ import { assertTimesheetRecaptureAllowed } from '@/lib/timesheet-recapture';
 import { ensureClockedLinesHaveProjectAllocation } from '@/lib/timesheet-line-defaults';
 import {
   applyNightPaperClock,
+  canBookTimesheetHoursWithoutClock,
   isDayRateTimesheetEmployeeCode,
-  isManualOffshoreLine,
   isTimesheetInApprovalCapture,
   maxProductiveHoursFromBiometric,
   reconcileTimesheetLineHours,
@@ -363,7 +363,7 @@ export async function submitTimesheetForApproval(input: {
   const reconciledLines = linesForSave.map((line) => applyNightPaperClock(reconcileTimesheetLineHours(line), header.shiftLabel));
   for (const line of reconciledLines) {
     const projectHours = (line.projectAllocations || []).reduce((sum, allocation) => sum + Number(allocation.hours || 0), 0);
-    if (!isNightHeader && !line.clockIn && !isManualOffshoreLine(line) && projectHours > 0.001) {
+    if (!isNightHeader && !line.clockIn && !canBookTimesheetHoursWithoutClock(line, header.workCenterName, header.shiftLabel) && projectHours > 0.001) {
       throw new Error(`Absent employee ${line.employeeName} cannot receive project/productive hours.`);
     }
     const validated = validateTimesheetLine(
