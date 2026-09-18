@@ -7,16 +7,41 @@ $ErrorActionPreference = "Stop"
 $RepoRoot = Split-Path -Parent $PSScriptRoot
 Set-Location $RepoRoot
 
+# Windows PowerShell treats git stderr (e.g. "From https://github.com/...") as a
+# terminating NativeCommandError when $ErrorActionPreference is Stop.
+function Invoke-Git {
+  param([Parameter(Mandatory = $true)][string[]]$Arguments)
+  $previous = $ErrorActionPreference
+  $ErrorActionPreference = "Continue"
+  try {
+    $output = & git.exe @Arguments 2>&1
+    $code = $LASTEXITCODE
+    foreach ($line in @($output)) {
+      if ($null -eq $line) { continue }
+      Write-Host ([string]$line)
+    }
+    return $code
+  } finally {
+    $ErrorActionPreference = $previous
+  }
+}
+
 function Remove-UntrackedIncomingFiles {
-  $incoming = git diff --name-only HEAD origin/main
-  if ($LASTEXITCODE -ne 0 -or -not $incoming) { return }
-  foreach ($path in $incoming) {
-    if (-not $path) { continue }
-    if (-not (Test-Path -LiteralPath $path)) { continue }
-    $tracked = git ls-files -- $path
-    if ($tracked) { continue }
-    Write-Host "Removing untracked file that origin/main will add: $path"
-    Remove-Item -LiteralPath $path -Force
+  $previous = $ErrorActionPreference
+  $ErrorActionPreference = "Continue"
+  try {
+    $incoming = @(& git.exe diff --name-only HEAD origin/main 2>$null)
+    if ($LASTEXITCODE -ne 0 -or -not $incoming) { return }
+    foreach ($path in $incoming) {
+      if (-not $path) { continue }
+      if (-not (Test-Path -LiteralPath $path)) { continue }
+      $tracked = & git.exe ls-files -- $path 2>$null
+      if ($tracked) { continue }
+      Write-Host "Removing untracked file that origin/main will add: $path"
+      Remove-Item -LiteralPath $path -Force
+    }
+  } finally {
+    $ErrorActionPreference = $previous
   }
 }
 
@@ -31,11 +56,11 @@ function Sync-OriginMain {
     Start-Sleep -Seconds 2
 
     # Disable auto-gc during fetch to reduce pack file churn on Windows.
-    git -c gc.auto=0 fetch origin 2>&1 | ForEach-Object { Write-Host $_ }
-    if ($LASTEXITCODE -eq 0) {
+    $fetchExit = Invoke-Git @("-c", "gc.auto=0", "fetch", "origin")
+    if ($fetchExit -eq 0) {
       Remove-UntrackedIncomingFiles
-      git reset --hard origin/main
-      if ($LASTEXITCODE -eq 0) { return }
+      $resetExit = Invoke-Git @("reset", "--hard", "origin/main")
+      if ($resetExit -eq 0) { return }
     }
 
     if ($attempt -lt $maxAttempts) {
