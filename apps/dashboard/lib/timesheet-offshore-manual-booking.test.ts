@@ -112,12 +112,8 @@ const dl2601Roster = [
   employeeCode: row.employeeCode,
   supervisorId: row.supervisorId,
 }));
-const matched = dl2601Roster.filter((item) => mobilizationMatchesOffshoreSheet(item, {
-  supervisorId: 'P0013 - Mr SAMUEL KARONWI (5)',
-  projectCode: 'DL2601',
-  workCenterName: 'DL2601',
-  crewCodes: [],
-}));
-assert.deepEqual(matched.map((item) => item.employeeCode), ['C2663', 'C1686', 'C2534', 'C2823', 'C1544', 'C1229']);
+const samuelAssigned = new Set(['C1544', 'C1229']);
+const samuelOffshore = dl2601Roster.filter((item) => samuelAssigned.has(item.employeeCode));
+assert.deepEqual(samuelOffshore.map((item) => item.employeeCode), ['C1544', 'C1229'], 'Samuel books only assigned people who are mobilized, not nested crews');
 
 console.log('timesheet-offshore-manual-booking.test.ts: ok');

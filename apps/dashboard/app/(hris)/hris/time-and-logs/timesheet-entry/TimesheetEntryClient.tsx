@@ -35,7 +35,7 @@ import {
   validateTimesheetLine,
   type OvertimeAuthorization,
 } from '@/lib/timesheet-overtime-booking';
-import { DAILY_BREAK_HOURS, STANDARD_TIMESHEET_HOURS, DEFAULT_BREAK_IDLE_REASON_ID, DEFAULT_BREAK_IDLE_REASON_NAME, normalizeIdleAllocations, normalizeProjectAllocations, canonicalProjectCode, consolidateProjectAllocationsToPrimary, resolvePrimaryProjectCode, resolveTimesheetHours, attendanceDurationFromClock, reconcileTimesheetLineHours, sumProjectAllocationHours, matrixProductiveHoursCap, upsertMatrixProjectHours, DEFAULT_TIMESHEET_SHIFT_LABEL, resolveTimesheetShift, timesheetHeaderMatchesShift, timesheetLineMatchesShift, applyNightPaperClock, buildRosterTimesheetLine, buildManualOffshoreLine, IDLE_TIME_PROJECT_CODE, IDLE_TIME_PROJECT_NAME, idleTimeProjectHours, productiveProjectHours, isIdleTimeProjectCode, isEditableTimesheetStatus, isTimesheetInApprovalCapture, isManualOffshoreLine, isTimesheetAbsentLine, isOffshoreWorkCenterName, isOffshoreLocationName, isOffshoreTimesheetContext, OFFSHORE_ALLOWANCE_HOURS, OFFSHORE_LOCATION_NAME, supervisorTimesheetMessage, resolveAutoDistributeProjectCode, requiresMiscellaneousTimesheetConfirm, dedupeTimesheetLinesByEmployee, markLineAsManualOffshore, canBookTimesheetHoursWithoutClock, resolveOffshoreProjectCode } from '@/lib/timesheet-entry-shared';
+import { DAILY_BREAK_HOURS, STANDARD_TIMESHEET_HOURS, DEFAULT_BREAK_IDLE_REASON_ID, DEFAULT_BREAK_IDLE_REASON_NAME, normalizeIdleAllocations, normalizeProjectAllocations, canonicalProjectCode, consolidateProjectAllocationsToPrimary, resolvePrimaryProjectCode, resolveTimesheetHours, attendanceDurationFromClock, reconcileTimesheetLineHours, sumProjectAllocationHours, matrixProductiveHoursCap, upsertMatrixProjectHours, DEFAULT_TIMESHEET_SHIFT_LABEL, resolveTimesheetShift, timesheetHeaderMatchesShift, timesheetLineMatchesShift, applyNightPaperClock, buildRosterTimesheetLine, buildManualOffshoreLine, IDLE_TIME_PROJECT_CODE, IDLE_TIME_PROJECT_NAME, idleTimeProjectHours, productiveProjectHours, isIdleTimeProjectCode, isEditableTimesheetStatus, isTimesheetInApprovalCapture, isManualOffshoreLine, isTimesheetAbsentLine, isOffshoreWorkCenterName, isOffshoreLocationName, isOffshoreTimesheetContext, OFFSHORE_ALLOWANCE_HOURS, OFFSHORE_LOCATION_NAME, supervisorTimesheetMessage, resolveAutoDistributeProjectCode, requiresMiscellaneousTimesheetConfirm, dedupeTimesheetLinesByEmployee, markLineAsManualOffshore, canBookTimesheetHoursWithoutClock, resolveOffshoreProjectCode, timesheetWorkCentersMatch } from '@/lib/timesheet-entry-shared';
 import { applyTimesheetLineDefaults } from '@/lib/timesheet-line-defaults';
 import { canBookOvertimeOnTimesheet } from '@/lib/timesheet-overtime-config';
 import {
@@ -105,6 +105,7 @@ type TimesheetHeader = {
   approvedBy: string | null;
   lastSyncAt: string | null;
   shiftLabel?: string | null;
+  locationName?: string | null;
   projectManager?: string | null;
   projectManagerProjectCode?: string | null;
   currentApprovalStage?: TimesheetWorkflowStage | null;
@@ -146,6 +147,7 @@ type TimesheetLine = {
   validationMessage: string | null;
   attendanceMode?: 'Biometric' | 'Manual' | null;
   offshoreAllowanceHours?: number;
+  workCenterName?: string | null;
 };
 
 type DisplayColumn = {
@@ -225,6 +227,7 @@ type Payload = {
     jobTitle: string;
     department: string;
     location: string;
+    workCenter?: string | null;
     managerEmployeeCode: string | null;
     managerName: string | null;
     status: string;
@@ -591,26 +594,8 @@ export default function TimesheetEntryClient({ variant = 'admin' }: { variant?: 
       setSelectedWorkCenter((current) => {
         const locationName = location || suggestedLocation || selectedLocation || dbLocationNames[0] || '';
         const dbWorkCenterNames = workCenterNamesForLocation(dbWorkCenters, isOffshoreTimesheetContext(locationName, workCenter) ? OFFSHORE_LOCATION_NAME : locationName);
-        const requestedProject = resolveOffshoreProjectCode(workCenter, OFFSHORE_LOCATION_NAME);
-        if (isOffshoreTimesheetContext(location || locationName, workCenter || current)) {
-          const project = requestedProject
-            || resolveOffshoreProjectCode(data.header?.workCenterName, OFFSHORE_LOCATION_NAME)
-            || String(data.mobilizedCrew?.projectCode || '').trim().toUpperCase()
-            || '';
-          if (project && dbWorkCenterNames.includes(project)) return project;
-          return dbWorkCenterNames[0] || project;
-        }
-        if (headerId && data.header?.workCenterName) return data.header.workCenterName;
-        if (!workCenter) {
-          if (suggestedWorkCenter && dbWorkCenterNames.includes(suggestedWorkCenter)) return suggestedWorkCenter;
-          if (data.header?.workCenterName && dbWorkCenterNames.includes(data.header.workCenterName)) return data.header.workCenterName;
-          return dbWorkCenterNames[0] || '';
-        }
-        if (dbWorkCenterNames.includes(workCenter)) return workCenter;
-        if (data.header?.workCenterName && dbWorkCenterNames.includes(data.header.workCenterName)) return data.header.workCenterName;
         if (current && dbWorkCenterNames.includes(current)) return current;
-        if (suggestedWorkCenter && dbWorkCenterNames.includes(suggestedWorkCenter)) return suggestedWorkCenter;
-        return dbWorkCenterNames[0] || '';
+        return '';
       });
       if (headerId && data.header) {
         const periodClosed = data.period?.status !== 'Open';
@@ -667,10 +652,10 @@ export default function TimesheetEntryClient({ variant = 'admin' }: { variant?: 
   useEffect(() => {
     if (submitting) return;
     const timer = window.setTimeout(() => {
-      void load(selectedDate, selectedSupervisor, selectedLocation, selectedWorkCenter, requestedHeaderId || undefined, selectedShift);
+      void load(selectedDate, selectedSupervisor, selectedLocation, undefined, requestedHeaderId || undefined, selectedShift);
     }, hasPayloadRef.current ? 120 : 0);
     return () => window.clearTimeout(timer);
-  }, [load, selectedDate, selectedSupervisor, selectedLocation, selectedWorkCenter, requestedHeaderId, selectedShift, submitting]);
+  }, [load, selectedDate, selectedSupervisor, selectedLocation, requestedHeaderId, selectedShift, submitting]);
 
   useEffect(() => {
     const saved = payload?.header?.shiftLabel;
@@ -702,8 +687,8 @@ export default function TimesheetEntryClient({ variant = 'admin' }: { variant?: 
       }
       return;
     }
-    if (!selectedWorkCenter) {
-      if (source === 'manual') setError('No biometric device work center is available from the time and attendance system.');
+    if (!selectedLocation) {
+      if (source === 'manual') setError('Select a location before fetching punches.');
       return;
     }
     setSubmitting(true);
@@ -744,9 +729,9 @@ export default function TimesheetEntryClient({ variant = 'admin' }: { variant?: 
     if (payload.period.status !== 'Open') return;
     const bookingPeriod = payload.currentPeriod ?? payload.period;
     if (selectedDate < bookingPeriod.startDate || selectedDate > bookingPeriod.endDate) return;
-    if (!selectedDate || !selectedSupervisor || !selectedLocation || !selectedWorkCenter) return;
+    if (!selectedDate || !selectedSupervisor || !selectedLocation) return;
 
-    const syncKey = [selectedDate, selectedSupervisor, selectedLocation, selectedWorkCenter, selectedShift].join('|');
+    const syncKey = [selectedDate, selectedSupervisor, selectedLocation, selectedShift].join('|');
     if (autoSyncKeyRef.current === syncKey) return;
     if (isOffshoreTimesheetContext(selectedLocation, selectedWorkCenter) || isOffshoreTimesheetContext(payload.header?.locationName, payload.header?.workCenterName)) {
       autoSyncKeyRef.current = syncKey;
@@ -759,16 +744,14 @@ export default function TimesheetEntryClient({ variant = 'admin' }: { variant?: 
   useEffect(() => {
     if (!selectedLocation || workCenters.length === 0) return;
     const availableWorkCenters = workCenterNamesForLocation(workCenters, selectedLocation);
-    if (availableWorkCenters.length === 0 && selectedWorkCenter) {
-      setSelectedWorkCenter('');
-    } else if (availableWorkCenters.length > 0 && !availableWorkCenters.includes(selectedWorkCenter)) {
+    if (selectedWorkCenter && availableWorkCenters.length > 0 && !availableWorkCenters.includes(selectedWorkCenter)) {
       const project = resolveOffshoreProjectCode(selectedWorkCenter, selectedLocation);
       if (isOffshoreLocationName(selectedLocation) && project && availableWorkCenters.includes(project)) {
         setSelectedWorkCenter(project);
         return;
       }
       if (isOffshoreWorkCenterName(selectedWorkCenter)) return;
-      setSelectedWorkCenter(availableWorkCenters[0]);
+      setSelectedWorkCenter('');
     }
   }, [selectedLocation, selectedWorkCenter, workCenters]);
 
@@ -1462,17 +1445,31 @@ export default function TimesheetEntryClient({ variant = 'admin' }: { variant?: 
     setLocalLines(nextLines);
   };
 
-  const isOffshoreSheet = isOffshoreTimesheetContext(selectedLocation || payload?.header?.locationName, selectedWorkCenter || payload?.header?.workCenterName);
+  const isOffshoreSheet = isOffshoreLocationName(selectedLocation || payload?.header?.locationName)
+    || isOffshoreTimesheetContext(selectedLocation || payload?.header?.locationName, selectedWorkCenter || payload?.header?.workCenterName);
   const shiftLines = dedupeTimesheetLinesByEmployee(
     isOffshoreSheet
     || (payload?.header && timesheetHeaderMatchesShift(payload.header.shiftLabel, selectedShift))
       ? localLines
       : localLines.filter((line) => timesheetLineMatchesShift(line.clockIn, selectedShift, line.clockOut)),
   ).lines;
-  const filteredLines = shiftLines.filter((l) =>
-    l.employeeName.toLowerCase().includes(query.toLowerCase()) ||
-    l.employeeNo.toLowerCase().includes(query.toLowerCase())
-  );
+  const lineWorkCenterName = (line: TimesheetLine) => {
+    const fromLine = String(line.workCenterName || '').trim();
+    if (fromLine) return fromLine;
+    const employee = (payload?.supervisorEmployees || []).find((item) =>
+      String(item.employeeCode || '').trim().toUpperCase() === String(line.employeeNo || line.employeeId || '').trim().toUpperCase(),
+    );
+    return String(employee?.workCenter || '').trim();
+  };
+  const filteredLines = shiftLines.filter((l) => {
+    const matchesQuery = l.employeeName.toLowerCase().includes(query.toLowerCase())
+      || l.employeeNo.toLowerCase().includes(query.toLowerCase());
+    if (!matchesQuery) return false;
+    if (!selectedWorkCenter) return true;
+    const workCenter = lineWorkCenterName(l);
+    return timesheetWorkCentersMatch(workCenter, selectedWorkCenter)
+      || resolveOffshoreProjectCode(workCenter, selectedLocation) === selectedWorkCenter;
+  });
   const totalEmployeeCardPages = Math.max(1, Math.ceil(filteredLines.length / EMPLOYEE_CARD_PAGE_SIZE));
   const safeEmployeeCardPage = Math.min(employeeCardPage, totalEmployeeCardPages);
   const paginatedCardLines = filteredLines.slice(
@@ -1759,9 +1756,7 @@ export default function TimesheetEntryClient({ variant = 'admin' }: { variant?: 
             setQuery('');
           }}
           onWorkCenterChange={(value) => {
-            setRequestedHeaderId('');
             setSelectedWorkCenter(value);
-            if (isOffshoreWorkCenterName(value)) setSelectedLocation(OFFSHORE_LOCATION_NAME);
             setSelectedEmployees([]);
             setQuery('');
           }}
@@ -1974,18 +1969,16 @@ export default function TimesheetEntryClient({ variant = 'admin' }: { variant?: 
                 />
               </div>
               <div className="text-right">
-                <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400">{isOffshoreSheet ? 'Project' : 'Work Center'}</p>
+                <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400">{isOffshoreSheet ? 'Filter project' : 'Filter work centre'}</p>
                 <div className="flex items-center justify-end gap-2">
                   {workCenterOptions.length > 0 ? (
                     <SearchablePicker
                       value={selectedWorkCenter}
-                      options={workCenterOptions.map((workCenter) => ({ value: workCenter, label: workCenter }))}
-                      placeholder="Search work center"
+                      options={[{ value: '', label: isOffshoreSheet ? 'All projects' : 'All work centres' }, ...workCenterOptions.map((workCenter) => ({ value: workCenter, label: workCenter }))]}
+                      placeholder={isOffshoreSheet ? 'All projects' : 'All work centres'}
                       className="max-w-[220px]"
                       onChange={(value) => {
-                        setRequestedHeaderId('');
                         setSelectedWorkCenter(value);
-                        if (isOffshoreWorkCenterName(value)) setSelectedLocation(OFFSHORE_LOCATION_NAME);
                         setSelectedEmployees([]);
                         setQuery('');
                       }}
@@ -2302,7 +2295,7 @@ export default function TimesheetEntryClient({ variant = 'admin' }: { variant?: 
             <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 bg-slate-50 px-5 py-4">
               <div>
                 <p className="text-[10px] font-black uppercase tracking-widest text-indigo-600">Submitted Timesheet Summary</p>
-                <h3 className="mt-1 text-base font-black text-slate-950">{payload.header.workCenterName} / {payload.header.timesheetDate}</h3>
+                <h3 className="mt-1 text-base font-black text-slate-950">{payload.header.locationName || selectedLocation || payload.header.workCenterName} / {payload.header.timesheetDate}</h3>
               </div>
               <span className="rounded-full border border-indigo-200 bg-indigo-50 px-3 py-1 text-xs font-black text-indigo-800">{headerStatus.replace(/_/g, ' ')}</span>
             </div>
@@ -2324,6 +2317,7 @@ export default function TimesheetEntryClient({ variant = 'admin' }: { variant?: 
                           <div>
                             <div className="text-[9px] font-black uppercase tracking-widest text-indigo-600">{line.employeeNo}</div>
                             <div className="mt-1 text-[13px] font-black text-slate-900">{line.employeeName}</div>
+                            {lineWorkCenterName(line) ? <div className="text-[9px] font-bold uppercase tracking-widest text-slate-400">{lineWorkCenterName(line)}</div> : null}
                           </div>
                         </div>
                       </td>
@@ -2425,6 +2419,9 @@ export default function TimesheetEntryClient({ variant = 'admin' }: { variant?: 
                             <div className="flex flex-col whitespace-nowrap">
                               <span className="text-[9px] font-black text-indigo-600 tracking-widest uppercase">{line.employeeNo}</span>
                               <span className="text-[13px] font-black text-slate-900 tracking-tight">{line.employeeName}</span>
+                              {lineWorkCenterName(line) ? (
+                                <span className="text-[9px] font-bold uppercase tracking-widest text-slate-400">{lineWorkCenterName(line)}</span>
+                              ) : null}
                             </div>
                           </div>
                         </td>
@@ -2560,7 +2557,7 @@ export default function TimesheetEntryClient({ variant = 'admin' }: { variant?: 
                         className="h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
                       />
                       {!isAbsentLocked && <ShieldCheck className="h-4 w-4 text-emerald-600" />}
-                      <div><p className="text-[10px] font-black text-indigo-600 leading-none">{line.employeeNo}</p><h3 className="text-sm font-black text-slate-900 mt-1">{line.employeeName}</h3></div>
+                      <div><p className="text-[10px] font-black text-indigo-600 leading-none">{line.employeeNo}</p><h3 className="text-sm font-black text-slate-900 mt-1">{line.employeeName}</h3>{lineWorkCenterName(line) ? <p className="text-[9px] font-bold uppercase tracking-widest text-slate-400">{lineWorkCenterName(line)}</p> : null}</div>
                     </div>
                     <div className={`rounded-full border px-2 py-0.5 text-[9px] font-black ${employeeStatusBadgeTone(line)}`}>{isAbsentLocked ? 'ABSENT' : isNightSheet && isAbsent ? 'BOOK NIGHT' : (isManual || offshoreBookable) && !line.clockIn ? 'OFFSHORE' : line.validationStatus === 'Valid' ? 'COMPLETE' : line.validationStatus}</div>
                   </div>
@@ -2700,7 +2697,7 @@ export default function TimesheetEntryClient({ variant = 'admin' }: { variant?: 
             <div className="flex flex-wrap items-start justify-between gap-4 border-b border-slate-100 p-6">
               <div>
                 <p className="text-[10px] font-black uppercase tracking-widest text-indigo-600">Supervisor Review</p>
-                <h3 className="mt-1 text-xl font-black text-slate-950">{selectedDate} / {selectedLocation ? `${selectedLocation} / ` : ''}{selectedWorkCenter || 'No work center'}</h3>
+                <h3 className="mt-1 text-xl font-black text-slate-950">{selectedDate} / {selectedLocation || payload?.header?.locationName || 'No location'}</h3>
                 <p className="mt-1 text-sm font-semibold text-slate-500">{supervisorLabel}</p>
                 <p className="mt-2 text-sm font-black text-slate-900">
                   Job{reviewProjectCodes.length === 1 ? '' : 's'}: {reviewProjectCodes.length ? reviewProjectCodes.join(', ') : 'None selected'}

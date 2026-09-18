@@ -20,6 +20,17 @@ assert.equal(
   }).endsWith('-agege'),
   true,
 );
+assert.equal(
+  buildTimesheetHeaderId({
+    date: '2026-08-17',
+    supervisorId: 'P0436 - Mr SUNDAY OKEWU',
+    workCenterName: 'Maintenance',
+    shiftLabel: '01 (Day)',
+    locationName: 'AGEGE',
+  }).includes('maintenance'),
+  false,
+  'work centre is a line label, not part of the header id',
+);
 assert.notEqual(
   buildTimesheetHeaderId({
     date: '2026-08-17',

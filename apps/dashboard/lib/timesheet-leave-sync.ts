@@ -218,7 +218,6 @@ const ensureHeader = (
   const candidates = headers.filter((header) =>
     header.timesheetDate === date
     && (supervisorMatches(header.supervisorId, supervisorId) || supervisorMatches(header.supervisorName, supervisorId))
-    && header.workCenterName === workCenterName
     && String(header.shiftLabel || '').toLowerCase().includes('day'),
   );
   const pick = selectTimesheetHeaderForLocation(candidates, locationName, undefined, locationSpecificId);

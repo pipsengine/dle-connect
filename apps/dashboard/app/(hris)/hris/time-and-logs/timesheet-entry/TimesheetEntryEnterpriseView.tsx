@@ -53,6 +53,7 @@ type TimesheetLine = {
   attendanceMode?: 'Biometric' | 'Manual' | null;
   remarks?: string | null;
   offshoreAllowanceHours?: number;
+  workCenterName?: string | null;
 };
 
 type Project = { id: string; code: string; name: string };
@@ -377,12 +378,15 @@ export function TimesheetEntryEnterpriseView(props: TimesheetEnterpriseViewProps
                 options={props.locationOptions.map((item) => ({ value: item, label: item }))}
               />
             </ContextField>
-            <ContextField label={props.isOffshoreSheet ? 'Project' : 'Work Centre'}>
+            <ContextField label={props.isOffshoreSheet ? 'Filter project' : 'Filter work centre'}>
               <SearchableContextPicker
                 value={props.selectedWorkCenter}
                 onChange={props.onWorkCenterChange}
-                placeholder="Search work centre..."
-                options={props.workCenterOptions.map((item) => ({ value: item, label: item }))}
+                placeholder={props.isOffshoreSheet ? 'All projects' : 'All work centres'}
+                options={[
+                  { value: '', label: props.isOffshoreSheet ? 'All projects' : 'All work centres' },
+                  ...props.workCenterOptions.map((item) => ({ value: item, label: item })),
+                ]}
               />
             </ContextField>
             <ContextField label="Shift (Day and Night are separate sheets)">
@@ -619,7 +623,7 @@ export function TimesheetEntryEnterpriseView(props: TimesheetEnterpriseViewProps
                               </div>
                               <div className="min-w-0">
                                 <p className="truncate text-sm font-semibold text-[#0F172A]">{line.employeeName}</p>
-                                <p className="text-xs font-medium text-[#64748B]">{line.employeeNo}</p>
+                                <p className="text-xs font-medium text-[#64748B]">{line.employeeNo}{line.workCenterName ? ` · ${line.workCenterName}` : ''}</p>
                               </div>
                             </div>
                           </td>

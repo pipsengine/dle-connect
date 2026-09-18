@@ -15,6 +15,7 @@ import { canonicalProjectManagerForCode, withCanonicalProjectManager } from '@/l
 import {
   DAILY_BREAK_HOURS,
   buildLeaveIdleTimeAllocation,
+  MIXED_TIMESHEET_WORK_CENTER,
   STANDARD_TIMESHEET_HOURS,
   attendanceDurationFromClock,
   dedupeTimesheetLinesByEmployee,
@@ -34,6 +35,7 @@ import {
   selectTimesheetHeaderForLocation,
   type TimesheetLine,
 } from '@/lib/timesheet-entry-shared';
+import { selectCanonicalTimesheetHeader } from '@/lib/timesheet-sheet-identity';
 import {
   TIMESHEET_OCTOBER_2026_PERIOD_ID,
   TIMESHEET_SEPTEMBER_2026_PERIOD_ID,
@@ -973,6 +975,8 @@ IF COL_LENGTH(N'hris.TimesheetLines', N'AttendanceMode') IS NULL
 ALTER TABLE [hris].[TimesheetLines] ADD [AttendanceMode] NVARCHAR(20) NULL;
 IF COL_LENGTH(N'hris.TimesheetLines', N'OffshoreAllowanceHours') IS NULL
 ALTER TABLE [hris].[TimesheetLines] ADD [OffshoreAllowanceHours] DECIMAL(9,2) NULL CONSTRAINT [DF_TimesheetLines_OffshoreAllowanceHours] DEFAULT 0;
+IF COL_LENGTH(N'hris.TimesheetLines', N'WorkCenterName') IS NULL
+ALTER TABLE [hris].[TimesheetLines] ADD [WorkCenterName] NVARCHAR(180) NULL;
 IF OBJECT_ID(N'[hris].[TimesheetLines]', N'U') IS NULL
 CREATE TABLE [hris].[TimesheetLines] (
   [Id] NVARCHAR(220) NOT NULL CONSTRAINT [PK_TimesheetLines] PRIMARY KEY,
@@ -1598,6 +1602,7 @@ async function readTimesheetDataUncached(options?: { softFail?: boolean }) {
     validationMessage: row.ValidationMessage,
     attendanceMode: row.AttendanceMode === 'Manual' || String(row.Remarks || '').includes('OFFSHORE_MANUAL') ? 'Manual' as const : ((row.AttendanceMode || 'Biometric') as 'Biometric' | 'Manual'),
     offshoreAllowanceHours: Number(row.OffshoreAllowanceHours || 0),
+    workCenterName: row.WorkCenterName || null,
   }));
   return { headers, lines };
 }
@@ -1724,6 +1729,7 @@ const mapTimesheetLineRows = (
     validationMessage: row.ValidationMessage,
     attendanceMode: row.AttendanceMode === 'Manual' || String(row.Remarks || '').includes('OFFSHORE_MANUAL') ? 'Manual' as const : ((row.AttendanceMode || 'Biometric') as 'Biometric' | 'Manual'),
     offshoreAllowanceHours: Number(row.OffshoreAllowanceHours || 0),
+    workCenterName: row.WorkCenterName || null,
   }));
 };
 
@@ -2066,6 +2072,7 @@ export async function readTimesheetApprovalData(options?: { softFail?: boolean }
     validationMessage: row.ValidationMessage,
     attendanceMode: row.AttendanceMode === 'Manual' || String(row.Remarks || '').includes('OFFSHORE_MANUAL') ? 'Manual' as const : ((row.AttendanceMode || 'Biometric') as 'Biometric' | 'Manual'),
     offshoreAllowanceHours: Number(row.OffshoreAllowanceHours || 0),
+    workCenterName: row.WorkCenterName || null,
   }));
   return { headers, lines };
 }
@@ -2156,12 +2163,13 @@ VALUES (@Id,@PeriodId,@TimesheetDate,@SupervisorId,@SupervisorName,@WorkCenterId
         .input('ValidationMessage', sql.NVarChar(500), line.validationMessage)
         .input('AttendanceMode', sql.NVarChar(20), line.attendanceMode === 'Manual' ? 'Manual' : 'Biometric')
         .input('OffshoreAllowanceHours', sql.Decimal(9, 2), Number(line.offshoreAllowanceHours || 0))
+        .input('WorkCenterName', sql.NVarChar(180), line.workCenterName || null)
         .query(`
 MERGE [hris].[TimesheetLines] AS target
 USING (SELECT @Id AS [Id]) AS source ON target.[Id]=source.[Id]
-WHEN MATCHED THEN UPDATE SET [HeaderId]=@HeaderId,[EmployeeId]=@EmployeeId,[EmployeeNo]=@EmployeeNo,[EmployeeName]=@EmployeeName,[BiometricId]=@BiometricId,[AttendanceId]=@AttendanceId,[ClockIn]=@ClockIn,[ClockOut]=@ClockOut,[AttendanceDuration]=@AttendanceDuration,[UsedHours]=@UsedHours,[IdleHours]=@IdleHours,[TotalHours]=@TotalHours,[Variance]=@Variance,[Remarks]=@Remarks,[ValidationStatus]=@ValidationStatus,[ValidationMessage]=@ValidationMessage,[AttendanceMode]=@AttendanceMode,[OffshoreAllowanceHours]=@OffshoreAllowanceHours
-WHEN NOT MATCHED THEN INSERT ([Id],[HeaderId],[EmployeeId],[EmployeeNo],[EmployeeName],[BiometricId],[AttendanceId],[ClockIn],[ClockOut],[AttendanceDuration],[UsedHours],[IdleHours],[TotalHours],[Variance],[Remarks],[ValidationStatus],[ValidationMessage],[AttendanceMode],[OffshoreAllowanceHours])
-VALUES (@Id,@HeaderId,@EmployeeId,@EmployeeNo,@EmployeeName,@BiometricId,@AttendanceId,@ClockIn,@ClockOut,@AttendanceDuration,@UsedHours,@IdleHours,@TotalHours,@Variance,@Remarks,@ValidationStatus,@ValidationMessage,@AttendanceMode,@OffshoreAllowanceHours);`);
+WHEN MATCHED THEN UPDATE SET [HeaderId]=@HeaderId,[EmployeeId]=@EmployeeId,[EmployeeNo]=@EmployeeNo,[EmployeeName]=@EmployeeName,[BiometricId]=@BiometricId,[AttendanceId]=@AttendanceId,[ClockIn]=@ClockIn,[ClockOut]=@ClockOut,[AttendanceDuration]=@AttendanceDuration,[UsedHours]=@UsedHours,[IdleHours]=@IdleHours,[TotalHours]=@TotalHours,[Variance]=@Variance,[Remarks]=@Remarks,[ValidationStatus]=@ValidationStatus,[ValidationMessage]=@ValidationMessage,[AttendanceMode]=@AttendanceMode,[OffshoreAllowanceHours]=@OffshoreAllowanceHours,[WorkCenterName]=@WorkCenterName
+WHEN NOT MATCHED THEN INSERT ([Id],[HeaderId],[EmployeeId],[EmployeeNo],[EmployeeName],[BiometricId],[AttendanceId],[ClockIn],[ClockOut],[AttendanceDuration],[UsedHours],[IdleHours],[TotalHours],[Variance],[Remarks],[ValidationStatus],[ValidationMessage],[AttendanceMode],[OffshoreAllowanceHours],[WorkCenterName])
+VALUES (@Id,@HeaderId,@EmployeeId,@EmployeeNo,@EmployeeName,@BiometricId,@AttendanceId,@ClockIn,@ClockOut,@AttendanceDuration,@UsedHours,@IdleHours,@TotalHours,@Variance,@Remarks,@ValidationStatus,@ValidationMessage,@AttendanceMode,@OffshoreAllowanceHours,@WorkCenterName);`);
       await new sql.Request(tx).input('LineId', sql.NVarChar(220), line.id).query(`DELETE FROM [hris].[TimesheetProjectAllocations] WHERE [LineId]=@LineId; DELETE FROM [hris].[TimesheetIdleAllocations] WHERE [LineId]=@LineId;`);
       for (const allocation of normalizeProjectAllocations(line.projectAllocations || [])) {
         await new sql.Request(tx)
@@ -2273,12 +2281,13 @@ VALUES (@Id,@PeriodId,@TimesheetDate,@SupervisorId,@SupervisorName,@WorkCenterId
         .input('ValidationMessage', sql.NVarChar(500), line.validationMessage)
         .input('AttendanceMode', sql.NVarChar(20), line.attendanceMode === 'Manual' ? 'Manual' : 'Biometric')
         .input('OffshoreAllowanceHours', sql.Decimal(9, 2), Number(line.offshoreAllowanceHours || 0))
+        .input('WorkCenterName', sql.NVarChar(180), line.workCenterName || null)
         .query(`
 MERGE [hris].[TimesheetLines] AS target
 USING (SELECT @Id AS [Id]) AS source ON target.[Id]=source.[Id]
-WHEN MATCHED THEN UPDATE SET [HeaderId]=@HeaderId,[EmployeeId]=@EmployeeId,[EmployeeNo]=@EmployeeNo,[EmployeeName]=@EmployeeName,[BiometricId]=@BiometricId,[AttendanceId]=@AttendanceId,[ClockIn]=@ClockIn,[ClockOut]=@ClockOut,[AttendanceDuration]=@AttendanceDuration,[UsedHours]=@UsedHours,[IdleHours]=@IdleHours,[TotalHours]=@TotalHours,[Variance]=@Variance,[Remarks]=@Remarks,[ValidationStatus]=@ValidationStatus,[ValidationMessage]=@ValidationMessage,[AttendanceMode]=@AttendanceMode,[OffshoreAllowanceHours]=@OffshoreAllowanceHours
-WHEN NOT MATCHED THEN INSERT ([Id],[HeaderId],[EmployeeId],[EmployeeNo],[EmployeeName],[BiometricId],[AttendanceId],[ClockIn],[ClockOut],[AttendanceDuration],[UsedHours],[IdleHours],[TotalHours],[Variance],[Remarks],[ValidationStatus],[ValidationMessage],[AttendanceMode],[OffshoreAllowanceHours])
-VALUES (@Id,@HeaderId,@EmployeeId,@EmployeeNo,@EmployeeName,@BiometricId,@AttendanceId,@ClockIn,@ClockOut,@AttendanceDuration,@UsedHours,@IdleHours,@TotalHours,@Variance,@Remarks,@ValidationStatus,@ValidationMessage,@AttendanceMode,@OffshoreAllowanceHours);`);
+WHEN MATCHED THEN UPDATE SET [HeaderId]=@HeaderId,[EmployeeId]=@EmployeeId,[EmployeeNo]=@EmployeeNo,[EmployeeName]=@EmployeeName,[BiometricId]=@BiometricId,[AttendanceId]=@AttendanceId,[ClockIn]=@ClockIn,[ClockOut]=@ClockOut,[AttendanceDuration]=@AttendanceDuration,[UsedHours]=@UsedHours,[IdleHours]=@IdleHours,[TotalHours]=@TotalHours,[Variance]=@Variance,[Remarks]=@Remarks,[ValidationStatus]=@ValidationStatus,[ValidationMessage]=@ValidationMessage,[AttendanceMode]=@AttendanceMode,[OffshoreAllowanceHours]=@OffshoreAllowanceHours,[WorkCenterName]=@WorkCenterName
+WHEN NOT MATCHED THEN INSERT ([Id],[HeaderId],[EmployeeId],[EmployeeNo],[EmployeeName],[BiometricId],[AttendanceId],[ClockIn],[ClockOut],[AttendanceDuration],[UsedHours],[IdleHours],[TotalHours],[Variance],[Remarks],[ValidationStatus],[ValidationMessage],[AttendanceMode],[OffshoreAllowanceHours],[WorkCenterName])
+VALUES (@Id,@HeaderId,@EmployeeId,@EmployeeNo,@EmployeeName,@BiometricId,@AttendanceId,@ClockIn,@ClockOut,@AttendanceDuration,@UsedHours,@IdleHours,@TotalHours,@Variance,@Remarks,@ValidationStatus,@ValidationMessage,@AttendanceMode,@OffshoreAllowanceHours,@WorkCenterName);`);
 
       await new sql.Request(tx).input('LineId', sql.NVarChar(220), line.id).query(`DELETE FROM [hris].[TimesheetProjectAllocations] WHERE [LineId]=@LineId; DELETE FROM [hris].[TimesheetIdleAllocations] WHERE [LineId]=@LineId;`);
       for (const allocation of normalizeProjectAllocations(line.projectAllocations || [])) {
@@ -3800,28 +3809,37 @@ export async function syncAttendanceForTimesheet(
   }
   const period = calculateTimesheetPeriod(date);
 
-  const workCenterId = workCenterName.toLowerCase().replace(/\s+/g, '-');
+  const workCenterId = (workCenterName || MIXED_TIMESHEET_WORK_CENTER).toLowerCase().replace(/\s+/g, '-');
   const locationSpecificId = buildTimesheetHeaderId({
     date,
     supervisorId,
-    workCenterName,
     shiftLabel: shift.label,
     locationName,
   });
   const headerCandidates = headers.filter((h) => (
     h.timesheetDate === date
-    && h.supervisorId === supervisorId
-    && h.workCenterName === workCenterName
+    && (h.supervisorId === supervisorId || supervisorCodesMatch(h.supervisorId, supervisorId) || supervisorCodesMatch(h.supervisorName, supervisorId))
     && timesheetHeaderMatchesShift(h.shiftLabel, shift.label)
   ));
-  const pick = selectTimesheetHeaderForLocation(headerCandidates, locationName, supervisorHomeLocation, locationSpecificId);
+  const linesByHeader = new Map<string, TimesheetLine[]>();
+  for (const line of lines) {
+    const bucket = linesByHeader.get(line.headerId) || [];
+    bucket.push(line);
+    linesByHeader.set(line.headerId, bucket);
+  }
+  const pick = selectCanonicalTimesheetHeader(headerCandidates, {
+    date,
+    supervisorId,
+    shiftLabel: shift.label,
+    locationName,
+    supervisorHomeLocation,
+    preferredId: locationSpecificId,
+    linesByHeader,
+  });
   let header = pick.header;
-  // Prefer explicit night/day header id; fall back to legacy header only for Day home yard.
   if (!header && shift.kind === 'Day') {
-    header = headers.find((h) => h.id === `hdr-${date}-${supervisorId.toLowerCase().replace(/\s+/g, '-')}-${workCenterId}`) || null;
-    if (header && locationName && header.locationName && !timesheetLocationsMatch(header.locationName, locationName)) {
-      header = null;
-    }
+    const legacy = selectTimesheetHeaderForLocation(headerCandidates, locationName, supervisorHomeLocation, locationSpecificId);
+    header = legacy.header;
   }
   if (!header) {
     header = {
@@ -3831,7 +3849,7 @@ export async function syncAttendanceForTimesheet(
       supervisorId,
       supervisorName: supervisorId,
       workCenterId,
-      workCenterName,
+      workCenterName: MIXED_TIMESHEET_WORK_CENTER,
       status: 'Draft',
       submittedAt: null,
       submittedBy: null,
@@ -3945,6 +3963,7 @@ export async function syncAttendanceForTimesheet(
       validationStatus: shouldAutoBookPaidLeave ? 'Valid' : 'Incomplete',
       validationMessage: shouldAutoBookPaidLeave ? 'Approved paid leave. Biometric attendance is not required for this payable leave day.' : 'Awaiting time allocation.',
       attendanceMode: existingLine?.attendanceMode || (att.checkInTime ? 'Biometric' : undefined),
+      workCenterName: existingLine?.workCenterName || null,
     };
     return nextLine;
   });

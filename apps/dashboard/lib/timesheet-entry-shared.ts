@@ -393,7 +393,7 @@ export const timesheetLocationHeaderSlug = (locationName?: string | null) =>
 export const buildTimesheetHeaderId = (input: {
   date: string;
   supervisorId: string;
-  workCenterName: string;
+  workCenterName?: string | null;
   shiftLabel?: string | null;
   locationName?: string | null;
 }) => {
@@ -401,7 +401,6 @@ export const buildTimesheetHeaderId = (input: {
     'hdr',
     input.date,
     timesheetHeaderIdentitySlug(input.supervisorId),
-    timesheetHeaderIdentitySlug(input.workCenterName),
     timesheetShiftHeaderSlug(input.shiftLabel),
   ];
   const locationSlug = timesheetLocationHeaderSlug(input.locationName);
@@ -1095,7 +1094,12 @@ export type TimesheetLine = {
   attendanceMode?: 'Biometric' | 'Manual' | null;
   /** Hours recorded as offshore allowance. Not payroll OT. */
   offshoreAllowanceHours?: number;
+  /** Trade or offshore project for this person. Not a second timesheet. */
+  workCenterName?: string | null;
 };
+
+/** Header summary when one supervisor sheet has more than one trade or project. */
+export const MIXED_TIMESHEET_WORK_CENTER = 'Mixed';
 
 export const OFFSHORE_LOCATION_NAME = 'OFFSHORE';
 export const OFFSHORE_WORK_CENTER_PREFIX = 'OFFSHORE · ';
@@ -1236,12 +1240,14 @@ export const buildRosterTimesheetLine = (input: {
   employeeId: string;
   employeeNo: string;
   employeeName: string;
+  workCenterName?: string | null;
 }): TimesheetLine => ({
   id: `line-${input.headerId}-${String(input.employeeNo || input.employeeId).replace(/[^A-Za-z0-9]/g, '')}`,
   headerId: input.headerId,
   employeeId: input.employeeId,
   employeeNo: input.employeeNo,
   employeeName: input.employeeName,
+  workCenterName: input.workCenterName || null,
   biometricId: '',
   attendanceId: null,
   clockIn: null,
@@ -1301,6 +1307,7 @@ export const buildManualOffshoreLine = (input: {
     validationMessage: 'Offshore: 8h payroll + 1h break. 4h allowance is outside payroll.',
     attendanceMode: 'Manual',
     offshoreAllowanceHours: OFFSHORE_ALLOWANCE_HOURS,
+    workCenterName: projectCode || null,
   };
 };
 

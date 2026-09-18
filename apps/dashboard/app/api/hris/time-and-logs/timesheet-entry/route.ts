@@ -71,11 +71,18 @@ import {
   resolveOvertimeBookingOptions,
 } from '@/lib/timesheet-overtime-config';
 import { applyTimesheetLineDefaults, ensureClockedLinesHaveProjectAllocation } from '@/lib/timesheet-line-defaults';
-import { normalizeIdleAllocations, normalizeProjectAllocations, reconcileTimesheetLineHours, resolvePrimaryProjectCode, validateTimesheetLinesForPersist, TIMESHEET_SHIFT_LABELS, resolveTimesheetShift, timesheetHeaderMatchesShift, buildTimesheetHeaderId, selectTimesheetHeaderForLocation, timesheetWorkCentersMatch, isOffshoreWorkCenterName, isOffshoreLocationName, isOffshoreTimesheetContext, isManualOffshoreLine, isTimesheetAbsentLine, isTimesheetInApprovalCapture, applyNightPaperClock, timesheetLineHasBookedHours, buildManualOffshoreLine, buildRosterTimesheetLine, projectCodeFromOffshoreWorkCenter, resolveOffshoreProjectCode, timesheetOffshoreWorkCentersMatch, OFFSHORE_LOCATION_NAME, DEFAULT_TIMESHEET_SHIFT_LABEL, supervisorTimesheetMessage, dedupeTimesheetLinesByEmployee, isIdleTimeProjectCode, upsertMatrixProjectHours, markLineAsManualOffshore, canBookTimesheetHoursWithoutClock, type TimesheetDayContext } from '@/lib/timesheet-entry-shared';
+import { normalizeIdleAllocations, normalizeProjectAllocations, reconcileTimesheetLineHours, resolvePrimaryProjectCode, validateTimesheetLinesForPersist, TIMESHEET_SHIFT_LABELS, resolveTimesheetShift, timesheetHeaderMatchesShift, buildTimesheetHeaderId, timesheetWorkCentersMatch, isOffshoreWorkCenterName, isOffshoreLocationName, isOffshoreTimesheetContext, isManualOffshoreLine, isTimesheetAbsentLine, isTimesheetInApprovalCapture, applyNightPaperClock, timesheetLineHasBookedHours, buildManualOffshoreLine, buildRosterTimesheetLine, projectCodeFromOffshoreWorkCenter, resolveOffshoreProjectCode, timesheetOffshoreWorkCentersMatch, MIXED_TIMESHEET_WORK_CENTER, OFFSHORE_LOCATION_NAME, DEFAULT_TIMESHEET_SHIFT_LABEL, supervisorTimesheetMessage, dedupeTimesheetLinesByEmployee, isIdleTimeProjectCode, upsertMatrixProjectHours, markLineAsManualOffshore, canBookTimesheetHoursWithoutClock, type TimesheetDayContext } from '@/lib/timesheet-entry-shared';
 import { displaceUncommittedBookingsOnOtherDrafts, findSameDayBookingConflicts, releaseLinesAlreadyBookedElsewhere, type TimesheetAlreadyBookedSkip } from '@/lib/timesheet-booking-clash';
 import { assertTimesheetRecaptureAllowed, reopenTimesheetForRecapture } from '@/lib/timesheet-recapture';
 import { submitTimesheetForApproval } from '@/lib/timesheet-submit';
-import { mobilizationCoversDate, mobilizationMatchesOffshoreSheet, readTimesheetMobilizations, resolveOffshoreTimesheetRoster, type TimesheetMobilization } from '@/lib/timesheet-mobilization-store';
+import { mobilizationCoversDate, mobilizationMatchesSupervisor, readTimesheetMobilizations, resolveOffshoreTimesheetRoster, type TimesheetMobilization } from '@/lib/timesheet-mobilization-store';
+import {
+  mergeDuplicateTimesheetSheetLines,
+  preferAssignedTimesheetRoster,
+  resolveTimesheetLineWorkCenter,
+  selectCanonicalTimesheetHeader,
+  summarizeTimesheetHeaderWorkCenter,
+} from '@/lib/timesheet-sheet-identity';
 import {
   applyAgegeBlastingSupervisorContext,
   dedupeTimesheetLocationLabels,
@@ -84,7 +91,6 @@ import {
   normalizeTimesheetLocationLabel,
   supervisorCodesMatch,
   timesheetCrewMatchesLocation,
-  timesheetCrewMatchesWorkCenter,
   timesheetEmployeeRecordsMatch,
   timesheetLocationsMatch,
 } from '@/lib/timesheet-agege-blasting';
@@ -96,11 +102,8 @@ const dayContextFor = (date: string, holidayDates: string[], shiftLabel?: string
   locationName: locationName || undefined,
 });
 
-const resolveOffshoreSheetWorkCenter = (workCenterName: string, projectCodes: string[]) => {
-  const requested = resolveOffshoreProjectCode(workCenterName, OFFSHORE_LOCATION_NAME);
-  if (requested && projectCodes.includes(requested)) return requested;
-  return projectCodes[0] || requested || workCenterName;
-};
+const resolveOffshoreSheetWorkCenter = (_workCenterName: string, _projectCodes: string[]) =>
+  OFFSHORE_LOCATION_NAME;
 
 type ProjectManagerOption = {
   employeeId: string;
@@ -371,19 +374,27 @@ const slug = (value: string) => value.toLowerCase().replace(/\s+/g, '-');
 async function handleCopyPreviousDay(request: Request, date: string, supervisorId: string, workCenterName: string, locationName?: string) {
   const { headers, lines: allLines } = await readTimesheetData();
   
-  // 1. Find previous day's header
   const targetDate = parseTimesheetCalendarDate(date);
   const prevDate = new Date(targetDate);
   prevDate.setDate(targetDate.getDate() - 1);
   const prevDateStr = `${prevDate.getFullYear()}-${String(prevDate.getMonth() + 1).padStart(2, '0')}-${String(prevDate.getDate()).padStart(2, '0')}`;
 
-  const previousCandidates = headers.filter((h) => h.timesheetDate === prevDateStr && h.supervisorId === supervisorId && h.workCenterName === workCenterName);
-  const prevHeader = selectTimesheetHeaderForLocation(previousCandidates, locationName, undefined, buildTimesheetHeaderId({
+  const previousCandidates = headers.filter((h) => h.timesheetDate === prevDateStr && (
+    h.supervisorId === supervisorId || supervisorCodesMatch(h.supervisorId, supervisorId) || supervisorCodesMatch(h.supervisorName, supervisorId)
+  ));
+  const prevLinesByHeader = new Map<string, TimesheetLine[]>();
+  for (const line of allLines) {
+    const bucket = prevLinesByHeader.get(line.headerId) || [];
+    bucket.push(line);
+    prevLinesByHeader.set(line.headerId, bucket);
+  }
+  const prevHeader = selectCanonicalTimesheetHeader(previousCandidates, {
     date: prevDateStr,
     supervisorId,
-    workCenterName,
     locationName,
-  })).header || previousCandidates[0];
+    preferredId: buildTimesheetHeaderId({ date: prevDateStr, supervisorId, locationName }),
+    linesByHeader: prevLinesByHeader,
+  }).header || previousCandidates[0];
   if (!prevHeader) {
     throw new Error(`No timesheet found for previous day (${prevDateStr}) to copy from.`);
   }
@@ -393,14 +404,16 @@ async function handleCopyPreviousDay(request: Request, date: string, supervisorI
     throw new Error('Previous day timesheet has no data lines.');
   }
 
-  // 2. Find or create current day's header
-  const currentCandidates = headers.filter((h) => h.timesheetDate === date && h.supervisorId === supervisorId && h.workCenterName === workCenterName);
-  const currentPick = selectTimesheetHeaderForLocation(currentCandidates, locationName, undefined, buildTimesheetHeaderId({
+  const currentCandidates = headers.filter((h) => h.timesheetDate === date && (
+    h.supervisorId === supervisorId || supervisorCodesMatch(h.supervisorId, supervisorId) || supervisorCodesMatch(h.supervisorName, supervisorId)
+  ));
+  const currentPick = selectCanonicalTimesheetHeader(currentCandidates, {
     date,
     supervisorId,
-    workCenterName,
     locationName,
-  }));
+    preferredId: buildTimesheetHeaderId({ date, supervisorId, locationName }),
+    linesByHeader: prevLinesByHeader,
+  });
   let currentHeader = currentPick.header;
   if (!currentHeader) {
     const period = calculateTimesheetPeriod(targetDate);
@@ -415,8 +428,8 @@ async function handleCopyPreviousDay(request: Request, date: string, supervisorI
       timesheetDate: date,
       supervisorId,
       supervisorName: supervisorId,
-      workCenterId: slug(workCenterName),
-      workCenterName,
+      workCenterId: slug(workCenterName || MIXED_TIMESHEET_WORK_CENTER),
+      workCenterName: workCenterName || MIXED_TIMESHEET_WORK_CENTER,
       status: 'Draft',
       submittedAt: null,
       submittedBy: null,
@@ -712,6 +725,7 @@ const timesheetRecordEmployeeSummary = (record: TimesheetRecord) => ({
   jobTitle: record.mode,
   department: record.department,
   location: clean(record.location || record.site),
+  workCenter: clean(record.department || record.businessUnit),
   managerEmployeeCode: null,
   managerName: clean(record.supervisor) || null,
   status: record.status === 'Returned' ? 'Needs Review' : 'Active',
@@ -1122,13 +1136,10 @@ const buildPayload = async (
     const canonicalManager = canonicalSupervisorValue(employee.managerName, supervisorIndex);
     return canonicalManager === targetSupervisor || managerMatches({ managerName: canonicalManager || employee.managerName }, targetSupervisor);
   });
-  const selectedSupervisorAllDirectReports = [...assignedSupervisorEmployees];
-  for (const employee of reportingManagerEmployees) {
-    const key = clean(employee.employeeCode).toLowerCase();
-    if (!key) continue;
-    if (selectedSupervisorAllDirectReports.some((row) => clean(row.employeeCode).toLowerCase() === key)) continue;
-    selectedSupervisorAllDirectReports.push(employee);
-  }
+  const selectedSupervisorAllDirectReports = preferAssignedTimesheetRoster(
+    assignedSupervisorEmployees,
+    reportingManagerEmployees,
+  );
   {
     const supervisorRecordsForDefault = timesheetRecords.filter((record) => managerMatches({ managerName: record.supervisor }, targetSupervisor));
     const agegeForced = applyAgegeBlastingSupervisorContext({
@@ -1198,7 +1209,6 @@ const buildPayload = async (
   const supervisorHomeLocation = selectedSupervisorProfile ? employeeLocation(selectedSupervisorProfile) : '';
   const selectedSupervisorEmployeesFromDirectory = selectedSupervisorAllDirectReports
     .filter((employee) => timesheetCrewMatchesLocation(employeeLocation(employee), targetLocation, supervisorHomeLocation))
-    .filter((employee) => timesheetCrewMatchesWorkCenter(employee.workCenter, targetWorkCenter))
     .map((employee) => ({
       employeeId: clean(employee.employeeId),
       employeeCode: clean(employee.employeeCode),
@@ -1206,6 +1216,11 @@ const buildPayload = async (
       jobTitle: clean(employee.jobTitle),
       department: clean(employee.department),
       location: employeeLocation(employee),
+      workCenter: resolveTimesheetLineWorkCenter({
+        employeeWorkCenter: employee.workCenter,
+        jobTitle: employee.jobTitle,
+        workCenterNames: workCenterNameList,
+      }),
       managerEmployeeCode: null,
       managerName: clean(employee.managerName) || null,
       status: clean(employee.status) || 'Active',
@@ -1220,15 +1235,19 @@ const buildPayload = async (
     .map(timesheetRecordEmployeeSummary)
     .sort((a, b) => a.fullName.localeCompare(b.fullName));
   const isOffshoreSheet = isOffshoreLocationName(targetLocation) || isOffshoreWorkCenterName(targetWorkCenter);
-  const offshoreProjectCode = resolveOffshoreProjectCode(targetWorkCenter, targetLocation) || (isOffshoreSheet ? clean(targetWorkCenter).toUpperCase() : '');
+  const offshoreProjectCode = resolveOffshoreProjectCode(targetWorkCenter, targetLocation) || '';
   const supervisorCrewCodes = selectedSupervisorAllDirectReports.flatMap((employee) => [employee.employeeCode, employee.employeeId]).map((value) => clean(value)).filter(Boolean);
   const sheetMobilizations = isOffshoreSheet
-    ? dateMobilizations.filter((item) => mobilizationMatchesOffshoreSheet(item, {
-      supervisorId: targetSupervisor,
-      projectCode: offshoreProjectCode,
-      workCenterName: targetWorkCenter,
-      crewCodes: supervisorCrewCodes,
-    }))
+    ? dateMobilizations.filter((item) => {
+      const onOffshore = isOffshoreLocationName(item.locationName)
+        || isOffshoreWorkCenterName(item.workCenterName)
+        || Boolean(item.projectCode);
+      if (!onOffshore) return false;
+      if (supervisorCrewCodes.length) {
+        return supervisorCrewCodes.some((code) => supervisorCodesMatch(item.employeeCode, code));
+      }
+      return mobilizationMatchesSupervisor(item, targetSupervisor);
+    })
     : [];
   const employeeIsMobilizedAway = (code: string) =>
     dateMobilizations.some((item) =>
@@ -1248,6 +1267,7 @@ const buildPayload = async (
     jobTitle?: string | null;
     department?: string | null;
     status?: string | null;
+    workCenter?: string | null;
   }) => ({
     employeeId: clean(employee.employeeId) || clean(employee.employeeCode),
     employeeCode: clean(employee.employeeCode),
@@ -1255,6 +1275,7 @@ const buildPayload = async (
     jobTitle: clean(employee.jobTitle) || 'Offshore crew',
     department: clean(employee.department),
     location: OFFSHORE_LOCATION_NAME,
+    workCenter: clean(employee.workCenter),
     managerEmployeeCode: null as string | null,
     managerName: targetSupervisor,
     status: clean(employee.status) || 'Active',
@@ -1268,6 +1289,7 @@ const buildPayload = async (
       jobTitle: employee?.jobTitle,
       department: employee?.department || item.projectCode,
       status: employee?.status,
+      workCenter: item.projectCode || projectCodeFromOffshoreWorkCenter(item.workCenterName),
     });
   }).sort((a, b) => a.fullName.localeCompare(b.fullName));
   const offshoreRosterEmployees = resolveOffshoreTimesheetRoster(mobilizedOffshoreEmployees);
@@ -1285,13 +1307,12 @@ const buildPayload = async (
     deviceName: workCenter.name,
   }));
 
-  const locationSpecificHeaderId = targetWorkCenter && targetSupervisor
+  const locationSpecificHeaderId = targetSupervisor
     ? buildTimesheetHeaderId({
       date: targetDate,
       supervisorId: targetSupervisor,
-      workCenterName: targetWorkCenter,
       shiftLabel: targetShiftForSheet,
-      locationName: targetLocation,
+      locationName: isOffshoreSheet ? OFFSHORE_LOCATION_NAME : targetLocation,
     })
     : '';
   const headerMatchesScope = (h: TimesheetHeader) => (
@@ -1299,50 +1320,30 @@ const buildPayload = async (
     && canonicalSupervisorValue(h.supervisorId, supervisorIndex) === targetSupervisor
     && timesheetHeaderMatchesShift(h.shiftLabel, targetShiftForSheet)
   );
+  const scopeCandidates = headers.filter(headerMatchesScope);
+  const linesByHeader = new Map<string, TimesheetLine[]>();
+  for (const line of allLines) {
+    const bucket = linesByHeader.get(line.headerId) || [];
+    bucket.push(line);
+    linesByHeader.set(line.headerId, bucket);
+  }
   let adoptLegacyHeader = false;
-  let header =
-    requestedHeader ||
-    null;
-  if (!header && targetWorkCenter) {
-    const candidates = headers.filter((h) => headerMatchesScope(h) && (
-      h.workCenterName === targetWorkCenter
-      || timesheetOffshoreWorkCentersMatch(h.workCenterName, targetWorkCenter, targetLocation)
-    ));
-    const pick = selectTimesheetHeaderForLocation(candidates, targetLocation, supervisorHomeLocation, locationSpecificHeaderId);
+  let header = requestedHeader || null;
+  if (!header && targetSupervisor) {
+    const pick = selectCanonicalTimesheetHeader(scopeCandidates, {
+      date: targetDate,
+      supervisorId: targetSupervisor,
+      shiftLabel: targetShiftForSheet,
+      locationName: isOffshoreSheet ? OFFSHORE_LOCATION_NAME : targetLocation,
+      supervisorHomeLocation,
+      preferredId: locationSpecificHeaderId,
+      linesByHeader,
+    });
     header = pick.header;
     adoptLegacyHeader = pick.adoptLegacy;
-  } else if (!header) {
-    header = headers.find((h) => headerMatchesScope(h)) || null;
   }
   if (header && targetLocation && (adoptLegacyHeader || !header.locationName)) {
-    header = { ...header, locationName: targetLocation };
-  }
-  // C1001: reuse conflicting Painting drafts under Blasting instead of creating a second empty sheet.
-  let remappedConflictingPaintingHeader = false;
-  if (!header && !requestedHeader && applyAgegeBlastingSupervisorContext({
-    supervisorValue: targetSupervisor,
-    workCenterName: targetWorkCenter,
-    locationNames: directoryLocationNames,
-    workCenterNames: workCenterNameList,
-  }).forced && targetWorkCenter === 'Blasting') {
-    const conflicting = headers.find((h) => (
-      h.timesheetDate === targetDate
-      && canonicalSupervisorValue(h.supervisorId, supervisorIndex) === targetSupervisor
-      && clean(h.workCenterName).toLowerCase() === 'painting'
-      && timesheetHeaderMatchesShift(h.shiftLabel, targetShiftForSheet)
-      && ['Draft', 'Returned'].includes(normalizeTimesheetStatus(h.status))
-    ));
-    if (conflicting) {
-      header = {
-        ...conflicting,
-        supervisorId: targetSupervisor,
-        supervisorName: selectedSupervisorProfile ? supervisorDisplay(selectedSupervisorProfile) : targetSupervisor,
-        workCenterId: 'blasting',
-        workCenterName: 'Blasting',
-        locationName: targetLocation || conflicting.locationName,
-      };
-      remappedConflictingPaintingHeader = true;
-    }
+    header = { ...header, locationName: isOffshoreSheet ? OFFSHORE_LOCATION_NAME : targetLocation };
   }
   const selectedEmployeeKeys = new Set(selectedSupervisorEmployees.flatMap((employee) => matchKeys(employee.employeeCode, employee.fullName)).filter(Boolean));
   const lineBelongsToSelectedCrew = (line: TimesheetLine) =>
@@ -1378,25 +1379,19 @@ const buildPayload = async (
     lines = lines.filter(lineBelongsToSelectedCrew);
   }
 
-  if (!isOffshoreSheet && targetWorkCenter && targetSupervisor) {
-    const workCenterId = targetWorkCenter.toLowerCase().replace(/\s+/g, '-');
-    let persistRoster = adoptLegacyHeader || remappedConflictingPaintingHeader;
+  if (!isOffshoreSheet && targetSupervisor && targetLocation) {
+    const siblingHeaders = scopeCandidates.filter((item) => item.id !== header?.id);
+    let persistRoster = adoptLegacyHeader;
     const siblingWrites: Array<{ header: TimesheetHeader; lines: TimesheetLine[] }> = [];
     if (!header) {
       header = {
-        id: locationSpecificHeaderId || buildTimesheetHeaderId({
-          date: targetDate,
-          supervisorId: targetSupervisor,
-          workCenterName: targetWorkCenter,
-          shiftLabel: targetShiftForSheet,
-          locationName: targetLocation,
-        }),
+        id: locationSpecificHeaderId,
         periodId: period.id,
         timesheetDate: targetDate,
         supervisorId: targetSupervisor,
         supervisorName: selectedSupervisorProfile ? supervisorDisplay(selectedSupervisorProfile) : targetSupervisor,
-        workCenterId,
-        workCenterName: targetWorkCenter,
+        workCenterId: MIXED_TIMESHEET_WORK_CENTER.toLowerCase(),
+        workCenterName: MIXED_TIMESHEET_WORK_CENTER,
         status: 'Draft',
         submittedAt: null,
         submittedBy: null,
@@ -1412,28 +1407,40 @@ const buildPayload = async (
       persistRoster = true;
     }
 
-    if (header && targetLocation && isTimesheetEditableStatus(header.status)) {
-      const siblings = headers.filter((item) => (
-        item.id !== header!.id
-        && headerMatchesScope(item)
-        && item.workCenterName === targetWorkCenter
-        && isTimesheetEditableStatus(item.status)
-      ));
-      for (const sibling of siblings) {
-        const siblingLines = allLines.filter((line) => String(line.headerId) === String(sibling.id));
-        const move = siblingLines.filter((line) => (
-          lineBelongsToSelectedCrew(line)
-          && !lines.some((existing) => timesheetEmployeeRecordsMatch(existing, line))
-        ));
-        if (!move.length) continue;
-        const remaining = siblingLines.filter((line) => !move.some((item) => item.id === line.id));
-        const relocated = move.map((line) => ({
-          ...line,
-          id: `line-${header!.id}-${String(line.employeeNo || line.employeeId).replace(/[^A-Za-z0-9]/g, '')}`,
-          headerId: header!.id,
-        }));
-        lines = [...lines, ...relocated];
-        siblingWrites.push({ header: sibling, lines: remaining });
+    if (header && isTimesheetEditableStatus(header.status)) {
+      const merged = mergeDuplicateTimesheetSheetLines({
+        canonical: header,
+        siblings: siblingHeaders,
+        lines: [
+          ...lines,
+          ...allLines.filter((line) => siblingHeaders.some((item) => item.id === line.headerId)),
+        ],
+      });
+      if (merged.siblingWrites.length) {
+        lines = merged.lines.map((line) =>
+          normalizeLineForGrossDay(
+            line,
+            approvedOvertimeAuthorizations as OvertimeAuthorization[],
+            merged.lines,
+            line.workCenterName || targetWorkCenter,
+            overtimeBooking,
+            dayContext,
+            activeProjects.map((project) => project.code),
+          ),
+        );
+        for (const sibling of merged.siblingWrites) {
+          const siblingHeader = headers.find((item) => item.id === sibling.header.id);
+          if (siblingHeader) siblingWrites.push({ header: siblingHeader, lines: sibling.lines });
+        }
+        persistRoster = true;
+      }
+      const summaryWorkCenter = summarizeTimesheetHeaderWorkCenter(lines.map((line) => line.workCenterName));
+      if (summaryWorkCenter && header.workCenterName !== summaryWorkCenter) {
+        header = {
+          ...header,
+          workCenterId: summaryWorkCenter.toLowerCase().replace(/\s+/g, '-'),
+          workCenterName: summaryWorkCenter,
+        };
         persistRoster = true;
       }
     }
@@ -1454,16 +1461,44 @@ const buildPayload = async (
         const keys = matchKeys(employee.employeeCode, employee.fullName);
         if (keys.some((key) => existingKeys.has(key))) continue;
         persistRoster = true;
+        const workCenterName = resolveTimesheetLineWorkCenter({
+          employeeWorkCenter: 'workCenter' in employee ? employee.workCenter : '',
+          jobTitle: employee.jobTitle,
+          workCenterNames: workCenterNameList,
+        });
         lines.push(buildRosterTimesheetLine({
           headerId: header.id,
           employeeId: employee.employeeId || employee.employeeCode,
           employeeNo: employee.employeeCode,
           employeeName: employee.fullName,
+          workCenterName,
         }));
         keys.forEach((key) => existingKeys.add(key));
       }
     }
+    lines = lines.map((line) => {
+      if (clean(line.workCenterName)) return line;
+      const employee = selectedSupervisorEmployees.find((item) =>
+        supervisorCodesMatch(item.employeeCode, line.employeeNo) || supervisorCodesMatch(item.employeeCode, line.employeeId),
+      );
+      const workCenterName = resolveTimesheetLineWorkCenter({
+        employeeWorkCenter: employee && 'workCenter' in employee ? employee.workCenter : '',
+        jobTitle: employee?.jobTitle,
+        fallbackWorkCenter: header?.workCenterName,
+        workCenterNames: workCenterNameList,
+      });
+      return workCenterName ? { ...line, workCenterName } : line;
+    });
     lines = dedupeTimesheetLinesByEmployee(lines).lines;
+    const headerWorkCenter = summarizeTimesheetHeaderWorkCenter(lines.map((line) => line.workCenterName));
+    if (header && headerWorkCenter && header.workCenterName !== headerWorkCenter) {
+      header = {
+        ...header,
+        workCenterId: headerWorkCenter.toLowerCase().replace(/\s+/g, '-'),
+        workCenterName: headerWorkCenter,
+      };
+      persistRoster = true;
+    }
     if (persistRoster && period.status === 'Open' && isTimesheetEditableStatus(header.status)) {
       const persistLines = dedupeTimesheetLinesByEmployee(
         adoptLegacyHeader
@@ -1482,23 +1517,22 @@ const buildPayload = async (
   }
 
   if (isOffshoreSheet) {
-    const workCenterId = targetWorkCenter.toLowerCase().replace(/[^a-z0-9]+/g, '-');
+    const workCenterId = OFFSHORE_LOCATION_NAME.toLowerCase();
     let persistOffshore = false;
     if (!header) {
       header = {
-        id: buildTimesheetHeaderId({
+        id: locationSpecificHeaderId || buildTimesheetHeaderId({
           date: targetDate,
           supervisorId: targetSupervisor,
-          workCenterName: targetWorkCenter,
           shiftLabel: targetShiftForSheet,
-          locationName: targetLocation || OFFSHORE_LOCATION_NAME,
+          locationName: OFFSHORE_LOCATION_NAME,
         }),
         periodId: period.id,
         timesheetDate: targetDate,
         supervisorId: targetSupervisor,
         supervisorName: selectedSupervisorProfile ? supervisorDisplay(selectedSupervisorProfile) : targetSupervisor,
         workCenterId,
-        workCenterName: targetWorkCenter,
+        workCenterName: OFFSHORE_LOCATION_NAME,
         status: 'Draft',
         submittedAt: null,
         submittedBy: null,
@@ -1506,17 +1540,44 @@ const buildPayload = async (
         approvedBy: null,
         lastSyncAt: null,
         shiftLabel: targetShiftForSheet,
-        locationName: targetLocation || OFFSHORE_LOCATION_NAME,
-      };
-      persistOffshore = true;
-    } else if (header.workCenterName !== targetWorkCenter || header.locationName !== OFFSHORE_LOCATION_NAME) {
-      header = {
-        ...header,
-        workCenterId,
-        workCenterName: targetWorkCenter,
         locationName: OFFSHORE_LOCATION_NAME,
       };
       persistOffshore = true;
+    } else if (header.locationName !== OFFSHORE_LOCATION_NAME) {
+      header = {
+        ...header,
+        workCenterId,
+        workCenterName: header.workCenterName && !isOffshoreWorkCenterName(header.workCenterName)
+          ? header.workCenterName
+          : OFFSHORE_LOCATION_NAME,
+        locationName: OFFSHORE_LOCATION_NAME,
+      };
+      persistOffshore = true;
+    }
+    if (header && isTimesheetEditableStatus(header.status)) {
+      const siblingHeaders = scopeCandidates.filter((item) => item.id !== header!.id);
+      const merged = mergeDuplicateTimesheetSheetLines({
+        canonical: header,
+        siblings: siblingHeaders,
+        lines: [
+          ...lines,
+          ...allLines.filter((line) => siblingHeaders.some((item) => item.id === line.headerId)),
+        ],
+      });
+      if (merged.siblingWrites.length) {
+        lines = merged.lines;
+        persistOffshore = true;
+        for (const sibling of merged.siblingWrites) {
+          const siblingHeader = headers.find((item) => item.id === sibling.header.id);
+          if (siblingHeader && period.status === 'Open') {
+            try {
+              await writeTimesheetHeaderLines(siblingHeader, sibling.lines);
+            } catch (error) {
+              console.error('Offshore duplicate sheet merge failed:', error);
+            }
+          }
+        }
+      }
     }
     const beforeCount = lines.length;
     lines = sheetMobilizations.length
@@ -1524,19 +1585,50 @@ const buildPayload = async (
       : [];
     if (lines.length !== beforeCount) persistOffshore = true;
     const existingKeys = new Set(lines.flatMap((line) => matchKeys(line.employeeNo, line.employeeId, line.employeeName)));
-    const projectName = sheetMobilizations[0]?.projectName || offshoreProjectCode || targetWorkCenter;
     for (const employee of selectedSupervisorEmployees) {
       const keys = matchKeys(employee.employeeCode, employee.fullName);
-      if (keys.some((key) => existingKeys.has(key))) continue;
+      const mobilization = sheetMobilizations.find((item) =>
+        supervisorCodesMatch(item.employeeCode, employee.employeeCode),
+      );
+      const projectCode = mobilization?.projectCode
+        || ('workCenter' in employee ? clean(employee.workCenter) : '')
+        || offshoreProjectCode;
+      const projectName = mobilization?.projectName || projectCode;
+      if (keys.some((key) => existingKeys.has(key))) {
+        lines = lines.map((line) => {
+          if (!keys.some((key) => matchKeys(line.employeeNo, line.employeeId, line.employeeName).includes(key))) return line;
+          return {
+            ...line,
+            workCenterName: line.workCenterName || projectCode || null,
+          };
+        });
+        continue;
+      }
       persistOffshore = true;
       lines.push(buildManualOffshoreLine({
         headerId: header.id,
         employeeId: employee.employeeId || employee.employeeCode,
         employeeNo: employee.employeeCode,
         employeeName: employee.fullName,
-        projectCode: offshoreProjectCode || sheetMobilizations[0]?.projectCode || '',
+        projectCode,
         projectName,
       }));
+      keys.forEach((key) => existingKeys.add(key));
+    }
+    const offshoreSummary = summarizeTimesheetHeaderWorkCenter(lines.map((line) => line.workCenterName));
+    if (header && offshoreSummary && header.workCenterName !== offshoreSummary && offshoreSummary !== MIXED_TIMESHEET_WORK_CENTER) {
+      header = {
+        ...header,
+        workCenterId: offshoreSummary.toLowerCase().replace(/[^a-z0-9]+/g, '-'),
+        workCenterName: offshoreSummary,
+      };
+      persistOffshore = true;
+    } else if (header && offshoreSummary === MIXED_TIMESHEET_WORK_CENTER) {
+      header = {
+        ...header,
+        workCenterId,
+        workCenterName: OFFSHORE_LOCATION_NAME,
+      };
     }
     if (persistOffshore && period.status === 'Open' && isTimesheetEditableStatus(header.status)) {
       try {
@@ -1636,7 +1728,7 @@ const buildPayload = async (
     supervisorProfile: selectedSupervisorProfile ? employeeSummary(selectedSupervisorProfile) : null,
     suggestedContext: {
       location: targetLocation,
-      workCenter: targetWorkCenter,
+      workCenter: '',
     },
     approvedOvertimeAuthorizations,
     overtimeBooking,
@@ -1679,8 +1771,8 @@ const buildPayload = async (
         workCenterName: targetWorkCenter,
         employeeCodes: selectedSupervisorEmployees.map((employee) => employee.employeeCode),
         message: selectedSupervisorEmployees.length
-          ? `${selectedSupervisorEmployees.length} crew mobilized to ${offshoreProjectCode || targetWorkCenter}. Location OFFSHORE, project ${offshoreProjectCode || targetWorkCenter}. Manual booking, no clock. Type 8h on the project column. 4h offshore allowance is outside payroll.`
-          : `No crew mobilized to ${offshoreProjectCode || targetWorkCenter} for this date. Open Crew Mobilization, mobilize them to this project, then return here and type 8h.`,
+          ? `${selectedSupervisorEmployees.length} crew mobilized offshore. Location OFFSHORE. Project is on each row. Manual booking, no clock. Type 8h on the project column. 4h offshore allowance is outside payroll.`
+          : 'No assigned crew is mobilized offshore for this date. Open Crew Mobilization, mobilize them, then return here and type 8h.',
       }
       : dateMobilizations.length
         ? {
@@ -1688,7 +1780,7 @@ const buildPayload = async (
           projectCode: dateMobilizations[0]?.projectCode || '',
           workCenterName: dateMobilizations[0]?.projectCode || dateMobilizations[0]?.workCenterName || '',
           employeeCodes: dateMobilizations.map((item) => item.employeeCode),
-          message: `${dateMobilizations.length} crew are mobilized offshore today. Open location OFFSHORE and project ${dateMobilizations[0]?.projectCode || ''} to book them.`,
+          message: `${dateMobilizations.length} crew are mobilized offshore today. Open location OFFSHORE to book the people assigned to this supervisor.`,
         }
         : null,
     sameDayBookingConflicts: header
@@ -1864,11 +1956,12 @@ export async function PATCH(request: Request) {
         scopedDate = scoped.timesheetDate;
         scopedSupervisorId = scopedSupervisorId || scoped.filterOptions.supervisors[0];
         scopedLocationName = scopedLocationName || scoped.supervisorProfile?.location || scoped.filterOptions.locations[0];
-        scopedWorkCenterName = scopedWorkCenterName || scoped.header?.workCenterName || scoped.workCenters[0]?.name || '';
+        scopedWorkCenterName = scopedWorkCenterName || scoped.header?.workCenterName || MIXED_TIMESHEET_WORK_CENTER;
       }
-      if (!scopedDate || !scopedSupervisorId || !scopedWorkCenterName) {
-        return err(400, 'Date, supervisor, and work center are required to set shift.');
+      if (!scopedDate || !scopedSupervisorId) {
+        return err(400, 'Date and supervisor are required to set shift.');
       }
+      scopedWorkCenterName = scopedWorkCenterName || MIXED_TIMESHEET_WORK_CENTER;
       await requireOpenPeriod(scopedDate);
       const synced = await syncAttendanceForTimesheet(
         scopedDate,
@@ -1899,12 +1992,15 @@ export async function PATCH(request: Request) {
         scopedDate = scoped.timesheetDate;
         scopedSupervisorId = supervisorId || scoped.filterOptions.supervisors[0];
         scopedLocationName = locationName || scoped.supervisorProfile?.location || scoped.filterOptions.locations[0];
-        scopedWorkCenterName = workCenterName || scoped.header?.workCenterName || scoped.workCenters[0]?.name || '';
+        scopedWorkCenterName = workCenterName || scoped.header?.workCenterName || MIXED_TIMESHEET_WORK_CENTER;
       }
-      if (!scopedDate || !scopedSupervisorId || !scopedWorkCenterName) return err(400, 'Date, supervisor, and work center are required for copy.');
+      if (!scopedDate || !scopedSupervisorId) return err(400, 'Date and supervisor are required for copy.');
+      scopedWorkCenterName = scopedWorkCenterName || MIXED_TIMESHEET_WORK_CENTER;
       await requireOpenPeriod(scopedDate);
       const { headers } = await readTimesheetData();
-      const currentHeader = headers.find(h => h.timesheetDate === scopedDate && h.supervisorId === scopedSupervisorId && h.workCenterName === scopedWorkCenterName);
+      const currentHeader = headers.find(h => h.timesheetDate === scopedDate && (
+        h.supervisorId === scopedSupervisorId || supervisorCodesMatch(h.supervisorId, scopedSupervisorId)
+      ) && (!scopedLocationName || timesheetLocationsMatch(h.locationName, scopedLocationName) || !h.locationName));
       if (currentHeader) requireEditableTimesheet(currentHeader);
       await handleCopyPreviousDay(request, scopedDate, scopedSupervisorId, scopedWorkCenterName, scopedLocationName);
       return ok(await buildPayload(request, scopedDate, scopedSupervisorId, scopedWorkCenterName, scopedLocationName, mode));
@@ -2062,19 +2158,19 @@ export async function PATCH(request: Request) {
         scopedDate = scoped.timesheetDate;
         scopedSupervisorId = supervisorId || scoped.filterOptions.supervisors[0];
         scopedLocationName = locationName || scoped.supervisorProfile?.location || scoped.filterOptions.locations[0];
-        scopedWorkCenterName = workCenterName || scoped.header?.workCenterName || scoped.workCenters[0]?.name || '';
+        scopedWorkCenterName = workCenterName || scoped.header?.workCenterName || MIXED_TIMESHEET_WORK_CENTER;
       }
-      if (!scopedDate || !scopedSupervisorId || !scopedWorkCenterName) return err(400, 'Date, Supervisor ID, and Work Center Name are required.');
+      if (!scopedDate || !scopedSupervisorId) return err(400, 'Date and supervisor are required.');
+      scopedWorkCenterName = scopedWorkCenterName || MIXED_TIMESHEET_WORK_CENTER;
       if (isOffshoreTimesheetContext(scopedLocationName, scopedWorkCenterName)) {
         return err(400, 'Offshore timesheets are booked from the HR mobilization roster. There is no clocking machine — attendance sync is not used.');
       }
       await requireOpenPeriod(scopedDate);
       const existingHeader = headers.find((h) => (
         h.timesheetDate === scopedDate
-        && h.supervisorId === scopedSupervisorId
-        && h.workCenterName === scopedWorkCenterName
+        && (h.supervisorId === scopedSupervisorId || supervisorCodesMatch(h.supervisorId, scopedSupervisorId) || supervisorCodesMatch(h.supervisorName, scopedSupervisorId))
         && timesheetHeaderMatchesShift(h.shiftLabel, shiftLabel || h.shiftLabel || '01 (Day)')
-        && (!scopedLocationName || timesheetLocationsMatch(h.locationName, scopedLocationName))
+        && (!scopedLocationName || timesheetLocationsMatch(h.locationName, scopedLocationName) || !h.locationName)
       ));
       if (existingHeader) requireEditableTimesheet(existingHeader);
       const synced = await syncAttendanceForTimesheet(
@@ -2202,15 +2298,13 @@ export async function PATCH(request: Request) {
         )
         : normalizedLines;
       if (isOffshoreTimesheetContext(header.locationName, header.workCenterName)) {
-        const projectCode = resolveOffshoreProjectCode(header.workCenterName, header.locationName);
         const allowed = (await readTimesheetMobilizations().catch(() => [] as TimesheetMobilization[]))
           .filter((item) => mobilizationCoversDate(item, header.timesheetDate)
-            && mobilizationMatchesOffshoreSheet(item, {
-              supervisorId: header.supervisorId,
-              projectCode,
-              workCenterName: header.workCenterName,
-              crewCodes: [],
-            }));
+            && (
+              isOffshoreLocationName(item.locationName)
+              || isOffshoreWorkCenterName(item.workCenterName)
+              || Boolean(item.projectCode)
+            ));
         const allowedKeys = new Set(allowed.flatMap((item) => matchKeys(item.employeeCode, item.employeeName)));
         persistLines = persistLines.filter((line) => matchKeys(line.employeeNo, line.employeeId, line.employeeName).some((key) => allowedKeys.has(key)));
       }
