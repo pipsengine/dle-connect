@@ -454,9 +454,13 @@ export function TimesheetEntryEnterpriseView(props: TimesheetEnterpriseViewProps
           onSelectColumnProject={props.onSelectColumnProject}
         />
 
-        {resolveTimesheetShift(props.selectedShift).kind === 'Night' && props.canEditTimesheet && props.onAddNightCrew ? (
+        {(props.isOffshoreSheet || resolveTimesheetShift(props.selectedShift).kind === 'Night') && props.canEditTimesheet && props.onAddNightCrew ? (
           <div className="flex flex-wrap items-center gap-2 rounded-[16px] border border-sky-100 bg-sky-50 px-4 py-3">
-            <p className="text-xs font-semibold text-sky-950">Paper N — add someone who worked night without a clock:</p>
+            <p className="text-xs font-semibold text-sky-950">
+              {props.isOffshoreSheet
+                ? 'Add assigned crew to this offshore sheet (no clock). Confirm 8h, then Save Draft:'
+                : 'Paper N — add someone who worked night without a clock:'}
+            </p>
             <select
               defaultValue=""
               onChange={(event) => {
@@ -783,7 +787,15 @@ export function TimesheetEntryEnterpriseView(props: TimesheetEnterpriseViewProps
                     }) : (
                       <tr>
                         <td colSpan={11 + props.matrixColumns.length} className="px-4 py-10 text-center text-sm font-medium text-[#64748B]">
-                          {resolveTimesheetShift(props.selectedShift).kind === 'Night'
+                          {props.isOffshoreSheet ? (
+                            <div className="mx-auto max-w-xl space-y-2">
+                              <p>No crew is mobilized to this offshore project for this date.</p>
+                              <p>
+                                Mobilize them first: <Link href="/hris/workforce-management/crew-mobilization" className="font-bold text-[#2563EB] underline">Crew Mobilization</Link>
+                                {' '}→ project matching this work centre → workers and dates → Mobilize. Then return here, type 8h, Save Draft.
+                              </p>
+                            </div>
+                          ) : resolveTimesheetShift(props.selectedShift).kind === 'Night'
                             ? 'Night only lists people who clocked 18:00–02:00, or who you add here. Use Paper N above to add the person who worked night, type 8h, then Save Draft.'
                             : 'No employees on this timesheet for the selected shift. Switch Day/Night, or open the draft date and work centre from Timesheet Approval.'}
                         </td>

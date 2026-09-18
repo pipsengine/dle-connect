@@ -35,7 +35,7 @@ const roster = resolveOffshoreTimesheetRoster(
   [{ employeeCode: 'C1686', employeeName: 'Micah' }],
   [{ employeeCode: 'C2663', employeeName: 'Jeremiah' }, { employeeCode: 'C1686', employeeName: 'Micah duplicate' }],
 );
-assert.deepEqual(roster.map((item) => item.employeeCode), ['C1686', 'C2663']);
+assert.deepEqual(roster.map((item) => item.employeeCode), ['C1686'], 'mobilized crew wins over extra assigned home crew');
 assert.deepEqual(
   resolveOffshoreTimesheetRoster([], [{ employeeCode: 'C2534' }]).map((item) => item.employeeCode),
   ['C2534'],
@@ -66,12 +66,34 @@ assert.equal(mobilizationMatchesOffshoreSheet(mobilization, {
   supervisorId: 'P0013 - Mr SAMUEL KARONWI',
   projectCode: 'DL2601',
   workCenterName: 'OFFSHORE · DL2601',
-  crewCodes: ['C1686', 'C2663'],
-}), true, 'Samuel can book his assigned crew even when the host supervisor field is Shittu');
+  crewCodes: [],
+}), true, 'DL2601 timesheet lists everyone mobilized to that project, not only the selected host');
 assert.equal(mobilizationMatchesOffshoreSheet(mobilization, {
   supervisorId: 'P0013 - Mr SAMUEL KARONWI',
-  projectCode: 'DL2601',
-  crewCodes: ['C9999'],
+  projectCode: 'DL1811',
+  workCenterName: 'OFFSHORE · DL1811',
+  crewCodes: [],
 }), false);
+
+const dl2601Roster = [
+  { employeeCode: 'C2663', supervisorId: 'C1229 - SHITTU OLAWALE' },
+  { employeeCode: 'C1686', supervisorId: 'C1229 - SHITTU OLAWALE' },
+  { employeeCode: 'C2534', supervisorId: 'C1229 - SHITTU OLAWALE' },
+  { employeeCode: 'C2823', supervisorId: 'C1720 - ADANOU RAYMOND' },
+  { employeeCode: 'C1544', supervisorId: 'P0013 - Mr SAMUEL KARONWI' },
+  { employeeCode: 'C1229', supervisorId: 'P0013 - Mr SAMUEL KARONWI' },
+].map((row, index) => ({
+  ...mobilization,
+  id: `mob-${index + 1}`,
+  employeeCode: row.employeeCode,
+  supervisorId: row.supervisorId,
+}));
+const matched = dl2601Roster.filter((item) => mobilizationMatchesOffshoreSheet(item, {
+  supervisorId: 'P0013 - Mr SAMUEL KARONWI (5)',
+  projectCode: 'DL2601',
+  workCenterName: 'OFFSHORE · DL2601',
+  crewCodes: [],
+}));
+assert.deepEqual(matched.map((item) => item.employeeCode), ['C2663', 'C1686', 'C2534', 'C2823', 'C1544', 'C1229']);
 
 console.log('timesheet-offshore-manual-booking.test.ts: ok');

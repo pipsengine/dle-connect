@@ -224,15 +224,17 @@ const toNormalizedPunches = (punches: BiometricPunchPoint[]): NormalizedPunch[] 
 
 /**
  * Pair raw biometric punches into Day/Night sessions.
- * Night is not calendar min/max: work date D runs from 18:00 on D until 18:00 on D+1.
- * First punch in that window is clock-in; last punch before the next evening start is clock-out.
- * A day-window punch (06:00–18:00) on D means the evening punch is that day's clock-out, not a night in.
+ * Night is not calendar min/max: work date D runs from 18:00 on D until 08:00 on D+1.
+ * First punch in that overnight window is clock-in; last punch before 08:00 is clock-out.
+ * A lone evening punch with no overnight follow-up is that day's clock-out, not a night in.
+ * Next-day 08:00+ punches stay on the day sheet and must not be swallowed by the night window.
  */
 export const pairBiometricPunchesIntoShifts = (punches: BiometricPunchPoint[]): PairedAttendanceShift[] => {
   const unique = toNormalizedPunches(punches);
   if (!unique.length) return [];
   const used = new Set<number>();
   const sessions: PairedAttendanceShift[] = [];
+  const nightOutLatestMinutes = 8 * 60;
 
   const hasDayWindowPunch = (date: string) => unique.some((punch) => (
     punch.date === date
@@ -240,28 +242,36 @@ export const pairBiometricPunchesIntoShifts = (punches: BiometricPunchPoint[]): 
     && punch.minutes < NIGHT_SHIFT_START_MINUTES
   ));
 
+  const isOvernightFollowOn = (start: NormalizedPunch, punch: NormalizedPunch) => {
+    if (punch.epoch <= start.epoch) return false;
+    if (punch.date === start.date) return punch.minutes >= NIGHT_SHIFT_START_MINUTES;
+    return punch.date === addIsoDateDays(start.date, 1) && punch.minutes < nightOutLatestMinutes;
+  };
+
   for (let i = 0; i < unique.length; i += 1) {
     if (used.has(i)) continue;
     const punch = unique[i];
     if (punch.minutes < NIGHT_SHIFT_START_MINUTES) continue;
     if (hasDayWindowPunch(punch.date)) continue;
 
-    const windowEnd = punchEpochSeconds(addIsoDateDays(punch.date, 1), NIGHT_SHIFT_START_MINUTES);
-    const windowIndexes: number[] = [];
-    for (let j = i; j < unique.length; j += 1) {
-      if (unique[j].epoch >= windowEnd) break;
+    const windowIndexes: number[] = [i];
+    for (let j = i + 1; j < unique.length; j += 1) {
+      if (used.has(j)) continue;
+      if (!isOvernightFollowOn(punch, unique[j])) break;
       windowIndexes.push(j);
     }
+    if (windowIndexes.length < 2) continue;
+
     windowIndexes.forEach((index) => used.add(index));
     const clockIn = unique[windowIndexes[0]];
-    const clockOut = windowIndexes.length > 1 ? unique[windowIndexes[windowIndexes.length - 1]] : null;
+    const clockOut = unique[windowIndexes[windowIndexes.length - 1]];
     sessions.push({
       kind: 'Night',
       workDate: punch.date,
       clockIn: clockIn.clock,
-      clockOut: clockOut?.clock ?? null,
+      clockOut: clockOut.clock,
       clockInDate: clockIn.date,
-      clockOutDate: clockOut?.date ?? null,
+      clockOutDate: clockOut.date,
       punchCount: windowIndexes.length,
     });
   }
@@ -273,17 +283,28 @@ export const pairBiometricPunchesIntoShifts = (punches: BiometricPunchPoint[]): 
       .filter(({ punch, index }) => punch.date === date && !used.has(index));
     if (!remaining.length) continue;
     const inEntry = remaining.find(({ punch }) => punch.minutes < NIGHT_SHIFT_START_MINUTES);
-    if (!inEntry) continue;
     const last = remaining[remaining.length - 1];
-    const clockOut = last.index !== inEntry.index ? last.punch : null;
     remaining.forEach(({ index }) => used.add(index));
+    if (inEntry) {
+      const clockOut = last.index !== inEntry.index ? last.punch : null;
+      sessions.push({
+        kind: 'Day',
+        workDate: date,
+        clockIn: inEntry.punch.clock,
+        clockOut: clockOut?.clock ?? null,
+        clockInDate: date,
+        clockOutDate: clockOut ? date : null,
+        punchCount: remaining.length,
+      });
+      continue;
+    }
     sessions.push({
       kind: 'Day',
       workDate: date,
-      clockIn: inEntry.punch.clock,
-      clockOut: clockOut?.clock ?? null,
+      clockIn: TIMESHEET_SHIFTS[0].start,
+      clockOut: last.punch.clock,
       clockInDate: date,
-      clockOutDate: clockOut ? date : null,
+      clockOutDate: date,
       punchCount: remaining.length,
     });
   }

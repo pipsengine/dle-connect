@@ -1024,7 +1024,8 @@ const buildPayload = async (
   const hostMobilizations = dateMobilizations.filter((item) => mobilizationMatchesSupervisor(item, targetSupervisor));
   const scopedWorkCenters = [...workCenters];
   const scopedLocations = [...locations];
-  for (const item of hostMobilizations) {
+  for (const item of dateMobilizations) {
+    if (!isOffshoreWorkCenterName(item.workCenterName)) continue;
     if (!scopedWorkCenters.some((workCenter) => clean(workCenter.name) === item.workCenterName)) {
       scopedWorkCenters.push({
         id: `wc-${item.workCenterName.toLowerCase().replace(/[^a-z0-9]+/g, '-')}`,
@@ -1037,7 +1038,7 @@ const buildPayload = async (
       });
     }
   }
-  if ((hostMobilizations.length || isOffshoreWorkCenterName(targetWorkCenter)) && !scopedLocations.some((location) => clean(location.name) === OFFSHORE_LOCATION_NAME)) {
+  if ((dateMobilizations.some((item) => isOffshoreWorkCenterName(item.workCenterName)) || isOffshoreWorkCenterName(targetWorkCenter)) && !scopedLocations.some((location) => clean(location.name) === OFFSHORE_LOCATION_NAME)) {
     scopedLocations.push({
       id: 'loc-offshore',
       code: 'OFFSHORE',
@@ -1647,7 +1648,11 @@ const buildPayload = async (
         projectCode: offshoreProjectCode,
         workCenterName: targetWorkCenter,
         employeeCodes: selectedSupervisorEmployees.map((employee) => employee.employeeCode),
-        message: `${selectedSupervisorEmployees.length} mobilized crew — manual booking, no clock. Payroll 8h + 1h break. 4h offshore allowance is outside payroll.`,
+        message: selectedSupervisorEmployees.length
+          ? sheetMobilizations.length
+            ? `${sheetMobilizations.length} crew mobilized to ${offshoreProjectCode || targetWorkCenter}. Manual booking, no clock. Type 8h on the project column. 4h offshore allowance is outside payroll.`
+            : `${selectedSupervisorEmployees.length} assigned crew on this offshore sheet — manual booking, no clock. Type 8h on ${offshoreProjectCode || 'the project column'}. 4h offshore allowance is outside payroll.`
+          : `No crew mobilized to ${offshoreProjectCode || targetWorkCenter} for this date. Open Crew Mobilization, mobilize them to this project, then return here and type 8h.`,
       }
       : hostMobilizations.length
         ? {

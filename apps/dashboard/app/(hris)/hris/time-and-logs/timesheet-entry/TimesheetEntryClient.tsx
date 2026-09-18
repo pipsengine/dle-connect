@@ -35,7 +35,7 @@ import {
   validateTimesheetLine,
   type OvertimeAuthorization,
 } from '@/lib/timesheet-overtime-booking';
-import { DAILY_BREAK_HOURS, STANDARD_TIMESHEET_HOURS, DEFAULT_BREAK_IDLE_REASON_ID, DEFAULT_BREAK_IDLE_REASON_NAME, normalizeIdleAllocations, normalizeProjectAllocations, canonicalProjectCode, consolidateProjectAllocationsToPrimary, resolvePrimaryProjectCode, resolveTimesheetHours, attendanceDurationFromClock, reconcileTimesheetLineHours, sumProjectAllocationHours, matrixProductiveHoursCap, upsertMatrixProjectHours, DEFAULT_TIMESHEET_SHIFT_LABEL, resolveTimesheetShift, timesheetHeaderMatchesShift, timesheetLineMatchesShift, applyNightPaperClock, buildRosterTimesheetLine, IDLE_TIME_PROJECT_CODE, IDLE_TIME_PROJECT_NAME, idleTimeProjectHours, productiveProjectHours, isIdleTimeProjectCode, isEditableTimesheetStatus, isTimesheetInApprovalCapture, isManualOffshoreLine, isTimesheetAbsentLine, isOffshoreWorkCenterName, OFFSHORE_ALLOWANCE_HOURS, OFFSHORE_LOCATION_NAME, supervisorTimesheetMessage, resolveAutoDistributeProjectCode, requiresMiscellaneousTimesheetConfirm, dedupeTimesheetLinesByEmployee, markLineAsManualOffshore, canBookTimesheetHoursWithoutClock } from '@/lib/timesheet-entry-shared';
+import { DAILY_BREAK_HOURS, STANDARD_TIMESHEET_HOURS, DEFAULT_BREAK_IDLE_REASON_ID, DEFAULT_BREAK_IDLE_REASON_NAME, normalizeIdleAllocations, normalizeProjectAllocations, canonicalProjectCode, consolidateProjectAllocationsToPrimary, resolvePrimaryProjectCode, resolveTimesheetHours, attendanceDurationFromClock, reconcileTimesheetLineHours, sumProjectAllocationHours, matrixProductiveHoursCap, upsertMatrixProjectHours, DEFAULT_TIMESHEET_SHIFT_LABEL, resolveTimesheetShift, timesheetHeaderMatchesShift, timesheetLineMatchesShift, applyNightPaperClock, buildRosterTimesheetLine, buildManualOffshoreLine, IDLE_TIME_PROJECT_CODE, IDLE_TIME_PROJECT_NAME, idleTimeProjectHours, productiveProjectHours, isIdleTimeProjectCode, isEditableTimesheetStatus, isTimesheetInApprovalCapture, isManualOffshoreLine, isTimesheetAbsentLine, isOffshoreWorkCenterName, OFFSHORE_ALLOWANCE_HOURS, OFFSHORE_LOCATION_NAME, supervisorTimesheetMessage, resolveAutoDistributeProjectCode, requiresMiscellaneousTimesheetConfirm, dedupeTimesheetLinesByEmployee, markLineAsManualOffshore, canBookTimesheetHoursWithoutClock, projectCodeFromOffshoreWorkCenter } from '@/lib/timesheet-entry-shared';
 import { applyTimesheetLineDefaults } from '@/lib/timesheet-line-defaults';
 import { canBookOvertimeOnTimesheet } from '@/lib/timesheet-overtime-config';
 import {
@@ -424,7 +424,9 @@ const workCenterMatchesLocation = (workCenter: Payload['workCenters'][number], l
 
 const workCenterNamesForLocation = (workCenters: Payload['workCenters'], location: string) => {
   const matching = workCenters.filter((workCenter) => workCenterMatchesLocation(workCenter, location)).map((workCenter) => workCenter.name);
-  return matching.length ? matching : workCenters.map((workCenter) => workCenter.name);
+  const offshore = workCenters.filter((workCenter) => isOffshoreWorkCenterName(workCenter.name)).map((workCenter) => workCenter.name);
+  const names = matching.length ? matching : workCenters.map((workCenter) => workCenter.name);
+  return Array.from(new Set([...names, ...offshore]));
 };
 
 type DailyRatePanelRow = {
@@ -526,10 +528,26 @@ export default function TimesheetEntryClient({ variant = 'admin' }: { variant?: 
       const dbLocationNames = data.filterOptions.locations || [];
       hasPayloadRef.current = true;
       setPayload(data);
-      setLocalLines(data.lines);
+      const offshoreSheet = isOffshoreWorkCenterName(workCenter || data.header?.workCenterName || data.suggestedContext?.workCenter);
+      const offshoreProject = projectCodeFromOffshoreWorkCenter(workCenter || data.header?.workCenterName || '')
+        || data.mobilizedCrew?.projectCode
+        || '';
+      const nextLines = (!data.lines.length && offshoreSheet && data.header?.id && (data.supervisorEmployees || []).length)
+        ? (data.supervisorEmployees || []).map((employee) => buildManualOffshoreLine({
+          headerId: data.header!.id,
+          employeeId: employee.employeeId || employee.employeeCode,
+          employeeNo: employee.employeeCode,
+          employeeName: employee.fullName,
+          projectCode: offshoreProject,
+          projectName: offshoreProject,
+        }))
+        : data.lines;
+      setLocalLines(nextLines);
       setWorkCenters(dbWorkCenters);
       setMatrixColumns((current) => {
-        const source = current.length ? current : (data.matrixColumns || []);
+        const incoming = (data.matrixColumns || []).filter((column) => !isIdleTimeProjectCode(column.code));
+        if (incoming.length && (workCenter || headerId || offshoreSheet || !current.length)) return incoming;
+        const source = current.length ? current : incoming;
         return source.filter((column) => !isIdleTimeProjectCode(column.code));
       });
       if (data.header?.timesheetDate) setSelectedDate(data.header.timesheetDate);
@@ -559,12 +577,15 @@ export default function TimesheetEntryClient({ variant = 'admin' }: { variant?: 
       setSelectedWorkCenter((current) => {
         const locationName = location || suggestedLocation || selectedLocation || dbLocationNames[0] || '';
         const dbWorkCenterNames = workCenterNamesForLocation(dbWorkCenters, locationName);
+        if (isOffshoreWorkCenterName(workCenter)) return workCenter;
+        if (isOffshoreWorkCenterName(current) && dbWorkCenterNames.includes(current)) return current;
         if (headerId && data.header?.workCenterName) return data.header.workCenterName;
         if (!workCenter) {
           if (suggestedWorkCenter && dbWorkCenterNames.includes(suggestedWorkCenter)) return suggestedWorkCenter;
           if (data.header?.workCenterName && dbWorkCenterNames.includes(data.header.workCenterName)) return data.header.workCenterName;
           return dbWorkCenterNames[0] || '';
         }
+        if (dbWorkCenterNames.includes(workCenter)) return workCenter;
         if (data.header?.workCenterName && dbWorkCenterNames.includes(data.header.workCenterName)) return data.header.workCenterName;
         if (current && dbWorkCenterNames.includes(current)) return current;
         if (suggestedWorkCenter && dbWorkCenterNames.includes(suggestedWorkCenter)) return suggestedWorkCenter;
@@ -1344,17 +1365,31 @@ export default function TimesheetEntryClient({ variant = 'admin' }: { variant?: 
       || String(line.employeeName || '').trim().toLowerCase() === String(crew.fullName || '').trim().toLowerCase(),
     );
     if (already) {
-      setNotice(`${crew.fullName} is already on this night timesheet.`);
+      setNotice(`${crew.fullName} is already on this timesheet.`);
       return;
     }
-    const nextLine = buildRosterTimesheetLine({
-      headerId: payload.header.id,
-      employeeId: crew.employeeId || crew.employeeCode,
-      employeeNo: crew.employeeCode,
-      employeeName: crew.fullName,
-    });
+    const offshoreProject = projectCodeFromOffshoreWorkCenter(selectedWorkCenter || payload.header.workCenterName)
+      || payload.mobilizedCrew?.projectCode
+      || '';
+    const nextLine = isOffshoreSheet
+      ? buildManualOffshoreLine({
+        headerId: payload.header.id,
+        employeeId: crew.employeeId || crew.employeeCode,
+        employeeNo: crew.employeeCode,
+        employeeName: crew.fullName,
+        projectCode: offshoreProject,
+        projectName: offshoreProject,
+      })
+      : buildRosterTimesheetLine({
+        headerId: payload.header.id,
+        employeeId: crew.employeeId || crew.employeeCode,
+        employeeNo: crew.employeeCode,
+        employeeName: crew.fullName,
+      });
     setLocalLines((current) => [...current, nextLine]);
-    setNotice(`${crew.fullName} added. Type 8h on the project column and save.`);
+    setNotice(isOffshoreSheet
+      ? `${crew.fullName} added. Confirm 8h on ${offshoreProject || 'the project column'} and Save Draft.`
+      : `${crew.fullName} added. Type 8h on the project column and save.`);
   };
 
   const handleClearAllProjects = () => {

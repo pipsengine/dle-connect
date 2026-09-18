@@ -81,4 +81,20 @@ assert(
   'Salaried biometric duration still caps productive hours',
 );
 
+const ojika = pairBiometricPunchesIntoShifts([
+  { date: '2026-08-17', time: '08:33' },
+  { date: '2026-08-17', time: '18:28' },
+  { date: '2026-08-18', time: '18:04' },
+  { date: '2026-08-19', time: '18:55' },
+  { date: '2026-08-20', time: '08:46' },
+  { date: '2026-08-20', time: '17:53' },
+]);
+const ojika18 = ojika.find((session) => session.workDate === '2026-08-18' && session.kind === 'Day');
+const ojika19 = ojika.find((session) => session.workDate === '2026-08-19' && session.kind === 'Day');
+const ojika20 = ojika.find((session) => session.workDate === '2026-08-20' && session.kind === 'Day');
+assert(ojika18?.clockIn === '08:00' && ojika18.clockOut === '18:04', 'Missing morning punch on 18th is a day out, not absent');
+assert(ojika19?.clockIn === '08:00' && ojika19.clockOut === '18:55', 'Lone 18:55 on 19th stays on the day sheet');
+assert(ojika20?.clockIn === '08:46' && ojika20.clockOut === '17:53', '20th day punches must not be swallowed by the 19th evening punch');
+assert(!ojika.some((session) => session.kind === 'Night' && ['2026-08-18', '2026-08-19', '2026-08-20'].includes(session.workDate)), 'Agege day worker evening outs are not night shifts');
+
 console.log('sequential pairing checks passed');

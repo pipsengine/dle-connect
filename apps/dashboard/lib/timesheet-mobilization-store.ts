@@ -3,6 +3,7 @@ import { getDleEnterpriseDbPool } from '@/lib/dle-enterprise-db';
 import {
   OFFSHORE_LOCATION_NAME,
   offshoreWorkCenterName,
+  timesheetWorkCentersMatch,
 } from '@/lib/timesheet-entry-shared';
 import { supervisorCodesMatch } from '@/lib/timesheet-agege-blasting';
 
@@ -134,23 +135,23 @@ export const mobilizationMatchesOffshoreSheet = (
 ) => {
   const projectCode = clean(input.projectCode).toUpperCase();
   const workCenterName = clean(input.workCenterName);
-  const projectMatch = !projectCode
-    || item.projectCode === projectCode
-    || Boolean(workCenterName && item.workCenterName === workCenterName);
-  if (!projectMatch) return false;
+  const workCenterMatch = Boolean(workCenterName) && timesheetWorkCentersMatch(item.workCenterName, workCenterName);
+  if (projectCode && item.projectCode === projectCode) return true;
+  if (workCenterMatch) return true;
+  if (projectCode || workCenterName) return false;
   if (mobilizationMatchesSupervisor(item, input.supervisorId)) return true;
   const crew = new Set((input.crewCodes || []).map((code) => clean(code).toLowerCase()).filter(Boolean));
   return crew.has(item.employeeCode.toLowerCase());
 };
 
-/** Offshore sheets list mobilized crew plus the supervisor's assigned people so booking is never empty. */
+/** Prefer people actually mobilized to this offshore project; only use assigned home crew when none are. */
 export const resolveOffshoreTimesheetRoster = <T extends { employeeCode?: string | null }>(
   mobilizedCrew: T[],
   assignedCrew: T[],
 ) => {
   const seen = new Set<string>();
   const roster: T[] = [];
-  for (const row of [...mobilizedCrew, ...assignedCrew]) {
+  for (const row of (mobilizedCrew.length ? mobilizedCrew : assignedCrew)) {
     const key = String(row.employeeCode || '').trim().toLowerCase();
     if (!key || seen.has(key)) continue;
     seen.add(key);
