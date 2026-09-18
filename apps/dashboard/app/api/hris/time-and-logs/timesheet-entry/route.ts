@@ -201,6 +201,7 @@ type TimesheetPayload = {
     count: number;
     projectCode: string;
     workCenterName: string;
+    employeeCodes: string[];
     message: string;
   } | null;
   sameDayBookingConflicts: TimesheetAlreadyBookedSkip[];
