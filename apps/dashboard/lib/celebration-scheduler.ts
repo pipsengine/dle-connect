@@ -21,7 +21,7 @@ export const getCelebrationSchedulerStatus = () => ({
 
 const withinSendWindow = (now = new Date()) => now.getHours() >= SEND_AFTER_HOUR;
 
-export const runCelebrationSchedulerTick = async (input?: { force?: boolean }) => {
+export const runCelebrationSchedulerTick = async (input?: { force?: boolean; resend?: boolean }) => {
   if (tickInFlight) {
     return { tickSkipped: true as const, reason: 'Tick already in progress.' };
   }
@@ -36,7 +36,7 @@ export const runCelebrationSchedulerTick = async (input?: { force?: boolean }) =
   tickInFlight = true;
   lastTickAt = new Date().toISOString();
   try {
-    const result = await processDailyCelebrationEmails({ force: input?.force });
+    const result = await processDailyCelebrationEmails({ force: input?.force, resend: input?.resend });
     lastTickSummary = result.skipped
       ? `${result.reason} honorees=${result.honorees} sent=${result.sent}`
       : `honorees=${result.honorees} sent=${result.sent} failed=${result.failed} remaining=${result.remaining}`;

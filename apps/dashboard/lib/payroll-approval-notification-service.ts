@@ -27,6 +27,7 @@ import {
   PAYROLL_NAMED_CFO_CODES,
   PAYROLL_NAMED_MD_CEO_CODES,
 } from '@/lib/payroll-acting-approvers';
+import { isProtectedGlobalSuperAdminIdentity } from '@/lib/auth/protected-global-admin';
 import type { UnifiedPayrollRun } from '@/lib/payroll-run-store';
 import type { PayrollSessionRole } from '@/lib/payroll-session';
 
@@ -34,17 +35,21 @@ const compact = (value: unknown) => String(value || '').trim();
 const lower = (value: unknown) => compact(value).toLowerCase();
 
 const STAGE_ROLE_PATTERNS: Record<Exclude<PayrollApprovalStageId, 'payroll-officer'>, RegExp[]> = {
-  'hr-manager': [/hr manager/i, /hr director/i, /hr administrator/i],
+  'hr-manager': [/hr manager/i, /hr director/i],
   'finance-manager': [/finance manager/i, /finance controller/i, /finance payroll reviewer/i],
   cfo: [/\bcfo\b/i, /chief financial/i],
-  'md-ceo': [/executive director/i, /executive management/i, /\bceo\b/i, /\bmd\b/i, /managing director/i],
+  'md-ceo': [/\bmanaging director\b/i, /\bchief executive officer\b/i],
 };
 
 const STAGE_JOB_TITLE_PATTERNS: Partial<Record<Exclude<PayrollApprovalStageId, 'payroll-officer'>, RegExp[]>> = {
+  'hr-manager': [/hr manager/i, /head of human resources/i, /head of hr\b/i],
+  'finance-manager': [/finance manager/i, /financial controller/i],
   cfo: [/\bcfo\b/i, /chief financial officer/i],
-  // Avoid matching "PA to MD/CEO" and similar support titles.
-  'md-ceo': [/managing director/i, /executive director/i, /chief executive officer/i],
+  // Avoid matching "PA to MD/CEO", Executive Director as a bundled admin role, and similar titles.
+  'md-ceo': [/managing director/i, /chief executive officer/i],
 };
+
+const PLATFORM_ADMIN_ROLE = /super administrator|system administrator|application administrator/i;
 
 const STAGE_NAMED_CODES: Partial<Record<Exclude<PayrollApprovalStageId, 'payroll-officer'>, readonly string[]>> = {
   'finance-manager': PAYROLL_ACTING_FINANCE_MANAGER_CODES,
@@ -88,25 +93,31 @@ const systemSessionFor = (recipient: ApproverRecipient): SessionPayload => ({
   exp: Math.floor(Date.now() / 1000) + 3600,
 });
 
+export const userMatchesPayrollApproverStage = (
+  user: { id?: string; username?: string; employeeCode?: string; employeeId?: string; roles?: string[]; jobTitle?: string; isGlobalAdmin?: boolean },
+  stageId: PayrollApprovalStageId,
+) => {
+  if (stageId === 'payroll-officer') return false;
+  const code = compact(user.employeeCode || user.employeeId || user.username).toUpperCase();
+  const namedCodes = STAGE_NAMED_CODES[stageId] || [];
+  if (code && namedCodes.some((item) => item === code)) return true;
+
+  const jobTitle = compact(user.jobTitle);
+  const jobPatterns = STAGE_JOB_TITLE_PATTERNS[stageId] || [];
+  if (jobTitle && jobPatterns.some((pattern) => pattern.test(jobTitle))) return true;
+
+  if (user.isGlobalAdmin || isProtectedGlobalSuperAdminIdentity(user) || (user.roles || []).some((role) => PLATFORM_ADMIN_ROLE.test(role))) {
+    return false;
+  }
+
+  const roleText = (user.roles || []).join(' ');
+  return (STAGE_ROLE_PATTERNS[stageId] || []).some((pattern) => pattern.test(roleText));
+};
+
 export const resolvePayrollApproverRecipients = async (stageId: PayrollApprovalStageId): Promise<ApproverRecipient[]> => {
   if (stageId === 'payroll-officer') return [];
   const users = await readUsers();
-  const patterns = STAGE_ROLE_PATTERNS[stageId];
-  const matches = users.filter((user) => {
-    const roleText = user.roles.join(' ');
-    const byRole = patterns.some((pattern) => pattern.test(roleText));
-    if (byRole) return true;
-
-    const code = compact(user.employeeCode || user.employeeId || user.username).toUpperCase();
-    const namedCodes = STAGE_NAMED_CODES[stageId] || [];
-    if (namedCodes.some((item) => item === code)) return true;
-
-    const jobTitle = compact((user as { jobTitle?: string }).jobTitle);
-    const jobPatterns = STAGE_JOB_TITLE_PATTERNS[stageId] || [];
-    if (jobTitle && jobPatterns.some((pattern) => pattern.test(jobTitle))) return true;
-
-    return false;
-  });
+  const matches = users.filter((user) => userMatchesPayrollApproverStage(user, stageId));
   const withEmail = matches
     .map((user) => ({
       id: user.id,
@@ -282,13 +293,14 @@ export const notifyPayrollApprovalStage = async (input: {
       href: authorizeApproveUrl,
       actor: input.actor || 'Payroll Workflow',
       channels: ['In-App', 'Email'],
-      recipientRoles: recipient.roles,
+      recipientRoles: [],
       recipientEmployeeCode: recipient.username,
       metadata: {
         runId: input.run.id,
         period: input.run.period,
         pack: input.run.pack || '',
         stageId: input.stageId,
+        audience: 'named-recipient',
       },
     });
     notified += 1;
@@ -399,12 +411,13 @@ export const notifyPayrollFullyApproved = async (input: {
       href: bankScheduleDownloadUrl,
       actor: input.actor || 'Payroll Workflow',
       channels: ['In-App', 'Email'],
-      recipientRoles: recipient.roles,
+      recipientRoles: [],
       recipientEmployeeCode: recipient.username,
       metadata: {
         runId: input.run.id,
         period: input.run.period,
         bankScheduleDownloadUrl,
+        audience: 'named-recipient',
       },
     });
     notified += 1;
@@ -537,15 +550,55 @@ export const notifyPayrollClarificationComment = async (input: {
       href,
       actor: input.actorName,
       channels: ['In-App'],
-      recipientRoles: recipient.roles,
+      recipientRoles: [],
       recipientEmployeeCode: recipient.username,
       metadata: {
         period: input.period,
         event: 'clarification-comment',
         runId: run?.id || '',
+        audience: 'named-recipient',
       },
     });
     notified += 1;
   }
   return { notified };
+};
+
+const PAYROLL_FLOW_STAGES: Exclude<PayrollApprovalStageId, 'payroll-officer'>[] = [
+  'hr-manager',
+  'finance-manager',
+  'cfo',
+  'md-ceo',
+];
+
+export const listPayrollApprovalFlowRecipientCodes = async () => {
+  const codes = new Set<string>([
+    ...PAYROLL_NAMED_MD_CEO_CODES,
+    ...PAYROLL_NAMED_CFO_CODES,
+    ...PAYROLL_ACTING_FINANCE_MANAGER_CODES,
+  ].map((code) => compact(code).toUpperCase()).filter(Boolean));
+
+  for (const stage of PAYROLL_FLOW_STAGES) {
+    for (const recipient of await resolvePayrollApproverRecipients(stage)) {
+      const code = compact(recipient.username).toUpperCase();
+      if (code) codes.add(code);
+    }
+  }
+
+  const users = await readUsers();
+  for (const user of users) {
+    if (user.isGlobalAdmin || isProtectedGlobalSuperAdminIdentity(user) || user.roles.some((role) => PLATFORM_ADMIN_ROLE.test(role))) {
+      continue;
+    }
+    if (!user.roles.some((role) => /payroll officer|payroll supervisor/i.test(role))) continue;
+    const code = compact(user.employeeCode || user.employeeId || user.username).toUpperCase();
+    if (code) codes.add(code);
+  }
+  return codes;
+};
+
+export const repairPayrollApprovalNotificationPrivacy = async () => {
+  const { purgeLeakedPayrollApprovalNotifications } = await import('@/lib/enterprise-notifications-store');
+  const allowed = await listPayrollApprovalFlowRecipientCodes();
+  return purgeLeakedPayrollApprovalNotifications(allowed);
 };

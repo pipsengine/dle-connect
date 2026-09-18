@@ -11,4 +11,12 @@ export async function registerNodeInstrumentation() {
   ensurePayrollReminderSchedulerStarted();
   const { ensureCelebrationSchedulerStarted } = await import('@/lib/celebration-scheduler');
   ensureCelebrationSchedulerStarted();
+  void import('@/lib/payroll-approval-notification-service')
+    .then(({ repairPayrollApprovalNotificationPrivacy }) => repairPayrollApprovalNotificationPrivacy())
+    .then((result) => {
+      if (result.removed || result.stripped) {
+        console.info('[instrumentation] Purged leaked payroll approval notifications.', result);
+      }
+    })
+    .catch((error) => console.warn('[instrumentation] Payroll notification privacy repair skipped.', error));
 }

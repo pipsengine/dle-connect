@@ -550,7 +550,10 @@ export function EssCelebrationWishWall({
               onSubmit={async (event) => {
                 event.preventDefault();
                 const ok = await onSubmit(draft.trim());
-                if (ok !== false) setDraft('');
+                if (ok === true) {
+                  setDraft('');
+                  onClose();
+                }
               }}
               className="space-y-2"
             >

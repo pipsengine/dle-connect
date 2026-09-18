@@ -9,8 +9,10 @@ import {
   celebrationWishPortalPath,
   findCelebrationMoment,
   listTodaysCelebrationMoments,
+  prettyPersonName,
 } from './celebration-moments.ts';
 import { remainingCelebrationRecipients, type CelebrationSendLedger } from './celebration-wish-store.ts';
+import { buildFallbackCelebrationCopy } from './celebration-copy.ts';
 import { buildCelebrationEmail } from './celebration-email.ts';
 
 const people = [
@@ -90,18 +92,30 @@ assert.deepEqual(
   ['ben@example.com'],
 );
 
+assert.equal(prettyPersonName('CHINAECHEREM STEPHEN-EHIRIM'), 'Chinaecherem Stephen-Ehirim');
+
+const copy = buildFallbackCelebrationCopy(moments);
+assert.match(copy.byKey['birthday:P100'].colleagueMessage, /Ada/);
+assert.match(copy.byKey['anniversary:L200'].colleagueMessage, /Ben/);
+assert.match(copy.byKey['anniversary:L200'].colleagueMessage, /5/);
+
 const mail = buildCelebrationEmail({
   moments,
   recipient: people[3],
   recipientName: 'Ife',
   baseUrl: 'https://dleconnect.dormanlongeng.com:1432',
   photoCids: ['celeb-photo-P100'],
+  copy,
 });
 assert.match(mail.subject, /Birthdays and work anniversaries/);
 assert.match(mail.html, /cid:celeb-photo-P100/);
 assert.match(mail.html, /celebrate=P100/);
-assert.match(mail.html, /Wish Ada/);
-assert.match(mail.html, /Wish Ben/);
-assert.match(mail.text, /Send a wish in DLE Connect/);
+assert.match(mail.html, /Send a birthday wish/);
+assert.match(mail.html, /Send an anniversary wish/);
+assert.match(mail.html, /Happy Birthday, Ada/);
+assert.match(mail.html, /Year/);
+assert.match(mail.text, /Hello Ife/);
+assert.equal(mail.html.includes('Open the workforce portal to send a wish'), false);
+assert.equal(mail.html.includes('Send a wish in DLE Connect'), false);
 
 console.log('celebration-moments.test.ts ok');

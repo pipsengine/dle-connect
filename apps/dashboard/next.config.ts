@@ -14,6 +14,7 @@ const nextConfig: NextConfig = {
     'native-duplexpair',
     'mysql2',
     'xlsx',
+    '@google/genai',
   ],
   // Starts the DLE backup scheduler via apps/dashboard/instrumentation.ts
   // (Next.js loads instrumentation automatically when this file is present).
@@ -45,7 +46,7 @@ const nextConfig: NextConfig = {
       };
     }
     const externals = config.externals || [];
-    config.externals = Array.isArray(externals) ? [...externals, 'xlsx'] : [externals, 'xlsx'];
+    config.externals = Array.isArray(externals) ? [...externals, 'xlsx', '@google/genai'] : [externals, 'xlsx', '@google/genai'];
     return config;
   },
 };

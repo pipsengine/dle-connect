@@ -30,6 +30,20 @@ export type CelebrationMoment = {
 
 const compact = (value: unknown) => String(value || '').trim();
 
+/** HRIS often stores names in ALL CAPS; emails and flyers should read as proper names. */
+export const prettyPersonName = (value: unknown) => {
+  const raw = compact(value).replace(/\s+/g, ' ');
+  if (!raw) return '';
+  const letters = raw.replace(/[^A-Za-z]/g, '');
+  const upperRatio = letters
+    ? [...letters].filter((char) => char === char.toUpperCase() && char !== char.toLowerCase()).length / letters.length
+    : 0;
+  if (upperRatio < 0.72) return raw;
+  return raw
+    .toLowerCase()
+    .replace(/(^|[\s'-])([a-z])/g, (_, prefix: string, letter: string) => `${prefix}${letter.toUpperCase()}`);
+};
+
 export const todayIsoLocal = (now = new Date()) => {
   const y = now.getFullYear();
   const m = String(now.getMonth() + 1).padStart(2, '0');
@@ -59,12 +73,12 @@ export const codesMatch = (left?: string | null, right?: string | null) => {
 };
 
 export const displayFirstName = (person: Pick<CelebrationDirectoryPerson, 'firstName' | 'preferredName' | 'fullName'>) => {
-  const preferred = compact(person.preferredName);
+  const preferred = prettyPersonName(person.preferredName);
   if (preferred) return preferred.split(/\s+/)[0];
-  const first = compact(person.firstName);
+  const first = prettyPersonName(person.firstName);
   if (first) return first.split(/\s+/)[0];
-  const parts = compact(person.fullName).split(/\s+/).filter(Boolean);
-  return parts[0] || compact(person.fullName) || 'Colleague';
+  const parts = prettyPersonName(person.fullName).split(/\s+/).filter(Boolean);
+  return parts[0] || prettyPersonName(person.fullName) || 'Colleague';
 };
 
 export const initialsForName = (name: string) =>
@@ -111,7 +125,7 @@ const toMoment = (
   today: string,
   years?: number,
 ): CelebrationMoment | null => {
-  const fullName = compact(person.fullName);
+  const fullName = prettyPersonName(person.fullName);
   const employeeId = compact(person.employeeId);
   const employeeCode = compact(person.employeeCode || person.employeeId);
   if (!fullName || !employeeCode) return null;
@@ -119,7 +133,7 @@ const toMoment = (
     id: `${kind === 'birthday' ? 'dateOfBirth' : 'dateJoined'}-${employeeId || employeeCode}-${today}`,
     kind,
     fullName,
-    firstName: displayFirstName(person),
+    firstName: displayFirstName({ ...person, fullName }),
     department: compact(person.department) || 'Dorman Long',
     date: today,
     years,
@@ -256,11 +270,11 @@ export const celebrationEmailIntro = (
   }
   const names = joinNames(moments.map((item) => item.firstName));
   if (moments.length === 1 && moments[0].kind === 'birthday') {
-    return `Join us in wishing ${moments[0].fullName} a fantastic birthday today.`;
+    return `Join us in wishing ${moments[0].fullName} a wonderful birthday. The Dorman Long family is celebrating today.`;
   }
   if (moments.length === 1 && moments[0].kind === 'anniversary') {
     const years = moments[0].years || 1;
-    return `Celebrate ${moments[0].fullName} for ${years} year${years === 1 ? '' : 's'} of service with Dorman Long.`;
+    return `Today we honour ${moments[0].fullName} for ${years} year${years === 1 ? '' : 's'} of dedicated service with Dorman Long Engineering.`;
   }
-  return `Today we celebrate ${names}. Open the workforce portal to send a wish.`;
+  return `Today we celebrate ${names} across Dorman Long Engineering. Please take a moment to send your wishes.`;
 };

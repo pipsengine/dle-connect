@@ -186,6 +186,30 @@ export const beginCelebrationSendDay = async (input: {
   return ledger;
 });
 
+export const resetCelebrationSendDay = async (date: string) => withStoreLock(async () => {
+  const store = await readStore();
+  const day = compact(date).slice(0, 10);
+  let ledger = store.sendLedger.find((item) => item.date === day);
+  if (!ledger) {
+    ledger = {
+      date: day,
+      honoreeKeys: [],
+      recipientEmailsSent: [],
+      sentCount: 0,
+      failedCount: 0,
+    };
+    store.sendLedger.push(ledger);
+  } else {
+    ledger.recipientEmailsSent = [];
+    ledger.sentCount = 0;
+    ledger.failedCount = 0;
+    delete ledger.completedAt;
+    delete ledger.lastError;
+  }
+  await writeStore(store);
+  return ledger;
+});
+
 export const recordCelebrationSendProgress = async (input: {
   date: string;
   sentEmails?: string[];

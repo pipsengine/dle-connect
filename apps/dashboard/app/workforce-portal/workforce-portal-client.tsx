@@ -3,7 +3,7 @@
 /* eslint-disable react-hooks/exhaustive-deps */
 import Image from 'next/image';
 import Link from 'next/link';
-import { useSearchParams } from 'next/navigation';
+import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
 import EmployeeAvatar from '@/components/hris/EmployeeAvatar';
 import { EnterpriseUserProfile } from '@hris/components/layout/enterprise-user-profile';
@@ -1344,6 +1344,9 @@ function InfoListLike({ title, rows, keys }: { title: string; rows: SimpleRecord
 
 export default function WorkforcePortalClient({ initialNow }: { initialNow: string }) {
   const searchParams = useSearchParams();
+  const router = useRouter();
+  const pathname = usePathname();
+  const skipCelebrateOpenRef = useRef(false);
   const [payload, setPayload] = useState<Payload | null>(null);
   const [tab, setTab] = useState<Tab>('dashboard');
   const [locale, setLocale] = useState('en-NG');
@@ -1442,6 +1445,7 @@ export default function WorkforcePortalClient({ initialNow }: { initialNow: stri
     setInternshipReviewId(requestedInternshipId);
     setInternshipAction(requestedInternshipAction);
     if (requestedCelebrate) {
+      if (skipCelebrateOpenRef.current) return;
       setWishCode(requestedCelebrate);
       setWishKind(requestedCelebrateKind);
       setWishOpen(true);
@@ -1752,29 +1756,29 @@ export default function WorkforcePortalClient({ initialNow }: { initialNow: stri
   const openWish = (person: { employeeCode?: string; employeeId?: string; kind?: string }) => {
     const code = String(person.employeeCode || person.employeeId || '').trim();
     if (!code) return;
+    skipCelebrateOpenRef.current = false;
     setWishCode(code);
     setWishKind(person.kind || null);
     setWishError('');
     setWishOpen(true);
-    if (typeof window !== 'undefined') {
-      const url = new URL(window.location.href);
-      url.searchParams.set('celebrate', code);
-      if (person.kind) url.searchParams.set('kind', person.kind);
-      else url.searchParams.delete('kind');
-      window.history.replaceState({}, '', url);
-    }
+    const params = new URLSearchParams(searchParams.toString());
+    params.set('celebrate', code);
+    if (person.kind) params.set('kind', person.kind);
+    else params.delete('kind');
+    const qs = params.toString();
+    router.replace(qs ? `${pathname}?${qs}` : pathname, { scroll: false });
   };
 
   const closeWish = () => {
+    skipCelebrateOpenRef.current = true;
     setWishOpen(false);
     setWishError('');
-    if (typeof window !== 'undefined') {
-      const url = new URL(window.location.href);
-      url.searchParams.delete('celebrate');
-      url.searchParams.delete('kind');
-      url.searchParams.delete('celebrateDate');
-      window.history.replaceState({}, '', url);
-    }
+    const params = new URLSearchParams(searchParams.toString());
+    params.delete('celebrate');
+    params.delete('kind');
+    params.delete('celebrateDate');
+    const qs = params.toString();
+    router.replace(qs ? `${pathname}?${qs}` : pathname, { scroll: false });
   };
 
   const submitWish = async (message: string) => {
@@ -1806,6 +1810,7 @@ export default function WorkforcePortalClient({ initialNow }: { initialNow: stri
       if (!res.ok || json.status !== 'success') throw new Error(json.error || 'Unable to post this wish.');
       setCelebrationWishes(json.data?.wishes || []);
       setToast(json.data?.message || 'Wish posted.');
+      closeWish();
       return true;
     } catch (err) {
       setWishError(err instanceof Error ? err.message : 'Unable to post this wish.');

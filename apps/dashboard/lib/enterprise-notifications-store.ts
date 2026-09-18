@@ -142,6 +142,20 @@ const writeStore = async (store: NotificationFile) => {
   return false;
 };
 
+/** Roles that nearly every account has. Never use them as a notification broadcast. */
+const GENERIC_NOTIFICATION_ROLES = new Set([
+  'employee',
+  'manager',
+  'supervisor',
+  'department head',
+  'executive user',
+  'read-only user',
+  'auditor',
+]);
+
+const isPayrollConfidentialNotification = (item: Pick<EnterpriseNotification, 'module'>) =>
+  compact(item.module).toLowerCase() === 'payroll management';
+
 const ownerMatches = (item: EnterpriseNotification, session: SessionPayload) => {
   const sessionKeys = new Set([
     normalizeRecipientKey(session.sub),
@@ -157,8 +171,42 @@ const ownerMatches = (item: EnterpriseNotification, session: SessionPayload) => 
   ].filter(Boolean));
 
   if ([...sessionKeys].some((key) => recipientKeys.has(key))) return true;
-  if (item.recipientRoles.some((role) => session.roles.map((entry) => entry.toLowerCase()).includes(role.toLowerCase()))) return true;
+  // Payroll figures and approval actions are person-addressed only.
+  if (isPayrollConfidentialNotification(item)) return false;
+  const specificRoles = item.recipientRoles.filter((role) => !GENERIC_NOTIFICATION_ROLES.has(role.toLowerCase()));
+  if (specificRoles.some((role) => session.roles.map((entry) => entry.toLowerCase()).includes(role.toLowerCase()))) return true;
   return false;
+};
+
+export const notificationBelongsToSession = ownerMatches;
+
+export const isLeakedPayrollApprovalNotification = (
+  item: EnterpriseNotification,
+  allowedRecipientCodes: Set<string>,
+) => {
+  if (!isPayrollConfidentialNotification(item)) return false;
+  const approvalItem = /payroll approval required/i.test(item.title)
+    || /payroll approval reminder/i.test(compact(item.actor));
+  if (!approvalItem) return false;
+  const recipient = normalizeRecipientKey(item.recipientEmployeeCode || item.recipientUsername || item.recipientUserId);
+  if (!recipient) return true;
+  return !allowedRecipientCodes.has(recipient);
+};
+
+export const purgeLeakedPayrollApprovalNotifications = async (allowedRecipientCodes: Set<string>) => {
+  const store = await readStore();
+  const before = store.notifications.length;
+  let stripped = 0;
+  store.notifications = store.notifications
+    .filter((item) => !isLeakedPayrollApprovalNotification(item, allowedRecipientCodes))
+    .map((item) => {
+      if (!isPayrollConfidentialNotification(item) || !item.recipientRoles.length) return item;
+      stripped += 1;
+      return { ...item, recipientRoles: [] };
+    });
+  const removed = before - store.notifications.length;
+  if (removed > 0 || stripped > 0) await writeStore(store);
+  return { removed, stripped, remaining: store.notifications.length };
 };
 
 const sessionOverrideKeys = (session: SessionPayload) =>
@@ -216,7 +264,25 @@ export const computeNotificationCounts = (items: EnterpriseNotification[]): Noti
   };
 };
 
+let payrollPrivacyPurged = false;
+
+const ensurePayrollNotificationPrivacy = async () => {
+  if (payrollPrivacyPurged) return;
+  payrollPrivacyPurged = true;
+  try {
+    const { repairPayrollApprovalNotificationPrivacy } = await import('@/lib/payroll-approval-notification-service');
+    const result = await repairPayrollApprovalNotificationPrivacy();
+    if (result.removed || result.stripped) {
+      console.info('[enterprise-notifications] Removed leaked payroll approval notifications.', result);
+    }
+  } catch (error) {
+    payrollPrivacyPurged = false;
+    console.warn('[enterprise-notifications] Payroll privacy purge skipped.', error);
+  }
+};
+
 export const listEnterpriseNotifications = async (session: SessionPayload, scope: NotificationScope = 'all') => {
+  await ensurePayrollNotificationPrivacy();
   const store = await purgePersistentSeeds(session);
   const items = store.notifications
     .filter((item) => ownerMatches(item, session))

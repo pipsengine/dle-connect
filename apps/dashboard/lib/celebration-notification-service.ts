@@ -6,6 +6,7 @@ import {
   todayIsoLocal,
   type CelebrationMoment,
 } from '@/lib/celebration-moments';
+import { generateCelebrationFlyerCopy } from '@/lib/celebration-copy';
 import { buildCelebrationEmail } from '@/lib/celebration-email';
 import {
   beginCelebrationSendDay,
@@ -13,10 +14,10 @@ import {
   readCelebrationSendLedger,
   recordCelebrationSendProgress,
   remainingCelebrationRecipients,
+  resetCelebrationSendDay,
 } from '@/lib/celebration-wish-store';
 import {
   employeeEmailAddress,
-  resolveEmployeeMailbox,
   resolveMailProvider,
   sendTransactionalEmail,
 } from '@/lib/mail-service';
@@ -74,9 +75,9 @@ const loadPhotoAttachments = async (moments: CelebrationMoment[]) => {
 };
 
 const mailboxFor = async (employee: DleEmployeeDirectoryRow) =>
-  employeeEmailAddress(employee) || resolveEmployeeMailbox(employee);
+  employeeEmailAddress(employee);
 
-export const processDailyCelebrationEmails = async (input?: { date?: string; force?: boolean }) => {
+export const processDailyCelebrationEmails = async (input?: { date?: string; force?: boolean; resend?: boolean }) => {
   const date = compact(input?.date).slice(0, 10) || todayIsoLocal();
   if (!resolveMailProvider()) {
     return { skipped: true as const, reason: 'Mail provider not configured.', date, honorees: 0, sent: 0, failed: 0 };
@@ -88,6 +89,10 @@ export const processDailyCelebrationEmails = async (input?: { date?: string; for
     await beginCelebrationSendDay({ date, honoreeKeys: [] });
     await recordCelebrationSendProgress({ date, completed: true });
     return { skipped: true as const, reason: 'No birthdays or anniversaries today.', date, honorees: 0, sent: 0, failed: 0 };
+  }
+
+  if (input?.resend) {
+    await resetCelebrationSendDay(date);
   }
 
   const existing = await readCelebrationSendLedger(date);
@@ -115,12 +120,19 @@ export const processDailyCelebrationEmails = async (input?: { date?: string; for
   const pending = remainingCelebrationRecipients(ledger, recipients.map((item) => item.email));
   const pendingSet = new Set(pending.map((email) => email.toLowerCase()));
   const queue = recipients.filter((item) => pendingSet.has(item.email));
+  console.info('[celebration-email] Recipient queue ready.', {
+    date,
+    honorees: moments.length,
+    withEmailOnFile: recipients.length,
+    pending: queue.length,
+  });
   if (!queue.length) {
     await recordCelebrationSendProgress({ date, completed: true });
     return { skipped: false as const, date, honorees: moments.length, sent: ledger.sentCount, failed: ledger.failedCount, remaining: 0 };
   }
 
   const { attachments, photoCids } = await loadPhotoAttachments(moments);
+  const flyerCopy = await generateCelebrationFlyerCopy(moments);
   const baseUrl = resolveWorkflowLinkOrigin();
   let sent = 0;
   let failed = 0;
@@ -131,6 +143,7 @@ export const processDailyCelebrationEmails = async (input?: { date?: string; for
     honorees: moments.length,
     recipients: queue.length,
     photos: photoCids.length,
+    copySource: flyerCopy.source,
   });
 
   await mapPool(queue, SEND_CONCURRENCY, async (recipient) => {
@@ -140,6 +153,7 @@ export const processDailyCelebrationEmails = async (input?: { date?: string; for
       recipientName: compact(recipient.employee.preferredName || recipient.employee.firstName || recipient.employee.fullName) || 'Colleague',
       baseUrl,
       photoCids,
+      copy: flyerCopy,
     });
     const result = await sendTransactionalEmail({
       to: recipient.email,
