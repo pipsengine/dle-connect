@@ -27,6 +27,8 @@ import {
   isNightShiftEligibleAttendance,
   hasDayShiftDuration,
   isOffshoreTimesheetContext,
+  OFFSHORE_LOCATION_NAME,
+  withOffshoreTimesheetLocation,
   resolveTimesheetShift,
   timesheetHeaderMatchesShift,
   timesheetLineMatchesShift,
@@ -2883,12 +2885,23 @@ ORDER BY CASE WHEN [Name]=N'Unassigned Department' THEN 1 ELSE 0 END, [Name]`);
   return departments.length ? departments : fallbackDepartments();
 }
 
+const offshoreTimesheetLocation = (): TimesheetLocation => ({
+  id: locationId(OFFSHORE_LOCATION_NAME),
+  code: OFFSHORE_LOCATION_NAME,
+  name: OFFSHORE_LOCATION_NAME,
+  site: OFFSHORE_LOCATION_NAME,
+  sourceSystem: 'DLE Enterprise',
+});
+
+const withOffshoreOperatingSite = (locations: TimesheetLocation[]) =>
+  withOffshoreTimesheetLocation(locations, offshoreTimesheetLocation).sort((a, b) => a.name.localeCompare(b.name));
+
 export async function readSystemTimesheetLocations(): Promise<TimesheetLocation[]> {
   const fallbackLocations = async () => {
     const records = await readTimesheetRecords();
-    return Array.from(new Set(records.map((record) => record.location).filter(Boolean)))
+    return withOffshoreOperatingSite(Array.from(new Set(records.map((record) => record.location).filter(Boolean)))
       .sort((a, b) => a.localeCompare(b))
-      .map((name) => ({ id: `fallback-loc-${workCenterCode(name).toLowerCase()}`, code: workCenterCode(name), name, site: name, sourceSystem: 'Local HRIS fallback' }));
+      .map((name) => ({ id: `fallback-loc-${workCenterCode(name).toLowerCase()}`, code: workCenterCode(name), name, site: name, sourceSystem: 'Local HRIS fallback' })));
   };
   let pool: sql.ConnectionPool;
   try {
@@ -2897,19 +2910,20 @@ export async function readSystemTimesheetLocations(): Promise<TimesheetLocation[
     return fallbackLocations();
   }
   await ensureDefaultTimesheetLocations(pool);
+  await ensureOffshoreTimesheetLocation(pool);
   const stored = await readStoredTimesheetLocations(pool);
   const payrollOrRegistryLocations = stored.filter((location) => location.sourceSystem !== 'DLE Enterprise');
-  if (payrollOrRegistryLocations.length) return payrollOrRegistryLocations;
+  if (payrollOrRegistryLocations.length) return withOffshoreOperatingSite(payrollOrRegistryLocations);
 
   try {
     const synced = await syncSageTimesheetDimensions();
     const syncedLocations = synced.locations.filter((location) => location.sourceSystem !== 'DLE Enterprise');
-    if (syncedLocations.length) return syncedLocations;
+    if (syncedLocations.length) return withOffshoreOperatingSite(syncedLocations);
   } catch (error) {
     console.warn('Sage timesheet location sync failed; falling back to stored/default locations:', error);
   }
 
-  if (stored.length) return stored;
+  if (stored.length) return withOffshoreOperatingSite(stored);
 
   const table = await pool.request().query(`SELECT OBJECT_ID(N'[hris].[OrganizationLocationsSites]', N'U') AS [TableId]`);
   if (!table.recordset[0]?.TableId) {
@@ -2930,8 +2944,22 @@ ORDER BY CASE WHEN [Name]=N'Unassigned Location' THEN 1 ELSE 0 END, [Name]`);
     sourceSystem: row.SourceSystem || 'DLE Enterprise',
     updatedAt: toIso(row.LastSyncedAt),
   }));
-  if (locations.length) return locations;
+  if (locations.length) return withOffshoreOperatingSite(locations);
   return fallbackLocations();
+}
+
+async function ensureOffshoreTimesheetLocation(pool: sql.ConnectionPool) {
+  const location = offshoreTimesheetLocation();
+  await pool.request()
+    .input('Id', sql.NVarChar(100), location.id)
+    .input('Code', sql.NVarChar(80), location.code)
+    .input('Name', sql.NVarChar(180), location.name)
+    .input('Site', sql.NVarChar(180), location.site)
+    .query(`
+MERGE [hris].[TimesheetLocations] AS target
+USING (SELECT @Id AS [Id]) AS source ON target.[Id]=source.[Id]
+WHEN MATCHED THEN UPDATE SET [Code]=@Code,[Name]=@Name,[Site]=@Site,[UpdatedAt]=SYSUTCDATETIME()
+WHEN NOT MATCHED THEN INSERT ([Id],[Code],[Name],[Site],[SourceSystem]) VALUES (@Id,@Code,@Name,@Site,N'DLE Enterprise');`);
 }
 
 async function ensureDefaultTimesheetLocations(pool: sql.ConnectionPool) {

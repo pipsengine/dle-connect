@@ -71,7 +71,7 @@ import {
   resolveOvertimeBookingOptions,
 } from '@/lib/timesheet-overtime-config';
 import { applyTimesheetLineDefaults, ensureClockedLinesHaveProjectAllocation } from '@/lib/timesheet-line-defaults';
-import { normalizeIdleAllocations, normalizeProjectAllocations, reconcileTimesheetLineHours, resolvePrimaryProjectCode, validateTimesheetLinesForPersist, TIMESHEET_SHIFT_LABELS, resolveTimesheetShift, timesheetHeaderMatchesShift, buildTimesheetHeaderId, timesheetWorkCentersMatch, isOffshoreWorkCenterName, isOffshoreLocationName, isOffshoreTimesheetContext, isManualOffshoreLine, isTimesheetAbsentLine, isTimesheetInApprovalCapture, applyNightPaperClock, timesheetLineHasBookedHours, buildManualOffshoreLine, buildRosterTimesheetLine, projectCodeFromOffshoreWorkCenter, resolveOffshoreProjectCode, timesheetOffshoreWorkCentersMatch, MIXED_TIMESHEET_WORK_CENTER, OFFSHORE_LOCATION_NAME, DEFAULT_TIMESHEET_SHIFT_LABEL, supervisorTimesheetMessage, dedupeTimesheetLinesByEmployee, isIdleTimeProjectCode, upsertMatrixProjectHours, markLineAsManualOffshore, canBookTimesheetHoursWithoutClock, type TimesheetDayContext } from '@/lib/timesheet-entry-shared';
+import { normalizeIdleAllocations, normalizeProjectAllocations, reconcileTimesheetLineHours, resolvePrimaryProjectCode, validateTimesheetLinesForPersist, TIMESHEET_SHIFT_LABELS, resolveTimesheetShift, timesheetHeaderMatchesShift, buildTimesheetHeaderId, timesheetWorkCentersMatch, isOffshoreWorkCenterName, isOffshoreLocationName, isOffshoreTimesheetContext, isManualOffshoreLine, isTimesheetAbsentLine, isTimesheetInApprovalCapture, applyNightPaperClock, timesheetLineHasBookedHours, buildManualOffshoreLine, buildRosterTimesheetLine, projectCodeFromOffshoreWorkCenter, resolveOffshoreProjectCode, timesheetOffshoreWorkCentersMatch, MIXED_TIMESHEET_WORK_CENTER, OFFSHORE_LOCATION_NAME, DEFAULT_TIMESHEET_SHIFT_LABEL, supervisorTimesheetMessage, dedupeTimesheetLinesByEmployee, isIdleTimeProjectCode, upsertMatrixProjectHours, markLineAsManualOffshore, canBookTimesheetHoursWithoutClock, withOffshoreLocationName, withOffshoreTimesheetLocation, type TimesheetDayContext } from '@/lib/timesheet-entry-shared';
 import { displaceUncommittedBookingsOnOtherDrafts, findSameDayBookingConflicts, releaseLinesAlreadyBookedElsewhere, type TimesheetAlreadyBookedSkip } from '@/lib/timesheet-booking-clash';
 import { assertTimesheetRecaptureAllowed, reopenTimesheetForRecapture } from '@/lib/timesheet-recapture';
 import { submitTimesheetForApproval } from '@/lib/timesheet-submit';
@@ -1048,7 +1048,13 @@ const buildPayload = async (
       .filter(Boolean),
   ));
   const scopedWorkCenters = [...workCenters];
-  const scopedLocations = [...locations];
+  const scopedLocations = withOffshoreTimesheetLocation([...locations], () => ({
+    id: 'loc-offshore',
+    code: 'OFFSHORE',
+    name: OFFSHORE_LOCATION_NAME,
+    site: OFFSHORE_LOCATION_NAME,
+    sourceSystem: 'HRIS',
+  }));
   for (const item of dateMobilizations) {
     const projectCode = item.projectCode || projectCodeFromOffshoreWorkCenter(item.workCenterName);
     if (!projectCode) continue;
@@ -1068,15 +1074,6 @@ const buildPayload = async (
       location: OFFSHORE_LOCATION_NAME,
       site: OFFSHORE_LOCATION_NAME,
       status: 'Active',
-      sourceSystem: 'HRIS',
-    });
-  }
-  if ((dateMobilizations.some((item) => isOffshoreLocationName(item.locationName) || isOffshoreWorkCenterName(item.workCenterName) || Boolean(item.projectCode)) || isOffshoreTimesheetContext(targetLocation, targetWorkCenter)) && !scopedLocations.some((location) => clean(location.name) === OFFSHORE_LOCATION_NAME)) {
-    scopedLocations.push({
-      id: 'loc-offshore',
-      code: 'OFFSHORE',
-      name: OFFSHORE_LOCATION_NAME,
-      site: OFFSHORE_LOCATION_NAME,
       sourceSystem: 'HRIS',
     });
   }
@@ -1677,15 +1674,15 @@ const buildPayload = async (
       .flatMap((location) => [location.site, location.name])
       .filter((site) => site && site !== 'Unassigned Location'),
   );
-  const systemLocationNames = dedupeTimesheetLocationLabels(
+  const systemLocationNames = withOffshoreLocationName(dedupeTimesheetLocationLabels(
     [
       ...timesheetRecords.flatMap((record) => [record.location, record.site]),
       ...activeEmployees.map(employeeLocation),
       ...locations.flatMap((location) => [location.name, location.site]),
       ...scopedLocations.flatMap((location) => [location.name, location.site]),
-      ...(isOffshoreSheet || dateMobilizations.some((item) => isOffshoreLocationName(item.locationName) || isOffshoreWorkCenterName(item.workCenterName)) ? [OFFSHORE_LOCATION_NAME] : []),
+      OFFSHORE_LOCATION_NAME,
     ],
-  ).filter((name) => !isTimesheetTradeLabelLocation(name, workCenterNameList));
+  ).filter((name) => !isTimesheetTradeLabelLocation(name, workCenterNameList)));
   lines = dedupeTimesheetLinesByEmployee(lines).lines;
   const summary = {
     totalEmployees: lines.length,

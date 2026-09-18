@@ -35,7 +35,7 @@ import {
   validateTimesheetLine,
   type OvertimeAuthorization,
 } from '@/lib/timesheet-overtime-booking';
-import { DAILY_BREAK_HOURS, STANDARD_TIMESHEET_HOURS, DEFAULT_BREAK_IDLE_REASON_ID, DEFAULT_BREAK_IDLE_REASON_NAME, normalizeIdleAllocations, normalizeProjectAllocations, canonicalProjectCode, consolidateProjectAllocationsToPrimary, resolvePrimaryProjectCode, resolveTimesheetHours, attendanceDurationFromClock, reconcileTimesheetLineHours, sumProjectAllocationHours, matrixProductiveHoursCap, upsertMatrixProjectHours, DEFAULT_TIMESHEET_SHIFT_LABEL, resolveTimesheetShift, timesheetHeaderMatchesShift, timesheetLineMatchesShift, applyNightPaperClock, buildRosterTimesheetLine, buildManualOffshoreLine, IDLE_TIME_PROJECT_CODE, IDLE_TIME_PROJECT_NAME, idleTimeProjectHours, productiveProjectHours, isIdleTimeProjectCode, isEditableTimesheetStatus, isTimesheetInApprovalCapture, isManualOffshoreLine, isTimesheetAbsentLine, isOffshoreWorkCenterName, isOffshoreLocationName, isOffshoreTimesheetContext, OFFSHORE_ALLOWANCE_HOURS, OFFSHORE_LOCATION_NAME, supervisorTimesheetMessage, resolveAutoDistributeProjectCode, requiresMiscellaneousTimesheetConfirm, dedupeTimesheetLinesByEmployee, markLineAsManualOffshore, canBookTimesheetHoursWithoutClock, resolveOffshoreProjectCode, timesheetWorkCentersMatch } from '@/lib/timesheet-entry-shared';
+import { DAILY_BREAK_HOURS, STANDARD_TIMESHEET_HOURS, DEFAULT_BREAK_IDLE_REASON_ID, DEFAULT_BREAK_IDLE_REASON_NAME, normalizeIdleAllocations, normalizeProjectAllocations, canonicalProjectCode, consolidateProjectAllocationsToPrimary, resolvePrimaryProjectCode, resolveTimesheetHours, attendanceDurationFromClock, reconcileTimesheetLineHours, sumProjectAllocationHours, matrixProductiveHoursCap, upsertMatrixProjectHours, DEFAULT_TIMESHEET_SHIFT_LABEL, resolveTimesheetShift, timesheetHeaderMatchesShift, timesheetLineMatchesShift, applyNightPaperClock, buildRosterTimesheetLine, buildManualOffshoreLine, IDLE_TIME_PROJECT_CODE, IDLE_TIME_PROJECT_NAME, idleTimeProjectHours, productiveProjectHours, isIdleTimeProjectCode, isEditableTimesheetStatus, isTimesheetInApprovalCapture, isManualOffshoreLine, isTimesheetAbsentLine, isOffshoreWorkCenterName, isOffshoreLocationName, isOffshoreTimesheetContext, OFFSHORE_ALLOWANCE_HOURS, OFFSHORE_LOCATION_NAME, supervisorTimesheetMessage, resolveAutoDistributeProjectCode, requiresMiscellaneousTimesheetConfirm, dedupeTimesheetLinesByEmployee, markLineAsManualOffshore, canBookTimesheetHoursWithoutClock, resolveOffshoreProjectCode, timesheetWorkCentersMatch, withOffshoreLocationName } from '@/lib/timesheet-entry-shared';
 import { applyTimesheetLineDefaults } from '@/lib/timesheet-line-defaults';
 import { canBookOvertimeOnTimesheet } from '@/lib/timesheet-overtime-config';
 import {
@@ -1559,7 +1559,7 @@ export default function TimesheetEntryClient({ variant = 'admin' }: { variant?: 
   }
 
   const workCenterOptions = workCenterNamesForLocation(workCenters, selectedLocation);
-  const locationOptions = Array.from(new Set((payload?.filterOptions.locations ?? []).filter(Boolean))).sort((a, b) => a.localeCompare(b));
+  const locationOptions = Array.from(new Set(withOffshoreLocationName(payload?.filterOptions.locations ?? []).filter(Boolean))).sort((a, b) => a.localeCompare(b));
   const siteLocationOptions = (databaseProjectSites.length ? databaseProjectSites : payload?.filterOptions.projectSites ?? [])
     .filter((location) => location && location !== 'Unassigned Location')
     .sort((a, b) => a.localeCompare(b));
@@ -1956,7 +1956,11 @@ export default function TimesheetEntryClient({ variant = 'admin' }: { variant?: 
                 <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Location</p>
                 <SearchablePicker
                   value={selectedLocation}
-                  options={locationOptions.map((location) => ({ value: location, label: location }))}
+                  options={locationOptions.map((location) => ({
+                    value: location,
+                    label: location === 'OFFSHORE' ? 'Offshore' : location,
+                    searchText: location === 'OFFSHORE' ? 'offshore off-shore' : undefined,
+                  }))}
                   placeholder={locationOptions.length === 0 ? 'No location' : 'Search location'}
                   className="max-w-[220px]"
                   onChange={(value) => {

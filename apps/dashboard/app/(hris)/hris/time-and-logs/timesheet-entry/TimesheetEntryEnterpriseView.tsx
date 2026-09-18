@@ -375,7 +375,11 @@ export function TimesheetEntryEnterpriseView(props: TimesheetEnterpriseViewProps
                 value={props.selectedLocation}
                 onChange={props.onLocationChange}
                 placeholder="Search location..."
-                options={props.locationOptions.map((item) => ({ value: item, label: item }))}
+                options={props.locationOptions.map((item) => ({
+                  value: item,
+                  label: item === 'OFFSHORE' ? 'Offshore' : item,
+                  searchText: item === 'OFFSHORE' ? 'offshore off-shore' : undefined,
+                }))}
               />
             </ContextField>
             <ContextField label={props.isOffshoreSheet ? 'Filter project' : 'Filter work centre'}>

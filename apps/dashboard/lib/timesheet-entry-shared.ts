@@ -1114,6 +1114,26 @@ export const offshoreWorkCenterName = (projectCode: string) =>
 export const isOffshoreLocationName = (name?: string | null) =>
   String(name || '').trim().toUpperCase() === OFFSHORE_LOCATION_NAME;
 
+const looksLikeOffshoreLocation = (value?: string | null) =>
+  isOffshoreLocationName(value) || String(value || '').trim().toUpperCase() === 'OFFSHORE';
+
+/** OFFSHORE is an operating site, not a Sage payroll yard. Keep it in every location picker. */
+export const withOffshoreLocationName = (names: Array<string | null | undefined>) => {
+  const next = names.map((name) => String(name || '').trim()).filter(Boolean);
+  if (next.some((name) => looksLikeOffshoreLocation(name))) return next;
+  return [...next, OFFSHORE_LOCATION_NAME];
+};
+
+export const withOffshoreTimesheetLocation = <T extends { name?: string | null; site?: string | null; code?: string | null }>(
+  locations: T[],
+  createOffshore: () => T,
+): T[] => {
+  if (locations.some((item) => looksLikeOffshoreLocation(item.name) || looksLikeOffshoreLocation(item.site) || looksLikeOffshoreLocation(item.code))) {
+    return locations;
+  }
+  return [...locations, createOffshore()];
+};
+
 /** Legacy work-centre labels such as "OFFSHORE · DL2601". */
 export const isOffshoreWorkCenterName = (name?: string | null) =>
   /^OFFSHORE(\s|$|[·\-–])/i.test(String(name || '').trim());

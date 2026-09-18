@@ -84,7 +84,7 @@ export function SearchableContextPicker({
       if (!query) return true;
       return `${option.label} ${option.value} ${option.searchText || ''}`.toLowerCase().includes(query);
     })
-    .slice(0, 80);
+    .slice(0, 200);
 
   useEffect(() => {
     if (!open) return;

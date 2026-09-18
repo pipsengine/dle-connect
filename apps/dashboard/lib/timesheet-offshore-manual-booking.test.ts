@@ -9,6 +9,8 @@ import {
   OFFSHORE_REMARKS_MARKER,
   resolveOffshoreProjectCode,
   timesheetOffshoreWorkCentersMatch,
+  withOffshoreLocationName,
+  withOffshoreTimesheetLocation,
 } from './timesheet-entry-shared.ts';
 import {
   mobilizationCoversDate,
@@ -115,5 +117,19 @@ const dl2601Roster = [
 const samuelAssigned = new Set(['C1544', 'C1229']);
 const samuelOffshore = dl2601Roster.filter((item) => samuelAssigned.has(item.employeeCode));
 assert.deepEqual(samuelOffshore.map((item) => item.employeeCode), ['C1544', 'C1229'], 'Samuel books only assigned people who are mobilized, not nested crews');
+
+assert.deepEqual(
+  withOffshoreLocationName(['AGEGE', 'Onne Yard', 'SPIE']).includes('OFFSHORE'),
+  true,
+  'OFFSHORE stays in the location picker even without Sage or a mobilization',
+);
+assert.equal(withOffshoreLocationName(['AGEGE', 'OFFSHORE']).filter((name) => name === 'OFFSHORE').length, 1);
+assert.equal(
+  withOffshoreTimesheetLocation(
+    [{ name: 'AGEGE', site: 'AGEGE', code: 'AGEGE' }],
+    () => ({ name: 'OFFSHORE', site: 'OFFSHORE', code: 'OFFSHORE' }),
+  ).some((item) => item.name === 'OFFSHORE'),
+  true,
+);
 
 console.log('timesheet-offshore-manual-booking.test.ts: ok');
