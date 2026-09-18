@@ -44,6 +44,7 @@ type Payload = {
   };
   records: LocationSiteRecord[];
   insights: StructureInsight[];
+  warning?: string | null;
 };
 
 type TabId = 'overview' | 'location-explorer' | 'site-explorer' | 'analytics' | 'risk';
@@ -497,6 +498,9 @@ export default function LocationsSitesClient() {
         </div>
 
         {error ? <div className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm font-medium text-red-700">{error}</div> : null}
+        {!error && payload?.warning ? (
+          <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm font-medium text-amber-800">{payload.warning}</div>
+        ) : null}
 
         {activeTab === 'overview' ? (
           <div className="grid grid-cols-1 gap-5 xl:grid-cols-[minmax(0,320px)_minmax(0,1fr)_minmax(0,340px)]">
