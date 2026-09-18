@@ -106,7 +106,7 @@ const writeStore = async (store: CelebrationStoreFile) => {
   return pruned;
 };
 
-let celebrationSendSchemaPromise: Promise<void> | null = null;
+let celebrationSendSchemaPromise: Promise<boolean> | null = null;
 
 const celebrationDb = async () => {
   const pool = await getDleEnterpriseDbPool();
@@ -133,13 +133,14 @@ CREATE TABLE [hris].[CelebrationSendRecipients] (
   [SentAt] DATETIME2(0) NULL,
   CONSTRAINT [PK_CelebrationSendRecipients] PRIMARY KEY ([SendDate], [Email])
 );
-`).then(() => undefined).catch((error) => {
+`).then(() => true).catch((error) => {
       celebrationSendSchemaPromise = null;
       console.warn('[celebration-email] Could not ensure send ledger tables.', error instanceof Error ? error.message : error);
+      return false;
     });
   }
-  await celebrationSendSchemaPromise;
-  return celebrationSendSchemaPromise ? pool : null;
+  const ready = await celebrationSendSchemaPromise;
+  return ready ? pool : null;
 };
 
 const parseHonoreeKeys = (value: unknown) => {
