@@ -17,6 +17,8 @@ export const timesheetAttendanceMatchKeys = (...values: Array<string | number | 
   const keys = new Set<string>();
   for (const value of values) {
     const raw = String(value ?? '').trim().toUpperCase();
+    const embeddedCodes = raw.match(/\b[PCLNI]\d{3,6}\b/g) || [];
+    for (const code of embeddedCodes) keys.add(code);
     const normalized = normalizePayrollMatchKey(value);
     if (normalized) {
       keys.add(normalized);
@@ -35,6 +37,13 @@ export const timesheetAttendanceMatchKeys = (...values: Array<string | number | 
     }
     const nameKey = timesheetAttendanceNameKey(raw);
     if (nameKey) keys.add(nameKey);
+    const tokens = raw
+      .replace(/[^A-Z\s]/g, ' ')
+      .split(/\s+/)
+      .filter((token) => token.length >= 3 && !NAME_STOP_WORDS.has(token));
+    if (tokens.length >= 2) {
+      keys.add(`N10:${[...tokens].map((token) => token.slice(0, 10)).sort().join('|')}`);
+    }
   }
   return [...keys];
 };

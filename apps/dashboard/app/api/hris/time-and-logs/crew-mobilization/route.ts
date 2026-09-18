@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { AUTH_COOKIE, verifySessionToken } from '@/lib/auth/session';
-import { isHrPortalUser } from '@/lib/access/route-access';
+import { canAccessCrewMobilization } from '@/lib/access/route-access';
+import { permissionsForRequest } from '@/lib/auth/request-permissions';
 import { getUiPermissions, resolveAccessContext } from '@/lib/hris-access';
 import { readPayrollEmployees } from '@/lib/payroll-employee-source';
 import { readProjects, upsertTimesheetWorkCenter } from '@/lib/timesheet-entry-store';
@@ -29,12 +30,16 @@ const sessionFrom = (request: Request) =>
 
 const clean = (value: unknown) => String(value || '').trim();
 
-async function requireHrActor(request: Request) {
+async function requireCrewMobilizationActor(request: Request) {
   const session = await sessionFrom(request);
-  if (!session || !isHrPortalUser(session)) {
-    throw Object.assign(new Error('Only HR can manage crew mobilization.'), { status: 403 });
+  if (!session) {
+    throw Object.assign(new Error('Unauthenticated'), { status: 401 });
   }
-  const access = resolveAccessContext(request);
+  const permissions = await permissionsForRequest(request);
+  if (!canAccessCrewMobilization({ ...session, permissions })) {
+    throw Object.assign(new Error('You do not have access to crew mobilization.'), { status: 403 });
+  }
+  const access = resolveAccessContext(request, permissions);
   const uiPermissions = getUiPermissions(access);
   return {
     session,
@@ -45,7 +50,7 @@ async function requireHrActor(request: Request) {
 
 export async function GET(request: Request) {
   try {
-    const { actor, role } = await requireHrActor(request);
+    const { actor, role } = await requireCrewMobilizationActor(request);
     const { searchParams } = new URL(request.url);
     const date = searchParams.get('date') || undefined;
     const supervisorId = searchParams.get('supervisorId') || undefined;
@@ -106,7 +111,7 @@ export async function GET(request: Request) {
 
 export async function POST(request: Request) {
   try {
-    const { actor } = await requireHrActor(request);
+    const { actor } = await requireCrewMobilizationActor(request);
     const body = await request.json() as {
       action?: 'CREATE' | 'DEMOBILIZE' | 'CANCEL' | 'PARSE_CODES';
       id?: string;

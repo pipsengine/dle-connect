@@ -47,6 +47,23 @@ const administrationRoutePermissions = (pathname: string): string[] => {
   return ['admin.roles.view', 'admin.users.view'];
 };
 
+export const CREW_MOBILIZATION_PERMISSIONS = [
+  'page.hris.time-and-logs.crew-mobilization.view',
+  'page.hris.time-and-logs.crew-mobilization',
+] as const;
+
+export const isCrewMobilizationPath = (pathname: string) => {
+  const path = normalizePath(pathname);
+  return path === '/hris/workforce-management/crew-mobilization' || path === '/hris/time-and-logs/crew-mobilization';
+};
+
+/** HR portal users, or anyone published the Crew Mobilization page grant. */
+export const canAccessCrewMobilization = (session: SessionLike) => {
+  if (session.isGlobalAdmin || (session.roles || []).includes('Super Administrator')) return true;
+  if (isHrPortalUser(session)) return true;
+  return hasAnyPermission(session.permissions || [], [...CREW_MOBILIZATION_PERMISSIONS]);
+};
+
 export const isHrPortalUser = (session: SessionLike) => {
   if (session.isGlobalAdmin || (session.roles || []).includes('Super Administrator')) return true;
   const roles = session.roles || [];
@@ -289,12 +306,7 @@ export const hrisRoutePermissionOptions = (pathname: string): string[] | null =>
     ];
   }
   if (path === '/hris/workforce-management/crew-mobilization' || path === '/hris/time-and-logs/crew-mobilization') {
-    return [
-      'page.hris.time-and-logs.crew-mobilization.view',
-      'timesheet.hr.approve',
-      'workforce.manage',
-      'hris.view',
-    ];
+    return [...CREW_MOBILIZATION_PERMISSIONS];
   }
   if (path === '/hris/workforce-management/reports-and-analytics' || path.startsWith('/hris/workforce-management/reports-and-analytics/')) {
     return ['operations.timesheets.view', 'operations.timesheets.export', 'timesheet.view', 'timesheet.export', 'payroll.view'];
@@ -360,8 +372,8 @@ export const canAccessHrisPath = (session: SessionLike, pathname: string) => {
     return canAccessHrisPerformanceManagement(session);
   }
 
-  if (path === '/hris/workforce-management/crew-mobilization' || path === '/hris/time-and-logs/crew-mobilization') {
-    return isHrPortalUser(session);
+  if (isCrewMobilizationPath(path)) {
+    return canAccessCrewMobilization(session);
   }
 
   // Offboarding Management = HR only. Exit Clearance = HR + line managers.

@@ -16,6 +16,7 @@ import {
   timesheetLocationsMatch,
   timesheetCrewMatchesLocation,
   timesheetCrewMatchesWorkCenter,
+  tidyTimesheetEmployeeName,
 } from './timesheet-agege-blasting.ts';
 
 assert.equal(extractSupervisorEmployeeCode('C1001 - JIMOH GBADAMOSI'), 'C1001');
@@ -100,11 +101,14 @@ assert.equal(timesheetCrewMatchesLocation('AGEGE', 'AGEGE', 'AGEGE'), true);
 assert.equal(timesheetCrewMatchesLocation('Lagos - Idi Oro', 'IDI-ORO', 'AGEGE'), true);
 assert.equal(timesheetCrewMatchesLocation('AGEGE', 'IDI-ORO', 'AGEGE'), false);
 assert.equal(timesheetCrewMatchesLocation('', 'AGEGE', 'AGEGE'), true);
+assert.equal(timesheetCrewMatchesLocation('Unassigned', 'AGEGE', 'AGEGE'), true, 'Agege gate clocks with Unassigned office stay on Agege Cutting');
+assert.equal(timesheetCrewMatchesLocation('Cutting', 'AGEGE', 'IDI-ORO'), true, 'trade-as-location does not hide Agege Cutting crew');
 assert.equal(timesheetCrewMatchesLocation('', 'IDI-ORO', 'AGEGE'), false);
 assert.equal(timesheetCrewMatchesLocation('', 'IDI_ORO', ''), true, 'blank crew + blank supervisor home stay on the selected sheet');
 assert.equal(timesheetCrewMatchesLocation('', 'IDI_ORO', null), true);
 assert.equal(timesheetCrewMatchesWorkCenter('Rolling & Forming', 'Fitting'), true, 'P0044 remains on C1882 Fitting sheet');
 assert.equal(timesheetCrewMatchesWorkCenter('Rigging', 'Fitting'), true);
 assert.equal(timesheetCrewMatchesWorkCenter('', 'Fitting'), true);
+assert.equal(tidyTimesheetEmployeeName('MICHAEL ONOJA - GALVANIZING MAINTENANCE'), 'Michael Onoja');
 
 console.log('timesheet-agege-blasting.test.ts: ok');

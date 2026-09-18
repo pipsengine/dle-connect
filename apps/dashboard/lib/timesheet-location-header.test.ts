@@ -5,6 +5,9 @@ import {
   resolveAutoDistributeProjectCode,
   selectTimesheetHeaderForLocation,
   timesheetWorkCentersMatch,
+  upsertMatrixProjectHours,
+  idleTimeProjectHours,
+  productiveProjectHours,
 } from './timesheet-entry-shared.ts';
 
 assert.equal(
@@ -64,6 +67,8 @@ assert.equal(
   'DL1985',
 );
 assert.equal(resolveAutoDistributeProjectCode([{ code: 'DL0062' }], []), 'DL0062');
+assert.equal(resolveAutoDistributeProjectCode([{ code: 'DL1949' }], []), '');
+assert.equal(resolveAutoDistributeProjectCode([{ code: 'DL1949' }], [], 'DL1949'), '');
 
 assert.equal(requiresMiscellaneousTimesheetConfirm(['DL0062']), true);
 assert.equal(requiresMiscellaneousTimesheetConfirm(['DL0062', 'DL1985']), false);
@@ -74,5 +79,28 @@ assert.equal(timesheetWorkCentersMatch('Agege Maintenance', 'Maintenance'), true
 assert.equal(timesheetWorkCentersMatch('Electrical Maintenance', 'Maintenance'), false);
 assert.equal(timesheetWorkCentersMatch('Blasting', 'Galvanizing'), false);
 assert.equal(timesheetWorkCentersMatch('Blasting', 'Blasting'), true);
+
+const idleThenJob = upsertMatrixProjectHours(
+  [{ projectCode: 'DL1949', projectName: 'IDLE TIME', hours: 8, remarks: null }],
+  'DL1985',
+  'Agege Job',
+  8,
+  8,
+);
+assert.equal(productiveProjectHours(idleThenJob), 8);
+assert.equal(idleTimeProjectHours(idleThenJob), 0);
+
+const splitThenJob = upsertMatrixProjectHours(
+  [
+    { projectCode: 'DL1985', projectName: 'Agege Job', hours: 4, remarks: null },
+    { projectCode: 'DL1949', projectName: 'IDLE TIME', hours: 4, remarks: null },
+  ],
+  'DL1985',
+  'Agege Job',
+  6,
+  8,
+);
+assert.equal(productiveProjectHours(splitThenJob), 6);
+assert.equal(idleTimeProjectHours(splitThenJob), 2);
 
 console.log('timesheet-location-header.test.ts: ok');

@@ -823,10 +823,12 @@ export const resolveAutoDistributeProjectCode = (
   lines: Array<{ projectAllocations?: Array<{ projectCode: string; hours: number }> | null }> = [],
   selectedCode?: string | null,
 ) => {
-  const codes = columns.map((column) => canonicalProjectCode(column.code)).filter(Boolean);
+  const codes = columns
+    .map((column) => canonicalProjectCode(column.code))
+    .filter((code) => code && !isIdleTimeProjectCode(code));
   if (!codes.length) return '';
   const selected = canonicalProjectCode(selectedCode);
-  if (selected && codes.includes(selected)) return selected;
+  if (selected && codes.includes(selected) && !isIdleTimeProjectCode(selected)) return selected;
   for (const line of lines) {
     const booked = preferredProductiveProjectCodeFromAllocations(line.projectAllocations);
     if (booked && codes.includes(booked)) return booked;
@@ -860,6 +862,29 @@ export const projectHoursForColumn = (
   return round1(Number(match?.hours || 0));
 };
 
+/** When a real job is booked, unused Idle Time (DL1949) must not keep the full 8h day. */
+export const yieldIdleTimeToProductiveHours = <
+  T extends {
+    projectCode: string;
+    hours: number;
+  },
+>(
+  allocations: T[] | null | undefined,
+  maxTotalProductive: number,
+): T[] => {
+  const normalized = normalizeProjectAllocations(allocations);
+  const productive = normalized.filter((item) => !isIdleTimeProjectCode(item.projectCode));
+  const idle = normalized.filter((item) => isIdleTimeProjectCode(item.projectCode));
+  if (!idle.length) return normalized;
+  const productiveSum = round1(productive.reduce((sum, item) => sum + Number(item.hours || 0), 0));
+  const remaining = round1(Math.max(0, maxTotalProductive - productiveSum));
+  const nextIdle = idle.map((item, index) => ({
+    ...item,
+    hours: index === 0 ? Math.min(Number(item.hours || 0), remaining) : 0,
+  })).filter((item) => Number(item.hours || 0) > 0.001);
+  return normalizeProjectAllocations([...productive, ...nextIdle] as T[]);
+};
+
 /** Update one matrix column while keeping other project rows and capping total productive hours. */
 export const upsertMatrixProjectHours = <
   T extends {
@@ -878,9 +903,11 @@ export const upsertMatrixProjectHours = <
 ): T[] => {
   const code = canonicalProjectCode(columnCode);
   const normalized = normalizeProjectAllocations(allocations);
+  const bookingIdle = isIdleTimeProjectCode(code);
   const otherSum = round1(
     normalized
       .filter((item) => canonicalProjectCode(item.projectCode) !== code)
+      .filter((item) => bookingIdle || !isIdleTimeProjectCode(item.projectCode))
       .reduce((sum, item) => sum + Number(item.hours || 0), 0),
   );
   const hours = round1(Math.min(Math.max(0, requestedHours), Math.max(0, maxTotalProductive - otherSum)));
@@ -899,7 +926,8 @@ export const upsertMatrixProjectHours = <
         : null,
     } as T);
   }
-  return normalizeProjectAllocations(rest);
+  const next = normalizeProjectAllocations(rest);
+  return bookingIdle ? next : yieldIdleTimeToProductiveHours(next, maxTotalProductive);
 };
 
 /** Max total productive hours allowed across all matrix columns (8h standard, or up to biometric cap when OT is booked). */

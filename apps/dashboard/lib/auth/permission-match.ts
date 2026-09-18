@@ -58,6 +58,9 @@ const PERMISSION_ALIASES: Record<string, string[]> = {
     'page.hris.offboarding.exit-clearance.view',
     'offboarding.clearance.view',
   ],
+  'page.hris.time-and-logs.crew-mobilization.view': [
+    'page.hris.time-and-logs.crew-mobilization',
+  ],
   'recruitment.view': [
     'page.hris.recruitment.view',
     'page.hris.recruitment.dashboard.view',
@@ -239,6 +242,9 @@ export const expandPublishedPermissions = (permissions: string[]) => {
   }
   if (list.some((permission) => permission.startsWith('admin.roles'))) out.add('page.admin.access-control.view');
   if (list.some((permission) => permission.startsWith('admin.users'))) out.add('page.admin.user-management.view');
+  if (list.some((permission) => permission === 'page.hris.time-and-logs.crew-mobilization' || permission.startsWith('page.hris.time-and-logs.crew-mobilization.'))) {
+    out.add('page.hris.time-and-logs.crew-mobilization.view');
+  }
   if (list.some((permission) => permission.startsWith('hris.') || permission.startsWith('employees.'))) out.add('hris.view');
   // ESS payslip access must not promote to full payroll.view / Pay Setup.
   if (list.some((permission) =>

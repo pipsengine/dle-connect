@@ -143,17 +143,42 @@ export const timesheetCrewMatchesWorkCenter = (
  * If the supervisor also has no yard, keep them on the open sheet — hiding the
  * whole crew made Timesheet Entry look empty (0 employees under a supervisor).
  */
+const UNASSIGNED_LOCATION = /^(unassigned(\s+location)?|n\/?a|none|-|biometric terminal)$/i;
+const TRADE_AS_LOCATION = /^(cutting|fitting|welding|blasting|painting|galvanizing|maintenance|machining|rigging|cnc)$/i;
+
+export const isUnassignedTimesheetLocation = (value: string | null | undefined) => {
+  const raw = clean(value);
+  return !raw || UNASSIGNED_LOCATION.test(raw);
+};
+
 export const timesheetCrewMatchesLocation = (
   employeeLocationValue: string | null | undefined,
   targetLocation?: string | null,
   supervisorHomeLocation?: string | null,
 ) => {
   if (!clean(targetLocation)) return true;
-  if (!clean(employeeLocationValue)) {
-    if (!clean(supervisorHomeLocation)) return true;
+  const employeeLocation = clean(employeeLocationValue);
+  if (!employeeLocation || isUnassignedTimesheetLocation(employeeLocation) || TRADE_AS_LOCATION.test(employeeLocation)) {
+    if (isAgegeTimesheetLocation(targetLocation)) return true;
+    if (!clean(supervisorHomeLocation) || isUnassignedTimesheetLocation(supervisorHomeLocation)) return true;
     return timesheetLocationsMatch(targetLocation, supervisorHomeLocation);
   }
-  return timesheetLocationsMatch(employeeLocationValue, targetLocation);
+  return timesheetLocationsMatch(employeeLocation, targetLocation);
+};
+
+const TIMESHEET_NAME_NOISE = /\s*[-–,/|]+\s*(galvanizing|maintenance|fitting|cutting|welding|painting|blasting|machining|rigging|department|production).*$/i;
+
+export const tidyTimesheetEmployeeName = (value: string | null | undefined) => {
+  const raw = clean(value).replace(TIMESHEET_NAME_NOISE, '').replace(/\s+/g, ' ').trim();
+  if (!raw) return '';
+  const letters = raw.replace(/[^A-Za-z]/g, '');
+  const upperRatio = letters
+    ? [...letters].filter((char) => char === char.toUpperCase() && char !== char.toLowerCase()).length / letters.length
+    : 0;
+  if (upperRatio < 0.72) return raw;
+  return raw
+    .toLowerCase()
+    .replace(/(^|[\s'-])([a-z])/g, (_, prefix: string, letter: string) => `${prefix}${letter.toUpperCase()}`);
 };
 
 /** True when a "location" is really a trade / work-center label (e.g. Painting). */

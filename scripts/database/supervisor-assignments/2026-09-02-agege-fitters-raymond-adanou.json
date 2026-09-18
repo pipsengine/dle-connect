@@ -24,7 +24,7 @@
     { "sourceName": "AJAYI ADEBAYO", "tradeRole": "FITTER", "employeeCode": "C2011", "matchConfidence": "AgegeRosterEmployeeCode" },
     { "sourceName": "AKINLABI AKINMOLADU", "tradeRole": "FITTER", "employeeCode": "C2699", "matchConfidence": "AgegeRosterEmployeeCode" },
     { "sourceName": "AMADI VALINS", "tradeRole": "FITTER", "employeeCode": "C2823", "matchConfidence": "AgegeRosterEmployeeCode" },
-    { "sourceName": "THOMPSON NKANU", "tradeRole": "FITTER", "employeeCode": "C2807", "matchConfidence": "AgegeRosterEmployeeCode" },
+    { "sourceName": "THOMSON NKANU", "tradeRole": "FITTER", "employeeCode": "C2087", "matchConfidence": "AgegeRosterEmployeeCode", "matchNote": "Corrected from C2807. Agege fitter list uses C2087 Thomson Nkanu." },
     { "sourceName": "BENJEMIN CHURK", "tradeRole": "FITTER", "employeeCode": "C2757", "matchConfidence": "AgegeRosterEmployeeCode" },
     { "sourceName": "MUSA EZEMBOR", "tradeRole": "FITTER", "employeeCode": "C2083", "matchConfidence": "AgegeRosterEmployeeCode" },
     { "sourceName": "STEVE ERAGHARE", "tradeRole": "FITTER", "employeeCode": "C2171", "matchConfidence": "AgegeRosterEmployeeCode" },

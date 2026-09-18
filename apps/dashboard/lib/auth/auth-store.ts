@@ -655,7 +655,10 @@ const publicUser = async (user: UserAccount): Promise<SessionUser> => {
     department: user.department,
     unit: user.unit,
     roles,
-    permissions: lockedGlobal ? ['*'] : await effectivePermissionsForUser(user.id, roles),
+    permissions: lockedGlobal ? ['*'] : Array.from(new Set([
+      ...(await effectivePermissionsForUser(user.id, roles)),
+      ...(user.permissions || []),
+    ])),
     status: user.status,
     firstLoginRequired: user.firstLoginRequired,
     passwordResetRequired: user.passwordResetRequired,

@@ -19,6 +19,8 @@ import {
   Zap,
 } from 'lucide-react';
 import { canAccessTimesheetEntryAndApproval } from '@/lib/access/timesheet-access';
+import { canAccessCrewMobilization } from '@/lib/access/route-access';
+import { hasPermission } from '@/lib/auth/permission-match';
 import { effectivePermissionsForUser } from '@/lib/auth/access-control-store';
 import { AUTH_COOKIE, verifySessionToken } from '@/lib/auth/session';
 import { WORKFORCE_PORTAL_ENABLED } from '@/lib/workforce-portal-availability';
@@ -30,6 +32,7 @@ const quickLinks = [
   { title: 'Employee Profile', href: '/hris/employees/employee-profile', icon: UserRound, detail: 'Personal, job, contact, document and payroll profile records', permissions: ['employees.view', 'profile.view'], tone: 'blue' },
   { title: 'Attendance Register', href: '/hris/attendance/attendance-register', icon: CalendarCheck, detail: 'Daily attendance, review status, payroll readiness and exceptions', permissions: ['attendance.view', 'attendance.*'], tone: 'green' },
   { title: 'Timesheet Entry', href: '/hris/workforce-management/timesheet-entry', icon: Clock3, detail: 'Supervisor and line-manager timesheet capture and approvals', permissions: ['page.hris.time-and-logs.timesheet-entry.view', 'timesheet.supervisor.approve'], tone: 'violet' },
+  { title: 'Crew Mobilization', href: '/hris/workforce-management/crew-mobilization', icon: Users, detail: 'Mobilize crews to project work centres for timesheet booking', permissions: ['page.hris.time-and-logs.crew-mobilization.view', 'page.hris.time-and-logs.crew-mobilization'], tone: 'violet' },
   { title: 'Payroll Dashboard', href: '/hris/payroll/payroll-dashboard', icon: Banknote, detail: 'Payroll setup, processing, approvals, payslips, tax and deductions', permissions: ['payroll.view', 'payroll.*'], tone: 'green' },
   { title: 'Benefits Management', href: '/hris/benefits/overview', icon: Gift, detail: 'Medical, insurance, pension, welfare, enrollment, claims, and compliance', permissions: ['hris.view', 'payroll.view', 'employees.view'], tone: 'violet' },
   { title: 'Workforce Portal', href: '/workforce-portal', icon: UserCircle2, detail: 'Employee self-service dashboard, profile, leave, attendance, payroll and documents', permissions: ['ess.view', 'profile.view'], tone: 'orange' },
@@ -101,7 +104,13 @@ export default async function HRISHomePage() {
     if (item.href === '/hris/workforce-management/timesheet-entry') {
       return canAccessTimesheetEntryAndApproval(session);
     }
-    return item.permissions.some((permission) => can(permissions, permission));
+    if (item.href === '/hris/workforce-management/crew-mobilization') {
+      return canAccessCrewMobilization({
+        ...(session || { roles: [], department: '', unit: '', isGlobalAdmin: false }),
+        permissions,
+      });
+    }
+    return item.permissions.some((permission) => can(permissions, permission) || hasPermission(permissions, permission));
   });
 
   return (

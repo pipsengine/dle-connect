@@ -71,7 +71,7 @@ import {
   resolveOvertimeBookingOptions,
 } from '@/lib/timesheet-overtime-config';
 import { applyTimesheetLineDefaults, ensureClockedLinesHaveProjectAllocation } from '@/lib/timesheet-line-defaults';
-import { normalizeIdleAllocations, normalizeProjectAllocations, reconcileTimesheetLineHours, resolvePrimaryProjectCode, validateTimesheetLinesForPersist, TIMESHEET_SHIFT_LABELS, resolveTimesheetShift, timesheetHeaderMatchesShift, buildTimesheetHeaderId, selectTimesheetHeaderForLocation, timesheetWorkCentersMatch, isOffshoreWorkCenterName, isManualOffshoreLine, isTimesheetAbsentLine, isTimesheetInApprovalCapture, applyNightPaperClock, timesheetLineHasBookedHours, buildManualOffshoreLine, buildRosterTimesheetLine, projectCodeFromOffshoreWorkCenter, OFFSHORE_LOCATION_NAME, DEFAULT_TIMESHEET_SHIFT_LABEL, supervisorTimesheetMessage, dedupeTimesheetLinesByEmployee, type TimesheetDayContext } from '@/lib/timesheet-entry-shared';
+import { normalizeIdleAllocations, normalizeProjectAllocations, reconcileTimesheetLineHours, resolvePrimaryProjectCode, validateTimesheetLinesForPersist, TIMESHEET_SHIFT_LABELS, resolveTimesheetShift, timesheetHeaderMatchesShift, buildTimesheetHeaderId, selectTimesheetHeaderForLocation, timesheetWorkCentersMatch, isOffshoreWorkCenterName, isManualOffshoreLine, isTimesheetAbsentLine, isTimesheetInApprovalCapture, applyNightPaperClock, timesheetLineHasBookedHours, buildManualOffshoreLine, buildRosterTimesheetLine, projectCodeFromOffshoreWorkCenter, OFFSHORE_LOCATION_NAME, DEFAULT_TIMESHEET_SHIFT_LABEL, supervisorTimesheetMessage, dedupeTimesheetLinesByEmployee, isIdleTimeProjectCode, upsertMatrixProjectHours, STANDARD_TIMESHEET_HOURS, type TimesheetDayContext } from '@/lib/timesheet-entry-shared';
 import { displaceUncommittedBookingsOnOtherDrafts, findSameDayBookingConflicts, releaseLinesAlreadyBookedElsewhere, type TimesheetAlreadyBookedSkip } from '@/lib/timesheet-booking-clash';
 import { assertTimesheetRecaptureAllowed, reopenTimesheetForRecapture } from '@/lib/timesheet-recapture';
 import { submitTimesheetForApproval } from '@/lib/timesheet-submit';
@@ -302,6 +302,9 @@ async function handleBulkApply(request: Request, payload: UpdatePayload) {
     throw new Error('Bulk allocation details and header ID are required.');
   }
   const { employeeIds, projectCode, hours } = payload.bulkAllocation;
+  if (isIdleTimeProjectCode(projectCode)) {
+    throw new Error('Use the Idle Time column to book DL1949 IDLE TIME.');
+  }
   const { headers, lines: allLines } = await readTimesheetData();
   
   const header = headers.find(h => h.id === payload.headerId);
@@ -322,19 +325,13 @@ async function handleBulkApply(request: Request, payload: UpdatePayload) {
   const updatedLines = currentLines.map(line => {
     if (!employeeIds.includes(line.employeeId)) return line;
 
-    const allocations = [...line.projectAllocations];
-    const pIdx = allocations.findIndex(p => p.projectCode === projectCode);
-    if (pIdx >= 0) {
-      allocations[pIdx].hours = hours;
-    } else {
-      allocations.push({
-        projectId: projectCode,
-        projectCode,
-        projectName: projectCode,
-        hours,
-        remarks: null
-      });
-    }
+    const allocations = upsertMatrixProjectHours(
+      line.projectAllocations,
+      projectCode,
+      projectCode,
+      hours,
+      STANDARD_TIMESHEET_HOURS,
+    );
 
     const draft = { ...line, projectAllocations: allocations, idleAllocations: line.idleAllocations.map(withDefaultIdleReason) };
     const validated = validateTimesheetLine(
@@ -859,6 +856,7 @@ const workCenterFromSupervisorProfile = (profile: SupervisorSourceEmployee | nul
     [/\bpainter|painting|coating\b/i, 'Painting'],
     [/\brigger|rigging\b/i, 'Rigging'],
     [/\bscaffold/i, 'Structural Assembly'],
+    [/\bcnc|koike|cutter|cutting\b/i, 'Cutting'],
     [/\broller|rolling|machinist|machining\b/i, 'Machining'],
   ];
   const alias = aliases.find(([pattern]) => pattern.test(title))?.[1];
@@ -1224,6 +1222,7 @@ const buildPayload = async (
   if (isOffshoreSheet) targetShiftForSheet = DEFAULT_TIMESHEET_SHIFT_LABEL;
   const overtimeBooking = resolveOvertimeBookingOptions();
   const activeProjects = projects.filter((project) => ['Active', 'Approved', 'Open'].includes(project.status));
+  const bookableProjects = activeProjects.filter((project) => !isIdleTimeProjectCode(project.code));
   let approvedOvertimeAuthorizations: OvertimeAuthorizationRequest[] = [];
   const attendanceWorkCenters = scopedWorkCenters.map((workCenter) => ({
     location: workCenter.location || workCenter.name,
@@ -1571,9 +1570,9 @@ const buildPayload = async (
     matrixColumns: (isOffshoreSheet && offshoreProjectCode
       ? [
         { code: offshoreProjectCode, label: offshoreProjectCode, kind: 'project' as const },
-        ...activeProjects.filter((project) => project.code !== offshoreProjectCode).slice(0, 3).map((p) => ({ code: p.code, label: p.code, kind: 'project' as const })),
+        ...bookableProjects.filter((project) => project.code !== offshoreProjectCode).slice(0, 3).map((p) => ({ code: p.code, label: p.code, kind: 'project' as const })),
       ]
-      : activeProjects.slice(0, 4).map((p) => ({ code: p.code, label: p.code, kind: 'project' as const }))),
+      : bookableProjects.slice(0, 4).map((p) => ({ code: p.code, label: p.code, kind: 'project' as const }))),
     projectCatalog: activeProjects,
     mobilizedCrew: isOffshoreSheet
       ? {

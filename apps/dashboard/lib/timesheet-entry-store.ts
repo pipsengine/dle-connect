@@ -8,7 +8,7 @@ import { readPayrollEmployees } from '@/lib/payroll-employee-source';
 import { normalizePayrollMatchKey, readActiveSagePayrollEmployeeKeys, type SagePayrollEmployee } from '@/lib/sage-people-payroll-store';
 import { approvedPaidLeaveForDate } from '@/lib/leave-management-store';
 import { assignmentMatchesSupervisor, readSupervisorAssignments } from '@/lib/supervisor-assignment-store';
-import { extractSupervisorEmployeeCode, normalizeTimesheetLocationLabel, supervisorCodesMatch, timesheetCrewMatchesLocation, timesheetLocationsMatch } from '@/lib/timesheet-agege-blasting';
+import { extractSupervisorEmployeeCode, normalizeTimesheetLocationLabel, supervisorCodesMatch, tidyTimesheetEmployeeName, timesheetCrewMatchesLocation, timesheetLocationsMatch } from '@/lib/timesheet-agege-blasting';
 import { timesheetAttendanceMatchKeys } from '@/lib/timesheet-attendance-match';
 import { clearEmployeeFromDraftHeaders, employeeAlreadyCommittedOnOtherTimesheet, employeeIsOtherTimesheetSupervisor } from '@/lib/timesheet-booking-clash';
 import { canonicalProjectManagerForCode, withCanonicalProjectManager } from '@/lib/timesheet-canonical-project-managers';
@@ -3576,19 +3576,21 @@ const supervisorEmployeeScope = async (supervisorId: string) => {
     console.warn('Timesheet supervisor assignment scope could not be loaded; falling back to reporting manager data:', error);
   }
   const existingCodes = new Set(employees.map((employee) => employee.employeeCode.toLowerCase()));
-  for (const employee of source.employees) {
-    if (['Resigned', 'Terminated', 'Retired'].includes(employee.status)) continue;
-    if (!supervisorMatchesEmployee(employee.managerName, selected)) continue;
-    const employeeCode = employee.employeeCode || employee.employeeId;
-    if (!employeeCode || existingCodes.has(employeeCode.toLowerCase())) continue;
-    existingCodes.add(employeeCode.toLowerCase());
-    employees.push({ employeeCode, fullName: employee.fullName, location: payrollLocation(employee) });
-    [
-      employee.employeeId,
-      employee.employeeCode,
-      employee.fullName,
-      employee.sourceEmployeeId,
-    ].flatMap((value) => attendanceMatchKeys(value)).forEach((key) => keys.add(key));
+  if (!existingCodes.size) {
+    for (const employee of source.employees) {
+      if (['Resigned', 'Terminated', 'Retired'].includes(employee.status)) continue;
+      if (!supervisorMatchesEmployee(employee.managerName, selected)) continue;
+      const employeeCode = employee.employeeCode || employee.employeeId;
+      if (!employeeCode || existingCodes.has(employeeCode.toLowerCase())) continue;
+      existingCodes.add(employeeCode.toLowerCase());
+      employees.push({ employeeCode, fullName: employee.fullName, location: payrollLocation(employee) });
+      [
+        employee.employeeId,
+        employee.employeeCode,
+        employee.fullName,
+        employee.sourceEmployeeId,
+      ].flatMap((value) => attendanceMatchKeys(value)).forEach((key) => keys.add(key));
+    }
   }
   let supervisorLocation = '';
   if (selectedCode) {
@@ -3746,7 +3748,7 @@ export async function syncAttendanceForTimesheet(
     attendance: {
       id: `no-att-${shift.kind.toLowerCase()}-${date}-${employee.employeeCode}`,
       employeeId: employee.employeeCode,
-      employeeName: employee.fullName,
+      employeeName: tidyTimesheetEmployeeName(employee.fullName) || employee.fullName,
       businessUnit: '',
       department: '',
       jobTitle: '',
@@ -3892,7 +3894,10 @@ export async function syncAttendanceForTimesheet(
 
   const syncedFromAttendance: TimesheetLine[] = attendanceForDay.map(({ attendance: att, payrollEmployee }) => {
     const employeeCode = payrollEmployee ? sageTimesheetEmployeeCode(payrollEmployee, att.employeeId) : att.employeeId.trim().toUpperCase();
-    const employeeName = payrollEmployee ? formatSageEmployeeFullName(payrollEmployee, att.employeeName) : att.employeeName;
+    const assignedName = assignedSupervisorEmployees.find((employee) => supervisorCodesMatch(employee.employeeCode, employeeCode))?.fullName;
+    const employeeName = tidyTimesheetEmployeeName(
+      assignedName || (payrollEmployee ? formatSageEmployeeFullName(payrollEmployee, att.employeeName) : att.employeeName),
+    ) || att.employeeName;
     const existingLine = existingHeaderLines.find((l) => l.employeeId === employeeCode);
     const approvedLeave = attendanceMatchKeys(employeeCode, employeeName, att.employeeId, att.employeeName)
       .map((key) => approvedLeaveByKey.get(key))

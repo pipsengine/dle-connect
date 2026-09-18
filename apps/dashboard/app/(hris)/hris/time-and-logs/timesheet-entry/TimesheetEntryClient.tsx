@@ -514,9 +514,10 @@ export default function TimesheetEntryClient({ variant = 'admin' }: { variant?: 
       setPayload(data);
       setLocalLines(data.lines);
       setWorkCenters(dbWorkCenters);
-      if (data.matrixColumns && matrixColumns.length === 0) {
-        setMatrixColumns(data.matrixColumns.filter((column) => !isIdleTimeProjectCode(column.code)));
-      }
+      setMatrixColumns((current) => {
+        const source = current.length ? current : (data.matrixColumns || []);
+        return source.filter((column) => !isIdleTimeProjectCode(column.code));
+      });
       if (data.header?.timesheetDate) setSelectedDate(data.header.timesheetDate);
       else if (data.timesheetDate) setSelectedDate(data.timesheetDate);
       if (data.header?.supervisorId) setSelectedSupervisor(data.header.supervisorId);
@@ -1079,6 +1080,10 @@ export default function TimesheetEntryClient({ variant = 'admin' }: { variant?: 
       return;
     }
     if (selectedEmployees.length === 0 || !bulkProject) return;
+    if (isIdleTimeProjectCode(bulkProject)) {
+      setError(`Use the Idle Time column to book ${IDLE_TIME_PROJECT_CODE} ${IDLE_TIME_PROJECT_NAME}.`);
+      return;
+    }
     setSubmitting(true);
     try {
       const res = await fetch('/api/hris/time-and-logs/timesheet-entry', {
@@ -1227,9 +1232,8 @@ export default function TimesheetEntryClient({ variant = 'admin' }: { variant?: 
     setSelectedMatrixProjectCode(canonicalProjectCode(projectCode));
     if (!previousCode || canonicalProjectCode(previousCode) === canonicalProjectCode(projectCode)) return;
     const dayContext = { date: selectedDate, holidayDates: payload?.holidayDates ?? [], shiftLabel: selectedShift };
-    const standardHours = resolveTimesheetHours(dayContext).standardProductiveHours;
     setLocalLines((lines) => lines.map((line) => {
-      let projectAllocations = normalizeProjectAllocations(line.projectAllocations).map((item) => (
+      const projectAllocations = normalizeProjectAllocations(line.projectAllocations).map((item) => (
         canonicalProjectCode(item.projectCode) === canonicalProjectCode(previousCode)
           ? {
             ...item,
@@ -1240,18 +1244,6 @@ export default function TimesheetEntryClient({ variant = 'admin' }: { variant?: 
           }
           : item
       ));
-      if (
-        !isTimesheetAbsentLine(line)
-        && productiveProjectHours(projectAllocations) <= 0.001
-      ) {
-        projectAllocations = [{
-          projectId: project?.id || projectCode,
-          projectCode,
-          projectName: project?.name || projectCode,
-          hours: standardHours,
-          remarks: null,
-        }];
-      }
       return applyTimesheetLineDefaults(reconcileTimesheetLineHours({ ...line, projectAllocations }), dayContext);
     }));
   };
@@ -2887,7 +2879,7 @@ export default function TimesheetEntryClient({ variant = 'admin' }: { variant?: 
                   className="w-full rounded-xl border-2 border-slate-200 px-4 py-3 text-sm font-black text-slate-900 focus:border-indigo-500 focus:outline-none transition-all"
                 >
                   <option value="">Select Project...</option>
-                  {payload?.projects.map(p => <option key={p.id} value={p.code}>{p.code} - {p.name}</option>)}
+                  {payload?.projects.filter((p) => !isIdleTimeProjectCode(p.code)).map(p => <option key={p.id} value={p.code}>{p.code} - {p.name}</option>)}
                 </select>
               </div>
               <div>

@@ -13,7 +13,7 @@ import {
 } from 'lucide-react';
 import { navigationConfig, NavItem } from '@/lib/config/navigation';
 import { canAccessAdministrationCentre, hasPermission } from '@/lib/auth/permission-match';
-import { canAccessHrManagementNav } from '@/lib/access/route-access';
+import { canAccessCrewMobilization, canAccessHrManagementNav } from '@/lib/access/route-access';
 import { canAccessTimesheetEntryAndApproval } from '@/lib/access/timesheet-access';
 import {
   canAccessFinanceModule,
@@ -173,6 +173,12 @@ export function Sidebar({
         const subItems = item.subItems?.filter((sub) => {
           if (sub.route === '/hris') return canAccessHrManagementNav(sessionLike);
           if (sub.route === '/workforce-portal') return WORKFORCE_PORTAL_ENABLED;
+          if (
+            sub.route?.startsWith('/hris/workforce-management/crew-mobilization')
+            || sub.route?.startsWith('/hris/time-and-logs/crew-mobilization')
+          ) {
+            return canAccessCrewMobilization(sessionLike);
+          }
           if (sub.route === '/finance' || sub.route?.startsWith('/finance/') || sub.route === '/finance-accounting') {
             return canAccessFinanceSubItem(sub.route, permissions, sessionContext.isGlobalAdmin);
           }

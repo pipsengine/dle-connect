@@ -58,6 +58,7 @@ export const navigationConfig: NavItem[] = [
     subItems: [
       // Payroll, Recruitment, and Offboarding live inside the HRIS portal — not as MAIN sidebar modules.
       { title: 'HR Management', slug: 'hr-management', route: '/hris', permissionKey: 'view_hris' },
+      { title: 'Crew Mobilization', slug: 'crew-mobilization', route: '/hris/workforce-management/crew-mobilization', permissionKey: 'page.hris.time-and-logs.crew-mobilization.view' },
       { title: 'Workforce Portal', slug: 'workforce-portal', route: '/workforce-portal', permissionKey: 'view_workforce_portal' },
     ]
   },
@@ -160,6 +161,7 @@ export const navigationConfig: NavItem[] = [
     subItems: [
       { title: 'Operations Dashboard', slug: 'operations-dashboard', route: '/operations-center', permissionKey: 'operations.dashboard.view' },
       { title: 'Timesheets', slug: 'timesheets', route: '/operations-center/timesheets', permissionKey: 'operations.timesheets.submit' },
+      { title: 'Crew Mobilization', slug: 'crew-mobilization', route: '/hris/workforce-management/crew-mobilization', permissionKey: 'page.hris.time-and-logs.crew-mobilization.view' },
       { title: 'Workforce Allocation', slug: 'workforce-allocation', route: '/operations-center/workforce-allocation', permissionKey: 'operations.allocation.view' },
       { title: 'Resource Planning', slug: 'resource-planning', route: '/operations-center/resource-planning', permissionKey: 'operations.resource-planning.view' },
       { title: 'Daily Activity Reports', slug: 'daily-activity-reports', route: '/operations-center/daily-activity-reports', permissionKey: 'operations.daily-reports.create' },

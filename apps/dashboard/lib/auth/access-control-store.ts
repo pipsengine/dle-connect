@@ -123,14 +123,19 @@ const resolveDashboardRoot = () => {
 
 const DATA_DIR = path.join(resolveDashboardRoot(), 'data', 'auth');
 const ACCESS_PATH = path.join(DATA_DIR, 'access-control.json');
+const USERS_PATH = process.env.DLE_AUTH_DATA_DIR
+  ? path.join(process.env.DLE_AUTH_DATA_DIR, 'users.json')
+  : path.join(DATA_DIR, 'users.json');
 const ACCESS_STATE_KEY = 'global-access-control-centre';
 const ACCESS_STATE_CACHE_MS = Number(process.env.ACCESS_CONTROL_STATE_CACHE_MS || 0);
 
 let dbReady: Promise<sql.ConnectionPool> | null = null;
 let cachedAccessState: { state: AccessControlState; expiresAt: number } | null = null;
+let cachedUserFilePermissions: { map: Map<string, string[]>; expiresAt: number } | null = null;
 
 export const invalidateAccessControlStateCache = () => {
   cachedAccessState = null;
+  cachedUserFilePermissions = null;
 };
 
 const nowIso = () => new Date().toISOString();
@@ -693,6 +698,53 @@ const isProtectedPermission = (permission: string) => permission === '*' || ['ad
 
 const assignmentKey = (assignment: Pick<PermissionAssignment, 'subjectType' | 'subjectId'>) => `${assignment.subjectType}:${assignment.subjectId}`;
 
+const userGrantSubjectIds = (userId: string) => {
+  const id = compact(userId);
+  if (!id) return new Set<string>();
+  const ids = new Set<string>([id]);
+  if (/^usr-/i.test(id)) ids.add(id.replace(/^usr-/i, ''));
+  else ids.add(`usr-${id}`);
+  return ids;
+};
+
+const userAssignmentMatches = (subjectId: string, userId: string) => {
+  const granted = compact(subjectId);
+  if (!granted) return false;
+  return userGrantSubjectIds(userId).has(granted);
+};
+
+const userFilePermissionsFor = async (userId: string) => {
+  const now = Date.now();
+  if (!cachedUserFilePermissions || cachedUserFilePermissions.expiresAt < now) {
+    try {
+      const users = JSON.parse(await readFile(USERS_PATH, 'utf8')) as Array<{
+        id?: string;
+        username?: string;
+        employeeCode?: string;
+        employeeId?: string;
+        permissions?: string[];
+      }>;
+      const map = new Map<string, string[]>();
+      for (const user of users) {
+        const permissions = Array.isArray(user.permissions) ? user.permissions.filter(Boolean) : [];
+        if (!permissions.length) continue;
+        for (const key of [user.id, user.username, user.employeeCode, user.employeeId]) {
+          const id = compact(key);
+          if (id) map.set(id, permissions);
+        }
+      }
+      cachedUserFilePermissions = { map, expiresAt: now + 30_000 };
+    } catch {
+      cachedUserFilePermissions = { map: new Map(), expiresAt: now + 5_000 };
+    }
+  }
+  for (const id of userGrantSubjectIds(userId)) {
+    const hit = cachedUserFilePermissions.map.get(id);
+    if (hit?.length) return hit;
+  }
+  return [] as string[];
+};
+
 const baselinePermissions = (subjectType: PermissionScope, subjectId: string) => {
   if (subjectType === 'role' && enterpriseRoles.includes(subjectId as any)) return permissionsForRoles([subjectId]);
   return [] as string[];
@@ -730,14 +782,17 @@ const resolveEffectivePermissions = (state: AccessControlState, userId: string, 
     .filter((item) => item.subjectType === 'role' && roles.includes(item.subjectId) && item.status === 'published')
     .flatMap((item) => item.permissions);
   const userGrants = state.published
-    .filter((item) => item.subjectType === 'user' && item.subjectId === userId && item.status === 'published')
+    .filter((item) => item.subjectType === 'user' && userAssignmentMatches(item.subjectId, userId) && item.status === 'published')
     .flatMap((item) => item.permissions);
   return applyHrisExclusionForRoles(unique([...base, ...roleGrants, ...userGrants]), roles);
 };
 
 export const effectivePermissionsForUser = async (userId: string, roles: string[]) => {
   const state = await readState();
-  return resolveEffectivePermissions(state, userId, roles);
+  const resolved = resolveEffectivePermissions(state, userId, roles);
+  const stored = await userFilePermissionsFor(userId);
+  if (!stored.length) return resolved;
+  return applyHrisExclusionForRoles(unique([...resolved, ...stored]), roles);
 };
 
 export const effectivePermissionsForUsers = async (entries: Array<{ id: string; roles: string[] }>) => {

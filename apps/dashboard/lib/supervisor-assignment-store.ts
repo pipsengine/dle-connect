@@ -32,6 +32,7 @@ export type AssignEmployeesToSupervisorInput = {
   assignmentGroup?: string;
   reason?: string;
   performedBy?: string;
+  exclusive?: boolean;
   sourceRows?: Array<{
     employeeCode?: string | null;
     sourceLabel?: string | null;
@@ -273,7 +274,9 @@ VALUES (@employee_id, 1, 0);
       const employee = await readEmployeeByCode(tx, employeeCode);
       const previousReportingManager = clean(employee?.reporting_manager) || null;
       const matchedStatus = employee ? 'Matched' : 'Unresolved';
-      const employeeName = employee ? employeeDisplayName(employee) : null;
+      const employeeName = employee
+        ? (clean(source?.sourceLabel) || employeeDisplayName(employee))
+        : (clean(source?.sourceLabel) || null);
       const sourceLabel = clean(source?.sourceLabel) || employeeName || employeeCode;
       const newReportingManager = employee ? supervisorLabel : null;
 
@@ -341,6 +344,41 @@ VALUES (@employee_id, @audit_action, @performed_by, @reason, @old_value, @new_va
       }
     }
 
+    const extras: Array<{ employeeCode: string; previousReportingManager: string | null }> = [];
+    if (input.exclusive) {
+      const keep = new Set(employeeCodes.map((code) => code.toUpperCase()));
+      keep.add(supervisorEmployeeCode.toUpperCase());
+      const extraAssignments = await new sql.Request(tx)
+        .input('supervisor_employee_code', sql.NVarChar(50), supervisorEmployeeCode)
+        .query(`
+SELECT employee_code, new_reporting_manager
+FROM [hris].[SupervisorEmployeeAssignments]
+WHERE supervisor_employee_code = @supervisor_employee_code
+  AND NULLIF(employee_code, N'') IS NOT NULL
+`);
+      const extraCodes = new Set<string>();
+      for (const row of extraAssignments.recordset) {
+        const code = clean(row.employee_code).toUpperCase();
+        if (!code || keep.has(code)) continue;
+        extraCodes.add(code);
+      }
+      for (const extraCode of extraCodes) {
+        const employee = await readEmployeeByCode(tx, extraCode);
+        extras.push({
+          employeeCode: extraCode,
+          previousReportingManager: clean(employee?.reporting_manager) || null,
+        });
+        await new sql.Request(tx)
+          .input('employee_code', sql.NVarChar(50), extraCode)
+          .input('supervisor_employee_code', sql.NVarChar(50), supervisorEmployeeCode)
+          .query(`
+DELETE FROM [hris].[SupervisorEmployeeAssignments]
+WHERE employee_code = @employee_code
+  AND supervisor_employee_code = @supervisor_employee_code;
+`);
+      }
+    }
+
     await tx.commit();
     committed = true;
     invalidatePayrollEmployeeCache();
@@ -353,6 +391,7 @@ VALUES (@employee_id, @audit_action, @performed_by, @reason, @old_value, @new_va
         reportingManagerLabel: supervisorLabel,
       },
       assignments: await readSupervisorAssignments({ assignmentBatch }),
+      extrasRemoved: extras,
     };
   } catch (error) {
     if (!committed) await tx.rollback().catch(() => undefined);

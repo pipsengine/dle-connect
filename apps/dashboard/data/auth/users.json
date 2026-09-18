@@ -25028,6 +25028,8 @@
       "operations.timesheets.submit",
       "operations.timesheets.view",
       "operations.view",
+      "page.hris.time-and-logs.crew-mobilization",
+      "page.hris.time-and-logs.crew-mobilization.view",
       "page.hris.time-and-logs.timesheet-approval.view",
       "payroll.payslip.view",
       "profile.view",

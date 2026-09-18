@@ -1,0 +1,17 @@
+{
+  "assignmentBatch": "2026-09-18-agege-galvanizing-akinsanya-adebobola",
+  "assignmentGroup": "GALVANIZING",
+  "supervisorEmployeeCode": "P0277",
+  "exclusive": true,
+  "performedBy": "codex.database-import",
+  "reason": "Agege galvanizing crew locked to the seven operators reporting to Akinsanya Adebobola. Extra departments and finishing/kettle names are removed from this sheet.",
+  "rows": [
+    { "sourceName": "MICHAEL ONOJA", "tradeRole": "GALVANIZING", "employeeCode": "C2506", "matchConfidence": "DirectEmployeeCode" },
+    { "sourceName": "ANTHONY LAWRENCE", "tradeRole": "GALVANIZING", "employeeCode": "C2408", "matchConfidence": "DirectEmployeeCode" },
+    { "sourceName": "MUSBAU AKINDELE", "tradeRole": "GALVANIZING", "employeeCode": "C2396", "matchConfidence": "DirectEmployeeCode" },
+    { "sourceName": "AHMED IDOWU", "tradeRole": "GALVANIZING", "employeeCode": "C2394", "matchConfidence": "DirectEmployeeCode" },
+    { "sourceName": "RASAK JAMIU", "tradeRole": "GALVANIZING", "employeeCode": "C2522", "matchConfidence": "DirectEmployeeCode" },
+    { "sourceName": "GANIYU ADEBIYI", "tradeRole": "GALVANIZING", "employeeCode": "C2443", "matchConfidence": "DirectEmployeeCode" },
+    { "sourceName": "SUNDAY OVAT", "tradeRole": "GALVANIZING", "employeeCode": "C2512", "matchConfidence": "DirectEmployeeCode" }
+  ]
+}

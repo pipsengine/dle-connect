@@ -16,6 +16,8 @@ import {
   isTimesheetAbsentLine,
   applyNightPaperClock,
   isIdleTimeProjectCode,
+  isTimesheetPaidLeaveLine,
+  idleTimeProjectHours,
   productiveProjectHours,
   isManualOffshoreLine,
 } from '@/lib/timesheet-entry-shared';
@@ -95,6 +97,9 @@ export const ensureClockedLinesHaveProjectAllocation = (
       return working;
     }
     if (productiveProjectHours(working.projectAllocations) > 0.001) {
+      return working;
+    }
+    if (isTimesheetPaidLeaveLine(working) || idleTimeProjectHours(working.projectAllocations) > 0.001) {
       return working;
     }
     if (!working.clockIn && !isManualOffshoreLine(working) && shift.kind !== 'Night') {

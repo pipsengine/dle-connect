@@ -42,4 +42,17 @@ assert.equal(
   true,
 );
 
+assert.equal(
+  timesheetAttendanceMatchKeys('C1607 - OJIKA').includes('C1607'),
+  true,
+  'embedded C1607 in biometric name must match the Cutting roster',
+);
+assert.equal(
+  timesheetAttendanceMatchKeys('C1607', 'OJIKA CHUKWUDUMEBI').some((key) =>
+    timesheetAttendanceMatchKeys('C1607', 'OJIKA CHUKWUDUME').includes(key),
+  ),
+  true,
+  '16-char biometric truncation OJIKA CHUKWUDUME must match OJIKA CHUKWUDUMEBI',
+);
+
 console.log('timesheet-attendance-match.test.ts: ok');

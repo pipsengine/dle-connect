@@ -90,4 +90,46 @@ const absent = ensureClockedLinesHaveProjectAllocation(
 );
 assert.equal(absent.bookedCount, 0);
 
+const idleOnly = ensureClockedLinesHaveProjectAllocation(
+  [
+    baseLine({
+      projectAllocations: [{ projectId: 'idle', projectCode: 'DL1949', projectName: 'IDLE TIME', hours: 8, remarks: null }],
+      usedHours: 8,
+    }),
+    baseLine({
+      id: 'line-job',
+      employeeId: 'C1720',
+      employeeNo: 'C1720',
+      employeeName: 'ADANOU',
+      projectAllocations: [{ projectId: 'p1', projectCode: 'DL1985', projectName: 'Legacy Preferred', hours: 8, remarks: null }],
+      usedHours: 8,
+    }),
+  ],
+  projects,
+  dayContext,
+);
+assert.equal(idleOnly.lines[0]?.projectAllocations[0]?.projectCode, 'DL1949');
+assert.equal(idleOnly.lines[0]?.projectAllocations.some((item) => item.projectCode === 'DL1985'), false);
+
+const paidLeave = ensureClockedLinesHaveProjectAllocation(
+  [
+    baseLine({
+      projectAllocations: [{ projectId: 'idle', projectCode: 'DL1949', projectName: 'IDLE TIME', hours: 8, remarks: 'Approved paid leave abc' }],
+      usedHours: 8,
+      remarks: 'Approved paid leave: 2026-08-17 to 2026-08-17 (Annual)',
+    }),
+    baseLine({
+      id: 'line-job',
+      employeeId: 'C1720',
+      employeeNo: 'C1720',
+      employeeName: 'ADANOU',
+      projectAllocations: [{ projectId: 'p1', projectCode: 'DL1985', projectName: 'Legacy Preferred', hours: 8, remarks: null }],
+      usedHours: 8,
+    }),
+  ],
+  projects,
+  dayContext,
+);
+assert.equal(paidLeave.lines[0]?.projectAllocations[0]?.projectCode, 'DL1949');
+
 console.log('timesheet-line-defaults auto-book tests passed');
