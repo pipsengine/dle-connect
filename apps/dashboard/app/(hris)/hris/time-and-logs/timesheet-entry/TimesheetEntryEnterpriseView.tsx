@@ -377,7 +377,7 @@ export function TimesheetEntryEnterpriseView(props: TimesheetEnterpriseViewProps
                 options={props.locationOptions.map((item) => ({ value: item, label: item }))}
               />
             </ContextField>
-            <ContextField label="Work Centre">
+            <ContextField label={props.isOffshoreSheet ? 'Project' : 'Work Centre'}>
               <SearchableContextPicker
                 value={props.selectedWorkCenter}
                 onChange={props.onWorkCenterChange}
@@ -458,7 +458,7 @@ export function TimesheetEntryEnterpriseView(props: TimesheetEnterpriseViewProps
           <div className="flex flex-wrap items-center gap-2 rounded-[16px] border border-sky-100 bg-sky-50 px-4 py-3">
             <p className="text-xs font-semibold text-sky-950">
               {props.isOffshoreSheet
-                ? 'Add assigned crew to this offshore sheet (no clock). Confirm 8h, then Save Draft:'
+                ? 'If a mobilized person is missing from this project sheet, add them (no clock). Confirm 8h, then Save Draft:'
                 : 'Paper N — add someone who worked night without a clock:'}
             </p>
             <select
@@ -791,8 +791,8 @@ export function TimesheetEntryEnterpriseView(props: TimesheetEnterpriseViewProps
                             <div className="mx-auto max-w-xl space-y-2">
                               <p>No crew is mobilized to this offshore project for this date.</p>
                               <p>
-                                Mobilize them first: <Link href="/hris/workforce-management/crew-mobilization" className="font-bold text-[#2563EB] underline">Crew Mobilization</Link>
-                                {' '}→ project matching this work centre → workers and dates → Mobilize. Then return here, type 8h, Save Draft.
+                Mobilize them first: <Link href="/hris/workforce-management/crew-mobilization" className="font-bold text-[#2563EB] underline">Crew Mobilization</Link>
+                                {' '}→ project → workers and dates → Mobilize. Then open location OFFSHORE, pick that project, type 8h, Save Draft.
                               </p>
                             </div>
                           ) : resolveTimesheetShift(props.selectedShift).kind === 'Night'

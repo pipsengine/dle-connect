@@ -71,11 +71,11 @@ import {
   resolveOvertimeBookingOptions,
 } from '@/lib/timesheet-overtime-config';
 import { applyTimesheetLineDefaults, ensureClockedLinesHaveProjectAllocation } from '@/lib/timesheet-line-defaults';
-import { normalizeIdleAllocations, normalizeProjectAllocations, reconcileTimesheetLineHours, resolvePrimaryProjectCode, validateTimesheetLinesForPersist, TIMESHEET_SHIFT_LABELS, resolveTimesheetShift, timesheetHeaderMatchesShift, buildTimesheetHeaderId, selectTimesheetHeaderForLocation, timesheetWorkCentersMatch, isOffshoreWorkCenterName, isManualOffshoreLine, isTimesheetAbsentLine, isTimesheetInApprovalCapture, applyNightPaperClock, timesheetLineHasBookedHours, buildManualOffshoreLine, buildRosterTimesheetLine, projectCodeFromOffshoreWorkCenter, OFFSHORE_LOCATION_NAME, DEFAULT_TIMESHEET_SHIFT_LABEL, supervisorTimesheetMessage, dedupeTimesheetLinesByEmployee, isIdleTimeProjectCode, upsertMatrixProjectHours, markLineAsManualOffshore, canBookTimesheetHoursWithoutClock, type TimesheetDayContext } from '@/lib/timesheet-entry-shared';
+import { normalizeIdleAllocations, normalizeProjectAllocations, reconcileTimesheetLineHours, resolvePrimaryProjectCode, validateTimesheetLinesForPersist, TIMESHEET_SHIFT_LABELS, resolveTimesheetShift, timesheetHeaderMatchesShift, buildTimesheetHeaderId, selectTimesheetHeaderForLocation, timesheetWorkCentersMatch, isOffshoreWorkCenterName, isOffshoreLocationName, isOffshoreTimesheetContext, isManualOffshoreLine, isTimesheetAbsentLine, isTimesheetInApprovalCapture, applyNightPaperClock, timesheetLineHasBookedHours, buildManualOffshoreLine, buildRosterTimesheetLine, projectCodeFromOffshoreWorkCenter, resolveOffshoreProjectCode, timesheetOffshoreWorkCentersMatch, OFFSHORE_LOCATION_NAME, DEFAULT_TIMESHEET_SHIFT_LABEL, supervisorTimesheetMessage, dedupeTimesheetLinesByEmployee, isIdleTimeProjectCode, upsertMatrixProjectHours, markLineAsManualOffshore, canBookTimesheetHoursWithoutClock, type TimesheetDayContext } from '@/lib/timesheet-entry-shared';
 import { displaceUncommittedBookingsOnOtherDrafts, findSameDayBookingConflicts, releaseLinesAlreadyBookedElsewhere, type TimesheetAlreadyBookedSkip } from '@/lib/timesheet-booking-clash';
 import { assertTimesheetRecaptureAllowed, reopenTimesheetForRecapture } from '@/lib/timesheet-recapture';
 import { submitTimesheetForApproval } from '@/lib/timesheet-submit';
-import { mobilizationCoversDate, mobilizationMatchesOffshoreSheet, mobilizationMatchesSupervisor, readTimesheetMobilizations, resolveOffshoreTimesheetRoster, type TimesheetMobilization } from '@/lib/timesheet-mobilization-store';
+import { mobilizationCoversDate, mobilizationMatchesOffshoreSheet, readTimesheetMobilizations, resolveOffshoreTimesheetRoster, type TimesheetMobilization } from '@/lib/timesheet-mobilization-store';
 import {
   applyAgegeBlastingSupervisorContext,
   dedupeTimesheetLocationLabels,
@@ -89,11 +89,18 @@ import {
   timesheetLocationsMatch,
 } from '@/lib/timesheet-agege-blasting';
 
-const dayContextFor = (date: string, holidayDates: string[], shiftLabel?: string | null): TimesheetDayContext => ({
+const dayContextFor = (date: string, holidayDates: string[], shiftLabel?: string | null, locationName?: string | null): TimesheetDayContext => ({
   date,
   holidayDates,
   shiftLabel: shiftLabel || undefined,
+  locationName: locationName || undefined,
 });
+
+const resolveOffshoreSheetWorkCenter = (workCenterName: string, projectCodes: string[]) => {
+  const requested = resolveOffshoreProjectCode(workCenterName, OFFSHORE_LOCATION_NAME);
+  if (requested && projectCodes.includes(requested)) return requested;
+  return projectCodes[0] || requested || workCenterName;
+};
 
 type ProjectManagerOption = {
   employeeId: string;
@@ -321,7 +328,7 @@ async function handleBulkApply(request: Request, payload: UpdatePayload) {
     overtimeBooking,
   );
   const holidayDates = await readPublicHolidayDates();
-  const dayContext = dayContextFor(header.timesheetDate, holidayDates, header.shiftLabel);
+  const dayContext = dayContextFor(header.timesheetDate, holidayDates, header.shiftLabel, header.locationName);
 
   const updatedLines = currentLines.map(line => {
     if (!employeeIds.includes(line.employeeId)) return line;
@@ -941,7 +948,7 @@ const buildPayload = async (
     targetDate = clampDateToTimesheetPeriod(targetDate, openPeriod);
   }
   const targetShiftLabel = resolveTimesheetShift(requestedHeader?.shiftLabel || requestedShiftLabel).label;
-  const dayContext = dayContextFor(targetDate, holidayDates, targetShiftLabel);
+  let dayContext = dayContextFor(targetDate, holidayDates, targetShiftLabel);
   if (supervisorMode && !session) throw new Error('Authenticated supervisor session is required.');
   let requestedSupervisor = clean(requestedHeader?.supervisorId || supervisorId);
   let targetWorkCenter = clean(requestedHeader?.workCenterName || workCenterName);
@@ -1021,24 +1028,36 @@ const buildPayload = async (
   const selectedSupervisorProfile = findSupervisorEmployee(targetSupervisor, supervisorIndex) || activeEmployees.find((employee) => supervisorMatchesSelection(employee, targetSupervisor));
   const targetSupervisorCode = extractSupervisorEmployeeCode(targetSupervisor).toLowerCase();
   const dateMobilizations = allMobilizations.filter((item) => mobilizationCoversDate(item, targetDate));
-  const hostMobilizations = dateMobilizations.filter((item) => mobilizationMatchesSupervisor(item, targetSupervisor));
+  const offshoreProjectCodes = Array.from(new Set(
+    dateMobilizations
+      .map((item) => item.projectCode || projectCodeFromOffshoreWorkCenter(item.workCenterName))
+      .filter(Boolean),
+  ));
   const scopedWorkCenters = [...workCenters];
   const scopedLocations = [...locations];
   for (const item of dateMobilizations) {
-    if (!isOffshoreWorkCenterName(item.workCenterName)) continue;
-    if (!scopedWorkCenters.some((workCenter) => clean(workCenter.name) === item.workCenterName)) {
-      scopedWorkCenters.push({
-        id: `wc-${item.workCenterName.toLowerCase().replace(/[^a-z0-9]+/g, '-')}`,
-        code: item.workCenterName,
-        name: item.workCenterName,
-        location: OFFSHORE_LOCATION_NAME,
-        site: OFFSHORE_LOCATION_NAME,
-        status: 'Active',
-        sourceSystem: 'HRIS',
-      });
-    }
+    const projectCode = item.projectCode || projectCodeFromOffshoreWorkCenter(item.workCenterName);
+    if (!projectCode) continue;
+    if (
+      item.locationName
+      && !isOffshoreLocationName(item.locationName)
+      && !isOffshoreWorkCenterName(item.workCenterName)
+    ) continue;
+    if (scopedWorkCenters.some((workCenter) => (
+      clean(workCenter.name) === projectCode
+      || timesheetOffshoreWorkCentersMatch(workCenter.name, projectCode, OFFSHORE_LOCATION_NAME)
+    ))) continue;
+    scopedWorkCenters.push({
+      id: `wc-offshore-${projectCode.toLowerCase().replace(/[^a-z0-9]+/g, '-')}`,
+      code: projectCode,
+      name: projectCode,
+      location: OFFSHORE_LOCATION_NAME,
+      site: OFFSHORE_LOCATION_NAME,
+      status: 'Active',
+      sourceSystem: 'HRIS',
+    });
   }
-  if ((dateMobilizations.some((item) => isOffshoreWorkCenterName(item.workCenterName)) || isOffshoreWorkCenterName(targetWorkCenter)) && !scopedLocations.some((location) => clean(location.name) === OFFSHORE_LOCATION_NAME)) {
+  if ((dateMobilizations.some((item) => isOffshoreLocationName(item.locationName) || isOffshoreWorkCenterName(item.workCenterName) || Boolean(item.projectCode)) || isOffshoreTimesheetContext(targetLocation, targetWorkCenter)) && !scopedLocations.some((location) => clean(location.name) === OFFSHORE_LOCATION_NAME)) {
     scopedLocations.push({
       id: 'loc-offshore',
       code: 'OFFSHORE',
@@ -1060,13 +1079,14 @@ const buildPayload = async (
       locationNames: directoryLocationNames,
       workCenterNames: workCenterNameList,
     });
-    if (forced.forced && !isOffshoreWorkCenterName(targetWorkCenter) && !isOffshoreWorkCenterName(forced.workCenterName)) {
+    if (forced.forced && !isOffshoreTimesheetContext(targetLocation, targetWorkCenter) && !isOffshoreTimesheetContext(forced.locationName, forced.workCenterName)) {
       targetLocation = forced.locationName;
       targetWorkCenter = forced.workCenterName;
     }
   }
-  if (isOffshoreWorkCenterName(targetWorkCenter)) {
+  if (isOffshoreLocationName(targetLocation) || isOffshoreWorkCenterName(targetWorkCenter)) {
     targetLocation = OFFSHORE_LOCATION_NAME;
+    targetWorkCenter = resolveOffshoreSheetWorkCenter(targetWorkCenter, offshoreProjectCodes);
   }
   const employeesByCode = new Map(activeEmployees.map((employee) => [clean(employee.employeeCode).toLowerCase(), employee]));
   const assignedFromGlobalRows = assignmentRows
@@ -1118,8 +1138,9 @@ const buildPayload = async (
       locationNames: directoryLocationNames,
       workCenterNames: workCenterNameList,
     });
-    if (isOffshoreWorkCenterName(targetWorkCenter)) {
+    if (isOffshoreLocationName(targetLocation) || isOffshoreWorkCenterName(targetWorkCenter)) {
       targetLocation = OFFSHORE_LOCATION_NAME;
+      targetWorkCenter = resolveOffshoreSheetWorkCenter(targetWorkCenter, offshoreProjectCodes);
     } else if (agegeForced.forced) {
       targetLocation = agegeForced.locationName;
       targetWorkCenter = agegeForced.workCenterName;
@@ -1145,7 +1166,7 @@ const buildPayload = async (
         preferredLocationFromDirectory([], scopedLocations, scopedWorkCenters) ||
         workCenterSiteLocation(scopedWorkCenters.find((workCenter) => workCenter.name === targetWorkCenter), workCenterNameList) ||
         mostCommon(scopedLocations.flatMap((location) => [location.name, location.site]));
-      if (targetLocation && targetWorkCenter && !isOffshoreWorkCenterName(targetWorkCenter)) {
+      if (targetLocation && targetWorkCenter && !isOffshoreTimesheetContext(targetLocation, targetWorkCenter)) {
         const workCentersForLocation = scopedWorkCenters.filter((workCenter) => {
           const selected = clean(targetLocation).toLowerCase();
           if (!selected) return true;
@@ -1162,7 +1183,10 @@ const buildPayload = async (
         }
       }
     }
-    if (isOffshoreWorkCenterName(targetWorkCenter)) targetLocation = OFFSHORE_LOCATION_NAME;
+    if (isOffshoreLocationName(targetLocation) || isOffshoreWorkCenterName(targetWorkCenter)) {
+      targetLocation = OFFSHORE_LOCATION_NAME;
+      targetWorkCenter = resolveOffshoreSheetWorkCenter(targetWorkCenter, offshoreProjectCodes);
+    }
     // Drop trade-label locations (e.g. Painting) so Agege crew is not filtered out.
     if (targetLocation && isTimesheetTradeLabelLocation(targetLocation, workCenterNameList)) {
       targetLocation =
@@ -1195,8 +1219,8 @@ const buildPayload = async (
     })
     .map(timesheetRecordEmployeeSummary)
     .sort((a, b) => a.fullName.localeCompare(b.fullName));
-  const isOffshoreSheet = isOffshoreWorkCenterName(targetWorkCenter);
-  const offshoreProjectCode = projectCodeFromOffshoreWorkCenter(targetWorkCenter);
+  const isOffshoreSheet = isOffshoreLocationName(targetLocation) || isOffshoreWorkCenterName(targetWorkCenter);
+  const offshoreProjectCode = resolveOffshoreProjectCode(targetWorkCenter, targetLocation) || (isOffshoreSheet ? clean(targetWorkCenter).toUpperCase() : '');
   const supervisorCrewCodes = selectedSupervisorAllDirectReports.flatMap((employee) => [employee.employeeCode, employee.employeeId]).map((value) => clean(value)).filter(Boolean);
   const sheetMobilizations = isOffshoreSheet
     ? dateMobilizations.filter((item) => mobilizationMatchesOffshoreSheet(item, {
@@ -1246,17 +1270,11 @@ const buildPayload = async (
       status: employee?.status,
     });
   }).sort((a, b) => a.fullName.localeCompare(b.fullName));
-  const assignedOffshoreFallback = selectedSupervisorAllDirectReports
-    .map((employee) => toOffshoreRosterEmployee(employee))
-    .filter((employee, index, rows) => {
-      const key = employee.employeeCode.toLowerCase();
-      return key && rows.findIndex((row) => row.employeeCode.toLowerCase() === key) === index;
-    })
-    .sort((a, b) => a.fullName.localeCompare(b.fullName));
-  const offshoreRosterEmployees = resolveOffshoreTimesheetRoster(mobilizedOffshoreEmployees, assignedOffshoreFallback);
+  const offshoreRosterEmployees = resolveOffshoreTimesheetRoster(mobilizedOffshoreEmployees);
   const selectedSupervisorEmployees = isOffshoreSheet ? offshoreRosterEmployees : homeSupervisorEmployees;
   let targetShiftForSheet = targetShiftLabel;
   if (isOffshoreSheet) targetShiftForSheet = DEFAULT_TIMESHEET_SHIFT_LABEL;
+  dayContext = dayContextFor(targetDate, holidayDates, targetShiftForSheet, isOffshoreSheet ? OFFSHORE_LOCATION_NAME : targetLocation);
   const overtimeBooking = resolveOvertimeBookingOptions();
   const activeProjects = projects.filter((project) => ['Active', 'Approved', 'Open'].includes(project.status));
   const bookableProjects = activeProjects.filter((project) => !isIdleTimeProjectCode(project.code));
@@ -1286,7 +1304,10 @@ const buildPayload = async (
     requestedHeader ||
     null;
   if (!header && targetWorkCenter) {
-    const candidates = headers.filter((h) => headerMatchesScope(h) && h.workCenterName === targetWorkCenter);
+    const candidates = headers.filter((h) => headerMatchesScope(h) && (
+      h.workCenterName === targetWorkCenter
+      || timesheetOffshoreWorkCentersMatch(h.workCenterName, targetWorkCenter, targetLocation)
+    ));
     const pick = selectTimesheetHeaderForLocation(candidates, targetLocation, supervisorHomeLocation, locationSpecificHeaderId);
     header = pick.header;
     adoptLegacyHeader = pick.adoptLegacy;
@@ -1461,7 +1482,7 @@ const buildPayload = async (
   }
 
   if (isOffshoreSheet) {
-    const workCenterId = targetWorkCenter.toLowerCase().replace(/\s+/g, '-');
+    const workCenterId = targetWorkCenter.toLowerCase().replace(/[^a-z0-9]+/g, '-');
     let persistOffshore = false;
     if (!header) {
       header = {
@@ -1488,7 +1509,20 @@ const buildPayload = async (
         locationName: targetLocation || OFFSHORE_LOCATION_NAME,
       };
       persistOffshore = true;
+    } else if (header.workCenterName !== targetWorkCenter || header.locationName !== OFFSHORE_LOCATION_NAME) {
+      header = {
+        ...header,
+        workCenterId,
+        workCenterName: targetWorkCenter,
+        locationName: OFFSHORE_LOCATION_NAME,
+      };
+      persistOffshore = true;
     }
+    const beforeCount = lines.length;
+    lines = sheetMobilizations.length
+      ? lines.filter((line) => sheetMobilizations.some((item) => lineMatchesMobilization(line, item)))
+      : [];
+    if (lines.length !== beforeCount) persistOffshore = true;
     const existingKeys = new Set(lines.flatMap((line) => matchKeys(line.employeeNo, line.employeeId, line.employeeName)));
     const projectName = sheetMobilizations[0]?.projectName || offshoreProjectCode || targetWorkCenter;
     for (const employee of selectedSupervisorEmployees) {
@@ -1513,15 +1547,14 @@ const buildPayload = async (
     }
   }
 
-  const lineIsHostMobilized = (line: TimesheetLine) =>
-    hostMobilizations.some((item) => lineMatchesMobilization(line, item));
+  const lineIsSheetMobilized = (line: TimesheetLine) =>
+    sheetMobilizations.some((item) => lineMatchesMobilization(line, item));
   let persistManualStamp = false;
   lines = lines.map((line) => {
+    if (!isOffshoreSheet || !lineIsSheetMobilized(line)) return line;
     if (isManualOffshoreLine(line)) return line;
-    const offshoreCrew = isOffshoreSheet || lineIsHostMobilized(line);
-    if (!offshoreCrew) return line;
     persistManualStamp = true;
-    if (isOffshoreSheet && !timesheetLineHasBookedHours(line)) {
+    if (!timesheetLineHasBookedHours(line)) {
       return {
         ...buildManualOffshoreLine({
           headerId: header?.id || line.headerId,
@@ -1558,7 +1591,7 @@ const buildPayload = async (
       ...activeEmployees.map(employeeLocation),
       ...locations.flatMap((location) => [location.name, location.site]),
       ...scopedLocations.flatMap((location) => [location.name, location.site]),
-      ...(hostMobilizations.length || isOffshoreSheet ? [OFFSHORE_LOCATION_NAME] : []),
+      ...(isOffshoreSheet || dateMobilizations.some((item) => isOffshoreLocationName(item.locationName) || isOffshoreWorkCenterName(item.workCenterName)) ? [OFFSHORE_LOCATION_NAME] : []),
     ],
   ).filter((name) => !isTimesheetTradeLabelLocation(name, workCenterNameList));
   lines = dedupeTimesheetLinesByEmployee(lines).lines;
@@ -1636,10 +1669,7 @@ const buildPayload = async (
       supervisorDirectory,
     },
     matrixColumns: (isOffshoreSheet && offshoreProjectCode
-      ? [
-        { code: offshoreProjectCode, label: offshoreProjectCode, kind: 'project' as const },
-        ...bookableProjects.filter((project) => project.code !== offshoreProjectCode).slice(0, 3).map((p) => ({ code: p.code, label: p.code, kind: 'project' as const })),
-      ]
+      ? [{ code: offshoreProjectCode, label: offshoreProjectCode, kind: 'project' as const }]
       : bookableProjects.slice(0, 4).map((p) => ({ code: p.code, label: p.code, kind: 'project' as const }))),
     projectCatalog: activeProjects,
     mobilizedCrew: isOffshoreSheet
@@ -1649,18 +1679,16 @@ const buildPayload = async (
         workCenterName: targetWorkCenter,
         employeeCodes: selectedSupervisorEmployees.map((employee) => employee.employeeCode),
         message: selectedSupervisorEmployees.length
-          ? sheetMobilizations.length
-            ? `${sheetMobilizations.length} crew mobilized to ${offshoreProjectCode || targetWorkCenter}. Manual booking, no clock. Type 8h on the project column. 4h offshore allowance is outside payroll.`
-            : `${selectedSupervisorEmployees.length} assigned crew on this offshore sheet — manual booking, no clock. Type 8h on ${offshoreProjectCode || 'the project column'}. 4h offshore allowance is outside payroll.`
+          ? `${selectedSupervisorEmployees.length} crew mobilized to ${offshoreProjectCode || targetWorkCenter}. Location OFFSHORE, project ${offshoreProjectCode || targetWorkCenter}. Manual booking, no clock. Type 8h on the project column. 4h offshore allowance is outside payroll.`
           : `No crew mobilized to ${offshoreProjectCode || targetWorkCenter} for this date. Open Crew Mobilization, mobilize them to this project, then return here and type 8h.`,
       }
-      : hostMobilizations.length
+      : dateMobilizations.length
         ? {
-          count: hostMobilizations.length,
-          projectCode: hostMobilizations[0]?.projectCode || '',
-          workCenterName: hostMobilizations[0]?.workCenterName || '',
-          employeeCodes: hostMobilizations.map((item) => item.employeeCode),
-          message: `${hostMobilizations.length} crew are mobilized offshore today. Open location OFFSHORE to book them, or book hours here without a clock.`,
+          count: dateMobilizations.length,
+          projectCode: dateMobilizations[0]?.projectCode || '',
+          workCenterName: dateMobilizations[0]?.projectCode || dateMobilizations[0]?.workCenterName || '',
+          employeeCodes: dateMobilizations.map((item) => item.employeeCode),
+          message: `${dateMobilizations.length} crew are mobilized offshore today. Open location OFFSHORE and project ${dateMobilizations[0]?.projectCode || ''} to book them.`,
         }
         : null,
     sameDayBookingConflicts: header
@@ -1936,7 +1964,7 @@ export async function PATCH(request: Request) {
       if (!targets.length) return err(400, 'Select present employees to book approved overtime.');
 
       const holidayDates = await readPublicHolidayDates();
-      const dayContext = dayContextFor(header.timesheetDate, holidayDates, header.shiftLabel || payload.shiftLabel);
+      const dayContext = dayContextFor(header.timesheetDate, holidayDates, header.shiftLabel || payload.shiftLabel, header.locationName);
       if (String(dayContext.shiftLabel || '').toLowerCase().includes('night')) {
         return err(400, 'Night shift is paid as normal 8-hour work plus ₦1,500 inconvenience allowance. Overtime cannot be booked for night work.');
       }
@@ -2037,7 +2065,7 @@ export async function PATCH(request: Request) {
         scopedWorkCenterName = workCenterName || scoped.header?.workCenterName || scoped.workCenters[0]?.name || '';
       }
       if (!scopedDate || !scopedSupervisorId || !scopedWorkCenterName) return err(400, 'Date, Supervisor ID, and Work Center Name are required.');
-      if (isOffshoreWorkCenterName(scopedWorkCenterName)) {
+      if (isOffshoreTimesheetContext(scopedLocationName, scopedWorkCenterName)) {
         return err(400, 'Offshore timesheets are booked from the HR mobilization roster. There is no clocking machine — attendance sync is not used.');
       }
       await requireOpenPeriod(scopedDate);
@@ -2104,7 +2132,7 @@ export async function PATCH(request: Request) {
       const overtimeBooking = resolveOvertimeBookingOptions();
       const saveProjects = await readProjects();
       const holidayDates = await readPublicHolidayDates();
-      const dayContext = dayContextFor(header.timesheetDate, holidayDates, header.shiftLabel || payload.shiftLabel);
+      const dayContext = dayContextFor(header.timesheetDate, holidayDates, header.shiftLabel || payload.shiftLabel, header.locationName);
       if (payload.shiftLabel) header.shiftLabel = String(payload.shiftLabel);
       const isNightHeader = resolveTimesheetShift(header.shiftLabel).kind === 'Night';
 
@@ -2123,7 +2151,7 @@ export async function PATCH(request: Request) {
       const reconciledLines = linesForSave.map((line) => applyNightPaperClock(reconcileTimesheetLineHours(line), header.shiftLabel));
       for (const line of reconciledLines) {
         const projectHours = (line.projectAllocations || []).reduce((sum, allocation) => sum + Number(allocation.hours || 0), 0);
-        if (!isNightHeader && !line.clockIn && !canBookTimesheetHoursWithoutClock(line, header.workCenterName, header.shiftLabel) && projectHours > 0.001) {
+        if (!isNightHeader && !line.clockIn && !canBookTimesheetHoursWithoutClock(line, header.workCenterName, header.shiftLabel, header.locationName) && projectHours > 0.001) {
           return err(400, `Absent employee ${line.employeeName} cannot receive project/productive hours.`);
         }
         const validated = validateTimesheetLine(
@@ -2167,12 +2195,25 @@ export async function PATCH(request: Request) {
         header.status = previousStatus;
       }
 
-      const persistLines = isNightHeader
+      let persistLines = isNightHeader
         ? normalizedLines.filter((line) =>
           Boolean(String(line.clockIn || '').trim())
           || timesheetLineHasBookedHours(line),
         )
         : normalizedLines;
+      if (isOffshoreTimesheetContext(header.locationName, header.workCenterName)) {
+        const projectCode = resolveOffshoreProjectCode(header.workCenterName, header.locationName);
+        const allowed = (await readTimesheetMobilizations().catch(() => [] as TimesheetMobilization[]))
+          .filter((item) => mobilizationCoversDate(item, header.timesheetDate)
+            && mobilizationMatchesOffshoreSheet(item, {
+              supervisorId: header.supervisorId,
+              projectCode,
+              workCenterName: header.workCenterName,
+              crewCodes: [],
+            }));
+        const allowedKeys = new Set(allowed.flatMap((item) => matchKeys(item.employeeCode, item.employeeName)));
+        persistLines = persistLines.filter((line) => matchKeys(line.employeeNo, line.employeeId, line.employeeName).some((key) => allowedKeys.has(key)));
+      }
       const persistCheck = validateTimesheetLinesForPersist(persistLines);
       if (persistCheck.issues.some((issue) => /duplicate project code/i.test(issue))) {
         return err(400, persistCheck.issues.join(' '));

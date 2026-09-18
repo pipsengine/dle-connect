@@ -493,6 +493,7 @@ export type TimesheetDayContext = {
   holidayDates?: string[];
   /** Selected timesheet shift label, e.g. "02 (Night)". */
   shiftLabel?: string;
+  locationName?: string;
 };
 
 export const timesheetDayRulesForDate = (date: string, holidayDates: string[] = []): TimesheetDayRules => {
@@ -1106,12 +1107,39 @@ export const OFFSHORE_REMARKS_MARKER = 'OFFSHORE_MANUAL';
 export const offshoreWorkCenterName = (projectCode: string) =>
   `${OFFSHORE_WORK_CENTER_PREFIX}${String(projectCode || '').trim().toUpperCase()}`;
 
+export const isOffshoreLocationName = (name?: string | null) =>
+  String(name || '').trim().toUpperCase() === OFFSHORE_LOCATION_NAME;
+
+/** Legacy work-centre labels such as "OFFSHORE · DL2601". */
 export const isOffshoreWorkCenterName = (name?: string | null) =>
   /^OFFSHORE(\s|$|[·\-–])/i.test(String(name || '').trim());
 
 export const projectCodeFromOffshoreWorkCenter = (name?: string | null) => {
   const match = String(name || '').trim().match(/^OFFSHORE\s*[·\-–]\s*(.+)$/i);
   return match ? match[1].trim().toUpperCase() : '';
+};
+
+export const isOffshoreTimesheetContext = (locationName?: string | null, workCenterName?: string | null) =>
+  isOffshoreLocationName(locationName) || isOffshoreWorkCenterName(workCenterName);
+
+/** Canonical offshore work centre is the project code. Legacy "OFFSHORE · CODE" still resolves. */
+export const resolveOffshoreProjectCode = (workCenterName?: string | null, locationName?: string | null) => {
+  const fromLegacy = projectCodeFromOffshoreWorkCenter(workCenterName);
+  if (fromLegacy) return fromLegacy;
+  if (!isOffshoreTimesheetContext(locationName, workCenterName)) return '';
+  const code = String(workCenterName || '').trim().toUpperCase();
+  if (!code || code === OFFSHORE_LOCATION_NAME || isOffshoreWorkCenterName(code)) return '';
+  return code;
+};
+
+export const formatOffshoreSheetLabel = (projectCode: string) =>
+  `${OFFSHORE_LOCATION_NAME} · ${String(projectCode || '').trim().toUpperCase()}`;
+
+export const timesheetOffshoreWorkCentersMatch = (left?: string | null, right?: string | null, locationName?: string | null) => {
+  if (timesheetWorkCentersMatch(left, right)) return true;
+  const a = resolveOffshoreProjectCode(left, locationName) || projectCodeFromOffshoreWorkCenter(left);
+  const b = resolveOffshoreProjectCode(right, locationName) || projectCodeFromOffshoreWorkCenter(right);
+  return Boolean(a && b && a === b);
 };
 
 export const isManualOffshoreLine = (line: {
@@ -1136,10 +1164,11 @@ export const canBookTimesheetHoursWithoutClock = (
   },
   workCenterName?: string | null,
   shiftLabel?: string | null,
+  locationName?: string | null,
 ) => {
   if (resolveTimesheetShift(shiftLabel).kind === 'Night') return true;
   if (isManualOffshoreLine(line)) return true;
-  return isOffshoreWorkCenterName(workCenterName);
+  return isOffshoreTimesheetContext(locationName, workCenterName);
 };
 
 export const markLineAsManualOffshore = <T extends {

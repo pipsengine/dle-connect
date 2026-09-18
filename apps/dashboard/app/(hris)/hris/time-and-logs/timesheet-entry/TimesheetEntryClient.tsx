@@ -35,7 +35,7 @@ import {
   validateTimesheetLine,
   type OvertimeAuthorization,
 } from '@/lib/timesheet-overtime-booking';
-import { DAILY_BREAK_HOURS, STANDARD_TIMESHEET_HOURS, DEFAULT_BREAK_IDLE_REASON_ID, DEFAULT_BREAK_IDLE_REASON_NAME, normalizeIdleAllocations, normalizeProjectAllocations, canonicalProjectCode, consolidateProjectAllocationsToPrimary, resolvePrimaryProjectCode, resolveTimesheetHours, attendanceDurationFromClock, reconcileTimesheetLineHours, sumProjectAllocationHours, matrixProductiveHoursCap, upsertMatrixProjectHours, DEFAULT_TIMESHEET_SHIFT_LABEL, resolveTimesheetShift, timesheetHeaderMatchesShift, timesheetLineMatchesShift, applyNightPaperClock, buildRosterTimesheetLine, buildManualOffshoreLine, IDLE_TIME_PROJECT_CODE, IDLE_TIME_PROJECT_NAME, idleTimeProjectHours, productiveProjectHours, isIdleTimeProjectCode, isEditableTimesheetStatus, isTimesheetInApprovalCapture, isManualOffshoreLine, isTimesheetAbsentLine, isOffshoreWorkCenterName, OFFSHORE_ALLOWANCE_HOURS, OFFSHORE_LOCATION_NAME, supervisorTimesheetMessage, resolveAutoDistributeProjectCode, requiresMiscellaneousTimesheetConfirm, dedupeTimesheetLinesByEmployee, markLineAsManualOffshore, canBookTimesheetHoursWithoutClock, projectCodeFromOffshoreWorkCenter } from '@/lib/timesheet-entry-shared';
+import { DAILY_BREAK_HOURS, STANDARD_TIMESHEET_HOURS, DEFAULT_BREAK_IDLE_REASON_ID, DEFAULT_BREAK_IDLE_REASON_NAME, normalizeIdleAllocations, normalizeProjectAllocations, canonicalProjectCode, consolidateProjectAllocationsToPrimary, resolvePrimaryProjectCode, resolveTimesheetHours, attendanceDurationFromClock, reconcileTimesheetLineHours, sumProjectAllocationHours, matrixProductiveHoursCap, upsertMatrixProjectHours, DEFAULT_TIMESHEET_SHIFT_LABEL, resolveTimesheetShift, timesheetHeaderMatchesShift, timesheetLineMatchesShift, applyNightPaperClock, buildRosterTimesheetLine, buildManualOffshoreLine, IDLE_TIME_PROJECT_CODE, IDLE_TIME_PROJECT_NAME, idleTimeProjectHours, productiveProjectHours, isIdleTimeProjectCode, isEditableTimesheetStatus, isTimesheetInApprovalCapture, isManualOffshoreLine, isTimesheetAbsentLine, isOffshoreWorkCenterName, isOffshoreLocationName, isOffshoreTimesheetContext, OFFSHORE_ALLOWANCE_HOURS, OFFSHORE_LOCATION_NAME, supervisorTimesheetMessage, resolveAutoDistributeProjectCode, requiresMiscellaneousTimesheetConfirm, dedupeTimesheetLinesByEmployee, markLineAsManualOffshore, canBookTimesheetHoursWithoutClock, resolveOffshoreProjectCode } from '@/lib/timesheet-entry-shared';
 import { applyTimesheetLineDefaults } from '@/lib/timesheet-line-defaults';
 import { canBookOvertimeOnTimesheet } from '@/lib/timesheet-overtime-config';
 import {
@@ -423,10 +423,21 @@ const workCenterMatchesLocation = (workCenter: Payload['workCenters'][number], l
 };
 
 const workCenterNamesForLocation = (workCenters: Payload['workCenters'], location: string) => {
-  const matching = workCenters.filter((workCenter) => workCenterMatchesLocation(workCenter, location)).map((workCenter) => workCenter.name);
-  const offshore = workCenters.filter((workCenter) => isOffshoreWorkCenterName(workCenter.name)).map((workCenter) => workCenter.name);
-  const names = matching.length ? matching : workCenters.map((workCenter) => workCenter.name);
-  return Array.from(new Set([...names, ...offshore]));
+  if (isOffshoreLocationName(location)) {
+    return Array.from(new Set(
+      workCenters
+        .filter((workCenter) => isOffshoreLocationName(workCenter.location) || isOffshoreLocationName(workCenter.site) || isOffshoreWorkCenterName(workCenter.name))
+        .map((workCenter) => resolveOffshoreProjectCode(workCenter.name, OFFSHORE_LOCATION_NAME) || workCenter.name)
+        .filter(Boolean),
+    ));
+  }
+  const matching = workCenters
+    .filter((workCenter) => !isOffshoreLocationName(workCenter.location) && !isOffshoreWorkCenterName(workCenter.name) && workCenterMatchesLocation(workCenter, location))
+    .map((workCenter) => workCenter.name);
+  if (matching.length) return matching;
+  return workCenters
+    .filter((workCenter) => !isOffshoreLocationName(workCenter.location) && !isOffshoreWorkCenterName(workCenter.name))
+    .map((workCenter) => workCenter.name);
 };
 
 type DailyRatePanelRow = {
@@ -528,8 +539,11 @@ export default function TimesheetEntryClient({ variant = 'admin' }: { variant?: 
       const dbLocationNames = data.filterOptions.locations || [];
       hasPayloadRef.current = true;
       setPayload(data);
-      const offshoreSheet = isOffshoreWorkCenterName(workCenter || data.header?.workCenterName || data.suggestedContext?.workCenter);
-      const offshoreProject = projectCodeFromOffshoreWorkCenter(workCenter || data.header?.workCenterName || '')
+      const offshoreSheet = isOffshoreTimesheetContext(
+        location || data.suggestedContext?.location || data.header?.locationName,
+        workCenter || data.header?.workCenterName || data.suggestedContext?.workCenter,
+      );
+      const offshoreProject = resolveOffshoreProjectCode(workCenter || data.header?.workCenterName || '', location || data.header?.locationName)
         || data.mobilizedCrew?.projectCode
         || '';
       const nextLines = (!data.lines.length && offshoreSheet && data.header?.id && (data.supervisorEmployees || []).length)
@@ -558,7 +572,7 @@ export default function TimesheetEntryClient({ variant = 'admin' }: { variant?: 
       const suggestedLocation = String(data.suggestedContext?.location || data.supervisorProfile?.location || '').trim();
       const suggestedWorkCenter = String(data.suggestedContext?.workCenter || data.header?.workCenterName || '').trim();
       setSelectedLocation((current) => {
-        if (isOffshoreWorkCenterName(workCenter || suggestedWorkCenter || data.header?.workCenterName) && dbLocationNames.includes(OFFSHORE_LOCATION_NAME)) {
+        if (isOffshoreTimesheetContext(location || suggestedLocation || data.header?.locationName, workCenter || suggestedWorkCenter || data.header?.workCenterName) && dbLocationNames.includes(OFFSHORE_LOCATION_NAME)) {
           return OFFSHORE_LOCATION_NAME;
         }
         if (headerId) {
@@ -576,19 +590,24 @@ export default function TimesheetEntryClient({ variant = 'admin' }: { variant?: 
       });
       setSelectedWorkCenter((current) => {
         const locationName = location || suggestedLocation || selectedLocation || dbLocationNames[0] || '';
-        const dbWorkCenterNames = workCenterNamesForLocation(dbWorkCenters, locationName);
-        const requested = String(workCenter || '').trim();
-        const headerWorkCenter = String(data.header?.workCenterName || '').trim();
-        if (isOffshoreWorkCenterName(requested)) return requested;
-        if (isOffshoreWorkCenterName(current) && dbWorkCenterNames.includes(current)) return current;
-        if (headerId && headerWorkCenter) return headerWorkCenter;
-        if (!requested) {
+        const dbWorkCenterNames = workCenterNamesForLocation(dbWorkCenters, isOffshoreTimesheetContext(locationName, workCenter) ? OFFSHORE_LOCATION_NAME : locationName);
+        const requestedProject = resolveOffshoreProjectCode(workCenter, OFFSHORE_LOCATION_NAME);
+        if (isOffshoreTimesheetContext(location || locationName, workCenter || current)) {
+          const project = requestedProject
+            || resolveOffshoreProjectCode(data.header?.workCenterName, OFFSHORE_LOCATION_NAME)
+            || String(data.mobilizedCrew?.projectCode || '').trim().toUpperCase()
+            || '';
+          if (project && dbWorkCenterNames.includes(project)) return project;
+          return dbWorkCenterNames[0] || project;
+        }
+        if (headerId && data.header?.workCenterName) return data.header.workCenterName;
+        if (!workCenter) {
           if (suggestedWorkCenter && dbWorkCenterNames.includes(suggestedWorkCenter)) return suggestedWorkCenter;
-          if (headerWorkCenter && dbWorkCenterNames.includes(headerWorkCenter)) return headerWorkCenter;
+          if (data.header?.workCenterName && dbWorkCenterNames.includes(data.header.workCenterName)) return data.header.workCenterName;
           return dbWorkCenterNames[0] || '';
         }
-        if (dbWorkCenterNames.includes(requested)) return requested;
-        if (headerWorkCenter && dbWorkCenterNames.includes(headerWorkCenter)) return headerWorkCenter;
+        if (dbWorkCenterNames.includes(workCenter)) return workCenter;
+        if (data.header?.workCenterName && dbWorkCenterNames.includes(data.header.workCenterName)) return data.header.workCenterName;
         if (current && dbWorkCenterNames.includes(current)) return current;
         if (suggestedWorkCenter && dbWorkCenterNames.includes(suggestedWorkCenter)) return suggestedWorkCenter;
         return dbWorkCenterNames[0] || '';
@@ -676,7 +695,7 @@ export default function TimesheetEntryClient({ variant = 'admin' }: { variant?: 
       if (source === 'manual') setError('This timesheet period is closed. Reopen it before syncing attendance.');
       return;
     }
-    if (isOffshoreWorkCenterName(selectedWorkCenter) || isOffshoreWorkCenterName(payload?.header?.workCenterName)) {
+    if (isOffshoreTimesheetContext(selectedLocation, selectedWorkCenter) || isOffshoreTimesheetContext(payload?.header?.locationName, payload?.header?.workCenterName)) {
       if (source === 'manual') {
         setError(null);
         setNotice('Offshore sheets use the HR mobilization roster. There is no clocking machine, so attendance sync is not used.');
@@ -729,7 +748,7 @@ export default function TimesheetEntryClient({ variant = 'admin' }: { variant?: 
 
     const syncKey = [selectedDate, selectedSupervisor, selectedLocation, selectedWorkCenter, selectedShift].join('|');
     if (autoSyncKeyRef.current === syncKey) return;
-    if (isOffshoreWorkCenterName(selectedWorkCenter) || isOffshoreWorkCenterName(payload.header?.workCenterName)) {
+    if (isOffshoreTimesheetContext(selectedLocation, selectedWorkCenter) || isOffshoreTimesheetContext(payload.header?.locationName, payload.header?.workCenterName)) {
       autoSyncKeyRef.current = syncKey;
       return;
     }
@@ -743,6 +762,11 @@ export default function TimesheetEntryClient({ variant = 'admin' }: { variant?: 
     if (availableWorkCenters.length === 0 && selectedWorkCenter) {
       setSelectedWorkCenter('');
     } else if (availableWorkCenters.length > 0 && !availableWorkCenters.includes(selectedWorkCenter)) {
+      const project = resolveOffshoreProjectCode(selectedWorkCenter, selectedLocation);
+      if (isOffshoreLocationName(selectedLocation) && project && availableWorkCenters.includes(project)) {
+        setSelectedWorkCenter(project);
+        return;
+      }
       if (isOffshoreWorkCenterName(selectedWorkCenter)) return;
       setSelectedWorkCenter(availableWorkCenters[0]);
     }
@@ -839,6 +863,7 @@ export default function TimesheetEntryClient({ variant = 'admin' }: { variant?: 
       line,
       selectedWorkCenter || payload?.header?.workCenterName,
       selectedShift,
+      selectedLocation || payload?.header?.locationName,
     ) || lineIsMobilizedCrew(line, payload?.mobilizedCrew?.employeeCodes);
     if (bookWithoutClock && bookedProjectHours > 0.001 && !line.clockIn) {
       Object.assign(line, markLineAsManualOffshore(line));
@@ -856,7 +881,7 @@ export default function TimesheetEntryClient({ variant = 'admin' }: { variant?: 
       ),
     );
 
-    const dayContext = { date: selectedDate, holidayDates: payload?.holidayDates ?? [], shiftLabel: selectedShift };
+    const dayContext = { date: selectedDate, holidayDates: payload?.holidayDates ?? [], shiftLabel: selectedShift, locationName: selectedLocation };
     const authorizations = (payload?.approvedOvertimeAuthorizations ?? []) as OvertimeAuthorization[];
     const bookingOptions = payload?.overtimeBooking ?? { enabled: false, devRelaxed: false, retroCorrection: false, openBooking: false };
     const validated = validateTimesheetLine(
@@ -978,7 +1003,7 @@ export default function TimesheetEntryClient({ variant = 'admin' }: { variant?: 
     let bookedCount = 0;
     const denials: string[] = [];
     const partials: string[] = [];
-    const dayContext = { date: selectedDate, holidayDates: payload?.holidayDates ?? [], shiftLabel: selectedShift };
+    const dayContext = { date: selectedDate, holidayDates: payload?.holidayDates ?? [], shiftLabel: selectedShift, locationName: selectedLocation };
     for (const line of targets) {
       const index = next.findIndex((item) => item.id === line.id);
       if (index < 0) continue;
@@ -1280,7 +1305,7 @@ export default function TimesheetEntryClient({ variant = 'admin' }: { variant?: 
     setMatrixColumns(next);
     setSelectedMatrixProjectCode(canonicalProjectCode(projectCode));
     if (!previousCode || canonicalProjectCode(previousCode) === canonicalProjectCode(projectCode)) return;
-    const dayContext = { date: selectedDate, holidayDates: payload?.holidayDates ?? [], shiftLabel: selectedShift };
+    const dayContext = { date: selectedDate, holidayDates: payload?.holidayDates ?? [], shiftLabel: selectedShift, locationName: selectedLocation };
     setLocalLines((lines) => lines.map((line) => {
       const projectAllocations = normalizeProjectAllocations(line.projectAllocations).map((item) => (
         canonicalProjectCode(item.projectCode) === canonicalProjectCode(previousCode)
@@ -1308,7 +1333,7 @@ export default function TimesheetEntryClient({ variant = 'admin' }: { variant?: 
 
   const handleAutoDistribute = () => {
     if (!payload || payload.period.status !== 'Open' || !isEditableTimesheetStatus(payload.header?.status ?? 'Draft') || matrixColumns.length === 0) return;
-    const dayContext = { date: selectedDate, holidayDates: payload.holidayDates ?? [], shiftLabel: selectedShift };
+    const dayContext = { date: selectedDate, holidayDates: payload.holidayDates ?? [], shiftLabel: selectedShift, locationName: selectedLocation };
     const dayRules = resolveTimesheetHours(dayContext);
     const projectCode = resolveAutoDistributeProjectCode(matrixColumns, localLines, selectedMatrixProjectCode);
     if (!projectCode) {
@@ -1317,7 +1342,7 @@ export default function TimesheetEntryClient({ variant = 'admin' }: { variant?: 
     }
     const isNight = resolveTimesheetShift(selectedShift).kind === 'Night';
     const next = localLines.map((line) => {
-      if (isTimesheetAbsentLine(line) && !isNight && !canBookTimesheetHoursWithoutClock(line, selectedWorkCenter || payload?.header?.workCenterName, selectedShift)) return line;
+      if (isTimesheetAbsentLine(line) && !isNight && !canBookTimesheetHoursWithoutClock(line, selectedWorkCenter || payload?.header?.workCenterName, selectedShift, selectedLocation || payload?.header?.locationName)) return line;
       const projectAllocations = matrixColumns.map((col) => ({
         projectId: col.code,
         projectCode: col.code,
@@ -1370,7 +1395,7 @@ export default function TimesheetEntryClient({ variant = 'admin' }: { variant?: 
       setNotice(`${crew.fullName} is already on this timesheet.`);
       return;
     }
-    const offshoreProject = projectCodeFromOffshoreWorkCenter(selectedWorkCenter || payload.header.workCenterName)
+    const offshoreProject = resolveOffshoreProjectCode(selectedWorkCenter || payload.header.workCenterName, selectedLocation || payload.header.locationName)
       || payload.mobilizedCrew?.projectCode
       || '';
     const nextLine = isOffshoreSheet
@@ -1437,7 +1462,7 @@ export default function TimesheetEntryClient({ variant = 'admin' }: { variant?: 
     setLocalLines(nextLines);
   };
 
-  const isOffshoreSheet = isOffshoreWorkCenterName(selectedWorkCenter) || isOffshoreWorkCenterName(payload?.header?.workCenterName);
+  const isOffshoreSheet = isOffshoreTimesheetContext(selectedLocation || payload?.header?.locationName, selectedWorkCenter || payload?.header?.workCenterName);
   const shiftLines = dedupeTimesheetLinesByEmployee(
     isOffshoreSheet
     || (payload?.header && timesheetHeaderMatchesShift(payload.header.shiftLabel, selectedShift))
@@ -1949,7 +1974,7 @@ export default function TimesheetEntryClient({ variant = 'admin' }: { variant?: 
                 />
               </div>
               <div className="text-right">
-                <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Work Center</p>
+                <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400">{isOffshoreSheet ? 'Project' : 'Work Center'}</p>
                 <div className="flex items-center justify-end gap-2">
                   {workCenterOptions.length > 0 ? (
                     <SearchablePicker
@@ -2377,7 +2402,7 @@ export default function TimesheetEntryClient({ variant = 'admin' }: { variant?: 
                     const isManual = isManualOffshoreLine(line);
                     const offshoreBookable = isManual
                       || isOffshoreSheet
-                      || canBookTimesheetHoursWithoutClock(line, selectedWorkCenter || payload?.header?.workCenterName, selectedShift)
+                      || canBookTimesheetHoursWithoutClock(line, selectedWorkCenter || payload?.header?.workCenterName, selectedShift, selectedLocation || payload?.header?.locationName)
                       || lineIsMobilizedCrew(line, payload?.mobilizedCrew?.employeeCodes);
                     const isAbsentLocked = isAbsent && !isNightSheet && !offshoreBookable;
                     const canBookHours = canEditTimesheet && !isAbsentLocked;
@@ -2515,7 +2540,7 @@ export default function TimesheetEntryClient({ variant = 'admin' }: { variant?: 
               const isManual = isManualOffshoreLine(line);
               const offshoreBookable = isManual
                 || isOffshoreSheet
-                || canBookTimesheetHoursWithoutClock(line, selectedWorkCenter || payload?.header?.workCenterName, selectedShift)
+                || canBookTimesheetHoursWithoutClock(line, selectedWorkCenter || payload?.header?.workCenterName, selectedShift, selectedLocation || payload?.header?.locationName)
                 || lineIsMobilizedCrew(line, payload?.mobilizedCrew?.employeeCodes);
               const isAbsentLocked = isAbsent && !isNightSheet && !offshoreBookable;
               const canBookHours = canEditTimesheet && !isAbsentLocked;

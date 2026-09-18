@@ -15,6 +15,7 @@ import {
   XCircle,
 } from 'lucide-react';
 import { PageTemplate } from '@/components/layout/page-template';
+import { formatOffshoreSheetLabel } from '@/lib/timesheet-entry-shared';
 
 type TimesheetMobilization = {
   id: string;
@@ -306,7 +307,7 @@ export default function CrewMobilizationClient() {
             <div>
               <p className="font-black">Offshore booking rules</p>
               <p className="mt-1 font-semibold">
-                Mobilized crew drop off their home work centre for these dates. The host supervisor opens location OFFSHORE and work centre <span className="font-black">OFFSHORE · PROJECT</span>. Payroll sees 8h work + 1h break. The extra 4h is offshore allowance, not overtime.
+                Mobilized crew drop off their home work centre for these dates. On Timesheet Entry, open <span className="font-black">location OFFSHORE</span> and the <span className="font-black">project</span> (for example DL2601). Only mobilized people appear. Payroll sees 8h work + 1h break. The extra 4h is offshore allowance, not overtime.
               </p>
             </div>
           </div>
@@ -541,7 +542,7 @@ export default function CrewMobilizationClient() {
                         <div className="text-xs font-semibold text-slate-500">{item.employeeCode}</div>
                       </td>
                       <td className="px-3 py-3 font-semibold text-slate-700">{item.supervisorName}</td>
-                      <td className="px-3 py-3 font-semibold text-slate-700">{item.workCenterName}</td>
+                      <td className="px-3 py-3 font-semibold text-slate-700">{formatOffshoreSheetLabel(item.projectCode)}</td>
                       <td className="px-3 py-3 font-semibold text-slate-700">{item.startDate}{item.endDate ? ` → ${item.endDate}` : ''}</td>
                       <td className="px-3 py-3 font-semibold text-slate-500">{item.homeWorkCenterName || '—'}</td>
                       <td className="px-3 py-3 font-black text-slate-800">{item.status}</td>

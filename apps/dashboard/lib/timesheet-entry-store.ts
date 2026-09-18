@@ -25,7 +25,7 @@ import {
   normalizeProjectAllocations,
   isNightShiftEligibleAttendance,
   hasDayShiftDuration,
-  isOffshoreWorkCenterName,
+  isOffshoreTimesheetContext,
   resolveTimesheetShift,
   timesheetHeaderMatchesShift,
   timesheetLineMatchesShift,
@@ -3627,7 +3627,7 @@ export async function syncAttendanceForTimesheet(
 ) {
   const persist = options.persist !== false;
   if (persist) await assertTimesheetDateInOpenPeriod(date);
-  if (isOffshoreWorkCenterName(workCenterName)) {
+  if (isOffshoreTimesheetContext(locationName, workCenterName)) {
     throw new Error('Offshore timesheets are booked from the HR mobilization roster. Attendance sync is not used because there is no clocking machine.');
   }
   const shift = resolveTimesheetShift(options.shiftLabel);

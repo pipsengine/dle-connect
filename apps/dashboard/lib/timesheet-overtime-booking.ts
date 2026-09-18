@@ -189,7 +189,7 @@ export type OvertimeValidation = {
 
 export const validateStrictStandardDay = (line: TimesheetLine, dayContext?: TimesheetDayContext, workCenter?: string | null): OvertimeValidation => {
   const { standardProductiveHours, grossHours, shiftKind } = resolveTimesheetHours(dayContext);
-  const canBookWithoutClock = canBookTimesheetHoursWithoutClock(line, workCenter, dayContext?.shiftLabel);
+  const canBookWithoutClock = canBookTimesheetHoursWithoutClock(line, workCenter, dayContext?.shiftLabel, dayContext?.locationName);
   const isAbsentLine = !hasBiometricClockIn(line.clockIn) && !canBookWithoutClock;
   const projectAllocations = normalizeProjectAllocations(line.projectAllocations || []);
   const usedHours = sumProjectAllocationHours(projectAllocations);
@@ -300,7 +300,7 @@ export const validateTimesheetLine = (
     return validateStrictStandardDay(line, dayContext, workCenter);
   }
 
-  const canBookWithoutClock = canBookTimesheetHoursWithoutClock(line, workCenter, dayContext?.shiftLabel);
+  const canBookWithoutClock = canBookTimesheetHoursWithoutClock(line, workCenter, dayContext?.shiftLabel, dayContext?.locationName);
   const isAbsentLine = !hasBiometricClockIn(line.clockIn) && !canBookWithoutClock;
   const projectAllocations = normalizeProjectAllocations(line.projectAllocations || []);
   const usedHours = sumProjectAllocationHours(projectAllocations);

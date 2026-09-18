@@ -2,7 +2,6 @@ import sql from 'mssql';
 import { getDleEnterpriseDbPool } from '@/lib/dle-enterprise-db';
 import {
   OFFSHORE_LOCATION_NAME,
-  offshoreWorkCenterName,
   timesheetWorkCentersMatch,
 } from '@/lib/timesheet-entry-shared';
 import { supervisorCodesMatch } from '@/lib/timesheet-agege-blasting';
@@ -139,19 +138,17 @@ export const mobilizationMatchesOffshoreSheet = (
   if (projectCode && item.projectCode === projectCode) return true;
   if (workCenterMatch) return true;
   if (projectCode || workCenterName) return false;
-  if (mobilizationMatchesSupervisor(item, input.supervisorId)) return true;
-  const crew = new Set((input.crewCodes || []).map((code) => clean(code).toLowerCase()).filter(Boolean));
-  return crew.has(item.employeeCode.toLowerCase());
+  return false;
 };
 
-/** Prefer people actually mobilized to this offshore project; only use assigned home crew when none are. */
+/** Offshore sheets list only people mobilized to that project. Home crew never fills the gap. */
 export const resolveOffshoreTimesheetRoster = <T extends { employeeCode?: string | null }>(
   mobilizedCrew: T[],
-  assignedCrew: T[],
+  _assignedCrew: T[] = [],
 ) => {
   const seen = new Set<string>();
   const roster: T[] = [];
-  for (const row of (mobilizedCrew.length ? mobilizedCrew : assignedCrew)) {
+  for (const row of mobilizedCrew) {
     const key = String(row.employeeCode || '').trim().toLowerCase();
     if (!key || seen.has(key)) continue;
     seen.add(key);
@@ -217,7 +214,7 @@ export async function createTimesheetMobilizations(input: CreateMobilizationInpu
   ).filter((item) => clean(item.employeeCode));
   if (!employees.length) throw new Error('Select at least one employee.');
 
-  const workCenterName = offshoreWorkCenterName(projectCode);
+  const workCenterName = projectCode;
 
   const existing = await readTimesheetMobilizations({ status: 'Active' });
   const created: TimesheetMobilization[] = [];

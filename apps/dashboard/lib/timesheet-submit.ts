@@ -41,10 +41,11 @@ import {
 import { canonicalProjectManagerForCode, withCanonicalProjectManager } from '@/lib/timesheet-canonical-project-managers';
 import { formatAlreadyBookedSkipNotice, displaceUncommittedBookingsOnOtherDrafts, releaseLinesAlreadyBookedElsewhere } from '@/lib/timesheet-booking-clash';
 
-const dayContextFor = (date: string, holidayDates: string[], shiftLabel?: string | null): TimesheetDayContext => ({
+const dayContextFor = (date: string, holidayDates: string[], shiftLabel?: string | null, locationName?: string | null): TimesheetDayContext => ({
   date,
   holidayDates,
   shiftLabel: shiftLabel || undefined,
+  locationName: locationName || undefined,
 });
 
 const matchKey = (value: unknown) => {
@@ -345,7 +346,7 @@ export async function submitTimesheetForApproval(input: {
   const projects = (input.projects || await readProjects()).map(withCanonicalProjectManager);
   const holidayDates = input.holidayDates || await getPayrollPublicHolidayDates();
   if (input.shiftLabel) header.shiftLabel = String(input.shiftLabel);
-  const dayContext = dayContextFor(header.timesheetDate, holidayDates, header.shiftLabel);
+  const dayContext = dayContextFor(header.timesheetDate, holidayDates, header.shiftLabel, header.locationName);
   const isNightHeader = resolveTimesheetShift(header.shiftLabel).kind === 'Night';
 
   const allocationSeed = ensureClockedLinesHaveProjectAllocation(input.lines, projects, dayContext);
@@ -363,7 +364,7 @@ export async function submitTimesheetForApproval(input: {
   const reconciledLines = linesForSave.map((line) => applyNightPaperClock(reconcileTimesheetLineHours(line), header.shiftLabel));
   for (const line of reconciledLines) {
     const projectHours = (line.projectAllocations || []).reduce((sum, allocation) => sum + Number(allocation.hours || 0), 0);
-    if (!isNightHeader && !line.clockIn && !canBookTimesheetHoursWithoutClock(line, header.workCenterName, header.shiftLabel) && projectHours > 0.001) {
+    if (!isNightHeader && !line.clockIn && !canBookTimesheetHoursWithoutClock(line, header.workCenterName, header.shiftLabel, header.locationName) && projectHours > 0.001) {
       throw new Error(`Absent employee ${line.employeeName} cannot receive project/productive hours.`);
     }
     const validated = validateTimesheetLine(
