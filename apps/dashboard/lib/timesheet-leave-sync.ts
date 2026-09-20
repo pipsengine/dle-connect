@@ -38,6 +38,22 @@ export type LeaveTimesheetSyncInput = {
   endDate: string;
   requestId: string;
   mode: 'apply' | 'remove';
+  /** Reuse one in-memory timesheet snapshot across many employees. */
+  timesheetCache?: { headers: TimesheetHeader[]; lines: TimesheetLine[] };
+};
+
+export type LeaveTimesheetSkippedDay = {
+  date: string;
+  reason: string;
+};
+
+export type LeaveTimesheetSyncResult = {
+  daysUpdated: number;
+  skipped: boolean;
+  reason?: string;
+  bookedDates: string[];
+  alreadyBookedDates: string[];
+  skippedDates: LeaveTimesheetSkippedDay[];
 };
 
 const compact = (value: unknown) => String(value || '').trim();
@@ -250,30 +266,50 @@ const ensureHeader = (
   return created;
 };
 
-export async function syncCCodeLeaveToTimesheet(input: LeaveTimesheetSyncInput) {
+const emptySyncResult = (reason: string): LeaveTimesheetSyncResult => ({
+  daysUpdated: 0,
+  skipped: true,
+  reason,
+  bookedDates: [],
+  alreadyBookedDates: [],
+  skippedDates: [],
+});
+
+const skipReasonForExistingLine = (line: TimesheetLine) => {
+  if (compact(line.clockIn)) return `clock-in ${compact(line.clockIn)} present`;
+  const existingHours = Number(line.totalHours || 0);
+  if (existingHours > 0 && !isTimesheetPaidLeaveLine(line)) return `project hours already booked (${existingHours}h)`;
+  return 'line could not be booked';
+};
+
+export async function syncCCodeLeaveToTimesheet(input: LeaveTimesheetSyncInput): Promise<LeaveTimesheetSyncResult> {
   const employee = await resolveEmployeeRecord(input.employeeId, input.employeeCode);
   const employeeCode = compact(employee?.employeeCode || input.employeeCode || input.employeeId).toUpperCase();
   if (!isDayRateTimesheetEmployeeCode(employeeCode)) {
-    return { daysUpdated: 0, skipped: true, reason: 'Not a C-code employee.' };
+    return emptySyncResult('Not a C-code employee.');
   }
   if (!employee) {
-    return { daysUpdated: 0, skipped: true, reason: 'Employee record not found.' };
+    return emptySyncResult('Employee record not found.');
   }
 
   const holidayDates = await getPayrollPublicHolidayDates();
   const dates = workingDatesInLeaveRange(input.startDate, input.endDate, holidayDates);
-  if (!dates.length) return { daysUpdated: 0, skipped: true, reason: 'No working days in leave range.' };
+  if (!dates.length) return emptySyncResult('No working days in leave range.');
 
   const supervisorId = await resolveSupervisorId(employee);
   if (!supervisorId) {
-    return { daysUpdated: 0, skipped: true, reason: 'Supervisor could not be resolved for timesheet booking.' };
+    return emptySyncResult('Supervisor could not be resolved for timesheet booking.');
   }
 
-  const { headers, lines } = await readTimesheetData({ softFail: true });
+  const snapshot = input.timesheetCache || await readTimesheetData({ softFail: true });
+  const { headers, lines } = snapshot;
   const keys = employeeKeys(employeeCode, employee.employeeId, employee.fullName);
   const workCenterName = resolveWorkCenterName(employee, headers, lines, employeeCode, supervisorId);
   const employeeLocationName = normalizeTimesheetLocationLabel(employee.location || employee.workLocation) || '';
   let daysUpdated = 0;
+  const bookedDates: string[] = [];
+  const alreadyBookedDates: string[] = [];
+  const skippedDates: LeaveTimesheetSkippedDay[] = [];
   const headersToWrite = new Map<string, { header: TimesheetHeader; lines: TimesheetLine[] }>();
 
   for (const date of dates) {
@@ -297,6 +333,12 @@ export async function syncCCodeLeaveToTimesheet(input: LeaveTimesheetSyncInput) 
       continue;
     }
 
+    const alreadyLeave = existingMatches.find((line) => isTimesheetPaidLeaveLine(line));
+    if (alreadyLeave) {
+      alreadyBookedDates.push(date);
+      continue;
+    }
+
     const editableMatch = existingMatches.find((line) => {
       const header = headers.find((item) => item.id === line.headerId);
       return header && isEditableTimesheetStatus(header.status);
@@ -304,17 +346,37 @@ export async function syncCCodeLeaveToTimesheet(input: LeaveTimesheetSyncInput) 
     if (editableMatch) {
       const header = headers.find((item) => item.id === editableMatch.headerId)!;
       const nextLine = applyLeaveToLine(editableMatch, input);
-      if (!nextLine) continue;
+      if (!nextLine) {
+        skippedDates.push({ date, reason: skipReasonForExistingLine(editableMatch) });
+        continue;
+      }
       const index = lines.findIndex((item) => item.id === editableMatch.id);
       if (index >= 0) lines[index] = nextLine;
       const bucket = headersToWrite.get(header.id) || { header, lines: lines.filter((item) => item.headerId === header.id) };
       headersToWrite.set(header.id, bucket);
+      bookedDates.push(date);
       daysUpdated += 1;
       continue;
     }
 
+    const lockedMatch = existingMatches.find((line) => {
+      const header = headers.find((item) => item.id === line.headerId);
+      return header && !isEditableTimesheetStatus(header.status);
+    });
+    if (lockedMatch) {
+      const header = headers.find((item) => item.id === lockedMatch.headerId);
+      skippedDates.push({
+        date,
+        reason: `timesheet ${compact(header?.status) || 'locked'} is not editable`,
+      });
+      continue;
+    }
+
     const header = ensureHeader(headers, date, supervisorId, workCenterName, employeeLocationName);
-    if (!isEditableTimesheetStatus(header.status)) continue;
+    if (!isEditableTimesheetStatus(header.status)) {
+      skippedDates.push({ date, reason: `timesheet ${compact(header.status) || 'locked'} is not editable` });
+      continue;
+    }
 
     const lineId = `line-${header.id}-${employeeCode}`;
     const placeholder: TimesheetLine = {
@@ -341,10 +403,16 @@ export async function syncCCodeLeaveToTimesheet(input: LeaveTimesheetSyncInput) 
       offshoreAllowanceHours: 0,
     };
     const nextLine = applyLeaveToLine(placeholder, input);
-    if (!nextLine) continue;
-    lines.push(nextLine);
+    if (!nextLine) {
+      skippedDates.push({ date, reason: skipReasonForExistingLine(placeholder) });
+      continue;
+    }
+    const existingIndex = lines.findIndex((item) => item.id === lineId);
+    if (existingIndex >= 0) lines[existingIndex] = nextLine;
+    else lines.push(nextLine);
     const bucket = headersToWrite.get(header.id) || { header, lines: lines.filter((item) => item.headerId === header.id) };
     headersToWrite.set(header.id, bucket);
+    bookedDates.push(date);
     daysUpdated += 1;
   }
 
@@ -352,5 +420,11 @@ export async function syncCCodeLeaveToTimesheet(input: LeaveTimesheetSyncInput) 
     await writeTimesheetHeaderLines(header, headerLines);
   }
 
-  return { daysUpdated, skipped: false as const };
+  return {
+    daysUpdated,
+    skipped: false,
+    bookedDates,
+    alreadyBookedDates,
+    skippedDates,
+  };
 }

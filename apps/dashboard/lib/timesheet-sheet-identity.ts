@@ -199,8 +199,36 @@ export const mergeDuplicateTimesheetSheetLines = (input: {
   }
 
   return {
-    lines: canonicalLines,
+    lines: overlayMissingTimesheetClocks(
+      canonicalLines,
+      input.lines.filter((line) => line.headerId !== input.canonical.id && Boolean(String(line.clockIn || '').trim())),
+    ),
     siblingWrites,
     workCenterName: summarizeTimesheetHeaderWorkCenter(canonicalLines.map((line) => line.workCenterName)),
   };
+};
+
+const lineHasClock = (line: Pick<TimesheetLine, 'clockIn'>) => Boolean(String(line.clockIn || '').trim());
+
+/**
+ * Nested supervisors (Abel on Samuel's Agege sheet) often already have clocks on their
+ * own sheet or a leftover Blasting/Cutting duplicate. Copy those punches onto an Absent
+ * roster row so presence is visible even when hours stay on the other sheet.
+ */
+export const overlayMissingTimesheetClocks = (lines: TimesheetLine[], donors: TimesheetLine[]): TimesheetLine[] => {
+  if (!lines.length || !donors.length) return lines;
+  return lines.map((line) => {
+    if (lineHasClock(line)) return line;
+    const donor = donors.find((item) => lineHasClock(item) && timesheetEmployeeRecordsMatch(line, item));
+    if (!donor) return line;
+    return {
+      ...line,
+      clockIn: donor.clockIn,
+      clockOut: donor.clockOut || line.clockOut,
+      attendanceDuration: donor.attendanceDuration || line.attendanceDuration,
+      attendanceMode: donor.attendanceMode || line.attendanceMode || 'Biometric',
+      biometricId: donor.biometricId || line.biometricId,
+      attendanceId: donor.attendanceId || line.attendanceId,
+    };
+  });
 };

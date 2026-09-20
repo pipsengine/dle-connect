@@ -6,6 +6,7 @@ import {
 } from './timesheet-entry-shared.ts';
 import {
   mergeDuplicateTimesheetSheetLines,
+  overlayMissingTimesheetClocks,
   preferAssignedTimesheetRoster,
   resolveTimesheetLineWorkCenter,
   selectCanonicalTimesheetHeader,
@@ -161,5 +162,34 @@ assert.equal(merged.workCenterName, MIXED_TIMESHEET_WORK_CENTER);
 assert.equal(merged.lines.find((line) => line.employeeNo === 'C1229')?.workCenterName, 'Cutting');
 assert.equal(merged.lines.find((line) => line.employeeNo === 'C1544')?.workCenterName, 'Blasting');
 assert.equal(merged.siblingWrites[0]?.lines.length, 0, 'the extra Blasting draft is emptied');
+
+const abelAbsent = {
+  ...emptyBlastingLine,
+  id: 'line-abel-mixed',
+  headerId: 'hdr-mixed',
+  employeeId: 'C2225',
+  employeeNo: 'C2225',
+  employeeName: 'ABEL DANIEL',
+  workCenterName: 'Machining',
+} as TimesheetLine;
+const abelClockedOnOwnSheet = {
+  ...abelAbsent,
+  id: 'line-abel-own',
+  headerId: 'hdr-abel-cutting',
+  clockIn: '07:26',
+  clockOut: '17:42',
+  attendanceDuration: 9.3,
+  biometricId: 'live-clock-day-20260909-1239',
+} as TimesheetLine;
+const abelOnSamuel = overlayMissingTimesheetClocks([abelAbsent], [abelClockedOnOwnSheet]);
+assert.equal(abelOnSamuel[0]?.clockIn, '07:26', 'Abel stays present on Samuel Agege even when clocks live on his own sheet');
+assert.equal(abelOnSamuel[0]?.clockOut, '17:42');
+
+const mergedReviewedClocks = mergeDuplicateTimesheetSheetLines({
+  canonical: { ...cutting, id: 'hdr-mixed', status: 'Supervisor_Reviewed' },
+  siblings: [{ ...blasting, status: 'Supervisor_Reviewed' }],
+  lines: [abelAbsent, { ...abelClockedOnOwnSheet, headerId: 'hdr-blasting' }],
+});
+assert.equal(mergedReviewedClocks.lines[0]?.clockIn, '07:26', 'reviewed Blasting leftover still donates Abel’s punch');
 
 console.log('timesheet-sheet-identity.test.ts: ok');

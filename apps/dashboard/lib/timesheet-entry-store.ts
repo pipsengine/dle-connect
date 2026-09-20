@@ -37,7 +37,7 @@ import {
   selectTimesheetHeaderForLocation,
   type TimesheetLine,
 } from '@/lib/timesheet-entry-shared';
-import { selectCanonicalTimesheetHeader } from '@/lib/timesheet-sheet-identity';
+import { overlayMissingTimesheetClocks, selectCanonicalTimesheetHeader } from '@/lib/timesheet-sheet-identity';
 import {
   TIMESHEET_OCTOBER_2026_PERIOD_ID,
   TIMESHEET_SEPTEMBER_2026_PERIOD_ID,
@@ -3912,12 +3912,15 @@ export async function syncAttendanceForTimesheet(
     const employeeName = payrollEmployee
       ? formatSageEmployeeFullName(payrollEmployee, attendance.employeeName)
       : attendance.employeeName;
-    return !employeeAlreadyCommittedOnOtherTimesheet(
+    if (!employeeAlreadyCommittedOnOtherTimesheet(
       { employeeNo: employeeCode, employeeId: employeeCode, employeeName },
       syncHeaderRef,
       headers,
       lines,
-    );
+    )) return true;
+    // Nested supervisors stay on the skip-level roster. Keep their biometric
+    // punch even when hours are already booked on their own sheet.
+    return Boolean(String(attendance.checkInTime || '').trim());
   });
 
   // Rebuild lines for this shift-scoped header.
@@ -4002,30 +4005,42 @@ export async function syncAttendanceForTimesheet(
   const syncedKeys = new Set(newLines.flatMap((line) => attendanceMatchKeys(line.employeeId, line.employeeNo, line.employeeName)));
   const parkedOtherLocationLines = existingHeaderLines.flatMap((line) => {
     if (attendanceMatchKeys(line.employeeId, line.employeeNo, line.employeeName).some((key) => syncedKeys.has(key))) return [];
-    if (employeeAlreadyCommittedOnOtherTimesheet(line, syncHeaderRef, headers, lines)) return [];
     const lineKeys = attendanceMatchKeys(line.employeeId, line.employeeNo, line.employeeName);
     const matchedClock = attendanceCandidates.find((candidate) =>
       attendanceCandidateKeys(candidate).some((key) => lineKeys.includes(key)),
     );
-    if (matchedClock?.attendance.checkInTime) {
+    const withClock = (row: TimesheetLine): TimesheetLine[] => {
+      if (!matchedClock?.attendance.checkInTime) return [row];
       const att = matchedClock.attendance;
       const clockIn = att.checkInTime;
-      const clockOut = att.checkOutTime || line.clockOut || null;
+      const clockOut = att.checkOutTime || row.clockOut || null;
       const fromClock = attendanceDurationFromClock(clockIn, clockOut);
       return [{
-        ...line,
+        ...row,
         clockIn,
         clockOut,
-        attendanceDuration: fromClock && fromClock > 0 ? Math.round(fromClock * 10) / 10 : line.attendanceDuration,
-        attendanceMode: line.attendanceMode || 'Biometric',
+        attendanceDuration: fromClock && fromClock > 0 ? Math.round(fromClock * 10) / 10 : row.attendanceDuration,
+        attendanceMode: row.attendanceMode || 'Biometric',
         biometricId: att.id,
         attendanceId: att.id,
       }];
+    };
+    if (employeeAlreadyCommittedOnOtherTimesheet(line, syncHeaderRef, headers, lines)) {
+      return withClock(line);
     }
-    if (employeeIsOtherTimesheetSupervisor(line, syncHeaderRef, headers) && !line.clockIn) return [];
+    if (matchedClock?.attendance.checkInTime) return withClock(line);
+    if (employeeIsOtherTimesheetSupervisor(line, syncHeaderRef, headers) && !line.clockIn) {
+      return withClock(line);
+    }
     return [line];
   });
-  const persistLines = [...newLines, ...parkedOtherLocationLines];
+  const persistLines = overlayMissingTimesheetClocks(
+    [...newLines, ...parkedOtherLocationLines],
+    lines.filter((line) => line.headerId !== header!.id && timesheetHeaderMatchesShift(
+      headers.find((item) => item.id === line.headerId)?.shiftLabel,
+      shift.label,
+    )),
+  );
 
   if (persist) {
     await writeTimesheetHeaderLines(header, persistLines);

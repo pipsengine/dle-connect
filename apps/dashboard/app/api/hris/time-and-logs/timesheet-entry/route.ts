@@ -78,6 +78,7 @@ import { submitTimesheetForApproval } from '@/lib/timesheet-submit';
 import { mobilizationCoversDate, mobilizationMatchesSupervisor, readTimesheetMobilizations, resolveOffshoreTimesheetRoster, type TimesheetMobilization } from '@/lib/timesheet-mobilization-store';
 import {
   mergeDuplicateTimesheetSheetLines,
+  overlayMissingTimesheetClocks,
   preferAssignedTimesheetRoster,
   resolveTimesheetLineWorkCenter,
   selectCanonicalTimesheetHeader,
@@ -1487,6 +1488,19 @@ const buildPayload = async (
       return workCenterName ? { ...line, workCenterName } : line;
     });
     lines = dedupeTimesheetLinesByEmployee(lines).lines;
+    lines = overlayMissingTimesheetClocks(
+      lines,
+      allLines.filter((line) => {
+        if (line.headerId === header?.id) return false;
+        const other = headers.find((item) => item.id === line.headerId);
+        return Boolean(
+          other
+          && other.timesheetDate === targetDate
+          && timesheetHeaderMatchesShift(other.shiftLabel, targetShiftForSheet)
+          && String(line.clockIn || '').trim(),
+        );
+      }),
+    );
     const headerWorkCenter = summarizeTimesheetHeaderWorkCenter(lines.map((line) => line.workCenterName));
     if (header && headerWorkCenter && header.workCenterName !== headerWorkCenter) {
       header = {
