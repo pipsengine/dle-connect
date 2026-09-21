@@ -83,6 +83,7 @@ import {
   resolveTimesheetLineWorkCenter,
   selectCanonicalTimesheetHeader,
   summarizeTimesheetHeaderWorkCenter,
+  timesheetAssignmentGroupIsExclusive,
 } from '@/lib/timesheet-sheet-identity';
 import {
   applyAgegeBlastingSupervisorContext,
@@ -1140,12 +1141,17 @@ const buildPayload = async (
       ))
       .map((assignment) => clean(assignment.employeeCode).toLowerCase()),
   );
+  const assignmentExclusive = assignedSupervisorEmployees.length > 0
+    && assignmentRows
+      .filter((assignment) => assignmentMatchesSupervisor(assignment, targetSupervisorCode) && assignment.employeeCode && assignment.matchedStatus !== 'Unresolved')
+      .every((assignment) => timesheetAssignmentGroupIsExclusive(assignment.assignmentGroup));
   const selectedSupervisorAllDirectReports = preferAssignedTimesheetRoster(
     assignedSupervisorEmployees,
     reportingManagerEmployees,
     {
       codeOf: (employee) => employee.employeeCode || employee.employeeId || '',
       assignedToOtherCodes: assignedToOtherSupervisor,
+      exclusive: assignmentExclusive,
     },
   );
   {

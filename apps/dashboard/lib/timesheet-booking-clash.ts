@@ -72,15 +72,15 @@ const isPayrollReadyHeader = (header?: TimesheetHeaderClashRef | null) => {
   return key === 'hr_acknowledged' || key === 'locked' || key === 'approved';
 };
 
-/** Draft on another section is never a lock. A submitted sheet from a different supervisor also yields. */
+/** Draft or another work centre does not lock this crew. Payroll-ready sheets still win. */
 const otherSheetDoesNotLockThisCrew = (
   header: TimesheetHeaderClashRef,
   otherHeader: TimesheetHeaderClashRef | undefined,
 ) => {
   if (!otherHeader || isPayrollReadyHeader(otherHeader)) return false;
+  if (sameSupervisorHeaders(header, otherHeader)) return true;
   if (timesheetWorkCentersMatch(header.workCenterName, otherHeader.workCenterName)) return false;
-  if (normalizeTimesheetStatusKey(otherHeader.status) === 'draft') return true;
-  return !sameSupervisorHeaders(header, otherHeader);
+  return true;
 };
 
 const clashOnOtherSheet = (

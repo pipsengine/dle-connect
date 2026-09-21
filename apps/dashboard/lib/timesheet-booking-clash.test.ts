@@ -3,7 +3,6 @@ import {
   displaceUncommittedBookingsOnOtherDrafts,
   employeeAlreadyCommittedOnOtherTimesheet,
   findSameDayBookingConflicts,
-  formatSupervisorBookingConflictMessage,
   releaseLinesAlreadyBookedElsewhere,
 } from './timesheet-booking-clash.ts';
 import type { TimesheetLine } from './timesheet-entry-shared.ts';
@@ -108,7 +107,8 @@ assert.equal(
     [blasting, { ...galvanizing, status: 'Submitted' }],
     [line({ headerId: 'hdr-galvanizing' })],
   ),
-  true,
+  false,
+  'same supervisor duplicate work-centre headers do not hide the crew',
 );
 
 const submittedGalvanizingPreview = findSameDayBookingConflicts(
@@ -117,16 +117,7 @@ const submittedGalvanizingPreview = findSameDayBookingConflicts(
   [blasting, { ...galvanizing, status: 'Submitted' }],
   [line({ headerId: 'hdr-galvanizing' })],
 );
-assert.equal(submittedGalvanizingPreview.length, 1);
-assert.equal(submittedGalvanizingPreview[0]?.bookedOn, 'Galvanizing');
-assert.match(
-  formatSupervisorBookingConflictMessage(submittedGalvanizingPreview),
-  /ABEL DANIEL already has hours on Galvanizing today/,
-);
-assert.equal(
-  formatSupervisorBookingConflictMessage(submittedGalvanizingPreview, { allBookedAreConflicts: true }),
-  'Every worker with hours here is already on another timesheet today. There is nothing new to submit on this sheet.',
-);
+assert.equal(submittedGalvanizingPreview.length, 0, 'Akinsanya blasting vs galvanizing is one supervisor sheet');
 
 const fitting = { id: 'hdr-fitting', timesheetDate: '2026-09-07', shiftLabel: '01 (Day)', workCenterName: 'Fitting', supervisorName: 'C1882 - MOMOH MOHAMMED', supervisorId: 'C1882', status: 'Submitted' };
 const galvanizingSubmitted = { ...galvanizing, status: 'Submitted' as const };

@@ -38,7 +38,7 @@ import {
   weekdayOvertimeHoursFromLine,
   type TimesheetLine,
 } from '@/lib/timesheet-entry-shared';
-import { overlayMissingTimesheetClocks, selectCanonicalTimesheetHeader } from '@/lib/timesheet-sheet-identity';
+import { overlayMissingTimesheetClocks, selectCanonicalTimesheetHeader, timesheetAssignmentGroupIsExclusive } from '@/lib/timesheet-sheet-identity';
 import {
   TIMESHEET_OCTOBER_2026_PERIOD_ID,
   TIMESHEET_SEPTEMBER_2026_PERIOD_ID,
@@ -3603,6 +3603,7 @@ const supervisorEmployeeScope = async (supervisorId: string) => {
   );
   const existingCodes = new Set<string>();
   let assignedElsewhere = new Set<string>();
+  let assignmentExclusive = false;
   try {
     const allAssignments = await readSupervisorAssignments();
     const matchedAssignments = allAssignments.filter((assignment) =>
@@ -3610,6 +3611,8 @@ const supervisorEmployeeScope = async (supervisorId: string) => {
       && assignment.matchedStatus !== 'Unresolved'
       && assignmentMatchesSupervisor(assignment, selectedCode),
     );
+    assignmentExclusive = matchedAssignments.length > 0
+      && matchedAssignments.every((assignment) => timesheetAssignmentGroupIsExclusive(assignment.assignmentGroup));
     assignedElsewhere = new Set(
       allAssignments
         .filter((assignment) => (
@@ -3631,6 +3634,7 @@ const supervisorEmployeeScope = async (supervisorId: string) => {
   } catch (error) {
     console.warn('Timesheet supervisor assignment scope could not be loaded; falling back to reporting manager data:', error);
   }
+  if (!assignmentExclusive) {
   for (const employee of source.employees) {
     if (['Resigned', 'Terminated', 'Retired'].includes(employee.status)) continue;
     if (!supervisorMatchesEmployee(employee.managerName, selected)) continue;
@@ -3646,6 +3650,7 @@ const supervisorEmployeeScope = async (supervisorId: string) => {
       employee.fullName,
       employee.sourceEmployeeId,
     ].flatMap((value) => attendanceMatchKeys(value)).forEach((key) => keys.add(key));
+  }
   }
   let supervisorLocation = '';
   if (selectedCode) {
@@ -3670,7 +3675,7 @@ const supervisorEmployeeScope = async (supervisorId: string) => {
       ].flatMap((value) => attendanceMatchKeys(value)).forEach((key) => keys.add(key));
     }
   }
-  return { keys, employees, supervisorLocation };
+  return { keys, employees, supervisorLocation, assignmentExclusive };
 };
 
 export async function syncAttendanceForTimesheet(
@@ -3708,6 +3713,7 @@ export async function syncAttendanceForTimesheet(
   let assignedSupervisorEmployees: Array<{ employeeCode: string; fullName: string; location?: string }> = [];
   let supervisorScopeResolved = false;
   let supervisorHomeLocation = '';
+  let assignmentExclusive = false;
 
   const [liveResult, scopeResult, activePayrollResult, approvedLeaveResult] = await Promise.allSettled([
     liveAttendancePromise,
@@ -3726,6 +3732,7 @@ export async function syncAttendanceForTimesheet(
     allowedSupervisorKeys = scopeResult.value.keys;
     assignedSupervisorEmployees = scopeResult.value.employees;
     supervisorHomeLocation = scopeResult.value.supervisorLocation || '';
+    assignmentExclusive = Boolean(scopeResult.value.assignmentExclusive);
     if (locationName) {
       assignedSupervisorEmployees = assignedSupervisorEmployees.filter((employee) =>
         timesheetCrewMatchesLocation(employee.location, locationName, supervisorHomeLocation)
@@ -4049,6 +4056,13 @@ export async function syncAttendanceForTimesheet(
     if (matchedClock?.attendance.checkInTime) return withClock(line);
     if (employeeIsOtherTimesheetSupervisor(line, syncHeaderRef, headers) && !line.clockIn) {
       return withClock(line);
+    }
+    if (assignmentExclusive && supervisorScopeResolved) {
+      const assignedKeys = new Set(
+        assignedSupervisorEmployees.flatMap((employee) => attendanceMatchKeys(employee.employeeCode, employee.fullName)),
+      );
+      const onAssignedCrew = attendanceMatchKeys(line.employeeId, line.employeeNo, line.employeeName).some((key) => assignedKeys.has(key));
+      if (!onAssignedCrew && !timesheetLineHasBookedHours(line)) return [];
     }
     return [line];
   });

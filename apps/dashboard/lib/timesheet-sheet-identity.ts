@@ -44,17 +44,25 @@ const JOB_TITLE_WORK_CENTERS: Array<[RegExp, string]> = [
   [/\broller|rolling|machinist|machining\b/i, 'Machining'],
 ];
 
-/** Assigned crew wins, then HR direct reports who are not on another supervisor's sheet. */
+/** Assigned crew wins, then HR direct reports who are not on another supervisor's sheet. Exclusive shop rosters stay assignment-only. */
+export const timesheetAssignmentGroupIsExclusive = (group?: string | null) => {
+  const value = clean(group);
+  if (!value) return false;
+  return !/report|department reporting|org chart/i.test(value);
+};
+
 export const preferAssignedTimesheetRoster = <T>(
   assigned: T[],
   reportingFallback: T[],
   options?: {
     codeOf?: (item: T) => string | null | undefined;
     assignedToOtherCodes?: Iterable<string>;
+    exclusive?: boolean;
   },
 ) => {
   const codeOf = options?.codeOf;
   if (!codeOf) return assigned.length ? assigned : reportingFallback;
+  if (options?.exclusive && assigned.length) return assigned;
   const assignedElsewhere = new Set(
     [...(options?.assignedToOtherCodes || [])].map((value) => String(value || '').trim().toLowerCase()).filter(Boolean),
   );

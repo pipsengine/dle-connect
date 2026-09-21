@@ -72,6 +72,18 @@ assert.deepEqual(
 );
 assert.deepEqual(
   preferAssignedTimesheetRoster(
+    [{ employeeCode: 'C2506' }],
+    [{ employeeCode: 'C2506' }, { employeeCode: 'C0161' }, { employeeCode: 'C1001' }],
+    {
+      codeOf: (item) => item.employeeCode,
+      exclusive: true,
+    },
+  ).map((item) => item.employeeCode),
+  ['C2506'],
+  'exclusive galvanizing roster does not pull Akinsanya department reports',
+);
+assert.deepEqual(
+  preferAssignedTimesheetRoster(
     [{ employeeCode: 'P0044' }],
     [{ employeeCode: 'P0044' }, { employeeCode: 'C2410' }, { employeeCode: 'C1544' }],
     {
