@@ -5,8 +5,11 @@
  * Dry run (default):
  *   npx tsx --tsconfig apps/dashboard/tsconfig.json scripts/paper-book-missing-clock-crew.mts
  *
+ *   npx tsx --tsconfig apps/dashboard/tsconfig.json scripts/paper-book-missing-clock-crew.mts C2171
+ *
  * Apply:
  *   npx tsx --tsconfig apps/dashboard/tsconfig.json scripts/paper-book-missing-clock-crew.mts --apply
+ *   npx tsx --tsconfig apps/dashboard/tsconfig.json scripts/paper-book-missing-clock-crew.mts --apply C2171
  */
 import { loadWorkspaceEnv } from '../apps/dashboard/lib/dle-enterprise-db';
 import { getPayrollPublicHolidayDates } from '../apps/dashboard/lib/nigeria-public-holidays';
@@ -27,6 +30,7 @@ loadWorkspaceEnv();
 
 const APPLY = process.argv.includes('--apply');
 const TODAY = '2026-09-21';
+const onlyCode = process.argv.find((arg) => /^[CLP]\d+$/i.test(arg))?.toUpperCase() || '';
 
 type PaperRange = {
   codes: string[];
@@ -41,6 +45,8 @@ const RANGES: PaperRange[] = [
   { codes: ['C2810', 'C2816', 'C2825', 'C2585'], names: 'Ekwere Akpan, Gloria Ananu, Akande Ismaila, Emmanuel Aziekwe', from: '2026-08-17', to: TODAY },
   { codes: ['C2824'], names: 'Muideen Salau', from: '2026-09-20', to: TODAY },
   { codes: ['C2722'], names: 'Sunday Adeniji', from: '2026-08-24', to: '2026-09-15' },
+  { codes: ['C2171'], names: 'Steve Eraghare', from: '2026-08-17', to: '2026-09-15' },
+  { codes: ['C2827'], names: 'Charles Edigheti Akaka', from: '2026-08-17', to: '2026-09-15' },
 ];
 
 const compact = (value: unknown) => String(value || '').trim();
@@ -88,7 +94,16 @@ const main = async () => {
   let booked = 0;
   let skipped = 0;
 
-  for (const range of RANGES) {
+  const ranges = onlyCode
+    ? RANGES
+      .filter((range) => range.codes.some((code) => code.toUpperCase() === onlyCode))
+      .map((range) => ({ ...range, codes: range.codes.filter((code) => code.toUpperCase() === onlyCode) }))
+    : RANGES;
+  if (onlyCode && !ranges.length) {
+    throw new Error(`No paper-book range configured for ${onlyCode}.`);
+  }
+
+  for (const range of ranges) {
     const dates = workingDatesInLeaveRange(range.from, range.to, holidayDates);
     for (const code of range.codes) {
       for (const date of dates) {
