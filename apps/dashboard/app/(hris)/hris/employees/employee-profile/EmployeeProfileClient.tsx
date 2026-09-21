@@ -15,6 +15,11 @@ import { formatPayrollMoney } from '@/lib/payroll-currency';
 import { getNigeriaLgas, getNigeriaStates } from '@/lib/nigeria-locations';
 import { humanizeHttpErrorBody } from '@/lib/http-client-error';
 import { hrisEmployeeProfileHref, hrisEmployeeResourceUrl } from '@/lib/hris-employee-route';
+import {
+  resolveEmployeeProfileAccess,
+  type EmployeeProfilePermissions,
+  type EmployeeProfileRole,
+} from '@/lib/employee-profile-access';
 import { ContractPayrollClassificationPanel, type ContractPayrollClassificationView } from '../components/ContractPayrollClassificationUi';
 import EmployeeFinalSettlementPanel from './EmployeeFinalSettlementPanel';
 import EmployeeResignationPanel from './EmployeeResignationPanel';
@@ -56,27 +61,15 @@ import {
   X,
 } from 'lucide-react';
 
-type Role =
-  | 'Super Admin'
-  | 'HR Director'
-  | 'HR Manager'
-  | 'HR Officer'
-  | 'Admin Officer'
-  | 'Department Head'
-  | 'Line Manager'
-  | 'Payroll Officer'
-  | 'HSE Officer'
-  | 'Compliance Officer'
-  | 'Auditor'
-  | 'IT Administrator'
-  | 'Employee'
-  | 'Executive Management';
+type Role = EmployeeProfileRole;
 
 type AuthSession = {
   username: string;
+  fullName?: string;
   employeeId?: string;
   employeeCode?: string;
   roles?: string[];
+  permissions?: string[];
   isGlobalAdmin?: boolean;
 };
 
@@ -329,53 +322,6 @@ const severityStyle = (s: Severity) => {
   if (s === 'high') return { bg: 'bg-red-600/10', border: 'border-red-200/70', fg: 'text-red-700', icon: AlertTriangle };
   if (s === 'medium') return { bg: 'bg-amber-600/10', border: 'border-amber-200/70', fg: 'text-amber-700', icon: CircleAlert };
   return { bg: 'bg-blue-600/10', border: 'border-blue-200/70', fg: 'text-blue-700', icon: Sparkles };
-};
-
-const rolePermissions = (role: Role, subjectEmployeeId: string, viewerEmployeeId: string | undefined) => {
-  const isSelf = viewerEmployeeId ? viewerEmployeeId === subjectEmployeeId : role === 'Employee';
-  const canViewPayroll = role === 'Super Admin' || role === 'Payroll Officer' || role === 'HR Director' || role === 'HR Manager' || role === 'Executive Management';
-  const canViewMedical = role === 'Super Admin' || role === 'HR Director' || role === 'HSE Officer' || role === 'Compliance Officer';
-  const canViewDisciplinary = role === 'Super Admin' || role === 'HR Director' || role === 'HR Manager' || role === 'Compliance Officer';
-  const canEdit = role === 'Super Admin' || role === 'HR Director' || role === 'HR Manager' || role === 'HR Officer' || role === 'Admin Officer';
-  const canEditPayroll = canViewPayroll && (canEdit || role === 'Payroll Officer');
-  const canChangeStatus = role === 'Super Admin' || role === 'HR Director' || role === 'HR Manager';
-  const canManagePayrollClassification =
-    role === 'Super Admin' || role === 'HR Director' || role === 'HR Manager' || role === 'Payroll Officer';
-  const canViewAudit = role !== 'Employee' && role !== 'IT Administrator';
-  const canViewSensitivePersonal = role !== 'Employee' && role !== 'IT Administrator' && role !== 'Auditor';
-  const canViewDocuments = role !== 'IT Administrator';
-  const canViewProfile = role !== 'Employee' || isSelf;
-  return {
-    isSelf,
-    canViewProfile,
-    canViewPayroll,
-    canViewMedical,
-    canViewDisciplinary,
-    canEdit,
-    canEditPayroll,
-    canChangeStatus,
-    canManagePayrollClassification,
-    canViewAudit,
-    canViewSensitivePersonal,
-    canViewDocuments,
-  };
-};
-
-const profileRoleFromSession = (session: AuthSession | null): Role => {
-  if (!session) return 'Employee';
-  const value = (session.roles || []).join(' ').toLowerCase();
-  if (session.isGlobalAdmin || value.includes('super administrator')) return 'Super Admin';
-  if (value.includes('executive')) return 'Executive Management';
-  if (value.includes('payroll')) return 'Payroll Officer';
-  if (value.includes('hse')) return 'HSE Officer';
-  if (value.includes('compliance')) return 'Compliance Officer';
-  if (value.includes('auditor') || value.includes('audit')) return 'Auditor';
-  if (value.includes('it administrator')) return 'IT Administrator';
-  if (value.includes('department head')) return 'Department Head';
-  if (value.includes('manager') || value.includes('supervisor')) return 'Line Manager';
-  if (value.includes('hr administrator') || value.includes('hr manager')) return 'HR Manager';
-  if (value.includes('hr officer') || value.includes('employee records')) return 'HR Officer';
-  return 'Employee';
 };
 
 const EMPLOYMENT_FIELD_LABELS: Record<string, string> = {
@@ -953,9 +899,9 @@ const ProfileHeader = ({
   permissions,
 }: {
   profile: EmployeeProfile;
-  role: Role;
+  role: string;
   onAction: (action: string) => void;
-  permissions: ReturnType<typeof rolePermissions>;
+  permissions: EmployeeProfilePermissions;
 }) => {
   const tone = statusStyle(profile.employmentStatus);
   return (
@@ -1235,7 +1181,7 @@ const OverviewTab = ({
   employeeCode,
 }: {
   overview: EmployeeOverview;
-  permissions: ReturnType<typeof rolePermissions>;
+  permissions: EmployeeProfilePermissions;
   employeeId: string;
   employeeCode?: string;
 }) => {
@@ -1320,7 +1266,6 @@ export default function EmployeeProfileClient({
   initialTab?: string;
 }) {
   const router = useRouter();
-  const [role, setRole] = useState<Role>('Employee');
   const [viewerEmployeeId, setViewerEmployeeId] = useState<string | undefined>(undefined);
   const [tab, setTab] = useState<TabKey>('overview');
   const [toast, setToast] = useState<{ title: string; detail: string; tone: 'ok' | 'warn' | 'err' } | null>(null);
@@ -1328,8 +1273,25 @@ export default function EmployeeProfileClient({
   const [employeeOptions, setEmployeeOptions] = useState<EmployeeSearchOption[]>([]);
   const [employeeSearchLoading, setEmployeeSearchLoading] = useState(false);
   const [employeeSearchError, setEmployeeSearchError] = useState<string | null>(null);
+  const [sessionRoles, setSessionRoles] = useState<string[]>([]);
+  const [sessionPermissions, setSessionPermissions] = useState<string[]>([]);
+  const [isGlobalAdmin, setIsGlobalAdmin] = useState(false);
+  const [authReady, setAuthReady] = useState(false);
 
-  const perms = useMemo(() => rolePermissions(role, employeeId, viewerEmployeeId), [employeeId, role, viewerEmployeeId]);
+  const access = useMemo(
+    () =>
+      resolveEmployeeProfileAccess({
+        roles: sessionRoles,
+        permissions: sessionPermissions,
+        isGlobalAdmin,
+        subjectEmployeeId: employeeId,
+        viewerEmployeeId,
+      }),
+    [employeeId, isGlobalAdmin, sessionPermissions, sessionRoles, viewerEmployeeId],
+  );
+  const perms = access.perms;
+  const role = access.role;
+  const displayRole = access.displayRole;
   const nowStamp = useMemo(() => formatDateTimeUtc(initialNow), [initialNow]);
 
   const [profile, setProfile] = useState<ApiState<EmployeeProfilePayload>>({ status: 'idle' });
@@ -1343,11 +1305,23 @@ export default function EmployeeProfileClient({
       try {
         const res = await fetch('/api/auth/me', { cache: 'no-store' });
         const json = (await res.json()) as { status: string; data?: AuthSession };
-        if (!res.ok || json.status !== 'success' || !json.data || cancelled) return;
-        setRole(profileRoleFromSession(json.data));
+        if (cancelled) return;
+        if (!res.ok || json.status !== 'success' || !json.data) {
+          setAuthReady(true);
+          return;
+        }
+        setSessionRoles(json.data.roles || []);
+        setSessionPermissions(json.data.permissions || []);
+        setIsGlobalAdmin(Boolean(json.data.isGlobalAdmin));
         if (!json.data.isGlobalAdmin) setViewerEmployeeId(json.data.employeeCode || json.data.employeeId || json.data.username);
+        setAuthReady(true);
       } catch {
-        if (!cancelled) setRole('Employee');
+        if (!cancelled) {
+          setSessionRoles([]);
+          setSessionPermissions([]);
+          setIsGlobalAdmin(false);
+          setAuthReady(true);
+        }
       }
     };
     void loadAuthContext();
@@ -1471,6 +1445,7 @@ export default function EmployeeProfileClient({
   }, [perms.canViewAudit, perms.canViewDisciplinary, perms.canViewDocuments, perms.canViewMedical, perms.canViewPayroll, perms.isSelf]);
 
   useEffect(() => {
+    if (!authReady) return;
     if (!perms.canViewProfile) {
       const t = setTimeout(() => {
         setProfile({ status: 'error', error: 'Permission denied' });
@@ -1513,7 +1488,7 @@ export default function EmployeeProfileClient({
       cancelled = true;
       clearTimeout(t);
     };
-  }, [employeeId, perms.canViewProfile, role, viewerEmployeeId]);
+  }, [authReady, employeeId, perms.canViewProfile, role, viewerEmployeeId]);
 
   useEffect(() => {
     if (tabs.length === 0) return;
@@ -1770,38 +1745,8 @@ export default function EmployeeProfileClient({
           </div>
           {employeeSearchError ? <span className="text-[11px] font-extrabold text-red-700">{employeeSearchError}</span> : null}
           <div className="flex items-center gap-2 px-3 py-2 rounded-xl border border-slate-200 bg-white">
-            <span className="text-xs font-extrabold text-slate-600">Viewer Role</span>
-            <select value={role} onChange={(e) => setRole(e.target.value as Role)} className="text-xs font-extrabold text-slate-800 bg-white focus:outline-none">
-              {[
-                'Super Admin',
-                'HR Director',
-                'HR Manager',
-                'HR Officer',
-                'Admin Officer',
-                'Department Head',
-                'Line Manager',
-                'Payroll Officer',
-                'HSE Officer',
-                'Compliance Officer',
-                'Auditor',
-                'IT Administrator',
-                'Employee',
-                'Executive Management',
-              ].map((r) => (
-                <option key={r} value={r}>
-                  {r}
-                </option>
-              ))}
-            </select>
-          </div>
-          <div className="flex items-center gap-2 px-3 py-2 rounded-xl border border-slate-200 bg-white">
-            <span className="text-xs font-extrabold text-slate-600">Viewer EmployeeId</span>
-            <input
-              value={viewerEmployeeId || ''}
-              onChange={(e) => setViewerEmployeeId(e.target.value.trim() ? e.target.value.trim() : undefined)}
-              placeholder="Optional (for self-view)"
-              className="w-[200px] text-xs font-semibold text-slate-800 placeholder:text-slate-400 focus:outline-none"
-            />
+            <span className="text-xs font-extrabold text-slate-600">Access</span>
+            <span className="text-xs font-extrabold text-slate-800">{displayRole}</span>
           </div>
           {!perms.canViewProfile && <LockBadge />}
         </div>
@@ -1810,6 +1755,15 @@ export default function EmployeeProfileClient({
   );
 
   if (!employeeId || !employeeId.trim()) return <EmptyState title="No employee selected" detail="Open an employee from the directory to view a 360° master profile." />;
+  if (!authReady) {
+    return (
+      <div className="bg-white space-y-6">
+        {breadcrumb}
+        {roleBar}
+        <ProfileSkeleton />
+      </div>
+    );
+  }
   if (!perms.canViewProfile) return <EmptyState title="Permission denied" detail="You do not have permission to view this employee profile." />;
 
   const loading = profile.status === 'loading' || overview.status === 'loading' || insights.status === 'loading' || audit.status === 'loading';
@@ -1850,7 +1804,7 @@ export default function EmployeeProfileClient({
       {breadcrumb}
       {roleBar}
 
-      <ProfileHeader profile={profileData} role={role} onAction={onAction} permissions={perms} />
+      <ProfileHeader profile={profileData} role={displayRole} onAction={onAction} permissions={perms} />
       <InsightBanner insights={insightsData} onAction={onAction} />
 
       <Card className="p-4">

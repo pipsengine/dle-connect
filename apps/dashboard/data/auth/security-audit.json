@@ -1,5 +1,16 @@
 [
   {
+    "id": "sec-1789987073642-a92f86f7",
+    "at": "2026-09-21T10:37:53.642Z",
+    "user": "L2770",
+    "action": "User assign-roles",
+    "ipAddress": "127.0.0.1",
+    "device": "assign-user-roles",
+    "oldValue": "{\"status\":\"Active\",\"roles\":[\"Payroll Officer\",\"Employee\",\"Payroll Administrator\",\"HR Officer\",\"Payroll Supervisor\",\"HR Administrator\",\"Payroll Approver\"],\"departmentAccess\":[\"HUMAN RESOURCES\"],\"moduleAccess\":[]}",
+    "newValue": "{\"status\":\"Active\",\"roles\":[\"Payroll Officer\",\"Employee\",\"Payroll Administrator\",\"HR Officer\",\"Payroll Supervisor\",\"HR Administrator\",\"Payroll Approver\"],\"departmentAccess\":[\"HUMAN RESOURCES\"],\"moduleAccess\":[]}",
+    "performedBy": "System Repair"
+  },
+  {
     "id": "sec-1788968009461-22b5df54",
     "at": "2026-09-09T15:33:29.461Z",
     "user": "P0146",

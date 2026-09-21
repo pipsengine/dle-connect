@@ -25,23 +25,14 @@ import { cleanPayrollGroupValue, lumpsumBaseAmountFromStoredLines } from '@/lib/
 import { invalidatePayrollCalculationCache } from '@/lib/payroll-calculation-service';
 import { invalidatePayrollEmployeeOptionsCache } from '@/lib/payroll-employee-options-store';
 import { resolveHrisEmployeeRoute } from '@/lib/hris-employee-route';
+import { AUTH_COOKIE, verifySessionToken } from '@/lib/auth/session';
+import {
+  resolveEmployeeProfileAccess,
+  type EmployeeProfilePermissions,
+  type EmployeeProfileRole,
+} from '@/lib/employee-profile-access';
 
-type Role =
-  | 'Super Admin'
-  | 'HR Director'
-  | 'HR Manager'
-  | 'HR Officer'
-  | 'Admin Officer'
-  | 'Legal Officer'
-  | 'Department Head'
-  | 'Line Manager'
-  | 'Payroll Officer'
-  | 'HSE Officer'
-  | 'Compliance Officer'
-  | 'Auditor'
-  | 'IT Administrator'
-  | 'Employee'
-  | 'Executive Management';
+type Role = EmployeeProfileRole;
 
 type EmployeeStatus =
   | 'Active'
@@ -607,32 +598,19 @@ type ReportingLinePayload = {
 const jsonOk = <T,>(data: T) => NextResponse.json({ status: 'success', data });
 const jsonErr = (status: number, error: string) => NextResponse.json({ status: 'error', error }, { status });
 
-const rolePermissions = (role: Role, subjectEmployeeId: string, viewerEmployeeId: string | undefined) => {
-  const isSelf = viewerEmployeeId ? viewerEmployeeId === subjectEmployeeId : false;
-  const canViewPayroll = role === 'Super Admin' || role === 'Payroll Officer' || role === 'HR Director' || role === 'HR Manager' || role === 'Executive Management';
-  const canViewMedical = role === 'Super Admin' || role === 'HR Director' || role === 'HSE Officer' || role === 'Compliance Officer';
-  const canViewDisciplinary = role === 'Super Admin' || role === 'HR Director' || role === 'HR Manager' || role === 'Compliance Officer';
-  const canEdit = role === 'Super Admin' || role === 'HR Director' || role === 'HR Manager' || role === 'HR Officer' || role === 'Admin Officer';
-  const canEditPayroll = canViewPayroll && (canEdit || role === 'Payroll Officer');
-  const canChangeStatus = role === 'Super Admin' || role === 'HR Director' || role === 'HR Manager';
-  const canViewAudit = role !== 'Employee' && role !== 'IT Administrator';
-  const canViewSensitivePersonal = role !== 'Employee' && role !== 'IT Administrator' && role !== 'Auditor';
-  const canViewDocuments = role !== 'IT Administrator';
-  const canViewProfile = role !== 'Employee' || isSelf;
-  return {
-    isSelf,
-    canViewProfile,
-    canViewPayroll,
-    canViewMedical,
-    canViewDisciplinary,
-    canEdit,
-    canEditPayroll,
-    canChangeStatus,
-    canViewAudit,
-    canViewSensitivePersonal,
-    canViewDocuments,
-  };
-};
+const rolePermissions = (
+  role: Role,
+  subjectEmployeeId: string,
+  viewerEmployeeId: string | undefined,
+  options?: { roles?: string[]; permissions?: string[]; isGlobalAdmin?: boolean },
+): EmployeeProfilePermissions =>
+  resolveEmployeeProfileAccess({
+    roles: options?.roles?.length ? options.roles : [role],
+    permissions: options?.permissions,
+    isGlobalAdmin: options?.isGlobalAdmin,
+    subjectEmployeeId,
+    viewerEmployeeId,
+  }).perms;
 
 const seedFromId = (id: string) => {
   let h = 2166136261;
@@ -2772,31 +2750,32 @@ const RESERVED_EMPLOYEE_ACTION_IDS = new Set([
   'contract-payroll-classification',
 ]);
 
-const getRole = (request: Request): Role => {
-  const v = request.headers.get('x-hris-role');
-  const all: Role[] = [
-    'Super Admin',
-    'HR Director',
-    'HR Manager',
-    'HR Officer',
-    'Admin Officer',
-    'Legal Officer',
-    'Department Head',
-    'Line Manager',
-    'Payroll Officer',
-    'HSE Officer',
-    'Compliance Officer',
-    'Auditor',
-    'IT Administrator',
-    'Employee',
-    'Executive Management',
-  ];
-  return (all.includes(v as Role) ? (v as Role) : 'HR Manager') as Role;
+const readAuthCookie = (request: Request) => {
+  const cookieHeader = request.headers.get('cookie') || '';
+  const pair = cookieHeader
+    .split(';')
+    .map((chunk) => chunk.trim())
+    .find((chunk) => chunk.startsWith(`${AUTH_COOKIE}=`));
+  if (!pair) return '';
+  return decodeURIComponent(pair.split('=').slice(1).join('='));
 };
 
-const getViewerEmployeeId = (request: Request) => {
-  const v = request.headers.get('x-hris-employee-id');
-  return v && v.trim() ? v.trim() : undefined;
+const resolveProfileAccess = async (request: Request, subjectEmployeeId: string) => {
+  const session = await verifySessionToken(readAuthCookie(request)).catch(() => null);
+  const headerRole = String(request.headers.get('x-hris-role') || '').trim();
+  const headerViewer = request.headers.get('x-hris-employee-id')?.trim();
+  const access = resolveEmployeeProfileAccess({
+    roles: session?.roles?.length ? session.roles : headerRole ? [headerRole] : [],
+    permissions: session?.permissions || [],
+    isGlobalAdmin: session?.isGlobalAdmin,
+    subjectEmployeeId,
+    viewerEmployeeId: session
+      ? session.isGlobalAdmin
+        ? undefined
+        : session.employeeCode || session.employeeId || session.username
+      : headerViewer,
+  });
+  return access;
 };
 
 const employeeRoute = async (
@@ -2930,10 +2909,9 @@ export async function GET(request: Request, ctx: { params: Promise<{ id: string;
   if (reservedHit) {
     return jsonErr(404, 'Not found');
   }
-  const role = getRole(request);
-  const viewerEmployeeId = getViewerEmployeeId(request);
-  if (role === 'Employee' && (!viewerEmployeeId || viewerEmployeeId !== employeeId)) return jsonErr(403, 'Permission denied');
-  const perms = rolePermissions(role, employeeId, viewerEmployeeId);
+  const access = await resolveProfileAccess(request, employeeId);
+  const role = access.role;
+  const perms = access.perms;
   if (!perms.canViewProfile) return jsonErr(403, 'Permission denied');
 
   const rec = await ensureRecordFromDb(employeeId);
@@ -4564,12 +4542,11 @@ async function patchEmployeeRecord(request: Request, ctx: { params: Promise<{ id
   if (reservedHit) {
     return jsonErr(404, 'Not found');
   }
-  const role = getRole(request);
-  const viewerEmployeeId = getViewerEmployeeId(request);
-  if (role === 'Employee' && (!viewerEmployeeId || viewerEmployeeId !== employeeId)) return jsonErr(403, 'Permission denied');
-  const perms = rolePermissions(role, employeeId, viewerEmployeeId);
+  const access = await resolveProfileAccess(request, employeeId);
+  const role = access.role;
+  const perms = access.perms;
   if (!perms.canViewProfile) return jsonErr(403, 'Permission denied');
-  if (!perms.canEdit && resource[0] !== 'status') return jsonErr(403, 'Permission denied');
+  if (!perms.canEdit && resource[0] !== 'status' && resource[0] !== 'payroll') return jsonErr(403, 'Permission denied');
 
   const rec = await ensureRecordFromDb(employeeId);
   const { root, rest } = getResource(resource);
@@ -5667,10 +5644,9 @@ export async function POST(request: Request, ctx: { params: Promise<{ id: string
   if (reservedHit) {
     return jsonErr(404, 'Not found');
   }
-  const role = getRole(request);
-  const viewerEmployeeId = getViewerEmployeeId(request);
-  if (role === 'Employee' && (!viewerEmployeeId || viewerEmployeeId !== employeeId)) return jsonErr(403, 'Permission denied');
-  const perms = rolePermissions(role, employeeId, viewerEmployeeId);
+  const access = await resolveProfileAccess(request, employeeId);
+  const role = access.role;
+  const perms = access.perms;
   if (!perms.canViewProfile) return jsonErr(403, 'Permission denied');
 
   const rec = await ensureRecordFromDb(employeeId);
@@ -6968,10 +6944,9 @@ export async function DELETE(request: Request, ctx: { params: Promise<{ id: stri
   if (reservedHit) {
     return jsonErr(404, 'Not found');
   }
-  const role = getRole(request);
-  const viewerEmployeeId = getViewerEmployeeId(request);
-  if (role === 'Employee' && (!viewerEmployeeId || viewerEmployeeId !== employeeId)) return jsonErr(403, 'Permission denied');
-  const perms = rolePermissions(role, employeeId, viewerEmployeeId);
+  const access = await resolveProfileAccess(request, employeeId);
+  const role = access.role;
+  const perms = access.perms;
   if (!perms.canViewProfile) return jsonErr(403, 'Permission denied');
   if (!perms.canEdit) return jsonErr(403, 'Permission denied');
 
