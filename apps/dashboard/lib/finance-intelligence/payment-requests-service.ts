@@ -904,6 +904,81 @@ WHERE [RequestId] = @RequestId
   return approver;
 };
 
+export const repairPendingCostCentreManagerAssignments = async (requestNumber?: string) => {
+  const pool = await ensureFinanceDb().catch(() => null);
+  if (!pool) throw new Error('Finance database is not available.');
+  const filter = compact(requestNumber);
+  const result = filter
+    ? await pool.request()
+      .input('RequestNumber', sql.NVarChar(60), filter)
+      .query(`
+SELECT TOP 50 *
+FROM [finance].[PaymentRequests]
+WHERE ([RequestNumber] = @RequestNumber OR [RequestId] = @RequestNumber)
+  AND [Status] IN (N'Pending Approval', N'Submitted', N'Finance Review')
+`)
+    : await pool.request().query(`
+SELECT TOP 100 *
+FROM [finance].[PaymentRequests]
+WHERE [Status] IN (N'Pending Approval', N'Submitted', N'Finance Review')
+  AND LOWER(ISNULL([CurrentStage], N'')) LIKE N'%cost%centre%manager%'
+`);
+
+  const repaired: Array<{ requestNumber: string; from: string; to: string; toName: string }> = [];
+  const skipped: Array<{ requestNumber: string; reason: string }> = [];
+
+  for (const raw of result.recordset || []) {
+    const row = mapRow(raw as Record<string, unknown>);
+    if (!isCostCentreManagerStage(row.currentStage)) {
+      skipped.push({ requestNumber: row.requestNumber, reason: `stage is ${row.currentStage || 'blank'}` });
+      continue;
+    }
+    const approver = await assignCurrentApprover({
+      requestId: row.requestId,
+      stage: row.currentStage,
+      requesterCode: row.requesterCode,
+      projectCode: row.projectCode,
+      department: row.department,
+      costCentre: row.costCentre,
+      supervisorName: row.supervisorName,
+      paymentType: row.paymentType,
+    });
+    const previous = compact(row.currentApproverCode).toUpperCase();
+    const next = compact(approver.code).toUpperCase();
+    if (!next) {
+      skipped.push({ requestNumber: row.requestNumber, reason: 'no cost centre manager resolved' });
+      continue;
+    }
+    if (previous === next) {
+      skipped.push({ requestNumber: row.requestNumber, reason: `already ${approver.code}` });
+      continue;
+    }
+    await logAction({
+      requestId: row.requestId,
+      actionType: 'repair-stages',
+      stage: row.currentStage,
+      actorName: 'System',
+      actorCode: 'system',
+      comment: `Re-routed Cost Centre Manager from ${row.currentApproverName || row.currentApproverCode || 'unassigned'} to ${approver.name} (${approver.code}) using the HR-confirmed department line manager.`,
+    });
+    const refreshed = (await getPaymentRequestById(row.requestId)) || row;
+    await notifyPaymentApprovalRequired({
+      request: refreshed,
+      stage: row.currentStage,
+      actorName: 'System',
+      baseUrl: resolveWorkflowLinkOrigin(),
+    }).catch((error) => console.error('[payment-requests] cost-centre reroute notification failed', error));
+    repaired.push({
+      requestNumber: row.requestNumber,
+      from: row.currentApproverCode || row.currentApproverName || 'unassigned',
+      to: approver.code,
+      toName: approver.name,
+    });
+  }
+
+  return { repaired, skipped };
+};
+
 const stagesFromPayload = (payload: Record<string, unknown>) => {
   const raw = payload.stages;
   if (Array.isArray(raw)) return raw.map((item) => compact(item)).filter(Boolean);

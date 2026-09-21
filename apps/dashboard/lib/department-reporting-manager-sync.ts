@@ -6,7 +6,7 @@ const clean = (value: unknown) => (typeof value === 'string' ? value.trim() : ''
 
 const LEADERSHIP_PATTERN = /\b(manager|head|lead|supervisor|director)\b/i;
 
-/** Role-based supervisor overrides within ADMINSTRATION pending manual review for admin/front-office staff. */
+/** Role-based supervisor overrides within ADMINSTRATION. Department HOD is P0467. */
 export const ADMINSTRATION_ROLE_SUPERVISOR_CODES = {
   drivers: { supervisorCode: 'P0467', employeeCodes: [
     'L0297', 'L1090', 'L1369', 'L1618', 'L1963', 'L2125', 'L2142', 'L2191',
@@ -16,11 +16,8 @@ export const ADMINSTRATION_ROLE_SUPERVISOR_CODES = {
   security: { supervisorCode: 'P0272', employeeCodes: ['L0263', 'L0862', 'L1714', 'L1986'] },
 } as const;
 
-/** Departments that need manual supervisor review before any auto-assignment runs. */
-const DEPARTMENTS_PENDING_MANUAL_REVIEW = new Set([
-  'adminstration',
-  'administration',
-]);
+/** No departments are held back from Cost Centre Manager resolution. */
+const DEPARTMENTS_PENDING_MANUAL_REVIEW = new Set<string>();
 
 /** Explicit department → supervisor overrides where org data is incomplete. */
 export const explicitDepartmentSupervisorCode = (department: string) => {
@@ -28,12 +25,33 @@ export const explicitDepartmentSupervisorCode = (department: string) => {
   return DEPARTMENT_SUPERVISOR_CODES[normalized] || null;
 };
 
-/** Explicit department → supervisor overrides where org data is incomplete. */
+/**
+ * HR-confirmed department line managers (Cost Centre Manager + department reporting).
+ * Job-title inference is not used when a department is listed here.
+ */
 const DEPARTMENT_SUPERVISOR_CODES: Record<string, string> = {
+  'corporate office': 'P0060',
+  "md's office": 'P0060',
+  'md office': 'P0060',
+  corporate: 'P0060',
+  'health and safety': 'P0392',
+  'health & safety': 'P0392',
+  hse: 'P0392',
+  project: 'P0442',
+  projects: 'P0442',
+  'quality assurance control': 'L2792',
+  'quality control/assurance': 'L2792',
+  'quality control / assurance': 'L2792',
+  'quality assurance': 'L2792',
+  'quality control': 'L2792',
+  'qa/qc': 'L2792',
+  'qa / qc': 'L2792',
+  administration: 'P0467',
+  adminstration: 'P0467',
   'information technology': 'P0146',
   'it & enterprise systems': 'P0146',
   'it and enterprise systems': 'P0146',
-  'security': 'P0272',
+  security: 'P0272',
   'security & community liaison': 'P0272',
 };
 
@@ -400,19 +418,17 @@ async function buildDepartmentReportingSyncPlan(
       const assignedSupervisor = supervisorAssignments.get(employeeCode);
       const targetSupervisor = assignedSupervisor || supervisor;
       const hasManager = Boolean(clean(employee.managerName));
-      const explicitDepartment = Boolean(DEPARTMENT_SUPERVISOR_CODES[normalizeDepartment(department)]);
-      const needsExplicitSupervisor = explicitDepartment && !reportingManagerMatchesSupervisor(clean(employee.managerName), targetSupervisor);
       const needsAssignmentSupervisor = assignedSupervisor && !reportingManagerMatchesSupervisor(clean(employee.managerName), assignedSupervisor);
       const needsManager = !hasManager;
 
-      if (!needsManager && !needsExplicitSupervisor && !needsAssignmentSupervisor) continue;
+      // Department HODs drive Cost Centre Manager routing. Do not flatten existing
+      // individual reporting lines onto the HOD.
+      if (!needsManager && !needsAssignmentSupervisor) continue;
       if (needsManager && !assignedSupervisor && !isDepartmentHeadCandidate(targetSupervisor)) continue;
 
       const reason = needsAssignmentSupervisor
         ? 'Trade supervisor assignment alignment'
-        : needsExplicitSupervisor
-          ? 'Explicit department supervisor mapping'
-          : 'Missing reporting manager for department/unit';
+        : 'Missing reporting manager for department/unit';
 
       planned.push({
         employeeCode: clean(employee.employeeCode || employee.employeeId),
