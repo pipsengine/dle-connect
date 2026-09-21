@@ -261,7 +261,9 @@ export async function POST(request: NextRequest) {
       return ok(await scopedAuthorizationPayload(role, request, livePermissions, identity));
     }
     if (String(body.action || '').trim() === 'bulk-approve-authorization' || String(body.action || '').trim() === 'bulk-reject-authorization') {
-      const ids = Array.isArray(body.ids) ? body.ids.map((value: unknown) => String(value || '').trim()).filter(Boolean) : [];
+      const ids: string[] = Array.isArray(body.ids)
+        ? (body.ids as unknown[]).map((value) => String(value || '').trim()).filter(Boolean)
+        : [];
       if (!ids.length) return err(400, 'Select at least one overtime authorization request.');
       const decision = String(body.action).startsWith('bulk-approve') ? 'approve' : 'reject';
       if (!actorCanBypassOvertimeWorkflow(identity) && !canActOnAuthorization(request, decision, livePermissions)) return err(403, 'Permission denied.');
