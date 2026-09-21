@@ -28,7 +28,7 @@ import {
   type EssLeaveRequest,
 } from '../apps/dashboard/lib/leave-workflow-service';
 import { getPayrollPublicHolidayDates, resolveNigeriaPublicHolidays } from '../apps/dashboard/lib/nigeria-public-holidays';
-import { readPayrollEmployees } from '../apps/dashboard/lib/payroll-employee-source';
+import { readDirectoryEmployees } from '../apps/dashboard/lib/payroll-employee-source';
 import { addIsoDateDays } from '../apps/dashboard/lib/timesheet-entry-shared';
 import { readTimesheetData } from '../apps/dashboard/lib/timesheet-entry-store';
 import { syncCCodeLeaveToTimesheet, workingDatesInLeaveRange } from '../apps/dashboard/lib/timesheet-leave-sync';
@@ -155,17 +155,41 @@ const readExcelRows = (): ExcelLeaveRow[] => {
   })).filter((row) => row.employeeCode && row.startDate && row.resumptionDate);
 };
 
+const nameKey = (value: string) => compact(value)
+  .toUpperCase()
+  .replace(/[^A-Z0-9 ]/g, ' ')
+  .split(/\s+/)
+  .filter((part) => part.length > 1 && !['MR', 'MRS', 'MISS', 'MS'].includes(part))
+  .sort()
+  .join(' ');
+
+const nameTokens = (value: string) => nameKey(value).split(' ').filter(Boolean);
+
+const namesCouldBeSamePerson = (left: string, right: string) => {
+  const a = new Set(nameTokens(left));
+  const b = new Set(nameTokens(right));
+  if (!a.size || !b.size) return true;
+  return [...a].some((token) => b.has(token));
+};
+
 const findEmployee = (employees: DleEmployeeDirectoryRow[], code: string, name: string) => {
   const wanted = compact(code).toUpperCase();
   const byCode = employees.find((employee) =>
     compact(employee.employeeCode).toUpperCase() === wanted
     || compact(employee.employeeId).toUpperCase() === wanted,
   );
-  if (byCode) return byCode;
-  const wantedName = compact(name).toUpperCase().replace(/\s+/g, ' ');
+  if (byCode && namesCouldBeSamePerson(byCode.fullName, name)) return byCode;
+
+  const wantedName = nameKey(name);
   if (!wantedName) return null;
-  const named = employees.filter((employee) => compact(employee.fullName).toUpperCase().replace(/\s+/g, ' ') === wantedName);
-  return named.length === 1 ? named[0] : null;
+  const named = employees.filter((employee) =>
+    /^C\d+/i.test(compact(employee.employeeCode))
+    && nameKey(employee.fullName) === wantedName,
+  );
+  const activeNamed = named.filter((employee) => !/inactive|terminated|resigned/i.test(compact(employee.status)));
+  if (activeNamed.length === 1) return activeNamed[0];
+  if (named.length === 1) return named[0];
+  return null;
 };
 
 const employeeLookupKeys = (employee: DleEmployeeDirectoryRow, fallbackCode: string) =>
@@ -340,7 +364,7 @@ const main = async () => {
     publicHolidayRows: dayPreview.filter((item) => item.holidays.length && item.ok && item.weekdaysExclPh !== item.approved),
   }, null, 2));
 
-  const { employees } = await readPayrollEmployees();
+  const { employees } = await readDirectoryEmployees();
   const pool = await getDleEnterpriseDbPool();
   if (!pool) throw new Error('DLE Enterprise database is not available.');
 
@@ -351,6 +375,52 @@ WHERE [Id] NOT LIKE N'sage-leave-tx-%';`);
   const existingLeaves = (existingResult.recordset || []) as ExistingLeaveRow[];
   const essRequests = await readAllEssRequests().catch(() => [] as EssLeaveRequest[]);
   const timesheetCache = apply ? await readTimesheetData({ softFail: true }) : null;
+
+  const cancelWrongC1524Backfill = async (pool: sql.ConnectionPool) => {
+  const id = 'leave-backfill-C1524-2026-08-27';
+  const existing = await pool.request()
+    .input('Id', sql.NVarChar(120), id)
+    .query(`SELECT TOP 1 [Id],[StatusName],[Days] FROM [hris].[LeaveApplications] WHERE [Id]=@Id;`);
+  if (!existing.recordset[0] || CLOSED_STATUSES.has(compact(existing.recordset[0].StatusName))) {
+    return { cancelled: false };
+  }
+  const days = Number(existing.recordset[0].Days || 7);
+  await pool.request()
+    .input('Id', sql.NVarChar(120), id)
+    .query(`
+UPDATE [hris].[LeaveApplications]
+SET [StatusName]=N'Cancelled',
+    [ApprovalStatus]=N'Cancelled',
+    [WorkflowStage]=N'Closed',
+    [UpdatedAt]=SYSUTCDATETIME()
+WHERE [Id]=@Id;`);
+  await pool.request()
+    .input('EmployeeId', sql.NVarChar(80), 'C1524')
+    .input('LeaveType', sql.NVarChar(120), 'Casual Leave')
+    .input('Days', sql.Decimal(9, 2), days)
+    .query(`
+UPDATE [hris].[LeaveBalances]
+SET [UsedBalance] = CASE WHEN ISNULL([UsedBalance],0) - @Days < 0 THEN 0 ELSE ISNULL([UsedBalance],0) - @Days END,
+    [CurrentBalance] = ISNULL([CurrentBalance],0) + @Days,
+    [UpdatedAt]=SYSUTCDATETIME()
+WHERE [EmployeeId]=@EmployeeId AND [LeaveType]=@LeaveType;`);
+  try {
+    const requests = await readAllEssRequests();
+    if (requests.some((item) => item.id === id)) {
+      await writeAllEssRequests(requests.map((item) => item.id === id
+        ? { ...item, status: 'Rejected', updatedAt: new Date().toISOString() }
+        : item));
+    }
+  } catch {
+    // ESS JSON is secondary to SQL.
+  }
+  return { cancelled: true, days };
+};
+
+  if (apply) {
+    const reversed = await cancelWrongC1524Backfill(pool);
+    if (reversed.cancelled) console.log(JSON.stringify({ stage: 'reversed-wrong-c1524', ...reversed }));
+  }
 
   const reports: Array<Record<string, unknown>> = [];
   let applied = 0;
@@ -373,9 +443,11 @@ WHERE [Id] NOT LIKE N'sage-leave-tx-%';`);
     const selectedDates = matchesIncludingHoliday ? weekdaysIncludingHoliday : chargeableDates;
     const timesheetDates = chargeableDates;
     const employee = findEmployee(employees, row.employeeCode, row.employeeName);
+    const resolvedCode = compact(employee?.employeeCode || row.employeeCode).toUpperCase();
     const base = {
       row: row.rowNumber,
       code: row.employeeCode,
+      resolvedCode: resolvedCode !== row.employeeCode ? resolvedCode : undefined,
       name: employee?.fullName || row.employeeName,
       leaveType,
       startDate: row.startDate,
@@ -428,7 +500,7 @@ WHERE [Id] NOT LIKE N'sage-leave-tx-%';`);
     const existing = matched?.row || null;
     const existingStatus = compact(existing?.StatusName);
     const alreadyApproved = existing ? APPROVED_STATUSES.has(existingStatus) : false;
-    const requestId = existing?.Id || `leave-backfill-${row.employeeCode}-${row.startDate}`;
+    const requestId = existing?.Id || `leave-backfill-${resolvedCode}-${row.startDate}`;
     const existingEss = essRequests.find((item) => item.id === requestId) || null;
     const excludedHolidays = matchesIncludingHoliday
       ? []
