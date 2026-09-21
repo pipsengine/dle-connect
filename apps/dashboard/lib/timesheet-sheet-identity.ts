@@ -44,9 +44,32 @@ const JOB_TITLE_WORK_CENTERS: Array<[RegExp, string]> = [
   [/\broller|rolling|machinist|machining\b/i, 'Machining'],
 ];
 
-/** Assigned crew wins. HR reporting line is only used when nobody is assigned. */
-export const preferAssignedTimesheetRoster = <T>(assigned: T[], reportingFallback: T[]) =>
-  assigned.length ? assigned : reportingFallback;
+/** Assigned crew wins, then HR direct reports who are not on another supervisor's sheet. */
+export const preferAssignedTimesheetRoster = <T>(
+  assigned: T[],
+  reportingFallback: T[],
+  options?: {
+    codeOf?: (item: T) => string;
+    assignedToOtherCodes?: Iterable<string>;
+  },
+) => {
+  const codeOf = options?.codeOf;
+  if (!codeOf) return assigned.length ? assigned : reportingFallback;
+  const assignedElsewhere = new Set(
+    [...(options?.assignedToOtherCodes || [])].map((value) => String(value || '').trim().toLowerCase()).filter(Boolean),
+  );
+  const byCode = new Map<string, T>();
+  for (const row of assigned) {
+    const code = String(codeOf(row) || '').trim().toLowerCase();
+    if (code) byCode.set(code, row);
+  }
+  for (const row of reportingFallback) {
+    const code = String(codeOf(row) || '').trim().toLowerCase();
+    if (!code || byCode.has(code) || assignedElsewhere.has(code)) continue;
+    byCode.set(code, row);
+  }
+  return byCode.size ? [...byCode.values()] : reportingFallback;
+};
 
 export const workCenterNameFromJobTitle = (jobTitle?: string | null, workCenterNames: string[] = []) => {
   const title = clean(jobTitle);

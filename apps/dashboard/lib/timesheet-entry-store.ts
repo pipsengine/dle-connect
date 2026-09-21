@@ -3601,39 +3601,51 @@ const supervisorEmployeeScope = async (supervisorId: string) => {
         .map((key) => [key, { employee, location }] as const);
     }),
   );
+  const existingCodes = new Set<string>();
+  let assignedElsewhere = new Set<string>();
   try {
-    const assignments = selectedCode ? await readSupervisorAssignments({ supervisorEmployeeCode: selectedCode }) : [];
-    const matchedAssignments = assignments.filter((assignment) =>
+    const allAssignments = await readSupervisorAssignments();
+    const matchedAssignments = allAssignments.filter((assignment) =>
       assignment.employeeCode
       && assignment.matchedStatus !== 'Unresolved'
       && assignmentMatchesSupervisor(assignment, selectedCode),
+    );
+    assignedElsewhere = new Set(
+      allAssignments
+        .filter((assignment) => (
+          assignment.employeeCode
+          && assignment.matchedStatus !== 'Unresolved'
+          && !assignmentMatchesSupervisor(assignment, selectedCode)
+        ))
+        .map((assignment) => String(assignment.employeeCode || '').trim().toLowerCase())
+        .filter(Boolean),
     );
     for (const assignment of matchedAssignments) {
       const employeeCode = assignment.employeeCode || '';
       const fullName = assignment.employeeName || employeeCode;
       const payroll = payrollByCode.get(employeeCode.toLowerCase());
+      existingCodes.add(employeeCode.toLowerCase());
       employees.push({ employeeCode, fullName, location: payroll?.location || '' });
       attendanceMatchKeys(employeeCode, fullName).forEach((key) => keys.add(key));
     }
   } catch (error) {
     console.warn('Timesheet supervisor assignment scope could not be loaded; falling back to reporting manager data:', error);
   }
-  const existingCodes = new Set(employees.map((employee) => employee.employeeCode.toLowerCase()));
-  if (!existingCodes.size) {
-    for (const employee of source.employees) {
-      if (['Resigned', 'Terminated', 'Retired'].includes(employee.status)) continue;
-      if (!supervisorMatchesEmployee(employee.managerName, selected)) continue;
-      const employeeCode = employee.employeeCode || employee.employeeId;
-      if (!employeeCode || existingCodes.has(employeeCode.toLowerCase())) continue;
-      existingCodes.add(employeeCode.toLowerCase());
-      employees.push({ employeeCode, fullName: employee.fullName, location: payrollLocation(employee) });
-      [
-        employee.employeeId,
-        employee.employeeCode,
-        employee.fullName,
-        employee.sourceEmployeeId,
-      ].flatMap((value) => attendanceMatchKeys(value)).forEach((key) => keys.add(key));
-    }
+  for (const employee of source.employees) {
+    if (['Resigned', 'Terminated', 'Retired'].includes(employee.status)) continue;
+    if (!supervisorMatchesEmployee(employee.managerName, selected)) continue;
+    const employeeCode = employee.employeeCode || employee.employeeId;
+    if (!employeeCode) continue;
+    const codeKey = employeeCode.toLowerCase();
+    if (existingCodes.has(codeKey) || assignedElsewhere.has(codeKey)) continue;
+    existingCodes.add(codeKey);
+    employees.push({ employeeCode, fullName: employee.fullName, location: payrollLocation(employee) });
+    [
+      employee.employeeId,
+      employee.employeeCode,
+      employee.fullName,
+      employee.sourceEmployeeId,
+    ].flatMap((value) => attendanceMatchKeys(value)).forEach((key) => keys.add(key));
   }
   let supervisorLocation = '';
   if (selectedCode) {

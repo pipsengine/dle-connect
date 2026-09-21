@@ -51,12 +51,36 @@ assert.notEqual(
 assert.deepEqual(
   preferAssignedTimesheetRoster(['Shittu'], ['Shittu', 'Micah', 'Jeremiah']),
   ['Shittu'],
-  'nested crews stay off the skip-level sheet',
+  'without codes, assigned crew stays exclusive',
 );
 assert.deepEqual(
   preferAssignedTimesheetRoster([], ['Micah']),
   ['Micah'],
   'reporting line is used only when nobody is assigned',
+);
+assert.deepEqual(
+  preferAssignedTimesheetRoster(
+    [{ employeeCode: 'C2236' }],
+    [{ employeeCode: 'C2236' }, { employeeCode: 'C2410' }],
+    {
+      codeOf: (item) => item.employeeCode,
+      assignedToOtherCodes: [],
+    },
+  ).map((item) => item.employeeCode).sort(),
+  ['C2236', 'C2410'],
+  'unassigned direct reports stay on a partial assignment sheet',
+);
+assert.deepEqual(
+  preferAssignedTimesheetRoster(
+    [{ employeeCode: 'P0044' }],
+    [{ employeeCode: 'P0044' }, { employeeCode: 'C2410' }, { employeeCode: 'C1544' }],
+    {
+      codeOf: (item) => item.employeeCode,
+      assignedToOtherCodes: ['C1544', 'C2410'],
+    },
+  ).map((item) => item.employeeCode),
+  ['P0044'],
+  'crew assigned to another supervisor stay off the skip-level sheet',
 );
 
 assert.equal(workCenterNameFromJobTitle('WELDING SUPERVISOR', ['Welding', 'Cutting', 'Blasting']), 'Welding');

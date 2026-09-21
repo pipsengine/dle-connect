@@ -1131,9 +1131,22 @@ const buildPayload = async (
     const canonicalManager = canonicalSupervisorValue(employee.managerName, supervisorIndex);
     return canonicalManager === targetSupervisor || managerMatches({ managerName: canonicalManager || employee.managerName }, targetSupervisor);
   });
+  const assignedToOtherSupervisor = new Set(
+    assignmentRows
+      .filter((assignment) => (
+        assignment.employeeCode
+        && assignment.matchedStatus !== 'Unresolved'
+        && !assignmentMatchesSupervisor(assignment, targetSupervisorCode)
+      ))
+      .map((assignment) => clean(assignment.employeeCode).toLowerCase()),
+  );
   const selectedSupervisorAllDirectReports = preferAssignedTimesheetRoster(
     assignedSupervisorEmployees,
     reportingManagerEmployees,
+    {
+      codeOf: (employee) => employee.employeeCode || employee.employeeId,
+      assignedToOtherCodes: assignedToOtherSupervisor,
+    },
   );
   {
     const supervisorRecordsForDefault = timesheetRecords.filter((record) => managerMatches({ managerName: record.supervisor }, targetSupervisor));
