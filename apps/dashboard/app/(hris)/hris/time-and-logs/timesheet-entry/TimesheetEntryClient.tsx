@@ -545,11 +545,22 @@ export default function TimesheetEntryClient({ variant = 'admin' }: { variant?: 
       const offshoreSheet = isOffshoreTimesheetContext(
         location || data.suggestedContext?.location || data.header?.locationName,
         workCenter || data.header?.workCenterName || data.suggestedContext?.workCenter,
-      );
+      ) || isOffshoreLocationName(location);
+      const headerIsOffshore = isOffshoreLocationName(data.header?.locationName)
+        || isOffshoreWorkCenterName(data.header?.workCenterName);
       const offshoreProject = resolveOffshoreProjectCode(workCenter || data.header?.workCenterName || '', location || data.header?.locationName)
         || data.mobilizedCrew?.projectCode
         || '';
-      const nextLines = (!data.lines.length && offshoreSheet && data.header?.id && (data.supervisorEmployees || []).length)
+      const nextLines = offshoreSheet && !headerIsOffshore
+        ? (data.supervisorEmployees || []).map((employee) => buildManualOffshoreLine({
+          headerId: data.header?.id || `ts-off-${selectedDate}-${selectedSupervisor}`,
+          employeeId: employee.employeeId || employee.employeeCode,
+          employeeNo: employee.employeeCode,
+          employeeName: employee.fullName,
+          projectCode: resolveOffshoreProjectCode(employee.workCenter, OFFSHORE_LOCATION_NAME) || offshoreProject,
+          projectName: resolveOffshoreProjectCode(employee.workCenter, OFFSHORE_LOCATION_NAME) || offshoreProject,
+        }))
+        : (!data.lines.length && offshoreSheet && data.header?.id && (data.supervisorEmployees || []).length)
         ? (data.supervisorEmployees || []).map((employee) => buildManualOffshoreLine({
           headerId: data.header!.id,
           employeeId: employee.employeeId || employee.employeeCode,
@@ -651,11 +662,12 @@ export default function TimesheetEntryClient({ variant = 'admin' }: { variant?: 
 
   useEffect(() => {
     if (submitting) return;
+    const workCenter = isOffshoreLocationName(selectedLocation) ? (selectedWorkCenter || undefined) : undefined;
     const timer = window.setTimeout(() => {
-      void load(selectedDate, selectedSupervisor, selectedLocation, undefined, requestedHeaderId || undefined, selectedShift);
+      void load(selectedDate, selectedSupervisor, selectedLocation, workCenter, requestedHeaderId || undefined, selectedShift);
     }, hasPayloadRef.current ? 120 : 0);
     return () => window.clearTimeout(timer);
-  }, [load, selectedDate, selectedSupervisor, selectedLocation, requestedHeaderId, selectedShift, submitting]);
+  }, [load, selectedDate, selectedSupervisor, selectedLocation, selectedWorkCenter, requestedHeaderId, selectedShift, submitting]);
 
   useEffect(() => {
     const saved = payload?.header?.shiftLabel;
@@ -1465,6 +1477,7 @@ export default function TimesheetEntryClient({ variant = 'admin' }: { variant?: 
     const matchesQuery = l.employeeName.toLowerCase().includes(query.toLowerCase())
       || l.employeeNo.toLowerCase().includes(query.toLowerCase());
     if (!matchesQuery) return false;
+    if (isOffshoreSheet) return true;
     if (!selectedWorkCenter) return true;
     const workCenter = lineWorkCenterName(l);
     return timesheetWorkCentersMatch(workCenter, selectedWorkCenter)

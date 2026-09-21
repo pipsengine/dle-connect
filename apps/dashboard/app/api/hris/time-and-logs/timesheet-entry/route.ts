@@ -1331,6 +1331,10 @@ const buildPayload = async (
     header = pick.header;
     adoptLegacyHeader = pick.adoptLegacy;
   }
+  if (isOffshoreSheet && header && !isOffshoreLocationName(header.locationName) && !isOffshoreWorkCenterName(header.workCenterName)) {
+    header = null;
+    adoptLegacyHeader = false;
+  }
   if (header && targetLocation && (adoptLegacyHeader || !header.locationName)) {
     header = { ...header, locationName: isOffshoreSheet ? OFFSHORE_LOCATION_NAME : targetLocation };
   }
@@ -1730,7 +1734,7 @@ const buildPayload = async (
     supervisorProfile: selectedSupervisorProfile ? employeeSummary(selectedSupervisorProfile) : null,
     suggestedContext: {
       location: targetLocation,
-      workCenter: '',
+      workCenter: isOffshoreSheet ? (offshoreProjectCode || targetWorkCenter || '') : '',
     },
     approvedOvertimeAuthorizations,
     overtimeBooking,

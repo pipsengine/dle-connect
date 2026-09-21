@@ -192,4 +192,18 @@ const mergedReviewedClocks = mergeDuplicateTimesheetSheetLines({
 });
 assert.equal(mergedReviewedClocks.lines[0]?.clockIn, '07:26', 'reviewed Blasting leftover still donates Abel’s punch');
 
+const unlocatedYard = {
+  ...blasting,
+  id: 'hdr-unlocated',
+  locationName: '',
+};
+const offshoreHeaderPick = selectCanonicalTimesheetHeader([unlocatedYard, blasting], {
+  date: '2026-08-17',
+  supervisorId: 'P0013 - Mr SAMUEL KARONWI',
+  shiftLabel: '01 (Day)',
+  locationName: 'OFFSHORE',
+  supervisorHomeLocation: 'AGEGE',
+});
+assert.equal(offshoreHeaderPick.header, null, 'Offshore never adopts the Agege yard sheet');
+
 console.log('timesheet-sheet-identity.test.ts: ok');

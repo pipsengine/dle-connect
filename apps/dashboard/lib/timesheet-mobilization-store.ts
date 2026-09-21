@@ -196,7 +196,26 @@ export async function readTimesheetMobilizations(filters: {
 } = {}): Promise<TimesheetMobilization[]> {
   const pool = await poolOrThrow();
   const result = await pool.request().query(`
-SELECT * FROM [hris].[TimesheetMobilizations]
+SELECT
+  [Id],
+  [EmployeeCode],
+  [EmployeeName],
+  [HomeWorkCenterName],
+  [SupervisorId],
+  [SupervisorName],
+  [ProjectCode],
+  [ProjectName],
+  [WorkCenterName],
+  [LocationName],
+  CONVERT(varchar(10), [StartDate], 23) AS [StartDate],
+  CONVERT(varchar(10), [EndDate], 23) AS [EndDate],
+  [Status],
+  [Reason],
+  [CreatedAt],
+  [CreatedBy],
+  [UpdatedAt],
+  [UpdatedBy]
+FROM [hris].[TimesheetMobilizations]
 ORDER BY [StartDate] DESC, [SupervisorName], [EmployeeName]
 `);
   let rows = result.recordset.map(mapRow);

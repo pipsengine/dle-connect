@@ -5,6 +5,7 @@
 import { supervisorCodesMatch, timesheetEmployeeRecordsMatch, timesheetLocationsMatch } from '@/lib/timesheet-agege-blasting';
 import {
   MIXED_TIMESHEET_WORK_CENTER,
+  isOffshoreLocationName,
   normalizeTimesheetStatusKey,
   timesheetHeaderMatchesShift,
   timesheetLineHasBookedHours,
@@ -122,10 +123,12 @@ export const selectCanonicalTimesheetHeader = <T extends TimesheetSheetHeaderRef
     ? candidates.filter((header) => timesheetLocationsMatch(header.locationName, targetLocation))
     : candidates;
   const unlocated = candidates.filter((header) => !clean(header.locationName));
-  const canAdoptLegacy = Boolean(unlocated.length) && (
-    !clean(input.supervisorHomeLocation)
-    || timesheetLocationsMatch(targetLocation, input.supervisorHomeLocation)
-  );
+  const canAdoptLegacy = Boolean(unlocated.length)
+    && !isOffshoreLocationName(targetLocation)
+    && (
+      !clean(input.supervisorHomeLocation)
+      || timesheetLocationsMatch(targetLocation, input.supervisorHomeLocation)
+    );
   const pool = located.length ? located : (canAdoptLegacy ? unlocated : []);
   if (!pool.length) return { header: null, adoptLegacy: false };
 
