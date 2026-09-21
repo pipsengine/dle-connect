@@ -101,6 +101,7 @@ export default function CrewMobilizationClient() {
   const [pasteOpen, setPasteOpen] = useState(false);
   const [pasteText, setPasteText] = useState('');
   const [uploadReport, setUploadReport] = useState<UploadReport | null>(null);
+  const [closing, setClosing] = useState<{ id: string; employeeName: string; date: string } | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
 
   const load = useCallback(async () => {
@@ -275,7 +276,7 @@ export default function CrewMobilizationClient() {
     }
   };
 
-  const act = async (action: 'DEMOBILIZE' | 'CANCEL', id: string) => {
+  const act = async (action: 'DEMOBILIZE' | 'CANCEL', id: string, lastOffshoreDay?: string) => {
     setBusy(true);
     setError(null);
     setNotice(null);
@@ -283,11 +284,16 @@ export default function CrewMobilizationClient() {
       const res = await fetch('/api/hris/time-and-logs/crew-mobilization', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action, id, endDate: today }),
+        body: JSON.stringify({
+          action,
+          id,
+          endDate: action === 'DEMOBILIZE' ? (lastOffshoreDay || today) : undefined,
+        }),
       });
       const json = await res.json();
       if (!res.ok || json.status !== 'success') throw new Error(json.error || 'Unable to update mobilization');
       setNotice(json.data?.message || 'Updated.');
+      setClosing(null);
       await load();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Unable to update mobilization');
@@ -310,6 +316,39 @@ export default function CrewMobilizationClient() {
       <div className="space-y-5">
         {error ? <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-bold text-red-700">{error}</div> : null}
         {notice ? <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-bold text-emerald-800">{notice}</div> : null}
+        {closing ? (
+          <div className="flex flex-wrap items-end gap-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3">
+            <div className="min-w-0 flex-1">
+              <p className="text-sm font-black text-amber-950">Last offshore day for {closing.employeeName}</p>
+              <p className="mt-1 text-xs font-semibold text-amber-900">They stay on the offshore sheet through this date. Home work centre and clocking resume the next day.</p>
+            </div>
+            <label className="text-xs font-bold text-amber-950">
+              Last day
+              <input
+                type="date"
+                value={closing.date}
+                onChange={(event) => setClosing((current) => current ? { ...current, date: event.target.value } : current)}
+                className="mt-1 h-10 w-44 rounded-xl border border-amber-200 bg-white px-3 text-sm font-semibold"
+              />
+            </label>
+            <button
+              type="button"
+              disabled={busy || !closing.date}
+              onClick={() => void act('DEMOBILIZE', closing.id, closing.date)}
+              className="inline-flex h-10 items-center rounded-xl bg-slate-950 px-4 text-xs font-black text-white hover:bg-slate-800 disabled:opacity-50"
+            >
+              Confirm demobilize
+            </button>
+            <button
+              type="button"
+              disabled={busy}
+              onClick={() => setClosing(null)}
+              className="inline-flex h-10 items-center rounded-xl border border-amber-200 px-4 text-xs font-black text-amber-950 hover:bg-white disabled:opacity-50"
+            >
+              Cancel
+            </button>
+          </div>
+        ) : null}
 
         <div className="rounded-xl border border-sky-200 bg-sky-50 px-4 py-3 text-sm text-sky-950">
           <div className="flex items-start gap-2">
@@ -559,7 +598,7 @@ export default function CrewMobilizationClient() {
                       <td className="px-3 py-3">
                         {item.status === 'Planned' || item.status === 'Mobilized' ? (
                           <div className="flex flex-wrap gap-2">
-                            <button type="button" disabled={busy} onClick={() => void act('DEMOBILIZE', item.id)} className="inline-flex h-9 items-center gap-1 rounded-lg border border-slate-200 px-2 text-xs font-black text-slate-700 hover:bg-slate-50 disabled:opacity-50">
+                            <button type="button" disabled={busy} onClick={() => setClosing({ id: item.id, employeeName: item.employeeName, date: item.endDate || today })} className="inline-flex h-9 items-center gap-1 rounded-lg border border-slate-200 px-2 text-xs font-black text-slate-700 hover:bg-slate-50 disabled:opacity-50">
                               <UserMinus className="h-3.5 w-3.5" /> Demobilize
                             </button>
                             <button type="button" disabled={busy} onClick={() => void act('CANCEL', item.id)} className="inline-flex h-9 items-center gap-1 rounded-lg border border-red-200 px-2 text-xs font-black text-red-700 hover:bg-red-50 disabled:opacity-50">
