@@ -1,4 +1,4 @@
-import { processDailyCelebrationEmails } from '@/lib/celebration-notification-service';
+import { areCelebrationEmailsDisabled, processDailyCelebrationEmails } from '@/lib/celebration-notification-service';
 
 const TICK_MS = Number(process.env.DLE_CELEBRATION_SCHEDULER_INTERVAL_MS || 30 * 60_000);
 const SEND_AFTER_HOUR = Math.max(0, Math.min(23, Number(process.env.DLE_CELEBRATION_SEND_AFTER_HOUR || 7)));
@@ -16,7 +16,7 @@ export const getCelebrationSchedulerStatus = () => ({
   lastTickAt,
   lastTickSummary,
   tickInFlight,
-  disabled: process.env.DLE_CELEBRATION_SCHEDULER_DISABLED === '1',
+  disabled: areCelebrationEmailsDisabled(),
 });
 
 const withinSendWindow = (now = new Date()) => now.getHours() >= SEND_AFTER_HOUR;
@@ -25,8 +25,8 @@ export const runCelebrationSchedulerTick = async (input?: { force?: boolean; res
   if (tickInFlight) {
     return { tickSkipped: true as const, reason: 'Tick already in progress.' };
   }
-  if (process.env.DLE_CELEBRATION_SCHEDULER_DISABLED === '1') {
-    return { tickSkipped: true as const, reason: 'Scheduler disabled.' };
+  if (areCelebrationEmailsDisabled()) {
+    return { tickSkipped: true as const, reason: 'Birthday and anniversary emails are paused.' };
   }
   if (!input?.force && !withinSendWindow()) {
     lastTickAt = new Date().toISOString();
@@ -50,7 +50,7 @@ export const runCelebrationSchedulerTick = async (input?: { force?: boolean; res
 };
 
 export const ensureCelebrationSchedulerStarted = () => {
-  if (started || process.env.DLE_CELEBRATION_SCHEDULER_DISABLED === '1') return;
+  if (started || areCelebrationEmailsDisabled()) return;
   started = true;
   void runCelebrationSchedulerTick();
   tickTimer = setInterval(() => {

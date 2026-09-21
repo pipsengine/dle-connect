@@ -30,6 +30,7 @@ import { syncCCodeLeaveToTimesheet } from '@/lib/timesheet-leave-sync';
 import {
   approvalStatusForEss,
   isLeaveEssRequest,
+  isPendingLeaveStatus,
   workflowStageForEssStatus,
 } from '@/lib/leave-request-shared';
 import { invalidatePayrollEmployeeCache, readPayrollEmployees } from '@/lib/payroll-employee-source';
@@ -62,6 +63,7 @@ import {
 export type EssLeaveRequestStatus =
   | 'Draft'
   | 'Submitted'
+  | 'Under Review'
   | 'Line Manager Review'
   | 'HR Review'
   | 'Finance Review'
@@ -186,7 +188,7 @@ export const writeAllEssRequests = async (requests: EssLeaveRequest[]) => {
 export const readEssLeaveRequests = async () =>
   (await loadWorkflowLeaveRequests()).filter((item) => isLeaveEssRequest(item));
 
-const PENDING_WORKFLOW_STATUSES = new Set<EssLeaveRequestStatus>(['Submitted', 'Line Manager Review', 'HR Review']);
+const PENDING_WORKFLOW_STATUSES = new Set<EssLeaveRequestStatus>(['Submitted', 'Under Review', 'Line Manager Review', 'HR Review']);
 
 const readPendingLeaveRequestsFromDb = async (employees: DleEmployeeDirectoryRow[]) => {
   const pool = await getDleEnterpriseDbPool();
@@ -199,10 +201,21 @@ WHERE ([StatusName] IN (N'Under Review', N'Submitted', N'Line Manager Review', N
    OR [WorkflowStage] IN (N'Supervisor', N'HR'))
   AND [Id] NOT LIKE N'sage-leave-tx-%';`);
     return (result.recordset || [])
-      .map((row: Record<string, unknown>) => essLeaveRequestFromDbRow(row, employees))
+      .map((row: Record<string, unknown>) => {
+        try {
+          return essLeaveRequestFromDbRow(row, employees);
+        } catch (error) {
+          console.warn('[leave-workflow] skipped unreadable pending leave row', {
+            id: compact(row.Id),
+            reason: error instanceof Error ? error.message : 'map failed',
+          });
+          return null;
+        }
+      })
       .filter((item: EssLeaveRequest | null): item is EssLeaveRequest => Boolean(item))
-      .filter((item) => PENDING_WORKFLOW_STATUSES.has(item.status));
-  } catch {
+      .filter((item) => PENDING_WORKFLOW_STATUSES.has(item.status) || isPendingLeaveStatus(item.status));
+  } catch (error) {
+    console.warn('[leave-workflow] pending leave SQL read failed', error instanceof Error ? error.message : error);
     return [] as EssLeaveRequest[];
   }
 };
@@ -474,10 +487,25 @@ export const loadWorkflowLeaveRequests = async (options?: {
   const jsonRequests = await readAllEssRequests();
   const dbPending = await readPendingLeaveRequestsFromDb(employees);
   const merged = new Map<string, EssLeaveRequest>();
-  for (const item of dbPending) merged.set(item.id, item);
-  for (const item of jsonRequests) {
+  for (const item of jsonRequests) merged.set(item.id, item);
+  for (const item of dbPending) {
     const existing = merged.get(item.id);
-    merged.set(item.id, existing ? { ...existing, ...item } : item);
+    if (!existing) {
+      merged.set(item.id, item);
+      continue;
+    }
+    merged.set(item.id, {
+      ...existing,
+      ...item,
+      employeeId: item.employeeId || existing.employeeId,
+      status: item.status || existing.status,
+      startDate: item.startDate || existing.startDate,
+      endDate: item.endDate || existing.endDate,
+      leaveType: item.leaveType || existing.leaveType,
+      comments: existing.comments?.length ? existing.comments : item.comments,
+      workflow: existing.workflow?.length ? existing.workflow : item.workflow,
+      attachmentNames: existing.attachmentNames?.length ? existing.attachmentNames : item.attachmentNames,
+    });
   }
 
   let requests = [...merged.values()]
@@ -1021,8 +1049,10 @@ export const notifyLeaveWithdrawn = async (input: {
 
 const essLeaveRequestFromDbRow = (row: Record<string, unknown>, employees: DleEmployeeDirectoryRow[]): EssLeaveRequest | null => {
   const id = compact(row.Id);
-  const employeeId = compact(row.EmployeeId);
-  if (!id || !employeeId) return null;
+  const rawEmployeeId = compact(row.EmployeeId);
+  if (!id || !rawEmployeeId) return null;
+  const matchedEmployee = employees.find((employee) => employeeRequestMatches(employee, rawEmployeeId));
+  const employeeId = compact(matchedEmployee?.employeeCode || matchedEmployee?.employeeId || rawEmployeeId);
   const actingOfficer = compact(row.ActingOfficer);
   const reliever = actingOfficer
     ? employees.find((employee) => namesMatch(employee.fullName, actingOfficer) || employeeRequestMatches(employee, actingOfficer))

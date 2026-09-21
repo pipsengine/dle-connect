@@ -18,6 +18,7 @@ import { EssCommunicationsView, type EssCommunicationsPayload } from './ess-comm
 import { EssTimeView, type EssTimePayload } from './ess-time-view';
 import EssWorkflowDashboardView from './ess-workflow-dashboard-view';
 import { EssWorkflowDeliveryPanel, EssWorkflowDiagnosticsBanner, type WorkflowDeliveryTrace } from './ess-workflow-delivery-panel';
+import { humanizeHttpErrorBody } from '@/lib/http-client-error';
 import type { WorkflowIntelligence } from '@/lib/ess-workflow-intelligence';
 import { EssProfileDashboardView, type EssProfilePayload } from './ess-profile-dashboard-view';
 import { EssPayrollDashboardView, type EssPayrollPayload } from './ess-payroll-dashboard-view';
@@ -1039,7 +1040,13 @@ function EssLeaveWorkspace({ payload, employee, onLeaveSubmitted, onLeaveAction,
       form.set('requestId', draftRequestId);
       form.set('file', file);
       const res = await fetch('/api/workforce-portal/leave-attachments', { method: 'POST', body: form });
-      const json = (await res.json()) as ApiResponse<{ fileName: string }>;
+      const text = await res.text();
+      let json: ApiResponse<{ fileName: string }>;
+      try {
+        json = JSON.parse(text) as ApiResponse<{ fileName: string }>;
+      } catch {
+        throw new Error(humanizeHttpErrorBody(text, res.status, 'Leave attachment'));
+      }
       if (!res.ok || json.status !== 'success' || !json.data?.fileName) throw new Error(json.error || 'Unable to upload attachment');
       setAttachmentNames((current) => [...current, json.data!.fileName]);
     } finally {
@@ -1298,7 +1305,7 @@ function EssLeaveWorkspace({ payload, employee, onLeaveSubmitted, onLeaveAction,
                   onRetry={onRetryNotification}
                 />
               </div>
-              {['Line Manager Review', 'HR Review', 'Submitted', 'Draft'].includes(item.status) ? (
+              {['Line Manager Review', 'HR Review', 'Submitted', 'Draft', 'Under Review'].includes(item.status) ? (
                 <button
                   type="button"
                   disabled={saving}

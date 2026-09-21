@@ -24,6 +24,7 @@ import { mergePayrollEarningLinesForSave, sumMonthlyPackageGross } from '@/lib/p
 import { cleanPayrollGroupValue, lumpsumBaseAmountFromStoredLines } from '@/lib/payroll-draft-normalize';
 import { invalidatePayrollCalculationCache } from '@/lib/payroll-calculation-service';
 import { invalidatePayrollEmployeeOptionsCache } from '@/lib/payroll-employee-options-store';
+import { resolveHrisEmployeeRoute } from '@/lib/hris-employee-route';
 
 type Role =
   | 'Super Admin'
@@ -2798,6 +2799,17 @@ const getViewerEmployeeId = (request: Request) => {
   return v && v.trim() ? v.trim() : undefined;
 };
 
+const employeeRoute = async (
+  request: Request,
+  ctx: { params: Promise<{ id: string; resource: string[] }> },
+) => {
+  const { id, resource } = await ctx.params;
+  const resolved = resolveHrisEmployeeRoute(request, id, resource);
+  const reservedHit = RESERVED_EMPLOYEE_ACTION_IDS.has(String(id || '').trim().toLowerCase())
+    && resolved.employeeId === String(id || '').trim();
+  return { ...resolved, reservedHit };
+};
+
 const getResource = (segments: string[]) => ({
   root: segments[0] || '',
   rest: segments.slice(1),
@@ -2914,11 +2926,10 @@ const validateNextOfKin = (items: NextOfKinRecord[], employmentStatus?: string |
 };
 
 export async function GET(request: Request, ctx: { params: Promise<{ id: string; resource: string[] }> }) {
-  const { id, resource } = await ctx.params;
-  if (RESERVED_EMPLOYEE_ACTION_IDS.has(String(id || '').trim().toLowerCase())) {
+  const { employeeId, resource, reservedHit } = await employeeRoute(request, ctx);
+  if (reservedHit) {
     return jsonErr(404, 'Not found');
   }
-  const employeeId = id;
   const role = getRole(request);
   const viewerEmployeeId = getViewerEmployeeId(request);
   if (role === 'Employee' && (!viewerEmployeeId || viewerEmployeeId !== employeeId)) return jsonErr(403, 'Permission denied');
@@ -4548,12 +4559,11 @@ export async function GET(request: Request, ctx: { params: Promise<{ id: string;
   return jsonErr(404, 'Not found');
 }
 
-export async function PATCH(request: Request, ctx: { params: Promise<{ id: string; resource: string[] }> }) {
-  const { id, resource } = await ctx.params;
-  if (RESERVED_EMPLOYEE_ACTION_IDS.has(String(id || '').trim().toLowerCase())) {
+async function patchEmployeeRecord(request: Request, ctx: { params: Promise<{ id: string; resource: string[] }> }) {
+  const { employeeId, resource, reservedHit } = await employeeRoute(request, ctx);
+  if (reservedHit) {
     return jsonErr(404, 'Not found');
   }
-  const employeeId = id;
   const role = getRole(request);
   const viewerEmployeeId = getViewerEmployeeId(request);
   if (role === 'Employee' && (!viewerEmployeeId || viewerEmployeeId !== employeeId)) return jsonErr(403, 'Permission denied');
@@ -5643,12 +5653,20 @@ export async function PATCH(request: Request, ctx: { params: Promise<{ id: strin
   return jsonErr(404, 'Not found');
 }
 
+export async function PATCH(request: Request, ctx: { params: Promise<{ id: string; resource: string[] }> }) {
+  try {
+    return await patchEmployeeRecord(request, ctx);
+  } catch (error) {
+    console.error('[hris-employees] PATCH failed', error);
+    return jsonErr(500, error instanceof Error ? error.message : 'Save failed');
+  }
+}
+
 export async function POST(request: Request, ctx: { params: Promise<{ id: string; resource: string[] }> }) {
-  const { id, resource } = await ctx.params;
-  if (RESERVED_EMPLOYEE_ACTION_IDS.has(String(id || '').trim().toLowerCase())) {
+  const { employeeId, resource, reservedHit } = await employeeRoute(request, ctx);
+  if (reservedHit) {
     return jsonErr(404, 'Not found');
   }
-  const employeeId = id;
   const role = getRole(request);
   const viewerEmployeeId = getViewerEmployeeId(request);
   if (role === 'Employee' && (!viewerEmployeeId || viewerEmployeeId !== employeeId)) return jsonErr(403, 'Permission denied');
@@ -6946,11 +6964,10 @@ export async function POST(request: Request, ctx: { params: Promise<{ id: string
 }
 
 export async function DELETE(request: Request, ctx: { params: Promise<{ id: string; resource: string[] }> }) {
-  const { id, resource } = await ctx.params;
-  if (RESERVED_EMPLOYEE_ACTION_IDS.has(String(id || '').trim().toLowerCase())) {
+  const { employeeId, resource, reservedHit } = await employeeRoute(request, ctx);
+  if (reservedHit) {
     return jsonErr(404, 'Not found');
   }
-  const employeeId = id;
   const role = getRole(request);
   const viewerEmployeeId = getViewerEmployeeId(request);
   if (role === 'Employee' && (!viewerEmployeeId || viewerEmployeeId !== employeeId)) return jsonErr(403, 'Permission denied');

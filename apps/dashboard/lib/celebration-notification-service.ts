@@ -28,6 +28,11 @@ const compact = (value: unknown) => String(value || '').trim();
 const MAX_PHOTO_BYTES = Number(process.env.DLE_CELEBRATION_MAX_PHOTO_BYTES || 350_000);
 const SEND_CONCURRENCY = Math.max(1, Number(process.env.DLE_CELEBRATION_SEND_CONCURRENCY || 3));
 
+/** Birthday/anniversary emails stay off unless explicitly opted in. */
+export const areCelebrationEmailsDisabled = () =>
+  process.env.DLE_CELEBRATION_EMAILS_ENABLED !== '1'
+  || process.env.DLE_CELEBRATION_SCHEDULER_DISABLED === '1';
+
 const loadDirectory = async (): Promise<DleEmployeeDirectoryRow[]> => {
   const fromDb = await readEmployeeDirectoryFromDb();
   if (fromDb?.length) return fromDb;
@@ -80,6 +85,9 @@ const mailboxFor = async (employee: DleEmployeeDirectoryRow) =>
 
 export const processDailyCelebrationEmails = async (input?: { date?: string; force?: boolean; resend?: boolean }) => {
   const date = compact(input?.date).slice(0, 10) || todayIsoLocal();
+  if (areCelebrationEmailsDisabled()) {
+    return { skipped: true as const, reason: 'Birthday and anniversary emails are paused.', date, honorees: 0, sent: 0, failed: 0 };
+  }
   if (!resolveMailProvider()) {
     return { skipped: true as const, reason: 'Mail provider not configured.', date, honorees: 0, sent: 0, failed: 0 };
   }

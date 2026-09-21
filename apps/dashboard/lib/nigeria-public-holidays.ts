@@ -237,10 +237,14 @@ export const resolveNigeriaPublicHolidays = async (options?: {
   const dates = holidays.map((item) => item.date);
 
   // Keep payroll OT holiday list aligned for timesheet day typing.
+  // Only persist when dates change — a new syncedAt on every load dirties git and blocks pull.
   try {
     const payroll = await readJsonFile<{ dates?: string[] }>(PAYROLL_HOLIDAY_PATH, { dates: [] });
     const mergedDates = Array.from(new Set([...(payroll.dates || []).map(dateOnly).filter(Boolean), ...dates])).sort();
-    await writeJsonFile(PAYROLL_HOLIDAY_PATH, { dates: mergedDates, syncedFrom: 'nigeria-public-holidays', syncedAt: new Date().toISOString() });
+    const currentDates = Array.from(new Set((payroll.dates || []).map(dateOnly).filter(Boolean))).sort();
+    if (currentDates.join('|') !== mergedDates.join('|')) {
+      await writeJsonFile(PAYROLL_HOLIDAY_PATH, { dates: mergedDates, syncedFrom: 'nigeria-public-holidays', syncedAt: new Date().toISOString() });
+    }
   } catch {
     // Non-fatal — leave still works with in-memory holidays.
   }
@@ -268,11 +272,19 @@ export const resolveNigeriaPublicHolidays = async (options?: {
       if (!item.date) continue;
       byDate.set(item.date, item);
     }
-    await writeJsonFile(LEAVE_CALENDAR_PATH, {
-      blockedPeriods: Array.isArray(leaveConfig.blockedPeriods) ? leaveConfig.blockedPeriods : [],
-      holidays: Array.from(byDate.values()).sort((a, b) => a.date.localeCompare(b.date)),
-      holidayFeed: { source, sourceUrl: sourceUrl || null, syncedAt: new Date().toISOString() },
-    });
+    const nextHolidays = Array.from(byDate.values()).sort((a, b) => a.date.localeCompare(b.date));
+    const currentHolidays = (leaveConfig.holidays || [])
+      .map((item) => ({ id: item.id, label: item.label, date: dateOnly(item.date) }))
+      .filter((item) => item.date)
+      .sort((a, b) => a.date.localeCompare(b.date));
+    const holidaysChanged = JSON.stringify(currentHolidays) !== JSON.stringify(nextHolidays);
+    if (holidaysChanged) {
+      await writeJsonFile(LEAVE_CALENDAR_PATH, {
+        blockedPeriods: Array.isArray(leaveConfig.blockedPeriods) ? leaveConfig.blockedPeriods : [],
+        holidays: nextHolidays,
+        holidayFeed: { source, sourceUrl: sourceUrl || null, syncedAt: new Date().toISOString() },
+      });
+    }
   } catch {
     // Non-fatal
   }

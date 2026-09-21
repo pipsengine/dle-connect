@@ -13,6 +13,8 @@ import {
 } from '@/lib/payroll-profile-setup';
 import { formatPayrollMoney } from '@/lib/payroll-currency';
 import { getNigeriaLgas, getNigeriaStates } from '@/lib/nigeria-locations';
+import { humanizeHttpErrorBody } from '@/lib/http-client-error';
+import { hrisEmployeeProfileHref, hrisEmployeeResourceUrl } from '@/lib/hris-employee-route';
 import { ContractPayrollClassificationPanel, type ContractPayrollClassificationView } from '../components/ContractPayrollClassificationUi';
 import EmployeeFinalSettlementPanel from './EmployeeFinalSettlementPanel';
 import EmployeeResignationPanel from './EmployeeResignationPanel';
@@ -896,20 +898,30 @@ const Section = ({
   );
 };
 
+async function parseEmployeeApiJson<T>(res: Response): Promise<{ status: string; data?: T; error?: string }> {
+  const text = await res.text();
+  try {
+    return JSON.parse(text) as { status: string; data?: T; error?: string };
+  } catch {
+    throw new Error(humanizeHttpErrorBody(text, res.status, 'Employee Profile'));
+  }
+}
+
 async function apiFetch<T>(
   employeeId: string,
   resource: string,
   init: RequestInit & { role: Role; viewerEmployeeId?: string } = { role: 'HR Manager' }
 ): Promise<T> {
-  const res = await fetch(`/api/hris/employees/${encodeURIComponent(employeeId)}/${resource}`, {
+  const res = await fetch(hrisEmployeeResourceUrl(employeeId, resource), {
     ...init,
     headers: {
       ...(init.headers || {}),
       'x-hris-role': init.role,
+      'x-hris-target-employee-id': employeeId,
       ...(init.viewerEmployeeId ? { 'x-hris-employee-id': init.viewerEmployeeId } : {}),
     },
   });
-  const json = (await res.json()) as { status: string; data?: T; error?: string };
+  const json = await parseEmployeeApiJson<T>(res);
   if (!res.ok || json.status !== 'success' || !json.data) throw new Error(json.error || 'Request failed');
   return json.data;
 }
@@ -919,16 +931,17 @@ async function apiMutate<T>(
   resource: string,
   init: RequestInit & { role: Role; viewerEmployeeId?: string }
 ): Promise<T> {
-  const res = await fetch(`/api/hris/employees/${encodeURIComponent(employeeId)}/${resource}`, {
+  const res = await fetch(hrisEmployeeResourceUrl(employeeId, resource), {
     ...init,
     headers: {
       ...(init.headers || {}),
       'content-type': 'application/json',
       'x-hris-role': init.role,
+      'x-hris-target-employee-id': employeeId,
       ...(init.viewerEmployeeId ? { 'x-hris-employee-id': init.viewerEmployeeId } : {}),
     },
   });
-  const json = (await res.json()) as { status: string; data?: T; error?: string };
+  const json = await parseEmployeeApiJson<T>(res);
   if (!res.ok || json.status !== 'success') throw new Error(json.error || 'Request failed');
   return json.data as T;
 }
@@ -1395,7 +1408,7 @@ export default function EmployeeProfileClient({
   const openEmployeeProfile = (nextEmployeeId: string) => {
     const id = nextEmployeeId.trim();
     if (!id || id === employeeId) return;
-    router.push(`/hris/employees/employee-profile/${encodeURIComponent(id)}`);
+    router.push(hrisEmployeeProfileHref(id));
   };
 
   const [personalEdit, setPersonalEdit] = useState(false);

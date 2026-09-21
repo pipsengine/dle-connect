@@ -71,6 +71,7 @@ import {
   managerOwnerFor,
   normalizeLeaveDate,
   notifyLeaveWorkflow as notifyLeaveWorkflowCore,
+  employeeRequestMatches,
   runLeaveSubmitFollowUp,
   repairPendingLeaveManagerNotifications,
   pendingLeaveApprovalsForActor,
@@ -516,8 +517,6 @@ const serviceCatalog = [
 const normalize = (value: unknown) => compact(value).toLowerCase();
 const tokenFrom = (request: Request) => request.headers.get('cookie')?.split(';').map((item) => item.trim()).find((item) => item.startsWith(`${AUTH_COOKIE}=`))?.split('=').slice(1).join('=');
 const getSession = (request: Request) => verifySessionToken(tokenFrom(request) ? decodeURIComponent(tokenFrom(request) || '') : '');
-const employeeKeys = (employee: Awaited<ReturnType<typeof readPayrollEmployees>>['employees'][number]) =>
-  buildEssEmployeeLookupKeys(employee).map((key) => normalizePayrollMatchKey(key)).filter(Boolean);
 const resolveEssEmployee = (
   employees: Awaited<ReturnType<typeof readPayrollEmployees>>['employees'],
   session: SessionPayload,
@@ -528,10 +527,6 @@ const resolveEssEmployee = (
     employeeId: session.employeeId,
     username: session.username,
   }, { successorCodes });
-const employeeRequestMatches = (employee: Awaited<ReturnType<typeof readPayrollEmployees>>['employees'][number], requestEmployeeId: string) => {
-  const lookup = new Set(employeeKeys(employee));
-  return lookup.has(normalizePayrollMatchKey(requestEmployeeId));
-};
 
 const mergePayrollIdentity = (
   employee: DleEmployeeDirectoryRow,
