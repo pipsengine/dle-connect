@@ -22,6 +22,7 @@ import {
   isDayRateTimesheetEmployeeCode,
   overtimeBaseHoursForDate,
   hasBiometricClockIn,
+  includedOffshorePaidOvertimeHours,
 } from '@/lib/timesheet-entry-shared';
 import { resolveOvertimeBookingOptions } from '@/lib/timesheet-overtime-config';
 
@@ -117,7 +118,8 @@ export const maxOvertimeForEmployee = (
   options?: Partial<OvertimeBookingOptions>,
   dayContext?: TimesheetDayContext,
 ) => {
-  if (!hasBiometricClockIn(line.clockIn)) return 0;
+  const offshoreAuto = includedOffshorePaidOvertimeHours(line, dayContext?.locationName, workCenter);
+  if (!hasBiometricClockIn(line.clockIn) && offshoreAuto <= 0) return 0;
   // Night shift is normal 8h + inconvenience allowance only — never book OT.
   if (resolveTimesheetHours(dayContext).shiftKind === 'Night') {
     return 0;
@@ -129,8 +131,9 @@ export const maxOvertimeForEmployee = (
   if (booking.openBooking) {
     const otCap = openOvertimeCap(booking);
     const alreadyOt = overtimeProductiveHours(usedFromAllocations, otBase);
-    return round1(Math.max(0, otCap - alreadyOt));
+    return round1(Math.max(0, Math.max(otCap, offshoreAuto) - alreadyOt));
   }
+  if (!hasBiometricClockIn(line.clockIn)) return round1(offshoreAuto);
   let cap = 0;
   for (const auth of authorizations) {
     if (!authorizationMatchesContext(auth, workCenter)) continue;
@@ -151,7 +154,7 @@ export const maxOvertimeForEmployee = (
     const slotShare = slotsRemaining > 0 ? round1(poolRemaining / slotsRemaining) : 0;
     cap = Math.max(cap, Math.min(perEmployee, slotShare));
   }
-  return round1(cap);
+  return round1(Math.max(cap, offshoreAuto));
 };
 
 export const maxAllowedProductiveHours = (
@@ -208,24 +211,27 @@ export const validateStrictStandardDay = (line: TimesheetLine, dayContext?: Time
       validationMessage: 'Absent employees cannot receive project/productive hours.',
     };
   }
-  if (usedHours > standardProductiveHours + 0.001) {
+  const offshoreAuto = includedOffshorePaidOvertimeHours(line, dayContext?.locationName, workCenter);
+  const maxProductive = round1(standardProductiveHours + offshoreAuto);
+  const maxTotal = round1(maxProductive + (shiftKind === 'Night' ? 0 : DAILY_BREAK_HOURS));
+  if (usedHours > maxProductive + 0.001) {
     return {
       usedHours,
       idleHours,
       totalHours,
       variance,
       validationStatus: 'Error',
-      validationMessage: `Productive/payroll hours cannot exceed ${standardProductiveHours} hours per day.`,
+      validationMessage: `Productive/payroll hours cannot exceed ${maxProductive} hours per day.`,
     };
   }
-  if (totalHours > grossHours + 0.001) {
+  if (totalHours > maxTotal + 0.001) {
     return {
       usedHours,
       idleHours,
       totalHours,
       variance,
       validationStatus: 'Error',
-      validationMessage: `Total timesheet hours cannot exceed ${grossHours} hours including break time.`,
+      validationMessage: `Total timesheet hours cannot exceed ${maxTotal} hours including break time.`,
     };
   }
   const ignoreBiometricCap = isDayRateTimesheetEmployeeCode(line.employeeNo || line.employeeId);
@@ -264,6 +270,15 @@ export const validateStrictStandardDay = (line: TimesheetLine, dayContext?: Time
     };
   }
   if (totalHours === grossHours && usedHours === standardProductiveHours) {
+    return { usedHours, idleHours, totalHours, variance, validationStatus: 'Valid', validationMessage: null };
+  }
+  if (
+    offshoreAuto > 0
+    && idleHours >= DAILY_BREAK_HOURS - 0.001
+    && usedHours <= maxProductive + 0.001
+    && totalHours <= maxTotal + 0.001
+    && usedHours >= standardProductiveHours - 0.001
+  ) {
     return { usedHours, idleHours, totalHours, variance, validationStatus: 'Valid', validationMessage: null };
   }
   if (idleHours > 0 && line.idleAllocations.some((item) => item.hours > 0 && !item.reasonId)) {
@@ -326,7 +341,9 @@ export const validateTimesheetLine = (
     };
   }
 
-  if (lineOt > 0.001 && !booking.openBooking) {
+  const offshoreAuto = includedOffshorePaidOvertimeHours(line, dayContext?.locationName, workCenter);
+  const includedOffshoreOt = offshoreAuto > 0 && lineOt <= offshoreAuto + 0.001;
+  if (lineOt > 0.001 && !booking.openBooking && !includedOffshoreOt) {
     const authorizedProjects = authorizations.filter((auth) => authorizationMatchesContext(auth, workCenter));
     const otProjects = authorizedProjects.filter((auth) => overtimeHoursOnProject({ ...line, usedHours }, auth.projectCode, standardProductiveHours) > 0);
     if (!otProjects.length) {

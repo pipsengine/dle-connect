@@ -69,13 +69,13 @@ const buildPayload = async (request: Request) => {
   const countablePeriodHeaders = headers.filter((header) => header.periodId === periodId && isTimesheetCountableForPayroll(header.status));
   const periodHeaderIds = new Set(countablePeriodHeaders.map((header) => header.id));
 
-  const attendanceByKey = new Map<string, { daysWorked: number; attendanceHours: number; bookedHours: number; idleHours: number; payrollReadyDays: number; payrollReadyHours: number; latestPayrollUpdate: string | null; source: 'payroll-update' | 'timesheet-lines' | 'none'; anomalyCount: number; dateKeys: Set<string> }>();
+  const attendanceByKey = new Map<string, { daysWorked: number; attendanceHours: number; bookedHours: number; idleHours: number; weekdayOvertimeHours: number; payrollReadyDays: number; payrollReadyHours: number; latestPayrollUpdate: string | null; source: 'payroll-update' | 'timesheet-lines' | 'none'; anomalyCount: number; dateKeys: Set<string> }>();
 
   const registerAggregate = (
     employeeId: string,
     employeeNo: string | undefined,
     employeeName: string | undefined,
-    aggregate: { daysWorked: number; attendanceHours: number; bookedHours: number; idleHours: number },
+    aggregate: { daysWorked: number; attendanceHours: number; bookedHours: number; idleHours: number; weekdayOvertimeHours?: number },
     payrollReadyDays: number,
     payrollReadyHours: number,
     source: 'payroll-update' | 'timesheet-lines',
@@ -88,6 +88,7 @@ const buildPayload = async (request: Request) => {
         attendanceHours: aggregate.attendanceHours,
         bookedHours: aggregate.bookedHours,
         idleHours: aggregate.idleHours,
+        weekdayOvertimeHours: Number(aggregate.weekdayOvertimeHours || 0),
         payrollReadyDays: Math.min(payrollReadyDays, maxPayableDays),
         payrollReadyHours: payrollReadyHours,
         latestPayrollUpdate: updateAt || null,
@@ -159,7 +160,7 @@ const buildPayload = async (request: Request) => {
 
   const records = dailyEmployees.map((employee) => {
     const keys = [employee.employeeId, employee.employeeCode, employee.fullName].map(normalizePayrollMatchKey).filter(Boolean);
-    const attendance = keys.map((key) => attendanceByKey.get(key)).find(Boolean) || { daysWorked: 0, attendanceHours: 0, bookedHours: 0, idleHours: 0, payrollReadyDays: 0, payrollReadyHours: 0, latestPayrollUpdate: null, source: 'none' as const, anomalyCount: 0, dateKeys: new Set<string>() };
+    const attendance = keys.map((key) => attendanceByKey.get(key)).find(Boolean) || { daysWorked: 0, attendanceHours: 0, bookedHours: 0, idleHours: 0, weekdayOvertimeHours: 0, payrollReadyDays: 0, payrollReadyHours: 0, latestPayrollUpdate: null, source: 'none' as const, anomalyCount: 0, dateKeys: new Set<string>() };
     const { ratePerDay, ratePerHour, hoursPerDay } = derivedDailyRate(employee);
     const payMode = ratePerHour > 0 && ratePerDay <= 0 ? 'Hourly' : 'Daily';
     const payableDays = Math.min(attendance.daysWorked, maxPayableDays);
@@ -167,6 +168,7 @@ const buildPayload = async (request: Request) => {
     const dayRateEarnings = mergeTimesheetDayRateEarnings(employee, {
       ratePerDay: ratePerDay || ratePerHour * hoursPerDay,
       daysWorked: payMode === 'Hourly' ? payableHours / hoursPerDay : payableDays,
+      weekdayOvertimeHours: attendance.weekdayOvertimeHours,
       period: payrollPeriod,
     });
     const grossPay = roundMoney(dayRateEarnings.grossPay || (payMode === 'Hourly' ? payableHours * ratePerHour : payableDays * ratePerDay));

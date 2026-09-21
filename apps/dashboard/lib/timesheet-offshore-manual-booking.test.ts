@@ -5,14 +5,23 @@ import {
   isOffshoreLocationName,
   isOffshoreTimesheetContext,
   isTimesheetAbsentLine,
+  isPaperAttendanceLine,
   markLineAsManualOffshore,
+  buildManualOffshoreLine,
+  buildPaperAttendanceLine,
+  ensureOffshorePaidOvertime,
+  weekdayOvertimeHoursFromLine,
   OFFSHORE_REMARKS_MARKER,
+  OFFSHORE_PRODUCTIVE_HOURS,
+  OFFSHORE_ALLOWANCE_HOURS,
+  PAPER_ATTENDANCE_REMARKS_MARKER,
   resolveOffshoreProjectCode,
   resolveOffshoreSheetWorkCenter,
   timesheetOffshoreWorkCentersMatch,
   withOffshoreLocationName,
   withOffshoreTimesheetLocation,
 } from './timesheet-entry-shared.ts';
+import { validateTimesheetLine } from './timesheet-overtime-booking.ts';
 import {
   mobilizationCoversDate,
   mobilizationMatchesOffshoreSheet,
@@ -174,5 +183,57 @@ assert.equal(
   ).some((item) => item.name === 'OFFSHORE'),
   true,
 );
+
+const offshoreBooked = buildManualOffshoreLine({
+  headerId: 'hdr-1',
+  employeeId: 'C1544',
+  employeeNo: 'C1544',
+  employeeName: 'Joseph Adeniyi',
+  projectCode: 'DL2601',
+  projectName: 'Offshore',
+});
+assert.equal(offshoreBooked.usedHours, OFFSHORE_PRODUCTIVE_HOURS);
+assert.equal(offshoreBooked.idleHours, 1);
+assert.equal(offshoreBooked.totalHours, OFFSHORE_PRODUCTIVE_HOURS + 1);
+assert.equal(offshoreBooked.offshoreAllowanceHours, OFFSHORE_ALLOWANCE_HOURS);
+assert.equal(isTimesheetAbsentLine(offshoreBooked), false);
+assert.equal(weekdayOvertimeHoursFromLine(offshoreBooked, '2026-09-21'), 4, 'Monday offshore 12h books 4h WEEKDAYOVT');
+assert.equal(weekdayOvertimeHoursFromLine(offshoreBooked, '2026-09-19'), 0, 'Saturday offshore hours are not WEEKDAYOVT');
+
+const legacyEightHour = {
+  ...offshoreBooked,
+  projectAllocations: [{ ...offshoreBooked.projectAllocations[0], hours: 8 }],
+  usedHours: 8,
+  totalHours: 9,
+};
+const stampedTwelve = ensureOffshorePaidOvertime(legacyEightHour, 'DL2601', 'Offshore');
+assert.equal(stampedTwelve.usedHours, 12, 'existing 8h offshore lines are stamped to 12h paid OT');
+assert.ok(String(stampedTwelve.remarks || '').includes(OFFSHORE_REMARKS_MARKER));
+
+const paperPresent = buildPaperAttendanceLine({
+  headerId: 'hdr-2',
+  employeeId: 'C2815',
+  employeeNo: 'C2815',
+  employeeName: 'Paul Okputu',
+  projectCode: 'DL1811',
+  projectName: 'Yard',
+});
+assert.equal(isPaperAttendanceLine(paperPresent), true);
+assert.equal(isTimesheetAbsentLine(paperPresent), false);
+assert.equal(paperPresent.usedHours, 8);
+assert.equal(paperPresent.clockIn, null);
+assert.ok(String(paperPresent.remarks || '').includes(PAPER_ATTENDANCE_REMARKS_MARKER));
+assert.equal(canBookTimesheetHoursWithoutClock(paperPresent, 'Welding', 'Day (07:00-16:00)', 'AGEGE'), true);
+
+const offshoreValidated = validateTimesheetLine(
+  offshoreBooked,
+  [],
+  [offshoreBooked],
+  'DL2601',
+  { enabled: true },
+  { date: '2026-09-21', locationName: 'OFFSHORE', shiftLabel: '01 (Day)' },
+);
+assert.equal(offshoreValidated.validationStatus, 'Valid', 'standard 4h offshore OT does not need Overtime Management');
+assert.equal(offshoreValidated.usedHours, 12);
 
 console.log('timesheet-offshore-manual-booking.test.ts: ok');

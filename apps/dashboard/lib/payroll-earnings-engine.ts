@@ -687,7 +687,7 @@ const scheduleAllowanceLines = (row: DayrateScheduleRow): PayrollEarningLine[] =
 
 export const mergeTimesheetDayRateEarnings = (
   employee: DleEmployeeDirectoryRow,
-  input: { ratePerDay: number; daysWorked: number; period?: string },
+  input: { ratePerDay: number; daysWorked: number; weekdayOvertimeHours?: number; period?: string },
 ): PayrollEarningsResult => {
   const excel = payrollExcelAmountOverlayApplies(input.period) ? findDayrateScheduleOverrideRow(input.period, employee) : null;
   // When HR has applied a dayrate schedule (2026-08 and earlier), the sheet is the
@@ -703,7 +703,11 @@ export const mergeTimesheetDayRateEarnings = (
         publicHolidayHours: excel.publicHolidayHours,
         mealAmount: num(excel.mealAllowance),
       })
-    : contractDayRatePayrollResult({ ratePerDay: input.ratePerDay, daysWorked: input.daysWorked });
+    : contractDayRatePayrollResult({
+        ratePerDay: input.ratePerDay,
+        daysWorked: input.daysWorked,
+        weekdayOvertimeHours: input.weekdayOvertimeHours,
+      });
   // Permanent authority rule: timesheet JCWEEKDAY (+ auto meal) is the day-rate base.
   // Never stack Sage Dayrate Payment Schedule OT / weekend / meal on top — that inflated July re-runs.
   // HRIS Timesheet Overtime postings are still merged via excludeSageDayrateSchedule filtering,

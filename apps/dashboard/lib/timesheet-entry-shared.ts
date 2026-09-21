@@ -953,12 +953,24 @@ export const upsertMatrixProjectHours = <
 
 /** Max total productive hours allowed across all matrix columns (8h standard, or up to biometric cap when OT is booked). */
 export const matrixProductiveHoursCap = (
-  line: { clockIn?: string | null; clockOut?: string | null; attendanceDuration?: number; employeeNo?: string | null; employeeId?: string | null },
+  line: {
+    clockIn?: string | null;
+    clockOut?: string | null;
+    attendanceDuration?: number;
+    employeeNo?: string | null;
+    employeeId?: string | null;
+    attendanceMode?: 'Biometric' | 'Manual' | null;
+    remarks?: string | null;
+    offshoreAllowanceHours?: number | null;
+  },
   usedHours: number,
   standardProductiveHours = STANDARD_TIMESHEET_HOURS,
   idleHours = DAILY_BREAK_HOURS,
   shiftValue?: string | null,
 ) => {
+  if (isManualOffshoreLine(line)) {
+    return round1(Math.max(OFFSHORE_PRODUCTIVE_HOURS, usedHours));
+  }
   if (isDayRateTimesheetEmployeeCode(line.employeeNo || line.employeeId)) {
     const overtimeHours = round1(Math.max(0, usedHours - standardProductiveHours));
     return overtimeHours > 0.001 ? Number.POSITIVE_INFINITY : standardProductiveHours;
@@ -1092,7 +1104,7 @@ export type TimesheetLine = {
   validationMessage: string | null;
   /** Biometric (default) or Manual for offshore/no-device booking. */
   attendanceMode?: 'Biometric' | 'Manual' | null;
-  /** Hours recorded as offshore allowance. Not payroll OT. */
+  /** 4h paid weekday overtime included in usedHours on each offshore day. */
   offshoreAllowanceHours?: number;
   /** Trade or offshore project for this person. Not a second timesheet. */
   workCenterName?: string | null;
@@ -1105,8 +1117,11 @@ export const OFFSHORE_LOCATION_NAME = 'OFFSHORE';
 export const OFFSHORE_WORK_CENTER_PREFIX = 'OFFSHORE · ';
 export const OFFSHORE_PAYROLL_HOURS = STANDARD_TIMESHEET_HOURS;
 export const OFFSHORE_ALLOWANCE_HOURS = 4;
+export const OFFSHORE_PRODUCTIVE_HOURS = STANDARD_TIMESHEET_HOURS + OFFSHORE_ALLOWANCE_HOURS;
 export const OFFSHORE_BREAK_HOURS = DAILY_BREAK_HOURS;
 export const OFFSHORE_REMARKS_MARKER = 'OFFSHORE_MANUAL';
+export const PAPER_ATTENDANCE_REMARKS_MARKER = 'PAPER_ATTENDANCE';
+export const OFFSHORE_PAID_OT_REMARK = `8h project + ${OFFSHORE_ALLOWANCE_HOURS}h paid overtime (WEEKDAYOVT).`;
 
 export const offshoreWorkCenterName = (projectCode: string) =>
   `${OFFSHORE_WORK_CENTER_PREFIX}${String(projectCode || '').trim().toUpperCase()}`;
@@ -1180,30 +1195,78 @@ export const timesheetOffshoreWorkCentersMatch = (left?: string | null, right?: 
 export const isManualOffshoreLine = (line: {
   attendanceMode?: 'Biometric' | 'Manual' | null;
   remarks?: string | null;
+  offshoreAllowanceHours?: number | null;
 }) =>
-  line.attendanceMode === 'Manual' || String(line.remarks || '').includes(OFFSHORE_REMARKS_MARKER);
+  String(line.remarks || '').includes(OFFSHORE_REMARKS_MARKER)
+  || (line.attendanceMode === 'Manual' && Number(line.offshoreAllowanceHours || 0) > 0);
+
+export const isPaperAttendanceLine = (line: {
+  remarks?: string | null;
+}) => String(line.remarks || '').includes(PAPER_ATTENDANCE_REMARKS_MARKER);
 
 export const isTimesheetAbsentLine = (line: {
   clockIn?: string | null;
   attendanceMode?: 'Biometric' | 'Manual' | null;
   remarks?: string | null;
+  offshoreAllowanceHours?: number | null;
+  usedHours?: number | null;
+  totalHours?: number | null;
+  projectAllocations?: Array<{ projectCode?: string; hours?: number }> | null;
+  idleAllocations?: Array<{ reasonName?: string; hours?: number }> | null;
 }) =>
-  !String(line.clockIn || '').trim() && !isManualOffshoreLine(line);
+  !String(line.clockIn || '').trim()
+  && !isManualOffshoreLine(line)
+  && !isPaperAttendanceLine(line)
+  && !isTimesheetPaidLeaveLine(line);
 
-/** Offshore / night paper booking does not need a biometric clock. */
+/** Offshore / night / paper booking does not need a biometric clock. */
 export const canBookTimesheetHoursWithoutClock = (
   line: {
     clockIn?: string | null;
     attendanceMode?: 'Biometric' | 'Manual' | null;
     remarks?: string | null;
+    offshoreAllowanceHours?: number | null;
+    usedHours?: number | null;
+    totalHours?: number | null;
+    projectAllocations?: Array<{ projectCode?: string; hours?: number }> | null;
+    idleAllocations?: Array<{ reasonName?: string; hours?: number }> | null;
   },
   workCenterName?: string | null,
   shiftLabel?: string | null,
   locationName?: string | null,
 ) => {
   if (resolveTimesheetShift(shiftLabel).kind === 'Night') return true;
-  if (isManualOffshoreLine(line)) return true;
+  if (isManualOffshoreLine(line) || isPaperAttendanceLine(line) || isTimesheetPaidLeaveLine(line)) return true;
   return isOffshoreTimesheetContext(locationName, workCenterName);
+};
+
+/** Weekday OT hours that payroll WEEKDAYOVT should pay from a timesheet line. */
+export const weekdayOvertimeHoursFromLine = (
+  line: { usedHours?: number | null; offshoreAllowanceHours?: number | null },
+  timesheetDate: string,
+) => {
+  const dateKey = String(timesheetDate || '').slice(0, 10);
+  const day = /^\d{4}-\d{2}-\d{2}$/.test(dateKey) ? new Date(`${dateKey}T12:00:00Z`).getUTCDay() : -1;
+  if (day < 1 || day > 5) return 0;
+  const used = Number(line.usedHours || 0);
+  const fromUsed = round1(Math.max(0, used - STANDARD_TIMESHEET_HOURS));
+  if (fromUsed > 0.001) return fromUsed;
+  return round1(Math.max(0, Number(line.offshoreAllowanceHours || 0)));
+};
+
+export const includedOffshorePaidOvertimeHours = (
+  line: {
+    attendanceMode?: 'Biometric' | 'Manual' | null;
+    remarks?: string | null;
+    offshoreAllowanceHours?: number | null;
+  },
+  locationName?: string | null,
+  workCenterName?: string | null,
+) => {
+  if (isManualOffshoreLine(line) || isOffshoreTimesheetContext(locationName, workCenterName)) {
+    return OFFSHORE_ALLOWANCE_HOURS;
+  }
+  return 0;
 };
 
 export const markLineAsManualOffshore = <T extends {
@@ -1320,8 +1383,8 @@ export const buildManualOffshoreLine = (input: {
       projectId: projectCode,
       projectCode,
       projectName,
-      hours: OFFSHORE_PAYROLL_HOURS,
-      remarks: 'Offshore payroll hours (8h). 4h allowance is outside payroll.',
+      hours: OFFSHORE_PRODUCTIVE_HOURS,
+      remarks: OFFSHORE_PAID_OT_REMARK,
     }],
     idleAllocations: [{
       reasonId: DEFAULT_BREAK_IDLE_REASON_ID,
@@ -1329,15 +1392,62 @@ export const buildManualOffshoreLine = (input: {
       hours: OFFSHORE_BREAK_HOURS,
       remarks: 'Offshore break',
     }],
-    usedHours: OFFSHORE_PAYROLL_HOURS,
+    usedHours: OFFSHORE_PRODUCTIVE_HOURS,
     idleHours: OFFSHORE_BREAK_HOURS,
-    totalHours: OFFSHORE_PAYROLL_HOURS + OFFSHORE_BREAK_HOURS,
+    totalHours: OFFSHORE_PRODUCTIVE_HOURS + OFFSHORE_BREAK_HOURS,
     variance: 0,
     remarks: OFFSHORE_REMARKS_MARKER,
     validationStatus: 'Valid',
-    validationMessage: 'Offshore: 8h payroll + 1h break. 4h allowance is outside payroll.',
+    validationMessage: `Offshore: ${OFFSHORE_PAYROLL_HOURS}h project + ${OFFSHORE_ALLOWANCE_HOURS}h paid overtime + ${OFFSHORE_BREAK_HOURS}h break.`,
     attendanceMode: 'Manual',
     offshoreAllowanceHours: OFFSHORE_ALLOWANCE_HOURS,
+    workCenterName: projectCode || null,
+  };
+};
+
+export const buildPaperAttendanceLine = (input: {
+  headerId: string;
+  employeeId: string;
+  employeeNo: string;
+  employeeName: string;
+  projectCode: string;
+  projectName: string;
+}): TimesheetLine => {
+  const projectCode = String(input.projectCode || '').trim().toUpperCase();
+  const projectName = String(input.projectName || projectCode).trim();
+  return {
+    id: `ts-paper-${input.headerId}-${String(input.employeeNo || input.employeeId).replace(/[^A-Za-z0-9]/g, '')}`,
+    headerId: input.headerId,
+    employeeId: input.employeeId,
+    employeeNo: input.employeeNo,
+    employeeName: input.employeeName,
+    biometricId: '',
+    attendanceId: null,
+    clockIn: null,
+    clockOut: null,
+    attendanceDuration: 0,
+    projectAllocations: [{
+      projectId: projectCode,
+      projectCode,
+      projectName,
+      hours: STANDARD_TIMESHEET_HOURS,
+      remarks: 'Paper book: present at work, clock registered late.',
+    }],
+    idleAllocations: [{
+      reasonId: DEFAULT_BREAK_IDLE_REASON_ID,
+      reasonName: DEFAULT_BREAK_IDLE_REASON_NAME,
+      hours: DAILY_BREAK_HOURS,
+      remarks: 'Break Time',
+    }],
+    usedHours: STANDARD_TIMESHEET_HOURS,
+    idleHours: DAILY_BREAK_HOURS,
+    totalHours: GROSS_TIMESHEET_HOURS,
+    variance: 0,
+    remarks: PAPER_ATTENDANCE_REMARKS_MARKER,
+    validationStatus: 'Valid',
+    validationMessage: 'Paper attendance: 8h project + 1h break. No biometric punch invented.',
+    attendanceMode: 'Manual',
+    offshoreAllowanceHours: 0,
     workCenterName: projectCode || null,
   };
 };
@@ -1417,6 +1527,79 @@ export const reconcileTimesheetLineHours = (line: TimesheetLine): TimesheetLine 
     totalHours,
     attendanceDuration,
   };
+};
+
+/** Stamp 8h+4h paid OT on a mobilized offshore line. Existing extra OT above 12h is kept. */
+export const ensureOffshorePaidOvertime = (
+  line: TimesheetLine,
+  projectCode?: string,
+  projectName?: string,
+): TimesheetLine => {
+  const marked = isManualOffshoreLine(line) ? line : markLineAsManualOffshore(line);
+  const used = Number(marked.usedHours || 0);
+  const fallbackCode = canonicalProjectCode(projectCode)
+    || resolvePrimaryProjectCode([], marked.projectAllocations)
+    || canonicalProjectCode(marked.workCenterName);
+  const fallbackName = String(projectName || fallbackCode).trim();
+  if (used <= 0.001) {
+    const built = buildManualOffshoreLine({
+      headerId: marked.headerId,
+      employeeId: marked.employeeId,
+      employeeNo: marked.employeeNo,
+      employeeName: marked.employeeName,
+      projectCode: fallbackCode,
+      projectName: fallbackName,
+    });
+    return { ...built, id: marked.id, workCenterName: marked.workCenterName || built.workCenterName };
+  }
+  if (used >= OFFSHORE_PRODUCTIVE_HOURS - 0.001) {
+    return {
+      ...marked,
+      offshoreAllowanceHours: OFFSHORE_ALLOWANCE_HOURS,
+      validationStatus: marked.validationStatus === 'Error' ? marked.validationStatus : 'Valid',
+      validationMessage: marked.validationStatus === 'Error'
+        ? marked.validationMessage
+        : `Offshore: ${OFFSHORE_PAYROLL_HOURS}h project + ${OFFSHORE_ALLOWANCE_HOURS}h paid overtime + ${OFFSHORE_BREAK_HOURS}h break.`,
+    };
+  }
+  const missing = round1(OFFSHORE_PRODUCTIVE_HOURS - used);
+  const allocations = normalizeProjectAllocations(marked.projectAllocations || []).map((item) => ({ ...item }));
+  const index = allocations.findIndex((item) => canonicalProjectCode(item.projectCode) === fallbackCode);
+  if (index >= 0) {
+    allocations[index] = {
+      ...allocations[index],
+      hours: round1(Number(allocations[index].hours || 0) + missing),
+      remarks: allocations[index].remarks || OFFSHORE_PAID_OT_REMARK,
+    };
+  } else if (fallbackCode) {
+    allocations.push({
+      projectId: fallbackCode,
+      projectCode: fallbackCode,
+      projectName: fallbackName,
+      hours: missing,
+      remarks: OFFSHORE_PAID_OT_REMARK,
+    });
+  }
+  const idleAllocations = (marked.idleAllocations || []).some((item) => Number(item.hours || 0) > 0)
+    ? marked.idleAllocations
+    : [{
+      reasonId: DEFAULT_BREAK_IDLE_REASON_ID,
+      reasonName: DEFAULT_BREAK_IDLE_REASON_NAME,
+      hours: OFFSHORE_BREAK_HOURS,
+      remarks: 'Offshore break',
+    }];
+  return reconcileTimesheetLineHours({
+    ...marked,
+    projectAllocations: allocations,
+    idleAllocations,
+    offshoreAllowanceHours: OFFSHORE_ALLOWANCE_HOURS,
+    attendanceMode: 'Manual',
+    remarks: String(marked.remarks || '').includes(OFFSHORE_REMARKS_MARKER)
+      ? marked.remarks
+      : [String(marked.remarks || '').trim(), OFFSHORE_REMARKS_MARKER].filter(Boolean).join(' | '),
+    validationStatus: 'Valid',
+    validationMessage: `Offshore: ${OFFSHORE_PAYROLL_HOURS}h project + ${OFFSHORE_ALLOWANCE_HOURS}h paid overtime + ${OFFSHORE_BREAK_HOURS}h break.`,
+  });
 };
 
 export type OvertimeAuthorization = {

@@ -129,6 +129,17 @@ assert.equal(timesheet12.grossPay, 126000);
 assert.match(timesheet10.profileName, /Day Rate/i);
 assert.equal(payrollRecordUsesExcelOverlay(timesheet10), false);
 
+const timesheet10WithOt = mergeTimesheetDayRateEarnings(dayRate, { ratePerDay: 10000, daysWorked: 10, weekdayOvertimeHours: 4, period: '2026-09' });
+assert.equal(
+  timesheet10WithOt.grossPay,
+  112500,
+  'September weekday overtime from timesheets pays WEEKDAYOVT on top of day rate + meal',
+);
+assert.equal(
+  timesheet10WithOt.paidEarningLines.find((line) => line.code === 'WEEKDAYOVT')?.amount,
+  7500,
+);
+
 const excelRow: DayrateScheduleRow = {
   employeeCode: 'C0100',
   firstName: 'Test',

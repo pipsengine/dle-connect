@@ -290,7 +290,7 @@ export const readApprovedTimesheetHoursForPayrollPeriod = async (period: string)
 
 const resolveTimesheetHoursForEmployee = (
   employee: Pick<DleEmployeeDirectoryRow, 'employeeId' | 'employeeCode' | 'id' | 'fullName'>,
-  timesheetHours: Map<string, { daysWorked: number; bookedHours: number }>,
+  timesheetHours: Map<string, { daysWorked: number; bookedHours: number; weekdayOvertimeHours?: number }>,
 ) => {
   const keys = [employee.employeeId, employee.employeeCode, employee.id, employee.fullName, normalizePayrollMatchKey(employee.employeeId), normalizePayrollMatchKey(employee.employeeCode), normalizePayrollMatchKey(employee.fullName)]
     .map((key) => compact(key))
@@ -301,7 +301,7 @@ const resolveTimesheetHoursForEmployee = (
 const applyDailyRateFromTimesheets = (
   employee: DleEmployeeDirectoryRow,
   amounts: ReturnType<typeof calculatePayrollEarnings>,
-  timesheetHours: Map<string, { daysWorked: number; bookedHours: number }>,
+  timesheetHours: Map<string, { daysWorked: number; bookedHours: number; weekdayOvertimeHours?: number }>,
   period: string,
 ) => {
   const profileId = resolvePayrollEarningProfile(employee);
@@ -372,7 +372,12 @@ const applyDailyRateFromTimesheets = (
       profileName: 'Daily Rate (No Rate — Blocked)',
     };
   }
-  const merged = mergeTimesheetDayRateEarnings(employee, { ratePerDay, daysWorked, period });
+  const merged = mergeTimesheetDayRateEarnings(employee, {
+    ratePerDay,
+    daysWorked,
+    weekdayOvertimeHours: timesheet?.weekdayOvertimeHours,
+    period,
+  });
   return {
     ...merged,
     profileName: excel

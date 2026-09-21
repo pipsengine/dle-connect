@@ -644,7 +644,7 @@ export function TimesheetEntryEnterpriseView(props: TimesheetEnterpriseViewProps
                             ) : isManual ? (
                               <div className="text-[#0369A1]">
                                 <div>MANUAL · OFFSHORE</div>
-                                <div className="text-[10px] font-medium text-[#64748B]">{OFFSHORE_ALLOWANCE_HOURS}h allowance outside payroll</div>
+                                <div className="text-[10px] font-medium text-[#64748B]">{OFFSHORE_ALLOWANCE_HOURS}h overtime paid</div>
                               </div>
                             ) : (
                               <div className="text-[#475569]">

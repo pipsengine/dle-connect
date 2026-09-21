@@ -158,9 +158,10 @@ type DailyAttendanceSummary = {
   attendanceHours: number;
   bookedHours: number;
   idleHours: number;
+  weekdayOvertimeHours: number;
 };
 
-const emptyDailyAttendance = (): DailyAttendanceSummary => ({ daysWorked: 0, attendanceHours: 0, bookedHours: 0, idleHours: 0 });
+const emptyDailyAttendance = (): DailyAttendanceSummary => ({ daysWorked: 0, attendanceHours: 0, bookedHours: 0, idleHours: 0, weekdayOvertimeHours: 0 });
 const inclusiveDays = (startDate: string, endDate: string) => {
   const start = new Date(`${startDate}T00:00:00Z`).getTime();
   const end = new Date(`${endDate}T00:00:00Z`).getTime();
@@ -177,6 +178,7 @@ const buildDailyAttendanceByKey = async (period: string) => {
       attendanceHours: 0,
       bookedHours: num(value.bookedHours),
       idleHours: 0,
+      weekdayOvertimeHours: num(value.weekdayOvertimeHours),
     });
   }
   return byKey;
@@ -243,7 +245,7 @@ const buildPayload = async (request: Request, requestedPeriod = monthPeriod()) =
     const ratePerHour = Number(employee.ratePerHour || 0) || (ratePerDay > 0 ? ratePerDay / Number(employee.hoursPerDay || 8) : 0);
     const dailyAttendance = dailyRateEmployee ? dailyAttendanceForEmployee(employee, dailyAttendanceByKey) : emptyDailyAttendance();
     const dailyTimesheetAmounts = dailyRateEmployee
-      ? mergeTimesheetDayRateEarnings(employee, { ratePerDay, daysWorked: dailyAttendance.daysWorked, period: requestedPeriod })
+      ? mergeTimesheetDayRateEarnings(employee, { ratePerDay, daysWorked: dailyAttendance.daysWorked, weekdayOvertimeHours: dailyAttendance.weekdayOvertimeHours, period: requestedPeriod })
       : null;
     const amounts = dailyTimesheetAmounts && dailyTimesheetAmounts.grossPay > 0 ? dailyTimesheetAmounts : standardAmounts;
     const calculationEmployee = dailyRateEmployee ? { ...payrollEmployee, sagePayrollEarnings: [] } : payrollEmployee;

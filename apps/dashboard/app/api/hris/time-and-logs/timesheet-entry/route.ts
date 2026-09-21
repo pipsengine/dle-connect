@@ -71,7 +71,7 @@ import {
   resolveOvertimeBookingOptions,
 } from '@/lib/timesheet-overtime-config';
 import { applyTimesheetLineDefaults, ensureClockedLinesHaveProjectAllocation } from '@/lib/timesheet-line-defaults';
-import { normalizeIdleAllocations, normalizeProjectAllocations, reconcileTimesheetLineHours, resolvePrimaryProjectCode, validateTimesheetLinesForPersist, TIMESHEET_SHIFT_LABELS, resolveTimesheetShift, timesheetHeaderMatchesShift, buildTimesheetHeaderId, timesheetWorkCentersMatch, isOffshoreWorkCenterName, isOffshoreLocationName, isOffshoreTimesheetContext, isManualOffshoreLine, isTimesheetAbsentLine, isTimesheetInApprovalCapture, applyNightPaperClock, timesheetLineHasBookedHours, buildManualOffshoreLine, buildRosterTimesheetLine, projectCodeFromOffshoreWorkCenter, resolveOffshoreProjectCode, resolveOffshoreSheetWorkCenter, timesheetOffshoreWorkCentersMatch, MIXED_TIMESHEET_WORK_CENTER, OFFSHORE_LOCATION_NAME, DEFAULT_TIMESHEET_SHIFT_LABEL, supervisorTimesheetMessage, dedupeTimesheetLinesByEmployee, isIdleTimeProjectCode, upsertMatrixProjectHours, markLineAsManualOffshore, canBookTimesheetHoursWithoutClock, withOffshoreLocationName, withOffshoreTimesheetLocation, type TimesheetDayContext } from '@/lib/timesheet-entry-shared';
+import { normalizeIdleAllocations, normalizeProjectAllocations, reconcileTimesheetLineHours, resolvePrimaryProjectCode, validateTimesheetLinesForPersist, TIMESHEET_SHIFT_LABELS, resolveTimesheetShift, timesheetHeaderMatchesShift, buildTimesheetHeaderId, timesheetWorkCentersMatch, isOffshoreWorkCenterName, isOffshoreLocationName, isOffshoreTimesheetContext, isManualOffshoreLine, isTimesheetAbsentLine, isTimesheetInApprovalCapture, applyNightPaperClock, timesheetLineHasBookedHours, buildManualOffshoreLine, buildRosterTimesheetLine, projectCodeFromOffshoreWorkCenter, resolveOffshoreProjectCode, resolveOffshoreSheetWorkCenter, timesheetOffshoreWorkCentersMatch, MIXED_TIMESHEET_WORK_CENTER, OFFSHORE_LOCATION_NAME, DEFAULT_TIMESHEET_SHIFT_LABEL, supervisorTimesheetMessage, dedupeTimesheetLinesByEmployee, isIdleTimeProjectCode, upsertMatrixProjectHours, ensureOffshorePaidOvertime, canBookTimesheetHoursWithoutClock, withOffshoreLocationName, withOffshoreTimesheetLocation, type TimesheetDayContext } from '@/lib/timesheet-entry-shared';
 import { displaceUncommittedBookingsOnOtherDrafts, findSameDayBookingConflicts, releaseLinesAlreadyBookedElsewhere, type TimesheetAlreadyBookedSkip } from '@/lib/timesheet-booking-clash';
 import { assertTimesheetRecaptureAllowed, reopenTimesheetForRecapture } from '@/lib/timesheet-recapture';
 import { submitTimesheetForApproval } from '@/lib/timesheet-submit';
@@ -1660,22 +1660,17 @@ const buildPayload = async (
   let persistManualStamp = false;
   lines = lines.map((line) => {
     if (!isOffshoreSheet || !lineIsSheetMobilized(line)) return line;
-    if (isManualOffshoreLine(line)) return line;
-    persistManualStamp = true;
-    if (!timesheetLineHasBookedHours(line)) {
-      return {
-        ...buildManualOffshoreLine({
-          headerId: header?.id || line.headerId,
-          employeeId: line.employeeId,
-          employeeNo: line.employeeNo,
-          employeeName: line.employeeName,
-          projectCode: offshoreProjectCode || sheetMobilizations[0]?.projectCode || '',
-          projectName: sheetMobilizations[0]?.projectName || offshoreProjectCode || targetWorkCenter,
-        }),
-        id: line.id,
-      };
+    const projectCode = offshoreProjectCode || sheetMobilizations[0]?.projectCode || '';
+    const projectName = sheetMobilizations[0]?.projectName || offshoreProjectCode || targetWorkCenter;
+    const next = ensureOffshorePaidOvertime(line, projectCode, projectName);
+    if (
+      next.usedHours !== line.usedHours
+      || next.totalHours !== line.totalHours
+      || !isManualOffshoreLine(line)
+    ) {
+      persistManualStamp = true;
     }
-    return markLineAsManualOffshore(line);
+    return next;
   });
   if (persistManualStamp && header && period.status === 'Open' && isTimesheetEditableStatus(header.status)) {
     try {
@@ -1787,8 +1782,8 @@ const buildPayload = async (
         workCenterName: targetWorkCenter,
         employeeCodes: selectedSupervisorEmployees.map((employee) => employee.employeeCode),
         message: selectedSupervisorEmployees.length
-          ? `${selectedSupervisorEmployees.length} crew mobilized offshore. Location OFFSHORE. Project is on each row. Manual booking, no clock. Type 8h on the project column. 4h offshore allowance is outside payroll.`
-          : 'No assigned crew is mobilized offshore for this date. Open Crew Mobilization, mobilize them, then return here and type 8h.',
+          ? `${selectedSupervisorEmployees.length} crew mobilized offshore. Location OFFSHORE. Project is on each row. Manual booking, no clock. Each mobilized day is 8h project + 4h paid overtime.`
+          : 'No assigned crew is mobilized offshore for this date. Open Crew Mobilization, mobilize them, then return here. Each day books 8h + 4h paid overtime.',
       }
       : dateMobilizations.length
         ? {

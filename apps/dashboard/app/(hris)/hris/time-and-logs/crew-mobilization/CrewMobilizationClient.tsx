@@ -299,7 +299,7 @@ export default function CrewMobilizationClient() {
   return (
     <PageTemplate
       title="Crew Mobilization"
-      description="HR roster for offshore tours. Host supervisor books 8h payroll + 1h break on a dedicated project sheet. 4h offshore allowance is stored but paid outside payroll."
+      description="HR roster for offshore tours. Host supervisor books 8h project + 4h paid overtime + 1h break on a dedicated project sheet. No Overtime Management request is required for the standard 4h."
       breadcrumbs={[
         { label: 'HRIS', href: '/hris' },
         { label: 'Workforce Management', href: '/hris/workforce-management' },

@@ -35,6 +35,7 @@ import {
   timesheetLineHasBookedHours,
   buildTimesheetHeaderId,
   selectTimesheetHeaderForLocation,
+  weekdayOvertimeHoursFromLine,
   type TimesheetLine,
 } from '@/lib/timesheet-entry-shared';
 import { overlayMissingTimesheetClocks, selectCanonicalTimesheetHeader } from '@/lib/timesheet-sheet-identity';
@@ -2440,6 +2441,7 @@ export type EmployeeAttendanceAggregate = {
   attendanceHours: number;
   bookedHours: number;
   idleHours: number;
+  weekdayOvertimeHours: number;
   skippedDuplicateDays: number;
 };
 
@@ -2516,6 +2518,7 @@ export const aggregateEmployeeAttendanceForHeaders = (
       attendanceHours: 0,
       bookedHours: 0,
       idleHours: 0,
+      weekdayOvertimeHours: 0,
       skippedDuplicateDays: 0,
     };
     if (!current.employeeName && line.employeeName) current.employeeName = line.employeeName;
@@ -2523,6 +2526,7 @@ export const aggregateEmployeeAttendanceForHeaders = (
     current.attendanceHours = Math.round((current.attendanceHours + normalizePaidWorkHours(line.attendanceDuration)) * 10) / 10;
     current.bookedHours = Math.round((current.bookedHours + normalizePaidWorkHours(line.totalHours)) * 10) / 10;
     current.idleHours = Math.round((current.idleHours + line.idleHours) * 10) / 10;
+    current.weekdayOvertimeHours = Math.round((current.weekdayOvertimeHours + weekdayOvertimeHoursFromLine(line, dateKey)) * 10) / 10;
     totals.set(employeeKey, current);
   }
 
@@ -2546,12 +2550,13 @@ export const synthesizeTimesheetHoursForPeriod = async (periodId: string) => {
       employeeName: current.employeeName || line.employeeName,
     });
   }
-  const mapped = new Map<string, { daysWorked: number; bookedHours: number; employeeNo?: string; employeeName?: string }>();
+  const mapped = new Map<string, { daysWorked: number; bookedHours: number; weekdayOvertimeHours: number; employeeNo?: string; employeeName?: string }>();
   for (const [employeeKey, aggregate] of totals) {
     const alias = aliasesByEmployee.get(employeeKey);
     mapped.set(employeeKey, {
       daysWorked: aggregate.daysWorked,
       bookedHours: aggregate.bookedHours,
+      weekdayOvertimeHours: aggregate.weekdayOvertimeHours,
       employeeNo: alias?.employeeNo,
       employeeName: alias?.employeeName || aggregate.employeeName,
     });
@@ -2560,11 +2565,11 @@ export const synthesizeTimesheetHoursForPeriod = async (periodId: string) => {
 };
 
 const registerTimesheetHours = (
-  map: Map<string, { daysWorked: number; bookedHours: number }>,
+  map: Map<string, { daysWorked: number; bookedHours: number; weekdayOvertimeHours?: number }>,
   employeeId: string,
   employeeNo: string | undefined,
   employeeName: string | undefined,
-  data: { daysWorked: number; bookedHours: number },
+  data: { daysWorked: number; bookedHours: number; weekdayOvertimeHours?: number },
 ) => {
   const compact = (value: unknown) => String(value || '').trim();
   const keys = [employeeId, employeeNo, employeeName, normalizePayrollMatchKey(employeeId), normalizePayrollMatchKey(employeeNo), normalizePayrollMatchKey(employeeName)]
@@ -2573,7 +2578,7 @@ const registerTimesheetHours = (
   keys.forEach((key) => map.set(key, data));
 };
 
-const hasTimesheetHours = (map: Map<string, { daysWorked: number; bookedHours: number }>, employeeId: string, employeeNo?: string, employeeName?: string) => {
+const hasTimesheetHours = (map: Map<string, { daysWorked: number; bookedHours: number; weekdayOvertimeHours?: number }>, employeeId: string, employeeNo?: string, employeeName?: string) => {
   const compact = (value: unknown) => String(value || '').trim();
   const keys = [employeeId, employeeNo, employeeName, normalizePayrollMatchKey(employeeId), normalizePayrollMatchKey(employeeNo), normalizePayrollMatchKey(employeeName)]
     .map((key) => compact(key))
@@ -2588,8 +2593,8 @@ const hasTimesheetHours = (map: Map<string, { daysWorked: number; bookedHours: n
 const TIMESHEET_HOURS_CACHE_MS = Number(process.env.HRIS_TIMESHEET_HOURS_CACHE_MS || 120000);
 type TimesheetHoursCacheEntry = {
   expiresAt: number;
-  map: Map<string, { daysWorked: number; bookedHours: number }>;
-  inFlight?: Promise<Map<string, { daysWorked: number; bookedHours: number }>>;
+  map: Map<string, { daysWorked: number; bookedHours: number; weekdayOvertimeHours?: number }>;
+  inFlight?: Promise<Map<string, { daysWorked: number; bookedHours: number; weekdayOvertimeHours?: number }>>;
 };
 const timesheetHoursCache = new Map<string, TimesheetHoursCacheEntry>();
 
@@ -2619,7 +2624,7 @@ export async function buildTimesheetHoursMapForPayrollPeriod(
     if (cached?.inFlight) return cached.inFlight;
 
     const inFlight = (async () => {
-      const map = new Map<string, { daysWorked: number; bookedHours: number }>();
+      const map = new Map<string, { daysWorked: number; bookedHours: number; weekdayOvertimeHours?: number }>();
 
     try {
       const synthesized = await synthesizeTimesheetHoursForPeriod(periodId);
@@ -2627,6 +2632,7 @@ export async function buildTimesheetHoursMapForPayrollPeriod(
         registerTimesheetHours(map, employeeId, data.employeeNo, data.employeeName, {
           daysWorked: data.daysWorked,
           bookedHours: data.bookedHours,
+          weekdayOvertimeHours: data.weekdayOvertimeHours,
         });
       });
     } catch (error) {
