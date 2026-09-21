@@ -95,6 +95,14 @@ const clashOnOtherSheet = (
   if (timesheetHeaderShiftKind(otherHeader?.shiftLabel) !== timesheetHeaderShiftKind(header.shiftLabel)) return false;
   if (otherSheetDoesNotLockThisCrew(header, otherHeader)) return false;
   if (committedOnly && !isCommittedTimesheetBooking(otherHeader, other)) return false;
+  // Same skip-level supervisor: biometric auto-book on another work centre
+  // must not lock hours typed on this sheet.
+  if (
+    otherHeader
+    && sameSupervisorHeaders(header, otherHeader)
+    && !timesheetWorkCentersMatch(header.workCenterName, otherHeader.workCenterName)
+    && isAutoBookedTimesheetLine(other)
+  ) return false;
   return timesheetEmployeeRecordsMatch(line, other);
 });
 
@@ -237,13 +245,14 @@ export const displaceUncommittedBookingsOnOtherDrafts = (
     const draft = normalizeTimesheetStatusKey(otherHeader.status) === 'draft';
     const foreignSupervisor = !sameSupervisorHeaders(header, otherHeader);
     const differentWorkCenter = !timesheetWorkCentersMatch(header.workCenterName, otherHeader.workCenterName);
-    if (!draft && !(foreignSupervisor && differentWorkCenter)) continue;
+    const canDisplaceSheet = draft || (foreignSupervisor && differentWorkCenter);
     const lines = otherLines.filter((line) => line.headerId === otherHeader.id);
     let changed = false;
     const next = lines.map((other) => {
       const match = bookedHere.find((line) => timesheetEmployeeRecordsMatch(line, other));
       if (!match) return other;
       const autoBook = isAutoBookedTimesheetLine(other);
+      if (!canDisplaceSheet && !autoBook) return other;
       if (!differentWorkCenter && !autoBook) return other;
       if (bookedHours(other) <= 0.001 && !timesheetLineHasProductiveHours(other)) return other;
       changed = true;

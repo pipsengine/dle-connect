@@ -72,7 +72,7 @@ import {
 } from '@/lib/timesheet-overtime-config';
 import { applyTimesheetLineDefaults, ensureClockedLinesHaveProjectAllocation } from '@/lib/timesheet-line-defaults';
 import { normalizeIdleAllocations, normalizeProjectAllocations, reconcileTimesheetLineHours, resolvePrimaryProjectCode, validateTimesheetLinesForPersist, TIMESHEET_SHIFT_LABELS, resolveTimesheetShift, timesheetHeaderMatchesShift, buildTimesheetHeaderId, timesheetWorkCentersMatch, isOffshoreWorkCenterName, isOffshoreLocationName, isOffshoreTimesheetContext, isManualOffshoreLine, isTimesheetAbsentLine, isTimesheetInApprovalCapture, applyNightPaperClock, timesheetLineHasBookedHours, buildManualOffshoreLine, buildRosterTimesheetLine, projectCodeFromOffshoreWorkCenter, resolveOffshoreProjectCode, resolveOffshoreSheetWorkCenter, timesheetOffshoreWorkCentersMatch, MIXED_TIMESHEET_WORK_CENTER, OFFSHORE_LOCATION_NAME, DEFAULT_TIMESHEET_SHIFT_LABEL, supervisorTimesheetMessage, dedupeTimesheetLinesByEmployee, isIdleTimeProjectCode, upsertMatrixProjectHours, ensureOffshorePaidOvertime, canBookTimesheetHoursWithoutClock, withOffshoreLocationName, withOffshoreTimesheetLocation, type TimesheetDayContext } from '@/lib/timesheet-entry-shared';
-import { displaceUncommittedBookingsOnOtherDrafts, findSameDayBookingConflicts, releaseLinesAlreadyBookedElsewhere, type TimesheetAlreadyBookedSkip } from '@/lib/timesheet-booking-clash';
+import { displaceUncommittedBookingsOnOtherDrafts, employeeAlreadyCommittedOnOtherTimesheet, employeeIsOtherTimesheetSupervisor, findSameDayBookingConflicts, releaseLinesAlreadyBookedElsewhere, type TimesheetAlreadyBookedSkip } from '@/lib/timesheet-booking-clash';
 import { assertTimesheetRecaptureAllowed, reopenTimesheetForRecapture } from '@/lib/timesheet-recapture';
 import { submitTimesheetForApproval } from '@/lib/timesheet-submit';
 import { mobilizationCoversDate, readTimesheetMobilizations, resolveOffshoreTimesheetRoster, selectOffshoreSheetMobilizations, type TimesheetMobilization } from '@/lib/timesheet-mobilization-store';
@@ -2257,7 +2257,13 @@ export async function PATCH(request: Request) {
       const isNightHeader = resolveTimesheetShift(header.shiftLabel).kind === 'Night';
 
       // Fill remaining clocked rows from a job already on this sheet. Do not guess a catalog project.
-      const allocationSeed = ensureClockedLinesHaveProjectAllocation(updatedLines, saveProjects, dayContext);
+      const allocationSeed = ensureClockedLinesHaveProjectAllocation(
+        updatedLines,
+        saveProjects,
+        dayContext,
+        (line) => employeeIsOtherTimesheetSupervisor(line, header, headers)
+          || employeeAlreadyCommittedOnOtherTimesheet(line, header, headers, allLines),
+      );
       const linesForSave = allocationSeed.lines;
 
       const approvedOvertimeAuthorizations = overtimeBooking.enabled

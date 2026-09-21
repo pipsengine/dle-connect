@@ -77,6 +77,7 @@ export const ensureClockedLinesHaveProjectAllocation = (
   lines: TimesheetLine[],
   projects: TimesheetBookableProject[],
   dayContext: TimesheetDayContext,
+  skipAutoBook?: (line: TimesheetLine) => boolean,
 ): { lines: TimesheetLine[]; bookedCount: number; projectCode: string | null } => {
   const project = resolveBookableTimesheetProject(projects, preferredProjectCodeFromLines(lines));
   if (!project) {
@@ -105,6 +106,7 @@ export const ensureClockedLinesHaveProjectAllocation = (
     if (!working.clockIn && !isManualOffshoreLine(working) && shift.kind !== 'Night') {
       return working;
     }
+    if (skipAutoBook?.(working)) return working;
 
     bookedCount += 1;
     const projectAllocations = normalizeProjectAllocations([

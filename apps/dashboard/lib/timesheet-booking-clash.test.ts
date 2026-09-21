@@ -84,7 +84,7 @@ const submittedAutoBook = releaseLinesAlreadyBookedElsewhere(
   [blasting, { ...galvanizing, status: 'Submitted' }],
   [autoBookedGalvanizing],
 );
-assert.equal(submittedAutoBook.skipped.length, 1);
+assert.equal(submittedAutoBook.skipped.length, 0, 'same-supervisor auto-book on another work centre does not lock typed hours');
 
 const preview = findSameDayBookingConflicts(
   [line({ usedHours: 0, projectAllocations: [] })],
@@ -195,5 +195,59 @@ const breakOnlyOtherSheet = findSameDayBookingConflicts(
   })],
 );
 assert.equal(breakOnlyOtherSheet.length, 0);
+
+const karonwiMixed = {
+  id: 'hdr-mixed',
+  timesheetDate: '2026-09-09',
+  shiftLabel: '01 (Day)',
+  workCenterName: 'Mixed',
+  supervisorId: 'P0013 - Mr SAMUEL KARONWI',
+  supervisorName: 'P0013 - Mr SAMUEL KARONWI',
+  status: 'Submitted',
+};
+const karonwiBlasting = {
+  id: 'hdr-karonwi-blasting',
+  timesheetDate: '2026-09-09',
+  shiftLabel: '01 (Day)',
+  workCenterName: 'Blasting',
+  supervisorId: 'P0013 - Mr SAMUEL KARONWI',
+  supervisorName: 'P0013 - Mr SAMUEL KARONWI',
+  status: 'Supervisor_Reviewed',
+};
+const abelAutoBookedBlasting = line({
+  id: 'line-blasting-abel',
+  headerId: 'hdr-karonwi-blasting',
+  projectAllocations: [{
+    projectId: 'p1',
+    projectCode: 'DL1985',
+    projectName: 'Blasting',
+    hours: 8,
+    remarks: 'Auto-booked from biometric attendance.',
+  }],
+});
+const abelTypedOnMixed = line({
+  id: 'line-mixed-abel',
+  headerId: 'hdr-mixed',
+  usedHours: 8,
+  projectAllocations: [{ projectId: 'p2', projectCode: 'DL2421', projectName: 'Fitting', hours: 8, remarks: null }],
+});
+const nestedSupervisorKeepsTypedHours = releaseLinesAlreadyBookedElsewhere(
+  [abelTypedOnMixed],
+  karonwiMixed,
+  [karonwiMixed, karonwiBlasting],
+  [abelAutoBookedBlasting],
+);
+assert.equal(nestedSupervisorKeepsTypedHours.skipped.length, 0);
+assert.equal(nestedSupervisorKeepsTypedHours.lines[0]?.usedHours, 8);
+
+const displacedSameSupervisorAutoBook = displaceUncommittedBookingsOnOtherDrafts(
+  [abelTypedOnMixed],
+  karonwiMixed,
+  [karonwiMixed, karonwiBlasting],
+  [abelAutoBookedBlasting],
+);
+assert.equal(displacedSameSupervisorAutoBook.length, 1);
+assert.equal(displacedSameSupervisorAutoBook[0]?.header.id, 'hdr-karonwi-blasting');
+assert.equal(displacedSameSupervisorAutoBook[0]?.lines[0]?.usedHours, 0);
 
 console.log('timesheet-booking-clash.test.ts: ok');

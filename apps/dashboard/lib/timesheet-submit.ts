@@ -39,7 +39,7 @@ import {
   resolveOvertimeBookingOptions,
 } from '@/lib/timesheet-overtime-config';
 import { canonicalProjectManagerForCode, withCanonicalProjectManager } from '@/lib/timesheet-canonical-project-managers';
-import { formatAlreadyBookedSkipNotice, displaceUncommittedBookingsOnOtherDrafts, releaseLinesAlreadyBookedElsewhere } from '@/lib/timesheet-booking-clash';
+import { formatAlreadyBookedSkipNotice, displaceUncommittedBookingsOnOtherDrafts, employeeAlreadyCommittedOnOtherTimesheet, employeeIsOtherTimesheetSupervisor, releaseLinesAlreadyBookedElsewhere } from '@/lib/timesheet-booking-clash';
 
 const dayContextFor = (date: string, holidayDates: string[], shiftLabel?: string | null, locationName?: string | null): TimesheetDayContext => ({
   date,
@@ -349,7 +349,13 @@ export async function submitTimesheetForApproval(input: {
   const dayContext = dayContextFor(header.timesheetDate, holidayDates, header.shiftLabel, header.locationName);
   const isNightHeader = resolveTimesheetShift(header.shiftLabel).kind === 'Night';
 
-  const allocationSeed = ensureClockedLinesHaveProjectAllocation(input.lines, projects, dayContext);
+  const allocationSeed = ensureClockedLinesHaveProjectAllocation(
+    input.lines,
+    projects,
+    dayContext,
+    (line) => employeeIsOtherTimesheetSupervisor(line, header, input.otherHeaders)
+      || employeeAlreadyCommittedOnOtherTimesheet(line, header, input.otherHeaders, input.otherLines),
+  );
   const linesForSave = input.repairBiometricHours
     ? allocationSeed.lines.map((line) => alignLineToBiometricCap(line, header.shiftLabel))
     : allocationSeed.lines;

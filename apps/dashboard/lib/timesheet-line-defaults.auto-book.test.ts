@@ -132,4 +132,30 @@ const paidLeave = ensureClockedLinesHaveProjectAllocation(
 );
 assert.equal(paidLeave.lines[0]?.projectAllocations[0]?.projectCode, 'DL1949');
 
+const skippedNestedSupervisor = ensureClockedLinesHaveProjectAllocation(
+  [
+    baseLine({
+      employeeId: 'C2225',
+      employeeNo: 'C2225',
+      employeeName: 'ABEL DANIEL',
+    }),
+    baseLine({
+      id: 'line-job',
+      employeeId: 'C1720',
+      employeeNo: 'C1720',
+      employeeName: 'ADANOU',
+      projectAllocations: [{ projectId: 'p1', projectCode: 'DL1985', projectName: 'Legacy Preferred', hours: 8, remarks: null }],
+      usedHours: 8,
+    }),
+  ],
+  projects,
+  dayContext,
+  (line) => line.employeeNo === 'C2225',
+);
+assert.equal(skippedNestedSupervisor.bookedCount, 0);
+assert.equal(
+  (skippedNestedSupervisor.lines[0]?.projectAllocations || []).some((item) => Number(item.hours || 0) > 0.001),
+  false,
+);
+
 console.log('timesheet-line-defaults auto-book tests passed');
