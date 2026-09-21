@@ -47,8 +47,11 @@ import {
   calculateLeaveDays,
   decodeLeaveExceptionsPayload,
   encodeLeaveExceptionsPayload,
+  essLeaveApplicationHasPastDates,
   leaveApplicationsConflict,
+  leaveCalendarTodayIso,
   normalizeLeaveIsoDate,
+  PAST_LEAVE_APPLICATION_MESSAGE,
 } from '@/lib/leave-day-engine';
 import { resolveNigeriaPublicHolidays } from '@/lib/nigeria-public-holidays';
 import {
@@ -2035,6 +2038,10 @@ export const validateEssLeaveApplication = async (input: {
     return { ok: false as const, status: 409, message: 'Leave application falls within a blocked period.' };
   }
 
+  if (essLeaveApplicationHasPastDates({ startDate, selectedDates: input.selectedDates }, leaveCalendarTodayIso())) {
+    return { ok: false as const, status: 400, message: PAST_LEAVE_APPLICATION_MESSAGE };
+  }
+
   const dayCalc = calculateLeaveDays({
     startDate,
     endDate,
@@ -2061,6 +2068,10 @@ export const validateEssLeaveApplication = async (input: {
   });
   if (regularized.days <= 0) {
     return { ok: false as const, status: 400, message: 'No chargeable leave days remain after excluding weekends and public holidays. Select at least one working day.' };
+  }
+
+  if (essLeaveApplicationHasPastDates({ startDate: regularized.startDate, selectedDates: regularized.selectedDates }, leaveCalendarTodayIso())) {
+    return { ok: false as const, status: 400, message: PAST_LEAVE_APPLICATION_MESSAGE };
   }
 
   const conflict = await findConflictingLeaveApplication({

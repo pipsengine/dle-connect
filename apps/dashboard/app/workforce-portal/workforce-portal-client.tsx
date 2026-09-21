@@ -38,6 +38,9 @@ import {
   holidaysOverlappingPeriod,
   isChargeableLeaveDate,
   isWeekendLeaveDate,
+  leaveCalendarTodayIso,
+  PAST_LEAVE_APPLICATION_MESSAGE,
+  essLeaveApplicationHasPastDates,
   LEAVE_CALENDAR_WEEKDAYS,
 } from '@/lib/leave-day-engine';
 import { Activity,
@@ -966,6 +969,7 @@ function EssLeaveWorkspace({ payload, employee, onLeaveSubmitted, onLeaveAction,
   const relieverOptions = payload?.leave.relieverOptions || [];
   const selectedReliever = relieverOptions.find((item) => item.employeeId === reliever || item.employeeCode === reliever);
   const holidays = payload?.leave.holidays || [];
+  const leaveToday = leaveCalendarTodayIso(initialNow);
   const leaveCalc = useMemo(
     () => calculateLeaveDays({ startDate, endDate, selectedDates, holidays }),
     [startDate, endDate, selectedDates, holidays],
@@ -985,10 +989,10 @@ function EssLeaveWorkspace({ payload, employee, onLeaveSubmitted, onLeaveAction,
       skipPeriodReseedRef.current = false;
       return;
     }
-    setSelectedDates(defaultChargeableDatesInPeriod(startDate, endDate, holidays));
+    setSelectedDates(defaultChargeableDatesInPeriod(startDate, endDate, holidays, { notBefore: leaveToday }));
     setAcknowledgeHolidays(false);
     setHolidayPrompt(null);
-  }, [startDate, endDate, holidays]);
+  }, [startDate, endDate, holidays, leaveToday]);
 
   const balance = Number(selected?.balance || 0);
   const allowanceEligible = leaveType === 'Annual Leave' && days >= 10;
@@ -1009,6 +1013,7 @@ function EssLeaveWorkspace({ payload, employee, onLeaveSubmitted, onLeaveAction,
     ...(overlappingPendingRequest
       ? [`You already have a pending leave request (${overlappingPendingRequest.title}) with status ${overlappingPendingRequest.status}. Open My Applications or wait for approval before submitting again.`]
       : []),
+    ...(essLeaveApplicationHasPastDates({ startDate, selectedDates }, leaveToday) ? [PAST_LEAVE_APPLICATION_MESSAGE] : []),
     ...(days > balance ? ['Selected days exceed available balance.'] : []),
     ...(leaveType === 'Annual Leave' && String(selected?.eligibilityStatus || '').toLowerCase().includes('locked') ? ['Annual Leave is available only after confirmation of appointment.'] : []),
     ...(usesCarryForward && endDate > `${new Date().getFullYear()}-03-31` ? ['Carry Forward Leave must be consumed on or before 31 March.'] : []),
@@ -1019,6 +1024,7 @@ function EssLeaveWorkspace({ payload, employee, onLeaveSubmitted, onLeaveAction,
   ];
 
   const toggleSelectedDate = (date: string) => {
+    if (date < leaveToday) return;
     if (!isChargeableLeaveDate(date, holidaySet)) return;
     const next = selectedDates.includes(date)
       ? selectedDates.filter((item) => item !== date)
@@ -1076,6 +1082,7 @@ function EssLeaveWorkspace({ payload, employee, onLeaveSubmitted, onLeaveAction,
 
   const submitLeaveForm = async (forceAcknowledgeHolidays = false) => {
     if (!onLeaveSubmitted) return;
+    if (essLeaveApplicationHasPastDates({ startDate, selectedDates }, leaveToday)) return;
     const overlappingHolidays = holidaysOverlappingPeriod(startDate, endDate, holidays);
     if (overlappingHolidays.length && !acknowledgeHolidays && !forceAcknowledgeHolidays) {
       setHolidayPrompt(overlappingHolidays);
@@ -1134,17 +1141,25 @@ function EssLeaveWorkspace({ payload, employee, onLeaveSubmitted, onLeaveAction,
               <select value={leaveType} onChange={(e) => setLeaveType(e.target.value)} className="h-11 rounded-lg border border-slate-200 px-3 text-sm font-bold">{(payload?.leave.balances || []).map((item) => <option key={String(item.id)}>{String(item.type)}</option>)}</select>
               <input value={`${days} working day(s)`} readOnly className="h-11 rounded-lg border border-slate-200 bg-slate-50 px-3 text-sm font-black text-slate-800" />
               <label className="text-xs font-bold text-slate-600">Leave period start
-                <input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} className="mt-1 h-11 w-full rounded-lg border border-slate-200 px-3 text-sm font-bold" />
+                <input type="date" min={leaveToday} value={startDate} onChange={(e) => {
+                  const next = e.target.value;
+                  if (next && next < leaveToday) return;
+                  setStartDate(next);
+                }} className="mt-1 h-11 w-full rounded-lg border border-slate-200 px-3 text-sm font-bold" />
               </label>
               <label className="text-xs font-bold text-slate-600">Leave period end
-                <input type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} className="mt-1 h-11 w-full rounded-lg border border-slate-200 px-3 text-sm font-bold" />
+                <input type="date" min={startDate || leaveToday} value={endDate} onChange={(e) => {
+                  const next = e.target.value;
+                  if (next && next < leaveToday) return;
+                  setEndDate(next);
+                }} className="mt-1 h-11 w-full rounded-lg border border-slate-200 px-3 text-sm font-bold" />
               </label>
               {calendarMonths.length ? (
                 <div className="md:col-span-2 rounded-lg border border-slate-200 bg-slate-50 p-3">
                   <div className="flex flex-wrap items-center justify-between gap-2">
                     <p className="text-xs font-black text-slate-800">Select leave days on the calendar (can be non-contiguous)</p>
                     <div className="flex gap-2">
-                      <button type="button" className="rounded border border-slate-300 bg-white px-2 py-1 text-[11px] font-bold" onClick={() => setSelectedDates(defaultChargeableDatesInPeriod(startDate, endDate, holidays))}>Select all working days</button>
+                      <button type="button" className="rounded border border-slate-300 bg-white px-2 py-1 text-[11px] font-bold" onClick={() => setSelectedDates(defaultChargeableDatesInPeriod(startDate, endDate, holidays, { notBefore: leaveToday }))}>Select all working days</button>
                       <button type="button" className="rounded border border-slate-300 bg-white px-2 py-1 text-[11px] font-bold" onClick={() => setSelectedDates([])}>Clear</button>
                     </div>
                   </div>
@@ -1165,18 +1180,20 @@ function EssLeaveWorkspace({ payload, employee, onLeaveSubmitted, onLeaveAction,
                             }
                             const weekend = isWeekendLeaveDate(date);
                             const holiday = holidays.find((item) => item.date === date);
+                            const past = date < leaveToday;
                             const chargeable = isChargeableLeaveDate(date, holidaySet);
+                            const selectable = chargeable && !past;
                             const checked = selectedDates.includes(date);
                             const dayNumber = Number(date.slice(8, 10));
                             return (
                               <button
                                 key={date}
                                 type="button"
-                                disabled={!chargeable}
+                                disabled={!selectable}
                                 onClick={() => toggleSelectedDate(date)}
-                                title={holiday ? `Holiday: ${holiday.label}` : weekend ? 'Weekend' : checked ? 'Selected' : 'Working day'}
+                                title={past ? 'This day has already passed' : holiday ? `Holiday: ${holiday.label}` : weekend ? 'Weekend' : checked ? 'Selected' : 'Working day'}
                                 className={`flex min-h-[64px] flex-col items-start justify-between px-1.5 py-1.5 text-left transition ${
-                                  !chargeable
+                                  !selectable
                                     ? 'cursor-not-allowed bg-slate-100 text-slate-400'
                                     : checked
                                       ? 'bg-blue-50 text-blue-900 ring-1 ring-inset ring-blue-500'
@@ -1185,13 +1202,15 @@ function EssLeaveWorkspace({ payload, employee, onLeaveSubmitted, onLeaveAction,
                               >
                                 <span className={`text-sm font-black ${checked ? 'text-blue-700' : ''}`}>{dayNumber}</span>
                                 <span className="w-full truncate text-[9px] font-semibold leading-tight opacity-80">
-                                  {holiday
-                                    ? holiday.label
-                                    : weekend
-                                      ? 'Weekend'
-                                      : checked
-                                        ? 'Selected'
-                                        : 'Working'}
+                                  {past
+                                    ? 'Past'
+                                    : holiday
+                                      ? holiday.label
+                                      : weekend
+                                        ? 'Weekend'
+                                        : checked
+                                          ? 'Selected'
+                                          : 'Working'}
                                 </span>
                               </button>
                             );
@@ -1203,7 +1222,7 @@ function EssLeaveWorkspace({ payload, employee, onLeaveSubmitted, onLeaveAction,
                   <div className="mt-3 flex flex-wrap gap-3 text-[10px] font-bold text-slate-500">
                     <span className="inline-flex items-center gap-1"><span className="h-3 w-3 rounded-sm bg-blue-50 ring-1 ring-blue-500" /> Selected</span>
                     <span className="inline-flex items-center gap-1"><span className="h-3 w-3 rounded-sm border border-slate-200 bg-white" /> Working day</span>
-                    <span className="inline-flex items-center gap-1"><span className="h-3 w-3 rounded-sm bg-slate-100" /> Weekend / holiday</span>
+                    <span className="inline-flex items-center gap-1"><span className="h-3 w-3 rounded-sm bg-slate-100" /> Weekend / holiday / past</span>
                   </div>
                 </div>
               ) : null}

@@ -88,10 +88,55 @@ export const defaultChargeableDatesInPeriod = (
   startDate: string,
   endDate: string,
   holidays?: Array<string | LeaveHoliday> | null,
+  options?: { notBefore?: string | null },
 ) => {
   const holidayMap = holidayMapFromList(holidays);
-  return enumerateInclusiveDates(startDate, endDate).filter((date) => isChargeableLeaveDate(date, holidayMap));
+  const notBefore = normalizeLeaveIsoDate(options?.notBefore);
+  return enumerateInclusiveDates(startDate, endDate).filter((date) => {
+    if (notBefore && date < notBefore) return false;
+    return isChargeableLeaveDate(date, holidayMap);
+  });
 };
+
+export const LEAVE_CALENDAR_TIME_ZONE = 'Africa/Lagos';
+
+export const PAST_LEAVE_APPLICATION_MESSAGE =
+  'Leave cannot be applied for days that have already passed. Choose today or a future working day.';
+
+/** Business calendar date in Nigeria (WAT). */
+export const leaveCalendarTodayIso = (now: Date | string = new Date()) => {
+  const parsed = typeof now === 'string' ? new Date(now) : now;
+  const date = parsed instanceof Date && !Number.isNaN(parsed.getTime()) ? parsed : new Date();
+  return new Intl.DateTimeFormat('en-CA', {
+    timeZone: LEAVE_CALENDAR_TIME_ZONE,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(date);
+};
+
+export const pastLeaveDatesInApplication = (
+  input: {
+    startDate?: string | null;
+    selectedDates?: string[] | null;
+  },
+  today: string = leaveCalendarTodayIso(),
+) => {
+  const todayIso = normalizeLeaveIsoDate(today) || leaveCalendarTodayIso();
+  const dates = [
+    normalizeLeaveIsoDate(input.startDate),
+    ...(input.selectedDates || []).map((item) => normalizeLeaveIsoDate(item)),
+  ].filter(Boolean);
+  return Array.from(new Set(dates.filter((date) => date < todayIso))).sort();
+};
+
+export const essLeaveApplicationHasPastDates = (
+  input: {
+    startDate?: string | null;
+    selectedDates?: string[] | null;
+  },
+  today: string = leaveCalendarTodayIso(),
+) => pastLeaveDatesInApplication(input, today).length > 0;
 
 export const holidaysOverlappingPeriod = (
   startDate: string,
