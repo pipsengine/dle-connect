@@ -281,6 +281,7 @@ type OvertimeAuthorizationRequest = {
   status: AuthorizationStatus;
   currentOwnerRole: string;
   currentOwnerName: string;
+  canAct?: boolean;
   projectManagerName: string;
   projectManagerEmail: string | null;
   gmOperationsName: string;
@@ -812,7 +813,7 @@ export default function OvertimeManagementClient({ initialNow }: { initialNow: s
       return;
     }
     const actionableIds = authorizationRequests
-      .filter((item) => !['HR Approved', 'MD Approved', 'Rejected', 'Cancelled'].includes(item.status))
+      .filter((item) => item.canAct === true)
       .map((item) => item.id);
     setSelectedAuthIds(new Set(actionableIds));
   };

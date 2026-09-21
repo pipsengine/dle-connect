@@ -73,6 +73,7 @@ export type EnterpriseAuthorizationRequest = {
   currentOwnerName: string;
   currentOwnerRole: string;
   status: string;
+  canAct?: boolean;
 };
 
 export type OvertimeManagementEnterpriseViewProps = {
@@ -196,7 +197,7 @@ function AuthorizationStageTrack({ status }: { status: string }) {
 
 export function OvertimeManagementEnterpriseView(props: OvertimeManagementEnterpriseViewProps) {
   const pendingAuthorizationIds = props.authorizationRequests
-    .filter((item) => !['HR Approved', 'MD Approved', 'Rejected', 'Cancelled'].includes(item.status))
+    .filter((item) => item.canAct === true)
     .map((item) => item.id);
   const pendingAuthorizationCount = pendingAuthorizationIds.length;
   const allPendingSelected =
@@ -400,7 +401,7 @@ export function OvertimeManagementEnterpriseView(props: OvertimeManagementEnterp
                 </thead>
                 <tbody className="divide-y divide-[#EDF2F7] bg-white text-[15px]">
                   {props.authorizationRequests.map((item) => {
-                    const actionable = !['HR Approved', 'MD Approved', 'Rejected', 'Cancelled'].includes(item.status);
+                    const actionable = item.canAct === true;
                     return (
                     <tr key={item.id} className={`hover:bg-[#F8FAFC] ${props.selectedAuthIds.has(item.id) ? 'bg-[#EFF6FF]' : ''}`}>
                       <td className="px-4 py-3">
@@ -460,7 +461,7 @@ export function OvertimeManagementEnterpriseView(props: OvertimeManagementEnterp
                   {!props.authorizationRequests.length ? (
                     <tr>
                       <td colSpan={8} className="px-4 py-8">
-                        <OvertimeEmptyState title="No authorization requests yet." description="Click New Overtime Request to book and submit overtime." />
+                        <OvertimeEmptyState title="No overtime authorizations assigned to you." description="This list shows requests you booked as supervisor, or requests waiting for your approval." />
                       </td>
                     </tr>
                   ) : null}

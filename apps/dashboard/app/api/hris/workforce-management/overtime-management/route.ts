@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { permissionsForRequest } from '@/lib/auth/request-permissions';
+import { AUTH_COOKIE, verifySessionToken } from '@/lib/auth/session';
 import {
   applyOvertimeAction,
   createOvertimeRequest,
@@ -16,6 +17,12 @@ import {
   createOvertimeAuthorizationRequest,
   listOvertimeAuthorizationRequests,
 } from '@/lib/overtime-approval-workflow-store';
+import {
+  actorCanActOnOvertimeAuthorization,
+  actorCanBypassOvertimeWorkflow,
+  scopeOvertimeAuthorizationRequests,
+  type OvertimeAuthorizationActor,
+} from '@/lib/overtime-authorization-scope';
 import { resolveWorkflowLinkOriginFromRequest } from '@/lib/public-app-url';
 import { getPayrollPublicHolidayDates } from '@/lib/nigeria-public-holidays';
 import { hasBiometricClockIn } from '@/lib/timesheet-entry-shared';
@@ -65,10 +72,30 @@ const canActOnAuthorization = (request: NextRequest, decision: 'approve' | 'reje
     'workforce.manage',
   ], permissions);
 
-const isSuperAdministrator = (request: NextRequest, role: string, permissions?: string[]) => {
-  if (role === 'Super Administrator' || role === 'Administrator') return true;
-  if (request.headers.get('x-auth-global-admin') === '1') return true;
-  return canUseOvertimeOverride(request, permissions);
+const sessionFromRequest = async (request: NextRequest) => {
+  const raw = (request.headers.get('cookie') || '')
+    .split(';')
+    .map((item) => item.trim())
+    .find((item) => item.startsWith(`${AUTH_COOKIE}=`));
+  const token = raw ? decodeURIComponent(raw.slice(`${AUTH_COOKIE}=`.length)) : '';
+  return verifySessionToken(token);
+};
+
+const overtimeActorFromRequest = async (request: NextRequest, permissions?: string[]): Promise<OvertimeAuthorizationActor> => {
+  const session = await sessionFromRequest(request);
+  const headerRoles = (request.headers.get('x-auth-roles') || '')
+    .split(',')
+    .map((item) => item.trim())
+    .filter(Boolean);
+  return {
+    fullName: session?.fullName || request.headers.get('x-hris-actor') || '',
+    username: session?.username || request.headers.get('x-auth-user') || '',
+    employeeCode: session?.employeeCode || request.headers.get('x-auth-employee-code') || '',
+    employeeId: session?.employeeId || request.headers.get('x-auth-employee-id') || '',
+    roles: session?.roles?.length ? session.roles : headerRoles,
+    isGlobalAdmin: Boolean(session?.isGlobalAdmin || request.headers.get('x-auth-global-admin') === '1'),
+    canOverride: canUseOvertimeOverride(request, permissions),
+  };
 };
 
 /**
@@ -76,12 +103,18 @@ const isSuperAdministrator = (request: NextRequest, role: string, permissions?: 
  * request through the full workflow chain in a single action. The workflow store
  * recognises the "Super Administrator" actor and advances Submitted → HR Approved.
  */
-const resolveAuthorizationActor = (request: NextRequest, role: string, bodyActor: unknown, permissions?: string[]) =>
-  isSuperAdministrator(request, role, permissions)
+const resolveAuthorizationActor = (identity: OvertimeAuthorizationActor, role: string, bodyActor: unknown) =>
+  actorCanBypassOvertimeWorkflow(identity)
     ? 'Super Administrator'
-    : bodyActor
-      ? String(bodyActor)
-      : role;
+    : identity.fullName || (bodyActor ? String(bodyActor) : role);
+
+const scopedAuthorizationPayload = async (role: string, request: NextRequest, livePermissions: string[], identity: OvertimeAuthorizationActor) => {
+  const [payload, authorizationRequests] = await Promise.all([readOvertimeManagementPayload(role), listOvertimeAuthorizationRequests()]);
+  return applyAccessToPayload({
+    ...payload,
+    authorizationRequests: scopeOvertimeAuthorizationRequests(authorizationRequests, identity),
+  }, request, livePermissions);
+};
 
 const applyAccessToPayload = <T extends { permissions: Record<string, boolean> }>(payload: T, request: NextRequest, permissions: string[]): T => ({
   ...payload,
@@ -111,6 +144,7 @@ export async function GET(request: NextRequest) {
       const attendance = await readOvertimeEmployeeAttendance(attendanceDate, employeeCodes);
       return ok({ workDate: attendanceDate, attendance });
     }
+    const identity = await overtimeActorFromRequest(request, livePermissions);
     const [authorizationRequests, payload, holidayDates] = await Promise.all([
       listOvertimeAuthorizationRequests().catch((error) => {
         console.warn('[OvertimeManagement] Authorization requests skipped:', error instanceof Error ? error.message : error);
@@ -124,7 +158,7 @@ export async function GET(request: NextRequest) {
     ]);
     const data = applyAccessToPayload({
       ...payload,
-      authorizationRequests,
+      authorizationRequests: scopeOvertimeAuthorizationRequests(authorizationRequests, identity),
       holidayDates: payload.holidayDates?.length ? payload.holidayDates : holidayDates,
     }, request, livePermissions);
     if (request.nextUrl.searchParams.get('format') === 'csv') {
@@ -146,6 +180,7 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   try {
     const livePermissions = await permissionsForRequest(request);
+    const identity = await overtimeActorFromRequest(request, livePermissions);
     const role = normalizeOvertimeRole(request.headers.get('x-hris-role') || 'HR Manager');
     const body = await request.json().catch(() => ({}));
     const id = String(body.id || '').trim();
@@ -223,24 +258,33 @@ export async function POST(request: NextRequest) {
           portalBaseUrl: baseUrl,
         }, body.actor ? String(body.actor) : 'Production Manager');
       }
-      const [payload, authorizationRequests] = await Promise.all([readOvertimeManagementPayload(role), listOvertimeAuthorizationRequests()]);
-      return ok(applyAccessToPayload({ ...payload, authorizationRequests }, request, livePermissions));
+      return ok(await scopedAuthorizationPayload(role, request, livePermissions, identity));
     }
     if (String(body.action || '').trim() === 'bulk-approve-authorization' || String(body.action || '').trim() === 'bulk-reject-authorization') {
       const ids = Array.isArray(body.ids) ? body.ids.map((value: unknown) => String(value || '').trim()).filter(Boolean) : [];
       if (!ids.length) return err(400, 'Select at least one overtime authorization request.');
       const decision = String(body.action).startsWith('bulk-approve') ? 'approve' : 'reject';
-      if (!isSuperAdministrator(request, role, livePermissions) && !canActOnAuthorization(request, decision, livePermissions)) return err(403, 'Permission denied.');
-      const actor = resolveAuthorizationActor(request, role, body.actor, livePermissions);
-      await bulkActOnOvertimeAuthorizationRequests(ids, decision, actor, body.comment ? String(body.comment) : null, baseUrl);
-      const [payload, authorizationRequests] = await Promise.all([readOvertimeManagementPayload(role), listOvertimeAuthorizationRequests()]);
-      return ok(applyAccessToPayload({ ...payload, authorizationRequests }, request, livePermissions));
+      if (!actorCanBypassOvertimeWorkflow(identity) && !canActOnAuthorization(request, decision, livePermissions)) return err(403, 'Permission denied.');
+      const rows = await listOvertimeAuthorizationRequests();
+      const allowedIds = ids.filter((requestId) => {
+        const item = rows.find((row) => row.id === requestId);
+        return Boolean(item && actorCanActOnOvertimeAuthorization(item, identity));
+      });
+      if (!allowedIds.length) return err(403, 'None of the selected overtime authorizations are waiting for your approval.');
+      const actor = resolveAuthorizationActor(identity, role, body.actor);
+      await bulkActOnOvertimeAuthorizationRequests(allowedIds, decision, actor, body.comment ? String(body.comment) : null, baseUrl);
+      return ok(await scopedAuthorizationPayload(role, request, livePermissions, identity));
     }
     if (String(body.action || '').trim() === 'approve-authorization' || String(body.action || '').trim() === 'reject-authorization') {
       if (!id) return err(400, 'Overtime authorization request is required.');
       const decision = String(body.action).startsWith('approve') ? 'approve' : 'reject';
-      if (!isSuperAdministrator(request, role, livePermissions) && !canActOnAuthorization(request, decision, livePermissions)) return err(403, 'Permission denied.');
-      const actor = resolveAuthorizationActor(request, role, body.actor, livePermissions);
+      if (!actorCanBypassOvertimeWorkflow(identity) && !canActOnAuthorization(request, decision, livePermissions)) return err(403, 'Permission denied.');
+      const item = (await listOvertimeAuthorizationRequests()).find((row) => row.id === id);
+      if (!item) return err(404, 'Overtime authorization request was not found.');
+      if (!actorCanActOnOvertimeAuthorization(item, identity)) {
+        return err(403, 'This overtime authorization is not waiting for your approval.');
+      }
+      const actor = resolveAuthorizationActor(identity, role, body.actor);
       await actOnOvertimeAuthorizationRequest(
         id,
         decision,
@@ -248,14 +292,16 @@ export async function POST(request: NextRequest) {
         body.comment ? String(body.comment) : null,
         baseUrl,
       );
-      const [payload, authorizationRequests] = await Promise.all([readOvertimeManagementPayload(role), listOvertimeAuthorizationRequests()]);
-      return ok(applyAccessToPayload({ ...payload, authorizationRequests }, request, livePermissions));
+      return ok(await scopedAuthorizationPayload(role, request, livePermissions, identity));
     }
     if (String(body.action || '').trim() === 'create-request') {
       if (!hasAnyPermission(request, ['overtime.authorization.create', 'overtime.authorization.submit', 'workforce.manage', 'operations.timesheets.submit'], livePermissions)) return err(403, 'Permission denied.');
       const payload = await createOvertimeRequest(body, role, body.actor ? String(body.actor) : role);
       const authorizationRequests = await listOvertimeAuthorizationRequests().catch(() => []);
-      return ok(applyAccessToPayload({ ...payload, authorizationRequests }, request, livePermissions));
+      return ok(applyAccessToPayload({
+        ...payload,
+        authorizationRequests: scopeOvertimeAuthorizationRequests(authorizationRequests, identity),
+      }, request, livePermissions));
     }
     if (!id) return err(400, 'Overtime record is required.');
     if (!action) return err(400, 'Overtime action is required.');
@@ -264,7 +310,10 @@ export async function POST(request: NextRequest) {
     if (['mark-payroll-ready', 'post-payroll'].includes(action) && !hasAnyPermission(request, ['overtime.authorization.release', 'overtime.authorization.post', 'workforce.manage', 'operations.timesheets.approve'], livePermissions)) return err(403, 'Permission denied.');
     const payload = await applyOvertimeAction(id, action, role, body.actor ? String(body.actor) : role, body.comment ? String(body.comment) : null);
     const authorizationRequests = await listOvertimeAuthorizationRequests().catch(() => []);
-    return ok(applyAccessToPayload({ ...payload, authorizationRequests }, request, livePermissions));
+    return ok(applyAccessToPayload({
+      ...payload,
+      authorizationRequests: scopeOvertimeAuthorizationRequests(authorizationRequests, identity),
+    }, request, livePermissions));
   } catch (error) {
     return err(500, error instanceof Error ? error.message : 'Unable to process overtime action.');
   }

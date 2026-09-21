@@ -296,6 +296,11 @@ const formatHours = (value: number) => `${numberFmt.format(Number(value || 0))}h
 const formatInt = (value: number) => intFmt.format(Number(value || 0));
 const formatDateTime = (value: string | null) =>
   value ? new Intl.DateTimeFormat('en', { month: 'short', day: '2-digit', hour: '2-digit', minute: '2-digit' }).format(new Date(value)) : '—';
+const formatWorkDate = (value: string | null | undefined) => {
+  const iso = String(value || '').slice(0, 10);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(iso)) return value || '—';
+  return new Intl.DateTimeFormat('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }).format(new Date(`${iso}T12:00:00`));
+};
 const csvValue = (value: unknown) => `"${String(value ?? '').replace(/"/g, '""')}"`;
 
 const validationScoreFor = (employee: EmployeeRow) => {
@@ -1131,7 +1136,7 @@ export default function TimesheetApprovalClient({ mode = 'active' }: { mode?: 'a
               <div className="dle-split-laptop">
                 <div className="min-w-0 min-[1920px]:border-r min-[1920px]:border-[#E5E7EB]">
                   <div className="dle-scroll-x max-h-[640px] overflow-auto">
-                    <table className="min-w-[1380px] w-full text-left">
+                    <table className="min-w-[1480px] w-full text-left">
                       <thead className="sticky top-0 z-10 bg-[#F8FAFC] text-[11px] font-semibold uppercase tracking-wide text-[#64748B]">
                         <tr>
                           {mode === 'active' ? (
@@ -1140,6 +1145,7 @@ export default function TimesheetApprovalClient({ mode = 'active' }: { mode?: 'a
                             </th>
                           ) : null}
                           <th className={`sticky ${mode === 'active' ? 'left-12' : 'left-0'} z-20 bg-[#F8FAFC] px-4 py-3`}>Employee</th>
+                          <th className="px-4 py-3">Booked Date</th>
                           <th className="px-4 py-3">Payroll Info</th>
                           <th className="px-4 py-3">Project / Cost Centre</th>
                           <th className="px-4 py-3">Hours Summary</th>
@@ -1154,7 +1160,7 @@ export default function TimesheetApprovalClient({ mode = 'active' }: { mode?: 'a
                         {loading ? (
                           Array.from({ length: 7 }).map((_, index) => (
                             <tr key={index}>
-                              <td colSpan={10} className="px-4 py-4">
+                              <td colSpan={11} className="px-4 py-4">
                                 <div className="h-12 animate-pulse rounded-lg bg-slate-100" />
                               </td>
                             </tr>
@@ -1180,6 +1186,10 @@ export default function TimesheetApprovalClient({ mode = 'active' }: { mode?: 'a
                                         <p className="text-xs text-[#64748B]">{row.employee.employeeNo}</p>
                                       </div>
                                     </div>
+                                  </td>
+                                  <td className="px-4 py-3 text-xs">
+                                    <p className="font-semibold text-[#0F172A]">{formatWorkDate(row.timesheet.timesheetDate)}</p>
+                                    <p className="text-[#64748B]">{row.timesheet.workCenterName}</p>
                                   </td>
                                   <td className="px-4 py-3 text-xs text-[#475569]">
                                     <p className="font-semibold text-[#0F172A]">{row.timesheet.periodName}</p>
@@ -1222,7 +1232,7 @@ export default function TimesheetApprovalClient({ mode = 'active' }: { mode?: 'a
                                 </tr>
                                 {expanded ? (
                                   <tr key={`${row.rowKey}-expanded`} className="bg-[#F8FAFC]">
-                                    <td colSpan={mode === 'active' ? 10 : 9} className="px-6 py-4">
+                                    <td colSpan={mode === 'active' ? 11 : 10} className="px-6 py-4">
                                       <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
                                         {row.employee.activities.map((activity) => (
                                           <div key={`${row.rowKey}-${activity.projectCode}-${activity.activityCode}`} className="rounded-xl border border-[#E5E7EB] bg-white p-3 text-xs">
@@ -1240,7 +1250,7 @@ export default function TimesheetApprovalClient({ mode = 'active' }: { mode?: 'a
                           })
                         ) : (
                           <tr>
-                            <td colSpan={mode === 'active' ? 10 : 9} className="px-4 py-10 text-center text-sm text-[#64748B]">
+                            <td colSpan={mode === 'active' ? 11 : 10} className="px-4 py-10 text-center text-sm text-[#64748B]">
                               {workspaceTimesheets.length
                                 ? 'No timesheets match the current filters. Clear filters or switch workspace tabs.'
                                 : mode === 'history'
@@ -1295,6 +1305,7 @@ export default function TimesheetApprovalClient({ mode = 'active' }: { mode?: 'a
                       </div>
                       <div className="grid grid-cols-2 gap-2 text-xs">
                         {[
+                          ['Booked Date', formatWorkDate(focusedRow.timesheet.timesheetDate)],
                           ['Payroll Group', focusedRow.employee.businessUnit],
                           ['Cost Centre', focusedRow.primaryProject?.costCenter || focusedRow.employee.department],
                           ['Payment Run', focusedRow.timesheet.periodName],
