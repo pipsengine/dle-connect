@@ -1144,7 +1144,7 @@ const buildPayload = async (
     assignedSupervisorEmployees,
     reportingManagerEmployees,
     {
-      codeOf: (employee) => employee.employeeCode || employee.employeeId,
+      codeOf: (employee) => employee.employeeCode || employee.employeeId || '',
       assignedToOtherCodes: assignedToOtherSupervisor,
     },
   );

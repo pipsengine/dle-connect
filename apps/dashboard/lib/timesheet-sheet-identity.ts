@@ -49,7 +49,7 @@ export const preferAssignedTimesheetRoster = <T>(
   assigned: T[],
   reportingFallback: T[],
   options?: {
-    codeOf?: (item: T) => string;
+    codeOf?: (item: T) => string | null | undefined;
     assignedToOtherCodes?: Iterable<string>;
   },
 ) => {
