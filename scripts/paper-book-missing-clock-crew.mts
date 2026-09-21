@@ -12,6 +12,7 @@
  *   npx tsx --tsconfig apps/dashboard/tsconfig.json scripts/paper-book-missing-clock-crew.mts --apply C2171
  */
 import { loadWorkspaceEnv } from '../apps/dashboard/lib/dle-enterprise-db';
+import { isAgegeTimesheetLocation } from '../apps/dashboard/lib/timesheet-agege-blasting';
 import { getPayrollPublicHolidayDates } from '../apps/dashboard/lib/nigeria-public-holidays';
 import {
   buildPaperAttendanceLine,
@@ -67,7 +68,17 @@ const matchesCode = (line: TimesheetLine, code: string) => {
 
 const isDayHeader = (header: TimesheetHeader) => resolveTimesheetShift(header.shiftLabel).kind !== 'Night';
 
-const looksLikeProjectCode = (code?: string | null) => /^DL\d+/i.test(canonicalProjectCode(code));
+const looksLikeProjectCode = (code?: string | null) => /^DL/i.test(canonicalProjectCode(code));
+
+const linePreference = (line: TimesheetLine, header?: TimesheetHeader) => {
+  if (!header) return -1;
+  let score = 0;
+  if (isEditableTimesheetStatus(header.status)) score += 100;
+  if (!timesheetLineHasBookedHours(line)) score += 40;
+  if (!compact(line.clockIn)) score += 10;
+  if (isAgegeTimesheetLocation(header.locationName)) score += 20;
+  return score;
+};
 
 const majorityProject = (headerLines: TimesheetLine[], skipLineId?: string) => {
   const hoursByCode = new Map<string, { code: string; name: string; hours: number }>();
@@ -112,10 +123,10 @@ const main = async () => {
           const header = headerById.get(line.headerId);
           return header && compact(header.timesheetDate).slice(0, 10) === date && matchesCode(line, code) && isDayHeader(header);
         });
-        const existing = dayLines.find((line) => {
-          const header = headerById.get(line.headerId);
-          return header && isEditableTimesheetStatus(header.status);
-        }) || dayLines[0];
+        const existing = dayLines.slice().sort((left, right) => (
+          linePreference(right, headerById.get(right.headerId))
+          - linePreference(left, headerById.get(left.headerId))
+        ))[0];
         const header = existing ? headerById.get(existing.headerId) : dayHeaders[0];
         const base = {
           code,
