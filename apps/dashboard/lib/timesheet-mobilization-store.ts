@@ -43,7 +43,24 @@ export type CreateMobilizationInput = {
 };
 
 const clean = (value: unknown) => String(value || '').trim();
-const dateOnly = (value: unknown) => clean(value).slice(0, 10);
+
+/** SQL DATE values must stay YYYY-MM-DD. String(Date).slice(0, 10) becomes "Sun Aug 16" and never matches a timesheet day. */
+export const toTimesheetDateOnly = (value: unknown) => {
+  if (value == null || value === '') return '';
+  if (value instanceof Date && !Number.isNaN(value.getTime())) {
+    const year = value.getUTCFullYear();
+    const month = String(value.getUTCMonth() + 1).padStart(2, '0');
+    const day = String(value.getUTCDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  }
+  const raw = clean(value);
+  if (/^\d{4}-\d{2}-\d{2}/.test(raw)) return raw.slice(0, 10);
+  const parsed = new Date(raw);
+  if (!Number.isNaN(parsed.getTime())) return toTimesheetDateOnly(parsed);
+  return '';
+};
+
+const dateOnly = (value: unknown) => toTimesheetDateOnly(value);
 const iso = (value: unknown) => {
   if (!value) return null;
   const date = value instanceof Date ? value : new Date(String(value));
@@ -132,14 +149,25 @@ export const mobilizationMatchesOffshoreSheet = (
   item: TimesheetMobilization,
   input: { supervisorId: string; projectCode?: string; workCenterName?: string; crewCodes?: string[] },
 ) => {
+  if (!mobilizationMatchesSupervisor(item, input.supervisorId)) return false;
   const projectCode = clean(input.projectCode).toUpperCase();
   const workCenterName = clean(input.workCenterName);
-  const workCenterMatch = Boolean(workCenterName) && timesheetWorkCentersMatch(item.workCenterName, workCenterName);
-  if (projectCode && item.projectCode === projectCode) return true;
-  if (workCenterMatch) return true;
-  if (projectCode || workCenterName) return false;
-  return false;
+  const requestedProject = projectCode && projectCode !== OFFSHORE_LOCATION_NAME
+    ? projectCode
+    : '';
+  const workCenterIsProject = Boolean(workCenterName)
+    && workCenterName.toUpperCase() !== OFFSHORE_LOCATION_NAME
+    && !/^OFFSHORE(\s|$|[·\-–])/i.test(workCenterName);
+  if (requestedProject) return item.projectCode === requestedProject || timesheetWorkCentersMatch(item.workCenterName, requestedProject);
+  if (workCenterIsProject) return timesheetWorkCentersMatch(item.workCenterName, workCenterName) || item.projectCode === workCenterName.toUpperCase();
+  return true;
 };
+
+/** Host supervisor + project. Home assigned roster is not required. */
+export const selectOffshoreSheetMobilizations = (
+  items: TimesheetMobilization[],
+  input: { supervisorId: string; projectCode?: string; workCenterName?: string },
+) => items.filter((item) => mobilizationMatchesOffshoreSheet(item, input));
 
 /** Offshore sheets list only people mobilized to that project. Home crew never fills the gap. */
 export const resolveOffshoreTimesheetRoster = <T extends { employeeCode?: string | null }>(

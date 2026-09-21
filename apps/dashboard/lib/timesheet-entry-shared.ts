@@ -1156,6 +1156,17 @@ export const resolveOffshoreProjectCode = (workCenterName?: string | null, locat
   return code;
 };
 
+/** Keep the selected project (DL2601). Do not collapse the sheet work centre to the word OFFSHORE. */
+export const resolveOffshoreSheetWorkCenter = (workCenterName?: string | null, projectCodes: string[] = []) => {
+  const requested = resolveOffshoreProjectCode(workCenterName, OFFSHORE_LOCATION_NAME)
+    || projectCodeFromOffshoreWorkCenter(workCenterName);
+  if (requested) return requested;
+  const raw = String(workCenterName || '').trim().toUpperCase();
+  if (raw && raw !== OFFSHORE_LOCATION_NAME && !isOffshoreWorkCenterName(raw)) return raw;
+  const fallback = projectCodes.map((code) => String(code || '').trim().toUpperCase()).find(Boolean);
+  return fallback || OFFSHORE_LOCATION_NAME;
+};
+
 export const formatOffshoreSheetLabel = (projectCode: string) =>
   `${OFFSHORE_LOCATION_NAME} · ${String(projectCode || '').trim().toUpperCase()}`;
 

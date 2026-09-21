@@ -71,11 +71,11 @@ import {
   resolveOvertimeBookingOptions,
 } from '@/lib/timesheet-overtime-config';
 import { applyTimesheetLineDefaults, ensureClockedLinesHaveProjectAllocation } from '@/lib/timesheet-line-defaults';
-import { normalizeIdleAllocations, normalizeProjectAllocations, reconcileTimesheetLineHours, resolvePrimaryProjectCode, validateTimesheetLinesForPersist, TIMESHEET_SHIFT_LABELS, resolveTimesheetShift, timesheetHeaderMatchesShift, buildTimesheetHeaderId, timesheetWorkCentersMatch, isOffshoreWorkCenterName, isOffshoreLocationName, isOffshoreTimesheetContext, isManualOffshoreLine, isTimesheetAbsentLine, isTimesheetInApprovalCapture, applyNightPaperClock, timesheetLineHasBookedHours, buildManualOffshoreLine, buildRosterTimesheetLine, projectCodeFromOffshoreWorkCenter, resolveOffshoreProjectCode, timesheetOffshoreWorkCentersMatch, MIXED_TIMESHEET_WORK_CENTER, OFFSHORE_LOCATION_NAME, DEFAULT_TIMESHEET_SHIFT_LABEL, supervisorTimesheetMessage, dedupeTimesheetLinesByEmployee, isIdleTimeProjectCode, upsertMatrixProjectHours, markLineAsManualOffshore, canBookTimesheetHoursWithoutClock, withOffshoreLocationName, withOffshoreTimesheetLocation, type TimesheetDayContext } from '@/lib/timesheet-entry-shared';
+import { normalizeIdleAllocations, normalizeProjectAllocations, reconcileTimesheetLineHours, resolvePrimaryProjectCode, validateTimesheetLinesForPersist, TIMESHEET_SHIFT_LABELS, resolveTimesheetShift, timesheetHeaderMatchesShift, buildTimesheetHeaderId, timesheetWorkCentersMatch, isOffshoreWorkCenterName, isOffshoreLocationName, isOffshoreTimesheetContext, isManualOffshoreLine, isTimesheetAbsentLine, isTimesheetInApprovalCapture, applyNightPaperClock, timesheetLineHasBookedHours, buildManualOffshoreLine, buildRosterTimesheetLine, projectCodeFromOffshoreWorkCenter, resolveOffshoreProjectCode, resolveOffshoreSheetWorkCenter, timesheetOffshoreWorkCentersMatch, MIXED_TIMESHEET_WORK_CENTER, OFFSHORE_LOCATION_NAME, DEFAULT_TIMESHEET_SHIFT_LABEL, supervisorTimesheetMessage, dedupeTimesheetLinesByEmployee, isIdleTimeProjectCode, upsertMatrixProjectHours, markLineAsManualOffshore, canBookTimesheetHoursWithoutClock, withOffshoreLocationName, withOffshoreTimesheetLocation, type TimesheetDayContext } from '@/lib/timesheet-entry-shared';
 import { displaceUncommittedBookingsOnOtherDrafts, findSameDayBookingConflicts, releaseLinesAlreadyBookedElsewhere, type TimesheetAlreadyBookedSkip } from '@/lib/timesheet-booking-clash';
 import { assertTimesheetRecaptureAllowed, reopenTimesheetForRecapture } from '@/lib/timesheet-recapture';
 import { submitTimesheetForApproval } from '@/lib/timesheet-submit';
-import { mobilizationCoversDate, mobilizationMatchesSupervisor, readTimesheetMobilizations, resolveOffshoreTimesheetRoster, type TimesheetMobilization } from '@/lib/timesheet-mobilization-store';
+import { mobilizationCoversDate, readTimesheetMobilizations, resolveOffshoreTimesheetRoster, selectOffshoreSheetMobilizations, type TimesheetMobilization } from '@/lib/timesheet-mobilization-store';
 import {
   mergeDuplicateTimesheetSheetLines,
   overlayMissingTimesheetClocks,
@@ -102,9 +102,6 @@ const dayContextFor = (date: string, holidayDates: string[], shiftLabel?: string
   shiftLabel: shiftLabel || undefined,
   locationName: locationName || undefined,
 });
-
-const resolveOffshoreSheetWorkCenter = (_workCenterName: string, _projectCodes: string[]) =>
-  OFFSHORE_LOCATION_NAME;
 
 type ProjectManagerOption = {
   employeeId: string;
@@ -1234,17 +1231,11 @@ const buildPayload = async (
     .sort((a, b) => a.fullName.localeCompare(b.fullName));
   const isOffshoreSheet = isOffshoreLocationName(targetLocation) || isOffshoreWorkCenterName(targetWorkCenter);
   const offshoreProjectCode = resolveOffshoreProjectCode(targetWorkCenter, targetLocation) || '';
-  const supervisorCrewCodes = selectedSupervisorAllDirectReports.flatMap((employee) => [employee.employeeCode, employee.employeeId]).map((value) => clean(value)).filter(Boolean);
   const sheetMobilizations = isOffshoreSheet
-    ? dateMobilizations.filter((item) => {
-      const onOffshore = isOffshoreLocationName(item.locationName)
-        || isOffshoreWorkCenterName(item.workCenterName)
-        || Boolean(item.projectCode);
-      if (!onOffshore) return false;
-      if (supervisorCrewCodes.length) {
-        return supervisorCrewCodes.some((code) => supervisorCodesMatch(item.employeeCode, code));
-      }
-      return mobilizationMatchesSupervisor(item, targetSupervisor);
+    ? selectOffshoreSheetMobilizations(dateMobilizations, {
+      supervisorId: targetSupervisor,
+      projectCode: offshoreProjectCode,
+      workCenterName: targetWorkCenter,
     })
     : [];
   const employeeIsMobilizedAway = (code: string) =>

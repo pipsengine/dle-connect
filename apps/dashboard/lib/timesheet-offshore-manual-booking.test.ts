@@ -8,6 +8,7 @@ import {
   markLineAsManualOffshore,
   OFFSHORE_REMARKS_MARKER,
   resolveOffshoreProjectCode,
+  resolveOffshoreSheetWorkCenter,
   timesheetOffshoreWorkCentersMatch,
   withOffshoreLocationName,
   withOffshoreTimesheetLocation,
@@ -16,6 +17,8 @@ import {
   mobilizationCoversDate,
   mobilizationMatchesOffshoreSheet,
   resolveOffshoreTimesheetRoster,
+  selectOffshoreSheetMobilizations,
+  toTimesheetDateOnly,
   type TimesheetMobilization,
 } from './timesheet-mobilization-store.ts';
 
@@ -87,13 +90,33 @@ const mobilization = {
   updatedAt: null,
   updatedBy: null,
 } as TimesheetMobilization;
+assert.equal(toTimesheetDateOnly(new Date(Date.UTC(2026, 7, 16))), '2026-08-16');
+assert.equal(toTimesheetDateOnly('2026-08-16'), '2026-08-16');
+assert.equal(toTimesheetDateOnly('Sun Aug 16 2026 01:00:00 GMT+0100'), '2026-08-16');
+assert.equal(
+  mobilizationCoversDate({ ...mobilization, startDate: '2026-08-16', endDate: '2026-09-15' }, '2026-08-16'),
+  true,
+  'first tour day is a bookable timesheet day',
+);
+assert.equal(
+  mobilizationCoversDate({ ...mobilization, startDate: 'Sun Aug 16', endDate: 'Tue Sep 15' }, '2026-08-16'),
+  false,
+  'English date prefixes must not be treated as coverage dates',
+);
+assert.equal(resolveOffshoreSheetWorkCenter('DL2601', ['DL2601']), 'DL2601');
+assert.equal(resolveOffshoreSheetWorkCenter('OFFSHORE', ['DL2601']), 'DL2601');
 assert.equal(mobilizationCoversDate(mobilization, '2026-08-17'), true);
+assert.equal(mobilizationMatchesOffshoreSheet(mobilization, {
+  supervisorId: 'C1229 - SHITTU OLAWALE',
+  projectCode: 'DL2601',
+  workCenterName: 'DL2601',
+}), true, 'host supervisor C1229 books people mobilized to him');
 assert.equal(mobilizationMatchesOffshoreSheet(mobilization, {
   supervisorId: 'P0013 - Mr SAMUEL KARONWI',
   projectCode: 'DL2601',
   workCenterName: 'DL2601',
   crewCodes: [],
-}), true, 'DL2601 timesheet lists everyone mobilized to that project, not only the selected host');
+}), false, 'Samuel does not inherit Shittu nested crew just because the project matches');
 assert.equal(mobilizationMatchesOffshoreSheet(mobilization, {
   supervisorId: 'P0013 - Mr SAMUEL KARONWI',
   projectCode: 'DL1811',
@@ -103,20 +126,40 @@ assert.equal(mobilizationMatchesOffshoreSheet(mobilization, {
 
 const dl2601Roster = [
   { employeeCode: 'C2663', supervisorId: 'C1229 - SHITTU OLAWALE' },
-  { employeeCode: 'C1686', supervisorId: 'C1229 - SHITTU OLAWALE' },
-  { employeeCode: 'C2534', supervisorId: 'C1229 - SHITTU OLAWALE' },
-  { employeeCode: 'C2823', supervisorId: 'C1720 - ADANOU RAYMOND' },
-  { employeeCode: 'C1544', supervisorId: 'P0013 - Mr SAMUEL KARONWI' },
+  { employeeCode: 'C1886', supervisorId: 'C1229 - SHITTU OLAWALE' },
+  { employeeCode: 'C2834', supervisorId: 'C1229 - SHITTU OLAWALE' },
+  { employeeCode: 'C2053', supervisorId: 'C1720 - ADANOU RAYMOND' },
+  { employeeCode: 'C1844', supervisorId: 'P0013 - Mr SAMUEL KARONWI' },
   { employeeCode: 'C1229', supervisorId: 'P0013 - Mr SAMUEL KARONWI' },
 ].map((row, index) => ({
   ...mobilization,
+  startDate: '2026-08-16',
+  endDate: '2026-09-15',
   id: `mob-${index + 1}`,
   employeeCode: row.employeeCode,
   supervisorId: row.supervisorId,
+  supervisorName: row.supervisorId,
 }));
-const samuelAssigned = new Set(['C1544', 'C1229']);
-const samuelOffshore = dl2601Roster.filter((item) => samuelAssigned.has(item.employeeCode));
-assert.deepEqual(samuelOffshore.map((item) => item.employeeCode), ['C1544', 'C1229'], 'Samuel books only assigned people who are mobilized, not nested crews');
+const shittuOffshore = selectOffshoreSheetMobilizations(dl2601Roster, {
+  supervisorId: 'C1229 - SHITTU OLAWALE',
+  projectCode: 'DL2601',
+  workCenterName: 'DL2601',
+});
+assert.deepEqual(
+  shittuOffshore.map((item) => item.employeeCode),
+  ['C2663', 'C1886', 'C2834'],
+  'Shittu books people hosted to him even if they are not on his home assigned roster',
+);
+const samuelOffshore = selectOffshoreSheetMobilizations(dl2601Roster, {
+  supervisorId: 'P0013 - Mr SAMUEL KARONWI',
+  projectCode: 'DL2601',
+  workCenterName: 'DL2601',
+});
+assert.deepEqual(
+  samuelOffshore.map((item) => item.employeeCode),
+  ['C1844', 'C1229'],
+  'Samuel books only people hosted to him, not nested crews',
+);
 
 assert.deepEqual(
   withOffshoreLocationName(['AGEGE', 'Onne Yard', 'SPIE']).includes('OFFSHORE'),

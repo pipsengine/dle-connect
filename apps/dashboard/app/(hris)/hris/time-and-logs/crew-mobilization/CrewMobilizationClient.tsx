@@ -63,6 +63,16 @@ type UploadReport = {
 
 const today = new Date().toISOString().slice(0, 10);
 const CREW_UPLOAD_TEMPLATE_CSV = 'Employee Code\nC2225\nP0425\n';
+const formatRosterDate = (value: string) => {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return value;
+  return new Date(`${value}T00:00:00Z`).toLocaleDateString('en-GB', {
+    weekday: 'short',
+    day: 'numeric',
+    month: 'short',
+    year: 'numeric',
+    timeZone: 'UTC',
+  });
+};
 
 const fileToBase64 = (file: File) =>
   new Promise<string>((resolve, reject) => {
@@ -543,7 +553,7 @@ export default function CrewMobilizationClient() {
                       </td>
                       <td className="px-3 py-3 font-semibold text-slate-700">{item.supervisorName}</td>
                       <td className="px-3 py-3 font-semibold text-slate-700">{formatOffshoreSheetLabel(item.projectCode)}</td>
-                      <td className="px-3 py-3 font-semibold text-slate-700">{item.startDate}{item.endDate ? ` → ${item.endDate}` : ''}</td>
+                      <td className="px-3 py-3 font-semibold text-slate-700">{formatRosterDate(item.startDate)}{item.endDate ? ` → ${formatRosterDate(item.endDate)}` : ''}</td>
                       <td className="px-3 py-3 font-semibold text-slate-500">{item.homeWorkCenterName || '—'}</td>
                       <td className="px-3 py-3 font-black text-slate-800">{item.status}</td>
                       <td className="px-3 py-3">
