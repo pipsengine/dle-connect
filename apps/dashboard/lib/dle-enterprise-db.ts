@@ -1060,16 +1060,20 @@ export const readEmployeeMailboxFromDb = async (employeeCode: string) => {
   if (!code) return '';
   const p = await pool();
   if (!p) return '';
-  const rs = await p
-    .request()
-    .input('code', sql.NVarChar(50), code)
-    .query(`
+  const variants = [...new Set([
+    code,
+    code.split(' - ')[0]?.trim() || '',
+    code.replace(/[^A-Za-z0-9]/g, ''),
+  ].filter(Boolean))];
+  const request = p.request();
+  variants.forEach((variant, index) => request.input(`code${index}`, sql.NVarChar(50), variant));
+  const rs = await request.query(`
       SELECT TOP (1)
         c.official_email,
         c.personal_email
       FROM [hris].[Employees] e
       LEFT JOIN [hris].[EmployeeContactInfo] c ON c.employee_id = e.employee_id
-      WHERE e.employee_code = @code
+      WHERE e.employee_code IN (${variants.map((_, index) => `@code${index}`).join(', ')})
     `);
   const row = rs.recordset?.[0];
   return normalizeOfficialEmail(row?.official_email) || normalizeOfficialEmail(row?.personal_email) || '';

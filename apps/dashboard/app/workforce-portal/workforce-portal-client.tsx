@@ -11,6 +11,7 @@ import { EssDashboardView, EssRightPanel } from './ess-dashboard-view';
 import { EssCelebrationFlyerModal, EssCelebrationWishWall, buildTodaysCelebrations, type EssCelebrationMoment, type EssCelebrationWish } from './ess-celebrations';
 import { EssLeaveDashboardView, type EssLeavePayload, type LeaveWorkspaceTab } from './ess-leave-dashboard-view';
 import { EssLeaveApprovalsView, type EssLeaveApprovalsPayload } from './ess-leave-approvals-view';
+import { EssLeaveApprovalHistoryList, type LeaveApprovalHistoryItem } from './ess-leave-approval-history';
 import { EssServicesView, type EssServicesPayload } from './ess-services-view';
 import { EssReportsView, type EssReportsPayload } from './ess-reports-view';
 import { EssDocumentsView, type EssDocumentsPayload } from './ess-documents-view';
@@ -175,6 +176,7 @@ type Payload = {
     workflows: SimpleRecord[];
     allowance: SimpleRecord[];
     approvals: SimpleRecord[];
+    approvalHistory?: SimpleRecord[];
     pendingApprovalCount?: number;
     reports: SimpleRecord[];
     notifications: SimpleRecord[];
@@ -1323,7 +1325,14 @@ function EssLeaveWorkspace({ payload, employee, onLeaveSubmitted, onLeaveAction,
         </section>
       )}
       {active === 'Leave Calendar' && <section className="grid grid-cols-1 gap-4 xl:grid-cols-2"><InfoListLike title="Calendar" rows={payload?.leave.calendar || []} keys={['label', 'from', 'to', 'status', 'scope']} /><InfoListLike title="Notifications" rows={payload?.leave.notifications || []} keys={['title', 'channel', 'status']} /></section>}
-      {active === 'Leave History' && <DataList rows={payload?.leave.history || []} titleKey="type" subtitleKeys={['from', 'to', 'days', 'approvalStage', 'allowanceStatus']} />}
+      {active === 'Leave History' && (
+        <EssLeaveApprovalHistoryList
+          title="My leave approval history"
+          emptyTitle="No leave approval history yet"
+          emptyDescription="Submitted leave and each line manager or HR decision will appear here."
+          rows={(payload?.leave.history || []) as LeaveApprovalHistoryItem[]}
+        />
+      )}
       {active === 'Approvals' && (
         <EssLeaveApprovalsView
           payload={payload as unknown as EssLeaveApprovalsPayload | null}

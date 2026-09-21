@@ -39,6 +39,7 @@ import { sendLeaveApprovalRequestEmail, sendLeaveRelieverAssignmentEmail, sendLe
 import { buildEssEmployeeLookupKeys } from '@/lib/ess-dashboard-store';
 import { normalizePayrollMatchKey } from '@/lib/sage-people-payroll-store';
 import { supervisorCodesMatch } from '@/lib/timesheet-agege-blasting';
+import { employeeReportsToManager } from '@/lib/reporting-manager-match';
 import { HRIS_LEAVE_SOURCE, isLegacySageLeaveImport, normalizeLeaveTypeName } from '@/lib/hris-leave-read';
 import { createEnterpriseNotification } from '@/lib/enterprise-notifications-store';
 import { invalidateEssPortalCache } from '@/lib/ess-portal-cache';
@@ -105,6 +106,42 @@ export type EssLeaveRequest = {
 
 const compact = (value: unknown) => String(value || '').trim();
 const clean = compact;
+
+const parseStoredLeaveComments = (value: unknown): EssLeaveRequest['comments'] => {
+  if (Array.isArray(value)) {
+    return value
+      .map((entry) => ({
+        at: compact((entry as { at?: string }).at),
+        actor: compact((entry as { actor?: string }).actor) || 'Leave Workflow',
+        comment: compact((entry as { comment?: string }).comment),
+      }))
+      .filter((entry) => entry.comment);
+  }
+  try {
+    return parseStoredLeaveComments(JSON.parse(String(value || '[]')));
+  } catch {
+    return [];
+  }
+};
+
+const parseStoredLeaveWorkflow = (value: unknown): NonNullable<EssLeaveRequest['workflow']> => {
+  if (Array.isArray(value)) {
+    return value
+      .map((entry) => ({
+        stage: compact((entry as { stage?: string }).stage),
+        owner: compact((entry as { owner?: string }).owner),
+        status: compact((entry as { status?: string }).status) || 'Pending',
+        actedAt: compact((entry as { actedAt?: string }).actedAt) || null,
+        comment: compact((entry as { comment?: string }).comment) || null,
+      }))
+      .filter((entry) => entry.stage);
+  }
+  try {
+    return parseStoredLeaveWorkflow(JSON.parse(String(value || '[]')));
+  } catch {
+    return [];
+  }
+};
 
 const resolveDashboardRoot = () => {
   const cwd = process.cwd();
@@ -193,15 +230,9 @@ const PENDING_WORKFLOW_STATUSES = new Set<EssLeaveRequestStatus>(['Submitted', '
 const readPendingLeaveRequestsFromDb = async (employees: DleEmployeeDirectoryRow[]) => {
   const pool = await getDleEnterpriseDbPool();
   if (!pool) return [] as EssLeaveRequest[];
-  try {
-    const result = await pool.request().query(`
-SELECT [Id],[EmployeeId],[FullName],[LeaveType],[StartDate],[EndDate],[Days],[StatusName],[WorkflowStage],[ManagerName],[ActingOfficer],[CreatedAt],[UpdatedAt]
-FROM [hris].[LeaveApplications]
-WHERE ([StatusName] IN (N'Under Review', N'Submitted', N'Line Manager Review', N'HR Review')
-   OR [WorkflowStage] IN (N'Supervisor', N'HR'))
-  AND [Id] NOT LIKE N'sage-leave-tx-%';`);
-    return (result.recordset || [])
-      .map((row: Record<string, unknown>) => {
+  const mapRows = (recordset: Record<string, unknown>[] | undefined) =>
+    (recordset || [])
+      .map((row) => {
         try {
           return essLeaveRequestFromDbRow(row, employees);
         } catch (error) {
@@ -214,9 +245,27 @@ WHERE ([StatusName] IN (N'Under Review', N'Submitted', N'Line Manager Review', N
       })
       .filter((item: EssLeaveRequest | null): item is EssLeaveRequest => Boolean(item))
       .filter((item) => PENDING_WORKFLOW_STATUSES.has(item.status) || isPendingLeaveStatus(item.status));
+  try {
+    const result = await pool.request().query(`
+SELECT [Id],[EmployeeId],[FullName],[LeaveType],[StartDate],[EndDate],[Days],[StatusName],[WorkflowStage],[ManagerName],[ActingOfficer],[CreatedAt],[UpdatedAt],[CommentsJson],[WorkflowJson]
+FROM [hris].[LeaveApplications]
+WHERE ([StatusName] IN (N'Under Review', N'Submitted', N'Line Manager Review', N'HR Review')
+   OR [WorkflowStage] IN (N'Supervisor', N'HR'))
+  AND [Id] NOT LIKE N'sage-leave-tx-%';`);
+    return mapRows(result.recordset as Record<string, unknown>[]);
   } catch (error) {
     console.warn('[leave-workflow] pending leave SQL read failed', error instanceof Error ? error.message : error);
-    return [] as EssLeaveRequest[];
+    try {
+      const result = await pool.request().query(`
+SELECT [Id],[EmployeeId],[FullName],[LeaveType],[StartDate],[EndDate],[Days],[StatusName],[WorkflowStage],[ManagerName],[ActingOfficer],[CreatedAt],[UpdatedAt]
+FROM [hris].[LeaveApplications]
+WHERE ([StatusName] IN (N'Under Review', N'Submitted', N'Line Manager Review', N'HR Review')
+   OR [WorkflowStage] IN (N'Supervisor', N'HR'))
+  AND [Id] NOT LIKE N'sage-leave-tx-%';`);
+      return mapRows(result.recordset as Record<string, unknown>[]);
+    } catch {
+      return [] as EssLeaveRequest[];
+    }
   }
 };
 
@@ -296,7 +345,7 @@ export const repairPendingLeaveManagerNotifications = async (input?: {
   actorName?: string;
 }) => {
   const { employees } = await readPayrollEmployees();
-  const requests = await readAllEssRequests();
+  const requests = await loadWorkflowLeaveRequests({ repair: false });
   for (const request of requests) {
     if (!/leave/i.test(request.category) || !PENDING_WORKFLOW_STATUSES.has(request.status)) continue;
     if (await managerEmailDeliveryComplete(request)) continue;
@@ -1085,7 +1134,7 @@ const essLeaveRequestFromDbRow = (row: Record<string, unknown>, employees: DleEm
     submittedAt: compact(row.CreatedAt) || new Date().toISOString(),
     updatedAt: compact(row.UpdatedAt) || new Date().toISOString(),
     approvers: ['Line Manager / Lead / Supervisor', 'HR Manager / Head'],
-    comments: [],
+    comments: parseStoredLeaveComments(row.CommentsJson),
     leaveType: compact(row.LeaveType) || 'Annual Leave',
     startDate: startDate || undefined,
     endDate: endDate || undefined,
@@ -1096,11 +1145,12 @@ const essLeaveRequestFromDbRow = (row: Record<string, unknown>, employees: DleEm
     relieverName: reliever?.fullName || actingOfficer || undefined,
     lineManagerEmployeeId: manager ? (manager.employeeCode || manager.employeeId) : undefined,
     lineManagerName: manager?.fullName || managerName || undefined,
+    workflow: parseStoredLeaveWorkflow(row.WorkflowJson),
   };
 };
 
 const normalizeEssStatus = (status: string): EssLeaveRequestStatus => {
-  if (status === 'Under Review') return 'HR Review';
+  if (status === 'Under Review') return 'Under Review';
   if (status === 'Completed') return 'Approved';
   if (status === 'Cancelled' || status === 'Withdrawn') return 'Rejected';
   if (['Approved', 'Rejected', 'Terminated', 'Submitted', 'Draft', 'Line Manager Review', 'HR Review', 'Finance Review', 'Closed'].includes(status)) {
@@ -1415,7 +1465,7 @@ export const resolveLeaveApproverKind = (input: {
   employees?: DleEmployeeDirectoryRow[];
 }): LeaveApproverKind => {
   const { actor, requester, request, roles = [], employees = [] } = input;
-  if (!['Line Manager Review', 'HR Review'].includes(request.status)) return null;
+  if (!['Line Manager Review', 'HR Review', 'Under Review'].includes(request.status)) return null;
 
   const isHrActor = isLeaveHrActor(roles, actor.jobTitle, actor.designation);
 
@@ -1425,6 +1475,9 @@ export const resolveLeaveApproverKind = (input: {
 
   // Line Manager Review — assigned reporting manager only (no manager-role / department-head fan-out).
   if (actorMatchesLeaveReference(actor, request.lineManagerEmployeeId) || actorMatchesLeaveReference(actor, request.lineManagerName)) {
+    return 'line-manager';
+  }
+  if (employeeReportsToManager({ managerName: requester.managerName, functionalManager: '', departmentHead: '' }, actor)) {
     return 'line-manager';
   }
   const resolvedManager = employees.length ? resolveLineManagerForEmployee(requester, employees) : null;
@@ -1455,7 +1508,7 @@ export const pendingLeaveApprovalsForActor = (
 
   return requests
     .filter((request) => /leave/i.test(request.category))
-    .filter((request) => ['Line Manager Review', 'HR Review'].includes(request.status))
+    .filter((request) => ['Line Manager Review', 'HR Review', 'Under Review'].includes(request.status))
     .map((request) => {
       const requester = resolveEmployeeReference(employees, request.employeeId)
         || employeeById.get(request.employeeId)
@@ -1541,13 +1594,160 @@ export const pendingLeaveApprovalsForActor = (
     }>;
 };
 
+export type LeaveApprovalHistoryEvent = {
+  at: string;
+  actor: string;
+  action: string;
+  comment: string;
+};
+
+export type LeaveApprovalHistoryRow = {
+  id: string;
+  employee: string;
+  employeeCode: string;
+  leaveType: string;
+  type: string;
+  from: string;
+  to: string;
+  startDate: string;
+  endDate: string;
+  days: number;
+  year?: number;
+  status: string;
+  stage: string;
+  approvalStage: string;
+  submittedAt: string;
+  updatedAt: string;
+  lineManager: string;
+  reliever: string;
+  reason: string;
+  events: LeaveApprovalHistoryEvent[];
+};
+
+const historyActionFromComment = (comment: string, status: string) => {
+  const text = comment.toLowerCase();
+  if (text.includes('rejected') || status === 'Rejected') return 'Rejected';
+  if (text.includes('withdraw') || text.includes('cancelled')) return 'Withdrawn';
+  if (text.includes('line manager') && text.includes('approval completed')) return 'Line manager approved';
+  if (text.includes('hr manager') && text.includes('approval')) return 'HR approved';
+  if (text.includes('submitted')) return 'Submitted';
+  if (text.includes('email delivered')) return 'Manager notified';
+  if (text.includes('email failed')) return 'Manager notification failed';
+  return 'Update';
+};
+
+export const leaveRequestApprovalEvents = (request: EssLeaveRequest): LeaveApprovalHistoryEvent[] => {
+  const fromWorkflow = (request.workflow || [])
+    .filter((step) => step.actedAt || ['Completed', 'Approved', 'Rejected', 'Terminated'].includes(step.status))
+    .map((step) => ({
+      at: compact(step.actedAt) || request.updatedAt || request.submittedAt,
+      actor: step.owner || 'Leave Workflow',
+      action: step.status === 'Completed' ? `${step.stage} completed` : `${step.stage}: ${step.status}`,
+      comment: compact(step.comment) || step.status,
+    }));
+  const fromComments = (request.comments || []).map((entry) => ({
+    at: entry.at,
+    actor: entry.actor,
+    action: historyActionFromComment(entry.comment, request.status),
+    comment: entry.comment,
+  }));
+  const combined = [...fromWorkflow, ...fromComments];
+  if (!combined.length) {
+    combined.push({
+      at: request.submittedAt,
+      actor: request.employeeId,
+      action: 'Submitted',
+      comment: `${request.leaveType || 'Leave'} submitted.`,
+    });
+  }
+  return combined.sort((left, right) => Date.parse(left.at || '') - Date.parse(right.at || '') || 0);
+};
+
+const actorIsAssignedLeaveManager = (
+  actor: DleEmployeeDirectoryRow,
+  request: EssLeaveRequest,
+  requester: DleEmployeeDirectoryRow | null,
+  employees: DleEmployeeDirectoryRow[],
+) => {
+  if (actorMatchesLeaveReference(actor, request.lineManagerEmployeeId) || actorMatchesLeaveReference(actor, request.lineManagerName)) {
+    return true;
+  }
+  if (requester && employeeReportsToManager({ managerName: requester.managerName, functionalManager: '', departmentHead: '' }, actor)) {
+    return true;
+  }
+  const resolved = requester ? resolveLineManagerForEmployee(requester, employees) : null;
+  return Boolean(resolved && (
+    employeeRequestMatches(actor, resolved.employee.employeeId)
+    || actorMatchesLeaveReference(actor, resolved.employee.employeeCode)
+  ));
+};
+
+const historyRowFromRequest = (
+  request: EssLeaveRequest,
+  requester: DleEmployeeDirectoryRow | null,
+): LeaveApprovalHistoryRow => {
+  const startDate = request.startDate || '';
+  const leaveType = request.leaveType || 'Leave';
+  const stage = compact(request.workflow?.find((step) => ['Current', 'Pending'].includes(step.status))?.stage)
+    || (request.status === 'HR Review' ? 'HR Review' : request.status === 'Line Manager Review' ? 'Line Manager Review' : request.status);
+  return {
+    id: request.id,
+    employee: requester?.fullName || request.title || request.employeeId,
+    employeeCode: requester?.employeeCode || requester?.employeeId || request.employeeId,
+    leaveType,
+    type: leaveType,
+    from: startDate,
+    to: request.endDate || '',
+    startDate,
+    endDate: request.endDate || '',
+    days: Number(request.days || 0),
+    year: startDate ? Number(startDate.slice(0, 4)) : undefined,
+    status: request.status,
+    stage,
+    approvalStage: stage,
+    submittedAt: request.submittedAt,
+    updatedAt: request.updatedAt,
+    lineManager: request.lineManagerName || requester?.managerName || 'Unassigned',
+    reliever: request.relieverName || 'Not configured',
+    reason: request.reason || '',
+    events: leaveRequestApprovalEvents(request),
+  };
+};
+
+export const leaveHistoryForEmployee = (
+  employee: DleEmployeeDirectoryRow,
+  requests: EssLeaveRequest[],
+) =>
+  requests
+    .filter((item) => /leave/i.test(item.category) && employeeRequestMatches(employee, item.employeeId))
+    .sort((left, right) => Date.parse(right.updatedAt || right.submittedAt) - Date.parse(left.updatedAt || left.submittedAt))
+    .map((item) => historyRowFromRequest(item, employee));
+
+export const leaveApprovalHistoryForManager = (
+  actor: DleEmployeeDirectoryRow,
+  requests: EssLeaveRequest[],
+  employees: DleEmployeeDirectoryRow[],
+) => {
+  const decided = new Set(['Approved', 'Rejected', 'Terminated', 'Closed', 'HR Review', 'Cancelled']);
+  return requests
+    .filter((item) => /leave/i.test(item.category) && item.startDate && item.endDate)
+    .filter((item) => decided.has(item.status))
+    .map((item) => {
+      const requester = resolveEmployeeReference(employees, item.employeeId);
+      if (!actorIsAssignedLeaveManager(actor, item, requester, employees)) return null;
+      return historyRowFromRequest(item, requester);
+    })
+    .filter(Boolean)
+    .sort((left, right) => Date.parse(right!.updatedAt || right!.submittedAt) - Date.parse(left!.updatedAt || left!.submittedAt)) as LeaveApprovalHistoryRow[];
+};
+
 export const listLiveLeaveApprovalNotifications = async (input: {
   actor: DleEmployeeDirectoryRow;
   employees: DleEmployeeDirectoryRow[];
   roles?: string[];
   isGlobalAdmin?: boolean;
 }) => {
-  const requests = await readAllEssRequests();
+  const requests = await loadWorkflowLeaveRequests({ repair: false });
   const queue = pendingLeaveApprovalsForActor(
     input.actor,
     requests.filter((item) => /leave/i.test(item.category) && item.startDate && item.endDate),

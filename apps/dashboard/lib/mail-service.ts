@@ -46,6 +46,8 @@ import {
 import { leavePortalUrl } from '@/lib/leave-email-action-token';
 import type { PayrollApprovalStageId } from '@/lib/payroll-approval-workflow';
 import { resolveWorkflowLinkOrigin } from '@/lib/public-app-url';
+import { employeeCodeFromReference } from '@/lib/reporting-manager-match';
+import { normalizePayrollMatchKey } from '@/lib/sage-people-payroll-store';
 
 type MailProvider = 'graph' | 'smtp';
 
@@ -110,19 +112,31 @@ export const resolveEmployeeMailbox = async (employee?: DleEmployeeDirectoryRow 
   const direct = employeeEmailAddress(employee);
   if (direct) return direct;
   if (!employee) return '';
-  const code = compact(employee.employeeCode || employee.employeeId || employee.sourceEmployeeId);
-  if (!code) return '';
-  const fromDb = normalizeMailboxAddress(await readEmployeeMailboxFromDb(code).catch(() => ''));
-  if (fromDb) {
-    await syncPortalMailboxForEmployee(code, fromDb).catch(() => undefined);
-    return fromDb;
+  const codes = [...new Set([
+    compact(employee.employeeCode),
+    compact(employee.employeeId),
+    compact(employee.sourceEmployeeId),
+    employeeCodeFromReference(compact(employee.employeeCode || employee.employeeId || employee.sourceEmployeeId)),
+  ].filter(Boolean))];
+  if (!codes.length) return '';
+  for (const code of codes) {
+    const fromDb = normalizeMailboxAddress(await readEmployeeMailboxFromDb(code).catch(() => ''));
+    if (fromDb) {
+      await syncPortalMailboxForEmployee(code, fromDb).catch(() => undefined);
+      return fromDb;
+    }
   }
   const users = await readUsers();
-  const normalized = code.toUpperCase();
+  const lookup = new Set(codes.flatMap((code) => {
+    const upper = code.toUpperCase();
+    const payroll = normalizePayrollMatchKey(code);
+    const embedded = employeeCodeFromReference(code);
+    return [upper, payroll, embedded, normalizePayrollMatchKey(embedded)].filter(Boolean);
+  }));
   const match = users.find((user) =>
     [user.employeeCode, user.employeeId, user.username]
       .map((value) => compact(value).toUpperCase())
-      .includes(normalized),
+      .some((value) => lookup.has(value) || lookup.has(normalizePayrollMatchKey(value)) || lookup.has(employeeCodeFromReference(value))),
   );
   return normalizeMailboxAddress(match?.email);
 };

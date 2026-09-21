@@ -10,7 +10,7 @@ import { resolveActivePayrollPeriod } from '@/lib/payroll-periods';
 import type { EmployeeLeaveSummary } from '@/lib/hris-leave-read';
 import { ensureEmployeeLeaveFromHris } from '@/lib/hris-leave-read';
 import type { PayslipEmployeeIdentity } from '@/lib/payroll-payslip-identity-store';
-import { resolveReportingManagerDisplay } from '@/lib/reporting-manager-match';
+import { employeeCodeFromReference, resolveReportingManagerDisplay } from '@/lib/reporting-manager-match';
 import { listTodaysCelebrationMoments } from '@/lib/celebration-moments';
 
 const compact = (value: unknown) => String(value || '').trim();
@@ -40,6 +40,8 @@ export const buildEssEmployeeLookupKeys = (employee: DleEmployeeDirectoryRow, pa
   ]) {
     const normalized = compact(value).toUpperCase();
     if (normalized) keys.add(normalized);
+    const embedded = employeeCodeFromReference(String(value || ''));
+    if (embedded) keys.add(embedded);
   }
   return [...keys];
 };

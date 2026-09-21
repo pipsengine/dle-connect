@@ -38,6 +38,7 @@ import {
   EssKpiCard,
   EssProgressBar,
 } from './ess-portal-ui';
+import { EssLeaveApprovalHistoryList } from './ess-leave-approval-history';
 
 type SimpleRecord = Record<string, unknown>;
 
@@ -96,6 +97,19 @@ export type EssLeaveApprovalsPayload = {
       slaCompliance?: number;
       avgApprovalLabel?: string;
     };
+    approvalHistory?: Array<{
+      id?: string;
+      employee?: string;
+      employeeCode?: string;
+      leaveType?: string;
+      startDate?: string;
+      endDate?: string;
+      days?: number;
+      status?: string;
+      stage?: string;
+      lineManager?: string;
+      events?: Array<{ at?: string; actor?: string; action?: string; comment?: string }>;
+    }>;
   };
 };
 
@@ -714,6 +728,14 @@ export function EssLeaveApprovalsView({ payload, saving, actingRequestId, onLeav
           </div>
         ) : null}
       </EssCard>
+      <div className="mt-4">
+        <EssLeaveApprovalHistoryList
+          title="Team leave approval history"
+          emptyTitle="No approval history yet"
+          emptyDescription="Leave you have approved, rejected, or already routed to HR will appear here."
+          rows={payload?.leave?.approvalHistory || []}
+        />
+      </div>
     </div>
   );
 }

@@ -1,6 +1,8 @@
 import { promises as fs } from 'fs';
 import path from 'path';
 import type { SessionPayload } from '@/lib/auth/session';
+import { employeeCodeFromReference } from '@/lib/reporting-manager-match';
+import { normalizePayrollMatchKey } from '@/lib/sage-people-payroll-store';
 import {
   isEssSelfServiceSession,
   normalizeEssNotificationHref,
@@ -156,19 +158,27 @@ const GENERIC_NOTIFICATION_ROLES = new Set([
 const isPayrollConfidentialNotification = (item: Pick<EnterpriseNotification, 'module'>) =>
   compact(item.module).toLowerCase() === 'payroll management';
 
-const ownerMatches = (item: EnterpriseNotification, session: SessionPayload) => {
-  const sessionKeys = new Set([
-    normalizeRecipientKey(session.sub),
-    normalizeRecipientKey(session.username),
-    normalizeRecipientKey(session.employeeCode),
-    normalizeRecipientKey(session.employeeId),
-  ].filter(Boolean));
+const recipientIdentityKeys = (...values: unknown[]) => {
+  const keys = new Set<string>();
+  for (const value of values) {
+    const raw = compact(value).toUpperCase();
+    if (!raw) continue;
+    keys.add(raw);
+    const payroll = normalizePayrollMatchKey(raw);
+    if (payroll) keys.add(payroll);
+    const embedded = employeeCodeFromReference(raw);
+    if (embedded) {
+      keys.add(embedded);
+      const embeddedPayroll = normalizePayrollMatchKey(embedded);
+      if (embeddedPayroll) keys.add(embeddedPayroll);
+    }
+  }
+  return keys;
+};
 
-  const recipientKeys = new Set([
-    normalizeRecipientKey(item.recipientUserId),
-    normalizeRecipientKey(item.recipientUsername),
-    normalizeRecipientKey(item.recipientEmployeeCode),
-  ].filter(Boolean));
+const ownerMatches = (item: EnterpriseNotification, session: SessionPayload) => {
+  const sessionKeys = recipientIdentityKeys(session.sub, session.username, session.employeeCode, session.employeeId);
+  const recipientKeys = recipientIdentityKeys(item.recipientUserId, item.recipientUsername, item.recipientEmployeeCode);
 
   if ([...sessionKeys].some((key) => recipientKeys.has(key))) return true;
   // Payroll figures and approval actions are person-addressed only.

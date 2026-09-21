@@ -8,21 +8,17 @@ import {
   type EnterpriseNotification,
   type NotificationScope,
 } from '@/lib/enterprise-notifications-store';
-import { buildEssEmployeeLookupKeys } from '@/lib/ess-dashboard-store';
+import { resolveDirectoryEmployeeForSession } from '@/lib/directory-employee-resolve';
 import { listLiveLeaveApprovalNotifications } from '@/lib/leave-workflow-service';
 import { readDirectoryEmployees } from '@/lib/payroll-employee-source';
 import { resolveNotificationHref } from '@/lib/ess-notification-routing';
-import { normalizePayrollMatchKey } from '@/lib/sage-people-payroll-store';
-import type { DleEmployeeDirectoryRow } from '@/lib/dle-enterprise-db';
 
 const resolveSessionEmployee = async (session: SessionPayload) => {
   const { employees } = await readDirectoryEmployees();
-  const identities = [session.employeeCode, session.employeeId, session.username]
-    .map((value) => normalizePayrollMatchKey(value))
-    .filter(Boolean);
-  const employee = employees.find((item: DleEmployeeDirectoryRow) => {
-    const keys = buildEssEmployeeLookupKeys(item).map((key: string) => normalizePayrollMatchKey(key)).filter(Boolean);
-    return identities.some((identity) => keys.includes(identity));
+  const employee = resolveDirectoryEmployeeForSession(employees, {
+    employeeCode: session.employeeCode,
+    employeeId: session.employeeId,
+    username: session.username,
   });
   return { employee, employees };
 };

@@ -1,4 +1,5 @@
 import { normalizePayrollMatchKey } from '@/lib/sage-people-payroll-store';
+import { employeeCodeFromReference } from '@/lib/reporting-manager-match';
 
 export type DirectoryEmployeeIdentity = {
   employeeId?: string | null;
@@ -28,6 +29,12 @@ const identityKeys = (...values: unknown[]) => {
     keys.add(raw);
     const payroll = normalizePayrollMatchKey(raw);
     if (payroll) keys.add(payroll);
+    const embedded = employeeCodeFromReference(raw);
+    if (embedded) {
+      keys.add(embedded);
+      const embeddedPayroll = normalizePayrollMatchKey(embedded);
+      if (embeddedPayroll) keys.add(embeddedPayroll);
+    }
   }
   return keys;
 };

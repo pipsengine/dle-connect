@@ -72,6 +72,8 @@ import {
   normalizeLeaveDate,
   notifyLeaveWorkflow as notifyLeaveWorkflowCore,
   employeeRequestMatches,
+  leaveHistoryForEmployee,
+  leaveApprovalHistoryForManager,
   runLeaveSubmitFollowUp,
   repairPendingLeaveManagerNotifications,
   pendingLeaveApprovalsForActor,
@@ -89,6 +91,7 @@ import {
   listLeaveWorkflowDeliveryLog,
   retryLeaveManagerNotification,
   readLeaveCalendarConfig,
+  type EssLeaveRequestStatus,
 } from '@/lib/leave-workflow-service';
 import { isLeaveEssRequest, isPendingLeaveStatus } from '@/lib/leave-request-shared';
 import { resolveMailProvider, verifyMailConnection, resolveEmployeeMailbox, sendTransactionalEmail } from '@/lib/mail-service';
@@ -108,7 +111,7 @@ type EssRequest = {
   serviceId?: string;
   category: string;
   title: string;
-  status: 'Draft' | 'Submitted' | 'Line Manager Review' | 'HR Review' | 'Finance Review' | 'Approved' | 'Rejected' | 'Terminated' | 'Closed';
+  status: EssLeaveRequestStatus;
   priority: 'Low' | 'Normal' | 'High';
   submittedAt: string;
   updatedAt: string;
@@ -1117,23 +1120,8 @@ export async function GET(request: Request) {
           scope: employee.department || 'Unassigned',
         })),
     ];
-    const leaveHistory = employeeLeaveApplications.map((item) => ({
-      id: item.id,
-      type: item.leaveType,
-      from: item.startDate,
-      to: item.endDate,
-      days: item.days,
-      year: Number(item.startDate.slice(0, 4)),
-      status: item.status,
-      approvalStage: item.stage,
-      approvers: item.managerName ? `${item.managerName}, HR Manager / Head` : 'Line Manager / Supervisor, HR Manager / Head',
-      reliever: item.actingOfficer || 'Not configured',
-      payrollImpact: item.leaveType === 'Unpaid Leave' ? 'Payroll deduction review' : 'None',
-      allowanceStatus: item.leaveType === 'Annual Leave' && item.days >= dormantLongPolicy.allowanceMinimumAnnualDays ? 'Eligible after final approval' : 'Not eligible',
-      attachments: item.supportingDocuments ? `${item.supportingDocuments} document(s)` : 'None',
-      comments: item.exceptions.length ? item.exceptions.join('; ') : 'No exceptions',
-      auditTrail: item.approvalStatus,
-    }));
+    const leaveHistory = leaveHistoryForEmployee(employee, allRequests.filter((item) => /leave/i.test(item.category)));
+    const managerApprovalHistory = leaveApprovalHistoryForManager(employee, allRequests, employeeSource.employees);
     const leaveApprovals = pendingLeaveApprovalsForActor(
       employee,
       allRequests.filter((item) => /leave/i.test(item.category) && item.startDate && item.endDate),
@@ -1182,7 +1170,7 @@ export async function GET(request: Request) {
           .filter((item) => compact(item.department).toLowerCase() === employeeDepartment)
           .flatMap((item) => [item.employeeId, item.employeeCode].filter(Boolean).map((key) => normalizePayrollMatchKey(String(key)))),
       );
-      const inActorScope = (request: EssRequest) => {
+      const inActorScope = (request: { employeeId: string }) => {
         const key = normalizePayrollMatchKey(request.employeeId);
         return deptEmployeeIds.has(key) || employeeRequestMatches(employee, request.employeeId);
       };
@@ -1191,7 +1179,7 @@ export async function GET(request: Request) {
       const approvedToday = decidedToday.filter((item) => item.status === 'Approved').length;
       const rejectedToday = decidedToday.filter((item) => item.status === 'Rejected').length;
       const escalated = leaveApprovals.filter((item) => item.slaStatus === 'Overdue').length;
-      const activeScoped = scopedLeave.filter((item) => ['Line Manager Review', 'HR Review', 'Submitted'].includes(item.status));
+      const activeScoped = scopedLeave.filter((item) => ['Line Manager Review', 'HR Review', 'Submitted', 'Under Review'].includes(item.status));
       const overdueActive = activeScoped.filter((item) => item.submittedAt && workingDaysSince(item.submittedAt) > workflowDeadlineDays).length;
       const slaCompliance = activeScoped.length ? Math.round((1 - overdueActive / activeScoped.length) * 100) : 100;
       const approvedForAvg = scopedLeave.filter((item) => item.status === 'Approved' && item.submittedAt && item.updatedAt);
@@ -1429,6 +1417,7 @@ export async function GET(request: Request) {
         balances: leavePolicyCards,
         calendar: leaveCalendar,
         history: leaveHistory,
+        approvalHistory: managerApprovalHistory,
         workflows: leaveWorkflow,
         allowance: [
           { label: 'Leave Allowance Status', value: currentYearAllowanceAlreadyPaid ? `Already paid/approved for ${leaveYear}` : allowanceEligible ? `Eligible when applying for ${dormantLongPolicy.allowanceMinimumAnnualDays}+ current-year Annual Leave working days` : 'Not currently eligible', status: allowanceEligible ? 'Ready' : 'Review' },
