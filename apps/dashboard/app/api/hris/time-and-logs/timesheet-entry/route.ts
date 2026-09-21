@@ -1194,12 +1194,22 @@ const buildPayload = async (
       targetWorkCenter = resolveOffshoreSheetWorkCenter(targetWorkCenter, offshoreProjectCodes);
     }
     // Drop trade-label locations (e.g. Painting) so Agege crew is not filtered out.
-    if (targetLocation && isTimesheetTradeLabelLocation(targetLocation, workCenterNameList)) {
+    // Never treat OFFSHORE as a trade — work centres named OFFSHORE / OFFSHORE · DL2601 would steal the sheet back to Agege.
+    if (targetLocation && !isOffshoreLocationName(targetLocation) && isTimesheetTradeLabelLocation(targetLocation, workCenterNameList)) {
       targetLocation =
         preferredLocationFromDirectory(selectedSupervisorAllDirectReports, scopedLocations, scopedWorkCenters) ||
         clean(selectedSupervisorProfile ? employeeLocation(selectedSupervisorProfile) : '') ||
         '';
     }
+  }
+  if (
+    isOffshoreLocationName(locationName)
+    || isOffshoreWorkCenterName(workCenterName)
+    || isOffshoreLocationName(targetLocation)
+    || isOffshoreWorkCenterName(targetWorkCenter)
+  ) {
+    targetLocation = OFFSHORE_LOCATION_NAME;
+    targetWorkCenter = resolveOffshoreSheetWorkCenter(targetWorkCenter || workCenterName, offshoreProjectCodes);
   }
   const supervisorHomeLocation = selectedSupervisorProfile ? employeeLocation(selectedSupervisorProfile) : '';
   const selectedSupervisorEmployeesFromDirectory = selectedSupervisorAllDirectReports

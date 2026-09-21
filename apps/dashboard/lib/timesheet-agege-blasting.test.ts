@@ -67,6 +67,8 @@ assert.deepEqual(
 
 assert.equal(isTimesheetTradeLabelLocation('Painting', ['Painting', 'Blasting']), true);
 assert.equal(isTimesheetTradeLabelLocation('AGEGE - AGEGE', ['Painting', 'Blasting']), false);
+assert.equal(isTimesheetTradeLabelLocation('OFFSHORE', ['OFFSHORE', 'DL2601', 'OFFSHORE · DL2601']), false, 'offshore is a site, not a trade');
+assert.equal(isTimesheetTradeLabelLocation('Offshore', ['Welding', 'OFFSHORE · DL2601']), false);
 assert.equal(resolveAgegeLocationLabel(['IDI_ORO', 'AGEGE - AGEGE']), AGEGE_TIMESHEET_LOCATION);
 
 const forced = applyAgegeBlastingSupervisorContext({

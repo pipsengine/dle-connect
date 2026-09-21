@@ -188,6 +188,7 @@ export const isTimesheetTradeLabelLocation = (
 ) => {
   const selected = normalizeTimesheetLocationLabel(locationName).toLowerCase() || clean(locationName).toLowerCase();
   if (!selected) return false;
+  if (selected === 'offshore' || /^offshore(\s|$|[·\-–])/i.test(selected)) return false;
   for (const name of workCenterNames) {
     const workCenter = clean(name).toLowerCase();
     if (workCenter && (selected === workCenter || selected.includes(workCenter) || workCenter.includes(selected))) {
