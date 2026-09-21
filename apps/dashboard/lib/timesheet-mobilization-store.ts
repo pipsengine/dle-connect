@@ -44,19 +44,21 @@ export type CreateMobilizationInput = {
 
 const clean = (value: unknown) => String(value || '').trim();
 
+const utcDateOnly = (date: Date): string => {
+  const year = date.getUTCFullYear();
+  const month = String(date.getUTCMonth() + 1).padStart(2, '0');
+  const day = String(date.getUTCDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+};
+
 /** SQL DATE values must stay YYYY-MM-DD. String(Date).slice(0, 10) becomes "Sun Aug 16" and never matches a timesheet day. */
-export const toTimesheetDateOnly = (value: unknown) => {
+export const toTimesheetDateOnly = (value: unknown): string => {
   if (value == null || value === '') return '';
-  if (value instanceof Date && !Number.isNaN(value.getTime())) {
-    const year = value.getUTCFullYear();
-    const month = String(value.getUTCMonth() + 1).padStart(2, '0');
-    const day = String(value.getUTCDate()).padStart(2, '0');
-    return `${year}-${month}-${day}`;
-  }
+  if (value instanceof Date && !Number.isNaN(value.getTime())) return utcDateOnly(value);
   const raw = clean(value);
   if (/^\d{4}-\d{2}-\d{2}/.test(raw)) return raw.slice(0, 10);
   const parsed = new Date(raw);
-  if (!Number.isNaN(parsed.getTime())) return toTimesheetDateOnly(parsed);
+  if (!Number.isNaN(parsed.getTime())) return utcDateOnly(parsed);
   return '';
 };
 
