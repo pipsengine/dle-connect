@@ -7,6 +7,7 @@ import {
   payrollLineMonthlyAmount,
   storedLinesToDraft,
   sumMonthlyPackageGross,
+  clientSafePayrollPeriod,
   type FlexiblePayrollLineDraft,
   type StoredPayrollPackageLine,
 } from '@/lib/payroll-package-lines';
@@ -16,7 +17,6 @@ import type { DleEmployeeDirectoryRow } from '@/lib/dle-enterprise-db';
 import { isDailyRatePayrollEmployee, isPeriodVariableDayRateEarningLine } from '@/lib/payroll-employee-classification';
 import type { PayrollSetupDraft } from '@/app/(hris)/hris/employees/add-new-employee/PayrollSetupStep';
 import { normalizePayrollDraftBeforeSave, lumpsumBaseAmountFromDraftLines } from '@/lib/payroll-draft-normalize';
-import { activePayrollPeriod } from '@/lib/payroll-periods';
 
 export type ProfilePayrollSummary = {
   payrollStatus: 'Verified' | 'Pending Validation' | 'Masked';
@@ -68,8 +68,11 @@ export const payrollDisplayCurrencyFromRow = (row: DleEmployeeDirectoryRow) =>
     businessUnit: row.businessUnit,
   });
 
-export const hrisEarningLinesFromEmployeeRow = (row: DleEmployeeDirectoryRow): FlexiblePayrollLineDraft[] => {
-  const period = activePayrollPeriod();
+export const hrisEarningLinesFromEmployeeRow = (
+  row: DleEmployeeDirectoryRow,
+  payrollPeriod?: string | null,
+): FlexiblePayrollLineDraft[] => {
+  const period = clientSafePayrollPeriod(payrollPeriod);
   const standing = isDailyRatePayrollEmployee(row)
     ? effectiveHrisPayrollLines(row.sagePayrollEarnings).filter((line) => !isPeriodVariableDayRateEarningLine(line))
     : effectiveHrisPayrollLines(row.sagePayrollEarnings);
@@ -140,11 +143,16 @@ export const earningLinesFromEmployeeRow = hrisEarningLinesFromEmployeeRow;
 export const deductionLinesFromEmployeeRow = (row: DleEmployeeDirectoryRow): FlexiblePayrollLineDraft[] =>
   storedLinesToDraft((row.sagePayrollDeductions?.lines || []) as StoredPayrollPackageLine[]);
 
-export const enrichPayrollSummaryFromRow = (summary: ProfilePayrollSummary, row: DleEmployeeDirectoryRow): ProfilePayrollSummary => {
-  const earningLines = hrisEarningLinesFromEmployeeRow(row);
+export const enrichPayrollSummaryFromRow = (
+  summary: ProfilePayrollSummary,
+  row: DleEmployeeDirectoryRow,
+  payrollPeriod?: string | null,
+): ProfilePayrollSummary => {
+  const period = clientSafePayrollPeriod(payrollPeriod);
+  const earningLines = hrisEarningLinesFromEmployeeRow(row, period);
   const leftoverPeriodEarningLines = leftoverStoredPeriodOnlyLines(
     row.sagePayrollEarnings as StoredPayrollPackageLine[],
-    activePayrollPeriod(),
+    period,
   );
   const legacyEarningLines = legacyEarningLinesFromEmployeeRow(row);
   const deductionLines = deductionLinesFromEmployeeRow(row);
@@ -172,7 +180,7 @@ export const enrichPayrollSummaryFromRow = (summary: ProfilePayrollSummary, row:
     leftoverPeriodEarningLines: leftoverPeriodEarningLines.length
       ? storedLinesToDraft(leftoverPeriodEarningLines as StoredPayrollPackageLine[])
       : undefined,
-    activePayrollPeriod: activePayrollPeriod(),
+    activePayrollPeriod: period,
     legacyEarningLines: legacyEarningLines.length ? legacyEarningLines : undefined,
     basicSalary,
     allowances: dailyRate ? null : summary.allowances,

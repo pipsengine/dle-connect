@@ -1,17 +1,8 @@
 export const ACTIVE_PAYROLL_PERIOD = process.env.HRIS_ACTIVE_PAYROLL_PERIOD || '2026-06';
 export const NEXT_PAYROLL_PERIOD = process.env.HRIS_NEXT_PAYROLL_PERIOD || '2026-07';
 
-/** Synchronous fallback — prefer resolveActivePayrollPeriod() in API routes. */
+/** Synchronous fallback — prefer getActivePayrollPeriod() from payroll-period-store in API routes. */
 export const activePayrollPeriod = () => process.env.HRIS_ACTIVE_PAYROLL_PERIOD || ACTIVE_PAYROLL_PERIOD;
-
-export const resolveActivePayrollPeriod = async () => {
-  try {
-    const { getActivePayrollPeriod } = await import('@/lib/payroll-period-store');
-    return await getActivePayrollPeriod();
-  } catch {
-    return activePayrollPeriod();
-  }
-};
 
 export const nextPayrollPeriod = (period: string) => {
   const match = /^(\d{4})-(\d{2})$/.exec(String(period || '').trim());

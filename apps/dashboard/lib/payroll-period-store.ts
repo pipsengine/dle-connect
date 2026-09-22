@@ -232,6 +232,8 @@ export const getActivePayrollPeriod = async () => {
   return advanced.period;
 };
 
+export const resolveActivePayrollPeriod = getActivePayrollPeriod;
+
 export const listPayrollPeriods = async () => {
   const state = await readState();
   return {

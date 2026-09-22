@@ -28,7 +28,7 @@ import { invalidatePayrollEmployeeOptionsCache } from '@/lib/payroll-employee-op
 import { resolveHrisEmployeeRoute } from '@/lib/hris-employee-route';
 import { AUTH_COOKIE, verifySessionToken } from '@/lib/auth/session';
 import { composePersonDisplayName } from '@/lib/person-display-name';
-import { resolveActivePayrollPeriod } from '@/lib/payroll-periods';
+import { resolveActivePayrollPeriod } from '@/lib/payroll-period-store';
 import {
   resolveEmployeeProfileAccess,
   type EmployeeProfilePermissions,

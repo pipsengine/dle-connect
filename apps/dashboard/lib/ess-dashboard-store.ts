@@ -6,7 +6,7 @@ import { listEnterpriseNotifications } from '@/lib/enterprise-notifications-stor
 import { normalizeEssNotificationHref } from '@/lib/ess-notification-routing';
 import type { LeaveApplicationRecord, LeaveBalanceRecord, LeaveStatus, WorkflowStage } from '@/lib/leave-management-store';
 import type { SessionPayload } from '@/lib/auth/session';
-import { resolveActivePayrollPeriod } from '@/lib/payroll-periods';
+import { resolveActivePayrollPeriod } from '@/lib/payroll-period-store';
 import type { EmployeeLeaveSummary } from '@/lib/hris-leave-read';
 import { ensureEmployeeLeaveFromHris } from '@/lib/hris-leave-read';
 import type { PayslipEmployeeIdentity } from '@/lib/payroll-payslip-identity-store';

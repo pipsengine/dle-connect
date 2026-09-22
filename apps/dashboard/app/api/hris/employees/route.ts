@@ -25,7 +25,7 @@ import {
 } from '@/lib/payroll-package-lines';
 import type { PayrollSetupDraft } from '@/app/(hris)/hris/employees/add-new-employee/PayrollSetupStep';
 import { normalizePayrollDraftBeforeSave, type PayrollEmploymentContext } from '@/lib/payroll-draft-normalize';
-import { resolveActivePayrollPeriod } from '@/lib/payroll-periods';
+import { resolveActivePayrollPeriod } from '@/lib/payroll-period-store';
 
 type Role =
   | 'Super Admin'

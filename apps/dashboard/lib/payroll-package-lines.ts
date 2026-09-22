@@ -39,6 +39,16 @@ export const normalizePackagePayrollPeriod = (value?: string | null) => {
   return match ? `${match[1]}-${match[2]}` : '';
 };
 
+/** Client-safe YYYY-MM. Do not import payroll-periods / payroll-period-store from UI modules. */
+export const clientSafePayrollPeriod = (value?: string | null) => {
+  const stamped = normalizePackagePayrollPeriod(value);
+  if (stamped) return stamped;
+  const env = normalizePackagePayrollPeriod(process.env.HRIS_ACTIVE_PAYROLL_PERIOD);
+  if (env) return env;
+  const now = new Date();
+  return `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, '0')}`;
+};
+
 /** Timesheet / one-off codes that must never sit on the standing monthly package. */
 const PERIOD_ONLY_PACKAGE_CODES = new Set([
   'OVERTIME',
