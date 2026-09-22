@@ -266,7 +266,7 @@ export function OvertimeManagementEnterpriseView(props: OvertimeManagementEnterp
                     value={new Date(props.payloadGeneratedAt || props.initialNow).toLocaleString('en-GB')}
                   />
                   <span className="inline-flex items-center rounded-full border border-[#93C5FD] bg-[#DBEAFE] px-3 py-1.5 text-xs font-semibold text-[#1D4ED8]">
-                    HRIS DB: {props.databaseAvailable ? 'Available' : 'Checking'}
+                    HRIS DB: {props.loading ? 'Checking' : props.databaseAvailable ? 'Available' : 'Unavailable'}
                   </span>
                 </div>
               </div>

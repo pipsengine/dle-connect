@@ -349,6 +349,9 @@ type ApiResponse<T> = { status: 'success' | 'error'; data?: T; error?: string };
 
 const humanizeOvertimeClientError = (message: string | undefined, status: number) => {
   const text = String(message || '');
+  if (/abort|timed out|timeout/i.test(text) || status === 408) {
+    return 'Overtime Management took too long to load. Refresh the page. If this continues, the overtime service is still busy — wait a minute and try again.';
+  }
   if (/<!DOCTYPE|Unexpected token ['"]<|is not valid JSON/i.test(text) || status === 502 || status === 504) {
     return 'Overtime Management could not load data from the server. Please refresh. If this continues, the overtime service may still be starting.';
   }
@@ -451,24 +454,37 @@ export default function OvertimeManagementClient({ initialNow }: { initialNow: s
     details: 'High workload on project delivery week tasks.',
   });
 
+  const [roleReady, setRoleReady] = useState(false);
+
   const load = useCallback(async () => {
     setLoading(true);
     setError('');
+    const controller = new AbortController();
+    const timer = window.setTimeout(() => controller.abort(), 25000);
     try {
-      const res = await fetch('/api/hris/workforce-management/overtime-management', { headers: { 'x-hris-role': role }, cache: 'no-store' });
+      const res = await fetch('/api/hris/workforce-management/overtime-management', {
+        headers: { 'x-hris-role': role },
+        cache: 'no-store',
+        signal: controller.signal,
+      });
       const data = await readOvertimeApi<Payload>(res);
       setPayload(data);
       setSelectedId((current) => current || data.records[0]?.id || '');
     } catch (event) {
-      setError(event instanceof Error ? event.message : 'Unable to load overtime management.');
+      const aborted = event instanceof DOMException && event.name === 'AbortError';
+      setError(aborted
+        ? humanizeOvertimeClientError('timed out', 408)
+        : event instanceof Error ? event.message : 'Unable to load overtime management.');
     } finally {
+      window.clearTimeout(timer);
       setLoading(false);
     }
   }, [role]);
 
   useEffect(() => {
+    if (!roleReady) return;
     void load();
-  }, [load]);
+  }, [load, roleReady]);
 
   useEffect(() => {
     let cancelled = false;
@@ -480,6 +496,8 @@ export default function OvertimeManagementClient({ initialNow }: { initialNow: s
         if (!cancelled && resolved) setRole(resolved);
       } catch {
         // Keep the default role if the profile lookup fails.
+      } finally {
+        if (!cancelled) setRoleReady(true);
       }
     })();
     return () => {

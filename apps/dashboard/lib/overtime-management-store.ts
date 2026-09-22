@@ -5,7 +5,7 @@ import { calculatePayrollOvertime, type OvertimeDayType } from '@/lib/payroll-ea
 import {
   isTimesheetPayrollReadyStatus,
   normalizePaidWorkHours,
-  readTimesheetData,
+  readTimesheetHeadersForWorkDates,
   readProjects,
   readTimesheetWorkCenters,
   STANDARD_TIMESHEET_HOURS,
@@ -278,7 +278,7 @@ export const readOvertimeEmployeeAttendance = async (
   const dateKey = clean(workDate).slice(0, 10);
   const codes = new Set(employeeCodes.map((code) => clean(code).toLowerCase()).filter(Boolean));
   if (!dateKey || !codes.size) return [];
-  const { headers, lines } = await readTimesheetData({ softFail: true }).catch(() => ({ headers: [] as TimesheetHeader[], lines: [] as TimesheetLine[] }));
+  const { headers, lines } = await readTimesheetHeadersForWorkDates([dateKey]).catch(() => ({ headers: [] as TimesheetHeader[], lines: [] as TimesheetLine[] }));
   const headerIds = new Set(headers.filter((header) => clean(header.timesheetDate).slice(0, 10) === dateKey).map((header) => header.id));
   const byCode = new Map<string, OvertimeEmployeeAttendance>();
   for (const line of lines) {
@@ -485,10 +485,20 @@ const unavailableEmployeeSource = (warning: string): PayrollEmployeeSource => ({
   warning,
 });
 
+const recentWorkDates = (dayCount = 62) => {
+  const dates: string[] = [];
+  const now = new Date();
+  for (let index = 0; index < dayCount; index += 1) {
+    const date = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() - index));
+    dates.push(date.toISOString().slice(0, 10));
+  }
+  return dates;
+};
+
 const buildCandidateRecords = async () => {
   const [employeeSource, timesheetData, holidayDates] = await Promise.all([
     readPayrollEmployees(),
-    readTimesheetData({ softFail: true }).catch(() => ({ headers: [] as TimesheetHeader[], lines: [] as TimesheetLine[] })),
+    readTimesheetHeadersForWorkDates(recentWorkDates()).catch(() => ({ headers: [] as TimesheetHeader[], lines: [] as TimesheetLine[] })),
     getPayrollPublicHolidayDates().catch((error) => {
       console.warn(
         '[OvertimeManagement] Public holiday calendar skipped:',
@@ -643,16 +653,53 @@ const upsertCandidates = async (records: OvertimeRecord[]) => {
     if (!id) continue;
     unique.set(id, { ...record, id });
   }
-  for (const record of unique.values()) {
-    await upsertOneCandidate(pool, record);
+  const list = Array.from(unique.values());
+  const chunkSize = 20;
+  for (let index = 0; index < list.length; index += chunkSize) {
+    const chunk = list.slice(index, index + chunkSize);
+    await Promise.all(chunk.map((record) => upsertOneCandidate(pool, record)));
   }
+};
+
+let timesheetCandidateSync: { at: number; pending?: Promise<void> } = { at: 0 };
+const TIMESHEET_CANDIDATE_SYNC_MS = 5 * 60 * 1000;
+
+const scheduleTimesheetCandidateSync = () => {
+  const now = Date.now();
+  if (timesheetCandidateSync.pending) return;
+  if (now - timesheetCandidateSync.at < TIMESHEET_CANDIDATE_SYNC_MS) return;
+  const pending = (async () => {
+    try {
+      const { records } = await buildCandidateRecords();
+      await upsertCandidates(records);
+    } catch (error) {
+      console.warn(
+        '[OvertimeManagement] Background timesheet candidate sync skipped:',
+        error instanceof Error ? error.message : error,
+      );
+    } finally {
+      timesheetCandidateSync = { at: Date.now() };
+    }
+  })();
+  timesheetCandidateSync = { at: now, pending };
 };
 
 const readRecords = async (): Promise<OvertimeRecord[]> => {
   const pool = await ensureDb();
   const [recordsResult, auditResult] = await Promise.all([
-    pool.request().query<DbOvertimeRow>('SELECT * FROM [hris].[OvertimeManagementRecords] ORDER BY [WorkDate] DESC, [EmployeeName]'),
-    pool.request().query<DbAuditRow>('SELECT * FROM [hris].[OvertimeManagementAudit] ORDER BY [CreatedAt] DESC'),
+    pool.request().query<DbOvertimeRow>(`
+SELECT *
+FROM [hris].[OvertimeManagementRecords]
+WHERE [WorkDate] >= DATEADD(day, -62, CAST(SYSUTCDATETIME() AS date))
+ORDER BY [WorkDate] DESC, [EmployeeName]
+`),
+    pool.request().query<DbAuditRow>(`
+SELECT a.*
+FROM [hris].[OvertimeManagementAudit] a
+INNER JOIN [hris].[OvertimeManagementRecords] r ON r.[Id] = a.[OvertimeId]
+WHERE r.[WorkDate] >= DATEADD(day, -62, CAST(SYSUTCDATETIME() AS date))
+ORDER BY a.[CreatedAt] DESC
+`),
   ]);
   const auditByRecord = new Map<string, OvertimeAuditEntry[]>();
   for (const row of auditResult.recordset) {
@@ -787,40 +834,28 @@ export const emptyOvertimeManagementPayload = (roleInput?: string | null, warnin
 
 export const readOvertimeManagementPayload = async (roleInput?: string | null) => {
   const role = normalizeOvertimeRole(roleInput);
+  scheduleTimesheetCandidateSync();
   const [
-    candidateResult,
+    employeeSource,
     projects,
     workCenters,
     supervisorAssignments,
+    records,
   ] = await Promise.all([
-    buildCandidateRecords().catch(async (error) => {
-      console.warn(
-        '[OvertimeManagement] Timesheet overtime candidates skipped:',
-        error instanceof Error ? error.message : error,
-      );
-      const employeeSource = await readPayrollEmployees().catch((sourceError) =>
-        unavailableEmployeeSource(sourceError instanceof Error ? sourceError.message : 'Employee source unavailable.'),
-      );
-      return { employeeSource, records: [] as OvertimeRecord[] };
-    }),
+    readPayrollEmployees().catch((sourceError) =>
+      unavailableEmployeeSource(sourceError instanceof Error ? sourceError.message : 'Employee source unavailable.'),
+    ),
     readProjects().catch(() => []),
     readTimesheetWorkCenters().catch(() => []),
     readSupervisorAssignments().catch(() => []),
+    readRecords().catch((error) => {
+      console.warn(
+        '[OvertimeManagement] Existing overtime records skipped:',
+        error instanceof Error ? error.message : error,
+      );
+      return [] as OvertimeRecord[];
+    }),
   ]);
-  const { employeeSource, records: candidates } = candidateResult;
-  await upsertCandidates(candidates).catch((error) => {
-    console.warn(
-      '[OvertimeManagement] Timesheet candidate sync skipped:',
-      error instanceof Error ? error.message : error,
-    );
-  });
-  const records = await readRecords().catch((error) => {
-    console.warn(
-      '[OvertimeManagement] Existing overtime records skipped:',
-      error instanceof Error ? error.message : error,
-    );
-    return [] as OvertimeRecord[];
-  });
   const activeEmployees = employeeSource.employees.filter((employee) => !['Resigned', 'Terminated', 'Retired', 'Inactive'].includes(clean(employee.status)));
   const employeeByCode = new Map(activeEmployees.map((employee) => [clean(employee.employeeCode).toLowerCase(), employee]));
   const uniqueSupervisors = new Map<string, OvertimeAuthorizationOption>();
@@ -864,24 +899,28 @@ export const readOvertimeManagementPayload = async (roleInput?: string | null) =
     }
   }
   // Direct-report fallback: employees whose reporting manager matches a supervisor (by code or name).
-  const supervisorByName = new Map<string, string>();
-  for (const [key, option] of uniqueSupervisors) supervisorByName.set(option.name.toLowerCase(), key);
+  const supervisorByToken = new Map<string, string>();
+  for (const [key, option] of uniqueSupervisors) {
+    if (option.code) supervisorByToken.set(option.code.toLowerCase(), key);
+    if (option.name) supervisorByToken.set(option.name.toLowerCase(), key);
+  }
   for (const employee of activeEmployees) {
-    const manager = `${clean(employee.managerName)} ${clean(employee.functionalManager)} ${clean(employee.departmentHead)}`.toLowerCase();
-    if (!manager.trim()) continue;
-    for (const [key, option] of uniqueSupervisors) {
-      const codeLower = option.code.toLowerCase();
-      const nameLower = option.name.toLowerCase();
-      if (
-        supervisorCodesMatch(employee.managerName, option.code)
-        || supervisorCodesMatch(employee.functionalManager, option.code)
-        || (codeLower && manager.includes(codeLower))
-        || (nameLower && manager.includes(nameLower))
-      ) {
-        addAssignedEmployee(key, clean(employee.employeeCode) || clean(employee.employeeId), clean(employee.fullName));
-        break;
+    const managerTokens = [employee.managerName, employee.functionalManager, employee.departmentHead]
+      .map((value) => clean(value).toLowerCase())
+      .filter(Boolean);
+    let matchedKey = '';
+    for (const token of managerTokens) {
+      matchedKey = supervisorByToken.get(token) || '';
+      if (matchedKey) break;
+      for (const [key, option] of uniqueSupervisors) {
+        if (supervisorCodesMatch(token, option.code) || supervisorCodesMatch(token, option.name)) {
+          matchedKey = key;
+          break;
+        }
       }
+      if (matchedKey) break;
     }
+    if (matchedKey) addAssignedEmployee(matchedKey, clean(employee.employeeCode) || clean(employee.employeeId), clean(employee.fullName));
   }
   const mdEmployee = resolveMdApprover(activeEmployees);
   const gmEmployee = resolveGmOperations(activeEmployees);

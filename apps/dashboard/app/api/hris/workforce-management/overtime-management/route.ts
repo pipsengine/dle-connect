@@ -130,6 +130,20 @@ const applyAccessToPayload = <T extends { permissions: Record<string, boolean> }
   },
 });
 
+const withTimeout = async <T>(promise: Promise<T>, ms: number, fallback: () => T) => {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      promise,
+      new Promise<T>((resolve) => {
+        timer = setTimeout(() => resolve(fallback()), ms);
+      }),
+    ]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+};
+
 export async function GET(request: NextRequest) {
   try {
     const livePermissions = await permissionsForRequest(request);
@@ -150,10 +164,14 @@ export async function GET(request: NextRequest) {
         console.warn('[OvertimeManagement] Authorization requests skipped:', error instanceof Error ? error.message : error);
         return [];
       }),
-      readOvertimeManagementPayload(role).catch((error) => {
-        console.warn('[OvertimeManagement] Payload load degraded:', error instanceof Error ? error.message : error);
-        return emptyOvertimeManagementPayload(role, humanizeOvertimeError(error));
-      }),
+      withTimeout(
+        readOvertimeManagementPayload(role).catch((error) => {
+          console.warn('[OvertimeManagement] Payload load degraded:', error instanceof Error ? error.message : error);
+          return emptyOvertimeManagementPayload(role, humanizeOvertimeError(error));
+        }),
+        20000,
+        () => emptyOvertimeManagementPayload(role, 'Overtime records are still loading. The authorization list is available — refresh in a moment for timesheet overtime.'),
+      ),
       getPayrollPublicHolidayDates().catch(() => [] as string[]),
     ]);
     const data = applyAccessToPayload({
