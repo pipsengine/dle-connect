@@ -43,7 +43,8 @@ type PaperRange = {
 const RANGES: PaperRange[] = [
   { codes: ['C2815', 'C2817', 'C2818'], names: 'Paul Okputu, Fatoyibo Samuel, Peter Odjegba', from: '2026-08-17', to: '2026-09-07' },
   { codes: ['C2757'], names: 'Benjamin Churk', from: '2026-08-17', to: '2026-09-10' },
-  { codes: ['C2810', 'C2816', 'C2825', 'C2585'], names: 'Ekwere Akpan, Gloria Ananu, Akande Ismaila, Emmanuel Aziekwe', from: '2026-08-17', to: TODAY },
+  { codes: ['C2810'], names: 'Ekwere Akpan', from: '2026-08-17', to: TODAY },
+  { codes: ['C2816', 'C2825', 'C2585'], names: 'Gloria Ananu, Akande Ismaila, Emmanuel Aziekwe', from: '2026-08-17', to: '2026-09-15' },
   { codes: ['C2824'], names: 'Muideen Salau', from: '2026-09-20', to: TODAY },
   { codes: ['C2722'], names: 'Sunday Adeniji', from: '2026-08-24', to: '2026-09-15' },
   { codes: ['C2171'], names: 'Steve Eraghare', from: '2026-08-17', to: '2026-09-15' },

@@ -1,5 +1,4 @@
 import type { DleEmployeeDirectoryRow } from '@/lib/dle-enterprise-db';
-import { resolvePayrollEarningProfile } from '@/lib/payroll-earnings-engine';
 
 const compact = (value: unknown) => String(value || '').trim();
 
@@ -153,11 +152,35 @@ export const isDailyRatePayrollEmployee = (employee: DleEmployeeDirectoryRow, pr
 };
 
 /**
+ * Enough profile identity for classification without importing the payroll engine
+ * (and therefore mssql) into client bundles.
+ */
+const classificationEarningProfile = (employee: DleEmployeeDirectoryRow) => {
+  const code = employeeCodeText(employee);
+  const groupText = payrollCategoryTextUpper(employee);
+  const stipendGroupText = [
+    employee.payrollGroup,
+    employee.staffCategory,
+    employee.employeeCategory,
+    employee.employmentType,
+  ].map(compact).join(' ').toUpperCase();
+  if (/^(P?IT|IT|I|P?NYSC|NYSC|N)\d+/.test(code) || /\b(INDUSTRIAL TRAINING|INDUSTRIAL TRAINEE|INTERN|NYSC|NATIONAL YOUTH SERVICE)\b/.test(stipendGroupText)) {
+    return 'stipend-non-taxable';
+  }
+  if (/^L\d+/.test(code) || /LUMPSUM|LUMP SUM/.test(groupText)) return 'contract-lumpsum';
+  const permanentStaffCode = /^P\d+/.test(code)
+    || (/\bPERMANENT\b/.test(groupText) && !/\b(CONTRACT|DAILY RATE|DAY RATE|LUMPSUM|LUMP SUM)\b/.test(groupText));
+  if (contractEmployeeCode(employee) && (Number(employee.ratePerDay || 0) > 0 || Number(employee.ratePerHour || 0) > 0)) return 'contract-day-rate';
+  if (!permanentStaffCode && (isDailyRatePayrollEmployee(employee) || /DAILY RATE|DAY RATE/.test(groupText))) return 'contract-day-rate';
+  return 'other';
+};
+
+/**
  * Live wages from approved timesheets. Permanent / lumpsum / NYSC / IT stay on
  * the profile even if a job title or category string looks like "daily".
  */
 export const isTimesheetWagePayrollEmployee = (employee: DleEmployeeDirectoryRow, profileId?: string) => {
-  const resolved = profileId || resolvePayrollEarningProfile(employee);
+  const resolved = profileId || classificationEarningProfile(employee);
   if (resolved === 'contract-lumpsum' || resolved === 'stipend-non-taxable') return false;
   const code = employeeCodeText(employee);
   if (/^P\d+/.test(code) || /^L\d+/.test(code)) return false;
@@ -171,7 +194,7 @@ export const isInactiveNonDailyContractEmployee = (employee: DleEmployeeDirector
   contractEmployeeCode(employee) && !isDailyRatePayrollEmployee(employee, profileId);
 
 export const contractPayrollClassification = (employee: DleEmployeeDirectoryRow): ContractPayrollClassification => {
-  const profileId = resolvePayrollEarningProfile(employee);
+  const profileId = classificationEarningProfile(employee);
   const isContractCode = contractEmployeeCode(employee);
   const isDailyRate = isDailyRatePayrollEmployee(employee, profileId);
   const shouldDeactivate = isInactiveNonDailyContractEmployee(employee, profileId);

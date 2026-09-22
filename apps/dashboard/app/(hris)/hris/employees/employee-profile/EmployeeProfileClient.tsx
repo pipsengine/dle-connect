@@ -1774,7 +1774,7 @@ export default function EmployeeProfileClient({
   const insightsData = insights.data;
   const auditData = audit.data;
   const payrollCurrency = profileData?.payrollSummary?.payCurrency || 'NGN';
-  const payrollMoney = (n: number | null, currency = payrollCurrency) =>
+  const payrollMoney = (n: number | null | undefined, currency = payrollCurrency) =>
     typeof n === 'number' ? formatPayrollMoney(n, currency) : '-';
 
   if (loading && (profile.status !== 'ready' || !profileData)) {
