@@ -10,14 +10,13 @@ import { isDailyRatePayrollEmployee } from '@/lib/payroll-employee-classificatio
 import { readPayrollEmployees, invalidatePayrollEmployeeCache } from '@/lib/payroll-employee-source';
 import { normalizePayrollCompany } from '@/lib/payroll-schedule-scope';
 import type { StoredPayrollPackageLine } from '@/lib/payroll-package-lines';
-import { roundMoney } from '@/lib/payroll-package-lines';
+import { isPeriodOnlyPackageEarningLine, roundMoney } from '@/lib/payroll-package-lines';
 import { excelRowCurrency, readAppliedSalaryScheduleOverride } from '@/lib/salary-schedule-upload-sql';
 import { salaryScheduleEmployeeKeys, type SalaryScheduleRow } from '@/lib/salary-schedule-xlsx';
 import { payrollCompanyFromSalaryScheduleRow } from '@/lib/salary-schedule-overlay';
 
 const compact = (value: unknown) => String(value || '').trim();
 
-const ONE_OFF_EARNING = /ARREARS|OVERTIME|WEEKDAYOVT|LEAVEALLOW|PENSION_REFUND/i;
 const STATUTORY_DEDUCTION = /^(PAYE|NHF|PENSION|PENSION_EE|PENSION_EE2)$/i;
 
 export const salaryRowToHrisPackageLines = (row: SalaryScheduleRow) => {
@@ -25,14 +24,18 @@ export const salaryRowToHrisPackageLines = (row: SalaryScheduleRow) => {
   for (const line of row.earnings || []) {
     const amount = roundMoney(line.amount);
     if (!(amount > 0)) continue;
-    const oneOff = ONE_OFF_EARNING.test(line.code);
+    const code = compact(line.code).toUpperCase() || 'EARNING';
+    const name = compact(line.name) || line.code;
+    if (isPeriodOnlyPackageEarningLine({ code, name })) {
+      continue;
+    }
     earnings.push({
-      code: compact(line.code).toUpperCase() || 'EARNING',
-      name: compact(line.name) || line.code,
+      code,
+      name,
       amount,
       sourceAmount: amount,
-      runFrequency: oneOff ? 'one-off' : 'monthly',
-      includeInMonthlyPayroll: !oneOff,
+      runFrequency: 'monthly',
+      includeInMonthlyPayroll: true,
       taxableAmount: amount,
       ytdTotal: 0,
     });

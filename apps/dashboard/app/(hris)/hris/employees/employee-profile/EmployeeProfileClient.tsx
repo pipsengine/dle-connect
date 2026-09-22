@@ -5,13 +5,14 @@ import Link from 'next/link';
 import EmployeeAvatar from '@/components/hris/EmployeeAvatar';
 import { useRouter } from 'next/navigation';
 import PayrollSetupStep from '../add-new-employee/PayrollSetupStep';
-import PayrollLinesEditor, { EARNING_LINE_PRESETS, DEDUCTION_LINE_PRESETS } from '@/components/payroll/PayrollLinesEditor';
+import PayrollLinesEditor, { EARNING_LINE_PRESETS, DEDUCTION_LINE_PRESETS, PERIOD_EARNING_LINE_PRESETS } from '@/components/payroll/PayrollLinesEditor';
 import {
   profileSummaryToSetupDraft,
   setupDraftToProfileSummary,
   type ProfilePayrollSummary,
 } from '@/lib/payroll-profile-setup';
 import { formatPayrollMoney } from '@/lib/payroll-currency';
+import { splitDraftEarningLinesByScope } from '@/lib/payroll-package-lines';
 import { getNigeriaLgas, getNigeriaStates } from '@/lib/nigeria-locations';
 import { humanizeHttpErrorBody } from '@/lib/http-client-error';
 import { hrisEmployeeProfileHref, hrisEmployeeResourceUrl } from '@/lib/hris-employee-route';
@@ -3082,18 +3083,52 @@ export default function EmployeeProfileClient({
                                 />
                               ) : null}
                             </div>
-                          ) : perms.canViewPayroll && (profileData.payrollSummary.earningLines?.length || profileData.payrollSummary.deductionLines?.length) ? (
+                          ) : perms.canViewPayroll && (profileData.payrollSummary.earningLines?.length || profileData.payrollSummary.deductionLines?.length || profileData.payrollSummary.leftoverPeriodEarningLines?.length) ? (
                             <div className="space-y-4">
-                              <PayrollLinesEditor
-                                title="Earning Lines"
-                                description="HRIS payroll package — edits here drive payroll calculation."
-                                lines={profileData.payrollSummary.earningLines || []}
-                                presets={EARNING_LINE_PRESETS}
-                                onChange={() => undefined}
-                                lineKind="earning"
-                                readOnly
-                                currency={payrollCurrency}
-                              />
+                              {(() => {
+                                const period = profileData.payrollSummary.activePayrollPeriod || '';
+                                const scoped = splitDraftEarningLinesByScope(profileData.payrollSummary.earningLines || [], period);
+                                return (
+                                  <>
+                                    <PayrollLinesEditor
+                                      title="Standing monthly package"
+                                      description="Repeats every payroll until changed. These lines drive the regular monthly calculation."
+                                      lines={scoped.standing}
+                                      presets={EARNING_LINE_PRESETS}
+                                      onChange={() => undefined}
+                                      lineKind="earning"
+                                      readOnly
+                                      currency={payrollCurrency}
+                                      scope="standing"
+                                    />
+                                    <PayrollLinesEditor
+                                      title={`This period only${period ? ` — ${period}` : ''}`}
+                                      description="Overtime, arrears and other variable pay captured for this month only. They will not roll into next month."
+                                      lines={scoped.thisPeriod}
+                                      presets={PERIOD_EARNING_LINE_PRESETS}
+                                      onChange={() => undefined}
+                                      lineKind="earning"
+                                      readOnly
+                                      currency={payrollCurrency}
+                                      scope="period"
+                                      payrollPeriod={period}
+                                    />
+                                    {scoped.leftover.length ? (
+                                      <PayrollLinesEditor
+                                        title="Stopped leftover variable earnings"
+                                        description="Left on the package from a previous month. These are not paid until assigned to the current payroll period."
+                                        lines={scoped.leftover}
+                                        presets={PERIOD_EARNING_LINE_PRESETS}
+                                        onChange={() => undefined}
+                                        lineKind="earning"
+                                        readOnly
+                                        currency={payrollCurrency}
+                                        scope="period"
+                                      />
+                                    ) : null}
+                                  </>
+                                );
+                              })()}
                               {profileData.payrollSummary.legacyEarningLines?.length ? (
                                 <PayrollLinesEditor
                                   title="Legacy Imported Lines (not used for payroll)"
@@ -3137,6 +3172,7 @@ export default function EmployeeProfileClient({
                             employmentType={profileData.employmentType || ''}
                             timesheetWages={Boolean(profileData.payrollClassification?.isDailyRate)}
                             assignLabel="Employee assigned to payroll run"
+                            payrollPeriod={profileData.payrollSummary.activePayrollPeriod || ''}
                           />
                         )
                       ) : null}

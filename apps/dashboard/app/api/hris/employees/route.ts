@@ -17,12 +17,15 @@ import { invalidatePayrollCalculationCache } from '@/lib/payroll-calculation-ser
 import type { SagePayrollLineItem } from '@/lib/sage-payroll-line-parser';
 import {
   draftPayrollLineToStored,
+  isPeriodOnlyPackageEarningLine,
+  storedPackageLinesForPayrollSave,
   sumMonthlyPackageGross,
   type FlexiblePayrollLineDraft,
   type StoredPayrollPackageLine,
 } from '@/lib/payroll-package-lines';
 import type { PayrollSetupDraft } from '@/app/(hris)/hris/employees/add-new-employee/PayrollSetupStep';
 import { normalizePayrollDraftBeforeSave, type PayrollEmploymentContext } from '@/lib/payroll-draft-normalize';
+import { resolveActivePayrollPeriod } from '@/lib/payroll-periods';
 
 type Role =
   | 'Super Admin'
@@ -561,9 +564,12 @@ const buildDefaultDeductionLines = (draft: EmployeeDraftPayload, _employeeCode: 
   return lines;
 };
 
-const buildSageJsonLinesForCreate = (draft: EmployeeDraftPayload, _employeeCode: string) => {
+const buildSageJsonLinesForCreate = (draft: EmployeeDraftPayload, _employeeCode: string, payrollPeriod?: string) => {
   const structuredEarnings = ((draft.payroll?.earningLines || []) as FlexiblePayrollLineDraft[])
-    .map((line) => draftPayrollLineToStored(line, true))
+    .map((line) => draftPayrollLineToStored(
+      isPeriodOnlyPackageEarningLine(line) ? { ...line, frequency: 'one-off', payrollPeriod: payrollPeriod || line.payrollPeriod } : line,
+      true,
+    ))
     .filter(Boolean) as StoredPayrollPackageLine[];
   const templateEarnings = structuredEarnings.length ? [] : parseTemplateLines(draft.payroll?.allowancesTemplate, true).map((line) => ({
     ...line,
@@ -571,7 +577,10 @@ const buildSageJsonLinesForCreate = (draft: EmployeeDraftPayload, _employeeCode:
     sourceAmount: line.amount,
     includeInMonthlyPayroll: true,
   }));
-  const earningLines = mergeEarningLines([structuredEarnings.length ? structuredEarnings : templateEarnings]);
+  const earningLines = storedPackageLinesForPayrollSave(
+    mergeEarningLines([structuredEarnings.length ? structuredEarnings : templateEarnings]) as StoredPayrollPackageLine[],
+    payrollPeriod,
+  );
 
   const structuredDeductions = ((draft.payroll?.deductionLines || []) as FlexiblePayrollLineDraft[])
     .map((line) => draftPayrollLineToStored(line, false))
@@ -775,7 +784,11 @@ export async function POST(request: Request) {
   draftRec.draft.employment.employeeId = employeeId;
   const override = toProfileOverride(employeeId, draftRec.draft);
   const startOnboarding = mode === 'create-and-start-onboarding';
-  const { earningLines, deductionLines } = buildSageJsonLinesForCreate(draftRec.draft, employeeId);
+  const { earningLines, deductionLines } = buildSageJsonLinesForCreate(
+    draftRec.draft,
+    employeeId,
+    await resolveActivePayrollPeriod(),
+  );
   const sageEarningLinesJson = earningLines.length ? JSON.stringify(earningLines) : null;
   const sageDeductionLinesJson = deductionLines.length ? JSON.stringify(deductionLines) : null;
   const finalRatePerDay = dailyEquivalent > 0 ? roundMoney(dailyEquivalent) : null;

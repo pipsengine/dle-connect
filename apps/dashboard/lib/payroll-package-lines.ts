@@ -9,12 +9,15 @@ export type FlexiblePayrollLineDraft = {
   amount: string;
   taxable: boolean;
   frequency: PayrollLineFrequency;
+  /** YYYY-MM. Required for this-period-only lines; leftover one-offs have none and must not pay. */
+  payrollPeriod?: string;
 };
 
 export type StoredPayrollPackageLine = SagePayrollLineItem & {
   runFrequency?: PayrollLineFrequency;
   sourceAmount?: number;
   includeInMonthlyPayroll?: boolean;
+  payrollPeriod?: string;
 };
 
 export const WEEKS_PER_MONTH = 52 / 12;
@@ -27,6 +30,117 @@ export const payrollLineCodeFromName = (name: string) =>
     .toUpperCase()
     .replace(/[^A-Z0-9]/g, '')
     .slice(0, 24) || 'EARNING';
+
+const compactPayrollCode = (value?: string | null) =>
+  String(value || '').trim().toUpperCase().replace(/[^A-Z0-9]/g, '');
+
+export const normalizePackagePayrollPeriod = (value?: string | null) => {
+  const match = /^(\d{4})-(\d{2})/.exec(String(value || '').trim());
+  return match ? `${match[1]}-${match[2]}` : '';
+};
+
+/** Timesheet / one-off codes that must never sit on the standing monthly package. */
+const PERIOD_ONLY_PACKAGE_CODES = new Set([
+  'OVERTIME',
+  'OVT',
+  'OT',
+  'WEEKDAYOVT',
+  'WKDAYOVT',
+  'JRWKDAYOVT',
+  'SATURDAYOVT',
+  'SUNDAYOVT',
+  'PUBHOL',
+  'PUBLICOVT',
+  'SATEARN',
+  'SUNDAYEARN',
+  'PARSATOVT',
+  'PERSUNOVT',
+  'ARREARS',
+  'STOCKCOUNT',
+  'NIGHTALL',
+  'NIGHTALLOW',
+  'MISC',
+  'OTHERPAY',
+  'LEAVEALLOW',
+  'REFUND',
+  'GRATUITY',
+  'LONGSERVICE',
+  'SPECIALALLOW',
+  'WEEKENDALLOW',
+  'JCWEEKDAY',
+  'JCWEEKDAYNT',
+]);
+
+/**
+ * Overtime, arrears, stock count, night, misc, and other this-month-only items.
+ * Standing monthly SITE / meal / lumpsum / housing stay on the package.
+ */
+export const isPeriodOnlyPackageEarningLine = (line: {
+  code?: string;
+  name?: string;
+  frequency?: PayrollLineFrequency;
+  runFrequency?: PayrollLineFrequency;
+  includeInMonthlyPayroll?: boolean;
+}) => {
+  const frequency = line.runFrequency || line.frequency || 'monthly';
+  if (frequency === 'one-off' || line.includeInMonthlyPayroll === false) return true;
+  const code = compactPayrollCode(line.code);
+  if (PERIOD_ONLY_PACKAGE_CODES.has(code)) return true;
+  const name = String(line.name || '').trim().toUpperCase();
+  return /\b(OVERTIME|ARREARS|STOCK\s*COUNT|NIGHT\s*ALLOW|OTHER\s*PAY|LEAVE\s*ALLOWANCE|WEEKDAY\s*OVT|SATURDAY\s*OVERTIME|SUNDAY\s*OVERTIME|PUBLIC\s*HOLIDAY|GRATUITY|LONG\s*SERVICE)\b/.test(name);
+};
+
+/** Standing package pays every month. Period-only pays only when stamped to the run period. */
+export const packageLinePaysInPeriod = (
+  line: {
+    code?: string;
+    name?: string;
+    frequency?: PayrollLineFrequency;
+    runFrequency?: PayrollLineFrequency;
+    includeInMonthlyPayroll?: boolean;
+    payrollPeriod?: string | null;
+  },
+  period?: string | null,
+) => {
+  if (!isPeriodOnlyPackageEarningLine(line)) return true;
+  const stamped = normalizePackagePayrollPeriod(line.payrollPeriod);
+  const current = normalizePackagePayrollPeriod(period);
+  return Boolean(stamped && current && stamped === current);
+};
+
+export const splitDraftEarningLinesByScope = (
+  lines: FlexiblePayrollLineDraft[] | null | undefined,
+  period?: string | null,
+) => {
+  const standing: FlexiblePayrollLineDraft[] = [];
+  const thisPeriod: FlexiblePayrollLineDraft[] = [];
+  const leftover: FlexiblePayrollLineDraft[] = [];
+  const current = normalizePackagePayrollPeriod(period);
+  for (const line of lines || []) {
+    if (!isPeriodOnlyPackageEarningLine(line)) {
+      standing.push(line);
+      continue;
+    }
+    if (current && normalizePackagePayrollPeriod(line.payrollPeriod) === current) thisPeriod.push(line);
+    else leftover.push(line);
+  }
+  return { standing, thisPeriod, leftover };
+};
+
+export const stampPeriodOnlyDraftLine = (
+  line: FlexiblePayrollLineDraft,
+  period?: string | null,
+): FlexiblePayrollLineDraft => {
+  if (!isPeriodOnlyPackageEarningLine(line)) {
+    return {
+      ...line,
+      frequency: line.frequency === 'weekly' ? 'weekly' : 'monthly',
+      payrollPeriod: undefined,
+    };
+  }
+  const payrollPeriod = normalizePackagePayrollPeriod(period) || normalizePackagePayrollPeriod(line.payrollPeriod);
+  return { ...line, frequency: 'one-off', payrollPeriod: payrollPeriod || undefined };
+};
 
 export const includeLineInMonthlyPayroll = (frequency: PayrollLineFrequency) => frequency !== 'one-off';
 
@@ -54,11 +168,12 @@ export const draftPayrollLineToStored = (
   if (sourceAmount <= 0) return null;
   const code = String(line.code || '').trim() || payrollLineCodeFromName(line.name);
   const name = String(line.name || '').trim() || code;
-  const frequency = line.frequency || 'monthly';
+  const frequency = isPeriodOnlyPackageEarningLine(line) ? 'one-off' : (line.frequency || 'monthly');
   const taxable = typeof line.taxable === 'boolean' ? line.taxable : taxableDefault;
   const includeInMonthly = includeLineInMonthlyPayroll(frequency);
   const monthlyAmount = monthlyPayrollAmountFromLine(sourceAmount, frequency);
   const amount = frequency === 'one-off' ? sourceAmount : monthlyAmount;
+  const payrollPeriod = frequency === 'one-off' ? normalizePackagePayrollPeriod(line.payrollPeriod) : '';
   return {
     code,
     name,
@@ -68,23 +183,28 @@ export const draftPayrollLineToStored = (
     includeInMonthlyPayroll: includeInMonthly,
     taxableAmount: taxable ? amount : 0,
     ytdTotal: 0,
+    ...(payrollPeriod ? { payrollPeriod } : {}),
   };
 };
 
 export const storedLinesToDraft = (lines: StoredPayrollPackageLine[]): FlexiblePayrollLineDraft[] =>
-  lines.map((line, index) => ({
-    id: `line-${index}-${line.code}`,
-    code: line.code,
-    name: line.name,
-    amount: String(line.sourceAmount ?? line.amount ?? ''),
-    taxable: Number(line.taxableAmount ?? line.amount ?? 0) > 0,
-    frequency: line.runFrequency || 'monthly',
-  }));
+  lines.map((line, index) => {
+    const payrollPeriod = normalizePackagePayrollPeriod(line.payrollPeriod);
+    return {
+      id: `line-${index}-${line.code}`,
+      code: line.code,
+      name: line.name,
+      amount: String(line.sourceAmount ?? line.amount ?? ''),
+      taxable: Number(line.taxableAmount ?? line.amount ?? 0) > 0,
+      frequency: line.runFrequency || (isPeriodOnlyPackageEarningLine(line) ? 'one-off' : 'monthly'),
+      ...(payrollPeriod ? { payrollPeriod } : {}),
+    };
+  });
 
 export const sumMonthlyPackageGross = (lines: StoredPayrollPackageLine[]) =>
   roundMoney(lines.reduce((sum, line) => sum + payrollLineMonthlyAmount(line), 0));
 
-export const EARNING_LINE_PRESETS: Array<Omit<FlexiblePayrollLineDraft, 'id' | 'amount'>> = [
+export const STANDING_EARNING_LINE_PRESETS: Array<Omit<FlexiblePayrollLineDraft, 'id' | 'amount'>> = [
   { code: 'BASIC', name: 'Basic Salary', taxable: true, frequency: 'monthly' },
   { code: 'HOUSING', name: 'Housing Allowance', taxable: true, frequency: 'monthly' },
   { code: 'OUTSTATION', name: 'Outstation Allowance', taxable: true, frequency: 'monthly' },
@@ -93,9 +213,19 @@ export const EARNING_LINE_PRESETS: Array<Omit<FlexiblePayrollLineDraft, 'id' | '
   { code: 'TCMMEAL', name: 'TCM Meal', taxable: true, frequency: 'monthly' },
   { code: 'SITE', name: 'Site Allowance', taxable: true, frequency: 'monthly' },
   { code: 'UTILITY', name: 'Utility Allowance', taxable: true, frequency: 'monthly' },
-  { code: 'WEEKDAYOVT', name: 'Weekday Overtime', taxable: true, frequency: 'one-off' },
-  { code: 'OVERTIME', name: 'Overtime Pay', taxable: true, frequency: 'one-off' },
 ];
+
+export const PERIOD_EARNING_LINE_PRESETS: Array<Omit<FlexiblePayrollLineDraft, 'id' | 'amount'>> = [
+  { code: 'OVERTIME', name: 'Overtime Pay', taxable: true, frequency: 'one-off' },
+  { code: 'WEEKDAYOVT', name: 'Weekday Overtime', taxable: true, frequency: 'one-off' },
+  { code: 'ARREARS', name: 'Arrears', taxable: true, frequency: 'one-off' },
+  { code: 'STOCKCOUNT', name: 'Stock Count', taxable: true, frequency: 'one-off' },
+  { code: 'NIGHTALL', name: 'Night Allowance', taxable: true, frequency: 'one-off' },
+  { code: 'MISC', name: 'Other Pay', taxable: true, frequency: 'one-off' },
+];
+
+/** Standing monthly/weekly package presets. Overtime belongs on this-period lines. */
+export const EARNING_LINE_PRESETS = STANDING_EARNING_LINE_PRESETS;
 
 export const DEDUCTION_LINE_PRESETS: Array<Omit<FlexiblePayrollLineDraft, 'id' | 'amount'>> = [
   { code: 'LOAN', name: 'Loan Recovery', taxable: false, frequency: 'monthly' },
@@ -122,8 +252,8 @@ export const isStructuralPayrollPackageCode = (code: string) =>
   /^(LUMPSUMTAX|BASIC1_LUMPSUM|STIPEND|BASIC|JNR_|SNR_|MGT_|SNM_|EXP_)/i.test(String(code || '').trim());
 
 const inferredFrequencyForLegacyLine = (line: SagePayrollLineItem): PayrollLineFrequency => {
+  if (isPeriodOnlyPackageEarningLine(line)) return 'one-off';
   const code = String(line.code || '').toUpperCase();
-  if (/WEEKDAYOVT|OVERTIME|\bOT\b/.test(code)) return 'one-off';
   if (/TRANSPORT|WEEKLY/.test(code)) return 'weekly';
   return 'monthly';
 };
@@ -145,16 +275,40 @@ export const isLegacySupplementLine = (line: SagePayrollLineItem) =>
   && !isStructuralPayrollPackageCode(line.code)
   && Number(line.amount || 0) !== 0;
 
-/** HRIS-configured lines plus promotable legacy supplements (overtime, transport, etc.). */
+/** Sage leftovers that are actually standing allowances (transport, meal, site) — never OT/arrears. */
+export const isPromotableStandingLegacySupplement = (line: SagePayrollLineItem) =>
+  isLegacySupplementLine(line) && !isPeriodOnlyPackageEarningLine(line);
+
+/** HRIS-configured standing lines plus this-period stamped lines, and standing Sage leftovers. */
 export const effectiveHrisPayrollLines = (lines: SagePayrollLineItem[] | null | undefined): StoredPayrollPackageLine[] => {
   const all = lines || [];
-  const configured = hrisConfiguredPayrollLines(all) as StoredPayrollPackageLine[];
+  const configured = (hrisConfiguredPayrollLines(all) as StoredPayrollPackageLine[])
+    .filter((line) => !isPeriodOnlyPackageEarningLine(line) || Boolean(normalizePackagePayrollPeriod(line.payrollPeriod)));
   const configuredCodes = new Set(configured.map((line) => String(line.code || '').toUpperCase()));
   const promoted = all
-    .filter(isLegacySupplementLine)
+    .filter(isPromotableStandingLegacySupplement)
     .filter((line) => !configuredCodes.has(String(line.code || '').toUpperCase()))
     .map(promoteLegacySupplementLine);
   return [...configured, ...promoted];
+};
+
+/** Previous-month one-offs still sitting on the package JSON — must not pay. */
+export const leftoverStoredPeriodOnlyLines = <T extends {
+  code?: string;
+  name?: string;
+  runFrequency?: PayrollLineFrequency;
+  includeInMonthlyPayroll?: boolean;
+  payrollPeriod?: string | null;
+}>(lines: T[] | null | undefined, period?: string | null) =>
+  (lines || []).filter((line) => isPeriodOnlyPackageEarningLine(line) && !packageLinePaysInPeriod(line, period));
+
+/** Keep standing lines plus one-offs stamped to this payroll period; drop leftover variable pay. */
+export const storedPackageLinesForPayrollSave = (
+  lines: StoredPayrollPackageLine[],
+  period?: string | null,
+): StoredPayrollPackageLine[] => {
+  const current = normalizePackagePayrollPeriod(period);
+  return lines.filter((line) => !isPeriodOnlyPackageEarningLine(line) || packageLinePaysInPeriod(line, current));
 };
 
 export const hasHrisPayrollSupplements = (lines: SagePayrollLineItem[] | null | undefined) =>
@@ -191,6 +345,7 @@ export const mergePayrollEarningLinesForSave = (
   for (const line of existing || []) {
     const code = String(line.code || '').trim().toUpperCase();
     if (!code || incomingCodes.has(code)) continue;
+    if (isPeriodOnlyPackageEarningLine(line)) continue;
     if (isHrisConfiguredPayrollLine(line)) {
       // Drop prior HRIS supplements/package lines not present in this save (editor is authority for HRIS lines).
       continue;

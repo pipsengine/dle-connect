@@ -9,6 +9,7 @@ export type SagePayrollLineItem = {
   runFrequency?: PayrollLineFrequency;
   sourceAmount?: number;
   includeInMonthlyPayroll?: boolean;
+  payrollPeriod?: string;
 };
 
 export const parseSagePayrollLineItems = (raw: unknown): SagePayrollLineItem[] => {
@@ -35,6 +36,9 @@ export const parseSagePayrollLineItems = (raw: unknown): SagePayrollLineItem[] =
           : Math.round(Number(line.sourceAmount) * 100) / 100,
         includeInMonthlyPayroll: typeof line?.includeInMonthlyPayroll === 'boolean'
           ? line.includeInMonthlyPayroll
+          : undefined,
+        payrollPeriod: /^\d{4}-\d{2}/.test(String(line?.payrollPeriod || '').trim())
+          ? String(line.payrollPeriod).trim().slice(0, 7)
           : undefined,
       }))
       .filter((line) => line.code && Number.isFinite(line.amount) && line.amount !== 0);
@@ -109,7 +113,9 @@ export const mergeSageLiveAndHrisProfileEarningLines = (
     if (!line.code || !Number.isFinite(line.amount) || line.amount === 0) return false;
     const code = canonicalPayrollLineCode(line.code);
     if (isHrisConfiguredPayrollLine(line)) {
-      if (line.runFrequency === 'one-off') return true;
+      if (line.runFrequency === 'one-off') {
+        return Boolean(line.payrollPeriod);
+      }
       return !liveCodes.has(code);
     }
     return !liveCodes.has(code);

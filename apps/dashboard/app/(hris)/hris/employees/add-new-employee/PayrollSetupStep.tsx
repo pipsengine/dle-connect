@@ -2,11 +2,13 @@
 
 import { useMemo, useState } from 'react';
 import { ChevronDown, Search } from 'lucide-react';
-import PayrollLinesEditor, { DEDUCTION_LINE_PRESETS, EARNING_LINE_PRESETS } from '@/components/payroll/PayrollLinesEditor';
+import PayrollLinesEditor, { DEDUCTION_LINE_PRESETS, EARNING_LINE_PRESETS, PERIOD_EARNING_LINE_PRESETS } from '@/components/payroll/PayrollLinesEditor';
 import {
   sumMonthlyPackageGross,
   draftPayrollLineToStored,
   newDraftPayrollLineId,
+  splitDraftEarningLinesByScope,
+  stampPeriodOnlyDraftLine,
   type FlexiblePayrollLineDraft,
 } from '@/lib/payroll-package-lines';
 import { formatPayrollMoney } from '@/lib/payroll-currency';
@@ -234,6 +236,7 @@ export default function PayrollSetupStep({
   contractStartDate = '',
   contractEndDate = '',
   timesheetWages = false,
+  payrollPeriod = '',
 }: {
   payroll: PayrollSetupDraft;
   onChange: (next: PayrollSetupDraft) => void;
@@ -244,6 +247,7 @@ export default function PayrollSetupStep({
   contractStartDate?: string;
   contractEndDate?: string;
   timesheetWages?: boolean;
+  payrollPeriod?: string;
 }) {
   const currency = resolvePayrollDraftCurrency(payroll);
   const patch = (partial: Partial<PayrollSetupDraft>) => onChange({ ...payroll, ...partial });
@@ -259,6 +263,22 @@ export default function PayrollSetupStep({
   const isDailyRate = timesheetWages || employmentType === 'Daily Rate';
   const isLumpsum = employmentType === 'Lumpsum';
   const showMonthlyPackageField = !isDailyRate;
+  const { standing, thisPeriod, leftover } = splitDraftEarningLinesByScope(payroll.earningLines, payrollPeriod);
+  const periodLabel = payrollPeriod
+    ? new Date(`${payrollPeriod}-01T00:00:00Z`).toLocaleString('en-GB', { month: 'long', year: 'numeric', timeZone: 'UTC' })
+    : 'this payroll period';
+
+  const replaceEarningScope = (
+    nextStanding: FlexiblePayrollLineDraft[],
+    nextPeriod: FlexiblePayrollLineDraft[],
+    nextLeftover: FlexiblePayrollLineDraft[] = leftover,
+  ) => patch({
+    earningLines: [
+      ...nextStanding.map((line) => stampPeriodOnlyDraftLine(line)),
+      ...nextPeriod.map((line) => stampPeriodOnlyDraftLine(line, payrollPeriod)),
+      ...nextLeftover,
+    ],
+  });
 
   const syncPeriodSalary = (raw: string) => {
     const amount = Number(raw || 0);
@@ -297,7 +317,7 @@ export default function PayrollSetupStep({
         <div className="mt-1 text-xs font-semibold text-blue-800">
           {isDailyRate
             ? 'Weekday pay, overtime, meal and refunds come from the payroll run (timesheets × daily rate). Do not store last month’s amounts here.'
-            : 'Add earning and deduction lines with weekly, monthly, or one-off frequency. No fixed salary grade is required — each employee gets a custom package.'}
+            : 'Standing lines repeat every month. Overtime, arrears and other this-period items pay only in the month you capture them — they do not roll forward.'}
         </div>
         {!isDailyRate && displayMonthlyGross > 0 ? (
           <div className="mt-3 inline-flex rounded-xl bg-white px-3 py-2 text-xs font-extrabold text-slate-800 border border-blue-200">
@@ -327,7 +347,7 @@ export default function PayrollSetupStep({
             type="number"
             value={payroll.periodSalary}
             onChange={syncPeriodSalary}
-            hint={isLumpsum ? 'Base lumpsum package only — overtime and other supplements stay on earning lines below' : 'Total monthly pay before one-off supplements'}
+            hint={isLumpsum ? 'Base lumpsum package only — overtime belongs in this-period lines below' : 'Total monthly pay before this-period supplements'}
           />
         ) : null}
         <SearchableBankField
@@ -366,15 +386,58 @@ export default function PayrollSetupStep({
       ) : null}
 
       {isDailyRate ? null : (
-        <PayrollLinesEditor
-          title="Earning Lines"
-          description="Examples: Basic Salary, Outstation Allowance (deployed staff), Weekly Transport Claim. Weekly amounts are converted to monthly (× 52/12) in payroll."
-          lines={payroll.earningLines}
-          presets={EARNING_LINE_PRESETS}
-          onChange={(earningLines) => patch({ earningLines })}
-          lineKind="earning"
-          currency={currency}
-        />
+        <>
+          <PayrollLinesEditor
+            title="Standing monthly package"
+            description="Repeats every payroll until you change it. Examples: Basic, lumpsum, meal, housing, site, weekly transport."
+            lines={standing}
+            presets={EARNING_LINE_PRESETS}
+            onChange={(nextStanding) => replaceEarningScope(nextStanding, thisPeriod)}
+            lineKind="earning"
+            currency={currency}
+            scope="standing"
+          />
+          <PayrollLinesEditor
+            title={`This period only${payrollPeriod ? ` — ${periodLabel}` : ''}`}
+            description="Overtime, arrears, stock count, night and other variable pay. These pay only in this month. They will not compute again next month."
+            lines={thisPeriod}
+            presets={PERIOD_EARNING_LINE_PRESETS}
+            onChange={(nextPeriod) => replaceEarningScope(standing, nextPeriod)}
+            lineKind="earning"
+            currency={currency}
+            scope="period"
+            payrollPeriod={payrollPeriod}
+          />
+          {leftover.length ? (
+            <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4">
+              <div className="text-sm font-extrabold text-amber-950">Stopped leftover variable earnings</div>
+              <div className="mt-1 text-xs font-semibold text-amber-900">
+                These amounts were left on the package from a previous month. They will not be paid unless you assign them to {periodLabel}.
+              </div>
+              <ul className="mt-3 space-y-1 text-xs font-semibold text-amber-950">
+                {leftover.map((line) => (
+                  <li key={line.id}>{line.name || line.code}: {formatMoney(Number(line.amount || 0))}</li>
+                ))}
+              </ul>
+              <div className="mt-3 flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  onClick={() => replaceEarningScope(standing, [...thisPeriod, ...leftover], [])}
+                  className="rounded-xl border border-amber-300 bg-white px-3 py-1.5 text-[11px] font-extrabold text-amber-950 hover:bg-amber-100"
+                >
+                  Pay in {periodLabel}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => replaceEarningScope(standing, thisPeriod, [])}
+                  className="rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-[11px] font-extrabold text-slate-700 hover:bg-slate-50"
+                >
+                  Remove leftover lines
+                </button>
+              </div>
+            </div>
+          ) : null}
+        </>
       )}
 
       <PayrollLinesEditor

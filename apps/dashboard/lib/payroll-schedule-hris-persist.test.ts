@@ -40,7 +40,7 @@ const row = (overrides: Partial<SalaryScheduleRow>): SalaryScheduleRow => ({
 
 const pkg = salaryRowToHrisPackageLines(row({}));
 assert(pkg.earnings.some((line) => line.code === 'BASIC' && line.runFrequency === 'monthly'), 'Basic is a recurring HRIS package line');
-assert(pkg.earnings.some((line) => line.code === 'ARREARS' && line.runFrequency === 'one-off' && line.includeInMonthlyPayroll === false), 'Arrears is one-off and will not repeat next month');
+assert(!pkg.earnings.some((line) => line.code === 'ARREARS'), 'Arrears must not persist onto the standing HRIS package');
 assert(!pkg.deductions.some((line) => line.code === 'PAYE'), 'PAYE is not stored as a package deduction — HRIS tax engine computes it');
 assert(pkg.deductions.some((line) => line.code === 'UNION' && line.amount === 2000), 'Union dues stay on the HRIS package');
 assert(pkg.periodSalary === 500000, 'Period salary is saved from the workbook');

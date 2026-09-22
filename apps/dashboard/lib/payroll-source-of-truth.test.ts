@@ -298,14 +298,32 @@ const lumpsumDouble = employee({
     { code: 'OVERTIME', name: 'OVERTIME', amount: 10000, runFrequency: 'one-off', sourceAmount: 10000, includeInMonthlyPayroll: false },
   ],
 });
-const lumpsumDoublePay = calculatePayrollEarnings(lumpsumDouble, { useHrisPackageLines: true });
-assert.equal(lumpsumDoublePay.grossPay, 265000, 'lumpsum formula must not stack LUMPSUMTAX on BASIC1_LUMPSUM; meal/OT stay');
+const lumpsumDoublePay = calculatePayrollEarnings(lumpsumDouble, { useHrisPackageLines: true, period: '2026-09' });
+assert.equal(lumpsumDoublePay.grossPay, 255000, 'lumpsum formula must not stack LUMPSUMTAX on BASIC1_LUMPSUM; leftover OT must not pay');
 assert.equal(
   lumpsumDoublePay.paidEarningLines.filter((line) => /^(LUMPSUMTAX|BASIC1_LUMPSUM)$/i.test(line.code)).length,
   1,
 );
 assert.equal(lumpsumDoublePay.paidEarningLines.find((line) => line.code === 'MEAL')?.amount, 5000);
-assert.equal(lumpsumDoublePay.paidEarningLines.find((line) => line.code === 'OVERTIME')?.amount, 10000);
+assert.equal(lumpsumDoublePay.paidEarningLines.find((line) => line.code === 'OVERTIME')?.amount, undefined);
+
+const lumpsumThisPeriodOt = employee({
+  employeeCode: 'L0100',
+  employeeId: 'L0100',
+  employmentType: 'Lumpsum',
+  periodSalary: 250000,
+  sagePayrollEarnings: [
+    { code: 'BASIC1_LUMPSUM', name: 'LUMSUM AMOUNT', amount: 250000, runFrequency: 'monthly', sourceAmount: 250000 },
+    { code: 'MEAL', name: 'MEAL ALLOWANCE', amount: 5000, runFrequency: 'monthly', sourceAmount: 5000 },
+    { code: 'OVERTIME', name: 'OVERTIME', amount: 10000, runFrequency: 'one-off', sourceAmount: 10000, includeInMonthlyPayroll: false, payrollPeriod: '2026-09' },
+  ],
+});
+const lumpsumThisPeriodOtPay = calculatePayrollEarnings(lumpsumThisPeriodOt, { useHrisPackageLines: true, period: '2026-09' });
+assert.equal(lumpsumThisPeriodOtPay.grossPay, 265000, 'this-period overtime stamped to September must pay in September');
+assert.equal(lumpsumThisPeriodOtPay.paidEarningLines.find((line) => line.code === 'OVERTIME')?.amount, 10000);
+const lumpsumNextPeriodOtPay = calculatePayrollEarnings(lumpsumThisPeriodOt, { useHrisPackageLines: true, period: '2026-10' });
+assert.equal(lumpsumNextPeriodOtPay.paidEarningLines.find((line) => line.code === 'OVERTIME')?.amount, undefined);
+assert.equal(lumpsumNextPeriodOtPay.grossPay, 255000, 'September overtime must not roll into October');
 
 const lumpsumAmountAlias = employee({
   employeeCode: 'L2718',

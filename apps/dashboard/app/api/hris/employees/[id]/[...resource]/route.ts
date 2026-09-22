@@ -21,13 +21,14 @@ import {
   type ProfilePayrollSummary,
 } from '@/lib/payroll-profile-setup';
 import type { FlexiblePayrollLineDraft } from '@/lib/payroll-package-lines';
-import { mergePayrollEarningLinesForSave, sumMonthlyPackageGross } from '@/lib/payroll-package-lines';
+import { mergePayrollEarningLinesForSave, storedPackageLinesForPayrollSave, sumMonthlyPackageGross } from '@/lib/payroll-package-lines';
 import { cleanPayrollGroupValue, lumpsumBaseAmountFromStoredLines } from '@/lib/payroll-draft-normalize';
 import { invalidatePayrollCalculationCache } from '@/lib/payroll-calculation-service';
 import { invalidatePayrollEmployeeOptionsCache } from '@/lib/payroll-employee-options-store';
 import { resolveHrisEmployeeRoute } from '@/lib/hris-employee-route';
 import { AUTH_COOKIE, verifySessionToken } from '@/lib/auth/session';
 import { composePersonDisplayName } from '@/lib/person-display-name';
+import { resolveActivePayrollPeriod } from '@/lib/payroll-periods';
 import {
   resolveEmployeeProfileAccess,
   type EmployeeProfilePermissions,
@@ -5569,10 +5570,14 @@ async function patchEmployeeRecord(request: Request, ctx: { params: Promise<{ id
       || rec.payrollClassification?.isDailyRate
       || /daily rate|day rate/i.test(employmentType),
     );
-    const storedEarnings = ((earningLinesProvided || editorEarnings.length)
-      ? mergePayrollEarningLinesForSave(directoryRow?.sagePayrollEarnings, editorEarnings)
-      : editorEarnings
-    ).filter((line) => !dailyRateSave || !isPeriodVariableDayRateEarningLine(line));
+    const activePeriod = await resolveActivePayrollPeriod();
+    const storedEarnings = storedPackageLinesForPayrollSave(
+      ((earningLinesProvided || editorEarnings.length)
+        ? mergePayrollEarningLinesForSave(directoryRow?.sagePayrollEarnings, editorEarnings)
+        : editorEarnings
+      ).filter((line) => !dailyRateSave || !isPeriodVariableDayRateEarningLine(line)),
+      activePeriod,
+    );
     const storedDeductions = buildStoredPayrollLinesFromDrafts(next.deductionLines || [], false);
     const monthlyGross = sumMonthlyPackageGross(storedEarnings);
     const isLumpsumEmployee = /lumpsum|lump\s*sum/i.test(String(employmentType || ''))

@@ -2,8 +2,9 @@
 
 import { Plus, Trash2 } from 'lucide-react';
 import {
-  EARNING_LINE_PRESETS,
   DEDUCTION_LINE_PRESETS,
+  EARNING_LINE_PRESETS,
+  PERIOD_EARNING_LINE_PRESETS,
   newDraftPayrollLineId,
   monthlyPayrollAmountFromLine,
   type FlexiblePayrollLineDraft,
@@ -11,11 +12,11 @@ import {
 } from '@/lib/payroll-package-lines';
 import { formatPayrollMoney } from '@/lib/payroll-currency';
 
-export { EARNING_LINE_PRESETS, DEDUCTION_LINE_PRESETS };
+export { EARNING_LINE_PRESETS, DEDUCTION_LINE_PRESETS, PERIOD_EARNING_LINE_PRESETS };
 
 const frequencyLabel = (frequency: PayrollLineFrequency) => {
   if (frequency === 'weekly') return 'Weekly';
-  if (frequency === 'one-off') return 'One-off';
+  if (frequency === 'one-off') return 'This period only';
   return 'Monthly';
 };
 
@@ -28,6 +29,8 @@ export default function PayrollLinesEditor({
   lineKind,
   readOnly = false,
   currency = 'NGN',
+  scope = 'standing',
+  payrollPeriod,
 }: {
   title: string;
   description: string;
@@ -37,6 +40,8 @@ export default function PayrollLinesEditor({
   lineKind: 'earning' | 'deduction';
   readOnly?: boolean;
   currency?: string;
+  scope?: 'standing' | 'period';
+  payrollPeriod?: string;
 }) {
   const formatMoney = (value: number) => formatPayrollMoney(value, currency);
   const updateLine = (id: string, patch: Partial<FlexiblePayrollLineDraft>) => {
@@ -44,14 +49,17 @@ export default function PayrollLinesEditor({
       if (line.id !== id) return line;
       const next = { ...line, ...patch };
       const codeOrName = `${next.code || ''} ${next.name || ''}`;
-      // When naming a line as overtime, default to one-off unless frequency was just set explicitly.
       if (
-        !('frequency' in patch)
-        && next.frequency === 'monthly'
-        && /OVERTIME|\bOVT\b|\bOT\b|WEEKDAYOVT/i.test(codeOrName)
-        && !/LUMPSUM/i.test(codeOrName)
+        lineKind === 'earning'
+        && (scope === 'period' || (
+          !('frequency' in patch)
+          && next.frequency === 'monthly'
+          && /OVERTIME|\bOVT\b|\bOT\b|WEEKDAYOVT|ARREARS|STOCK\s*COUNT|NIGHT/i.test(codeOrName)
+          && !/LUMPSUM/i.test(codeOrName)
+        ))
       ) {
         next.frequency = 'one-off';
+        if (payrollPeriod) next.payrollPeriod = payrollPeriod;
       }
       return next;
     }));
@@ -68,7 +76,8 @@ export default function PayrollLinesEditor({
         name: preset?.name || '',
         amount: '',
         taxable: preset?.taxable ?? lineKind === 'earning',
-        frequency: preset?.frequency || 'monthly',
+        frequency: scope === 'period' ? 'one-off' : (preset?.frequency || 'monthly'),
+        ...(scope === 'period' && payrollPeriod ? { payrollPeriod } : {}),
       },
     ]);
   };
@@ -159,15 +168,14 @@ export default function PayrollLinesEditor({
                       )}
                     </td>
                     <td className="px-3 py-2 text-xs font-semibold text-slate-800">
-                      {readOnly ? frequencyLabel(line.frequency) : (
-                        <select
+                      {readOnly || scope === 'period' ? frequencyLabel(line.frequency) : (
+                          <select
                           value={line.frequency}
                           onChange={(e) => updateLine(line.id, { frequency: e.target.value as PayrollLineFrequency })}
                           className="w-full rounded-lg border border-slate-200 px-2 py-1.5 text-xs font-semibold"
                         >
-                          <option value="monthly">Monthly</option>
-                          <option value="weekly">Weekly</option>
-                          <option value="one-off">One-off</option>
+                          <option value="monthly">Monthly — repeats every payroll</option>
+                          <option value="weekly">Weekly — converted to monthly</option>
                         </select>
                       )}
                     </td>
