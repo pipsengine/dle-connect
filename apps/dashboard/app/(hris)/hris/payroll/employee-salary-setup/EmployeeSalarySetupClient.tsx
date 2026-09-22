@@ -144,7 +144,7 @@ const CONTRACT_EARNING_COLUMNS: Array<{ id: string; label: string; pattern: RegE
   { id: 'earning-pubhol', label: 'Public Holiday', pattern: /PUBHOL|PUBLIC HOLIDAY/i },
   { id: 'earning-saturday', label: 'Saturday Earning', pattern: /SATEARN|SATURDAY EARNING/i },
   { id: 'earning-sunday', label: 'Sunday Earning', pattern: /SUNDAYEARN|SUNDAY EARNING/i },
-  { id: 'earning-meal', label: 'Meal Allowance', pattern: /^MEAL$/i },
+  { id: 'earning-meal', label: 'Meal Allowance', pattern: /MEAL/i },
 ];
 
 const DEDUCTION_COLUMNS: Array<{ id: string; label: string; pattern: RegExp }> = [

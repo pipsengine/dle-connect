@@ -533,7 +533,7 @@ const EARNING_PATTERN_BY_LABEL: Record<string, RegExp> = {
   'LUMPSUM ALLOWANCE (Earning)': /LUMPSUM ALLOW/i,
   'LUMSUM AMOUNT (Earning)': /LUMSUM AMOUNT|BASIC1_LUMPSUM|LUMPSUMTAX|LUMSUM/i,
   'MD BASIC (Earning)': /MD BASIC/i,
-  'MEAL (Earning)': /^MEAL$/i,
+  'MEAL (Earning)': /TCMMEAL|(?:^|\s)MEAL(?! ALLOW)(?:\s|$)/i,
   'Meal Allowance (Earning)': /MEAL ALLOW|PER_MEAL(?!_JNR)/i,
   'MEAL ALLOWANCE (Earning)': /MEAL ALLOW|PER_MEAL(?!_JNR)/i,
   'MEDICAL (Earning)': /MEDICAL/i,

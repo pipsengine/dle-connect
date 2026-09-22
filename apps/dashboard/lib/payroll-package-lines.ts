@@ -90,6 +90,7 @@ export const EARNING_LINE_PRESETS: Array<Omit<FlexiblePayrollLineDraft, 'id' | '
   { code: 'OUTSTATION', name: 'Outstation Allowance', taxable: true, frequency: 'monthly' },
   { code: 'TRANSPORT_WK', name: 'Weekly Transport Claim', taxable: true, frequency: 'weekly' },
   { code: 'MEAL', name: 'Meal Allowance', taxable: true, frequency: 'monthly' },
+  { code: 'TCMMEAL', name: 'TCM Meal', taxable: true, frequency: 'monthly' },
   { code: 'SITE', name: 'Site Allowance', taxable: true, frequency: 'monthly' },
   { code: 'UTILITY', name: 'Utility Allowance', taxable: true, frequency: 'monthly' },
   { code: 'WEEKDAYOVT', name: 'Weekday Overtime', taxable: true, frequency: 'one-off' },

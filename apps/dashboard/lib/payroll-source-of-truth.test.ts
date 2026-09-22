@@ -13,7 +13,10 @@ import type { DayrateScheduleRow } from './dayrate-schedule-xlsx';
 import {
   isTimesheetWagePayrollEmployee,
   isPeriodVariableDayRateEarningLine,
+  isContractStyleEarningLine,
   resolvePayrollRunPackForEmployee,
+  sagePayslipAcceptableForEmployee,
+  sanitizePermanentPayslipEarnings,
 } from './payroll-employee-classification';
 import {
   calculatePayrollEarnings,
@@ -105,6 +108,12 @@ assert.equal(isPeriodVariableDayRateEarningLine({ code: 'REFUND', name: 'REFUND'
 assert.equal(isPeriodVariableDayRateEarningLine({ code: 'NIGHTALL', name: 'NIGHT ALLOWANCE' }), true);
 assert.equal(isPeriodVariableDayRateEarningLine({ code: 'MEAL', name: 'MEAL ALLOWANCE' }), true);
 assert.equal(isPeriodVariableDayRateEarningLine({ code: 'LOAN', name: 'Loan Recovery' }), false);
+assert.equal(isPeriodVariableDayRateEarningLine({ code: 'PER_MEAL', name: 'Meal Allowance' }), false);
+assert.equal(isPeriodVariableDayRateEarningLine({ code: 'TCMMEAL', name: 'MEAL' }), false);
+assert.equal(isContractStyleEarningLine({ code: 'PER_MEAL', name: 'Meal Allowance' }), false);
+assert.equal(isContractStyleEarningLine({ code: 'MEAL', name: 'Meal Allowance' }), false);
+assert.equal(isContractStyleEarningLine({ code: 'TCMMEAL', name: 'MEAL' }), false);
+assert.equal(isContractStyleEarningLine({ code: 'JCWEEKDAY', name: 'WEEKDAY EARNING' }), true);
 assert.equal(resolvePayrollRunPackForEmployee(permanent), 'salaried');
 assert.equal(resolvePayrollRunPackForEmployee(lumpsum), 'salaried');
 assert.equal(resolvePayrollRunPackForEmployee(nysc), 'salaried');
@@ -335,6 +344,77 @@ assert.equal(
   'stored August leave allowance must not pay again from the standing package',
 );
 assert.equal(permanentLeavePay.grossPay, 300000);
+
+const lumpsumTcmMeal = employee({
+  employeeCode: 'L1687',
+  employeeId: 'L1687',
+  employmentType: 'Lumpsum',
+  periodSalary: 1326651.3,
+  sagePayrollEarnings: [
+    { code: 'LUMPSUMTAX', name: 'LUMPSUM ALLOWANCE', amount: 1326651.3, runFrequency: 'monthly', sourceAmount: 1326651.3 },
+    { code: 'TCMMEAL', name: 'MEAL', amount: 150000, runFrequency: 'monthly', sourceAmount: 150000 },
+  ],
+});
+const lumpsumTcmMealPay = calculatePayrollEarnings(lumpsumTcmMeal, { useHrisPackageLines: true });
+assert.equal(lumpsumTcmMealPay.paidEarningLines.find((line) => line.code === 'TCMMEAL')?.amount, 150000);
+assert.equal(lumpsumTcmMealPay.grossPay, 1476651.3);
+
+const mgtColaMeal = employee({
+  employeeCode: 'P0399',
+  employeeId: 'P0399',
+  employmentType: 'Permanent',
+  salaryGrade: 'MGTCOLA',
+  periodSalary: 518255,
+  sagePayrollEarnings: [
+    { code: 'MGT1COLA_BASIC', name: 'BASIC SALARY', amount: 213158.87, runFrequency: 'monthly', sourceAmount: 213158.87, includeInMonthlyPayroll: true },
+    { code: 'MGT1COLA_HOUSIN', name: 'HOUSING', amount: 85263.55, runFrequency: 'monthly', sourceAmount: 85263.55, includeInMonthlyPayroll: true },
+    { code: 'PER_MEAL', name: 'Meal Allowance', amount: 22000, runFrequency: 'monthly', sourceAmount: 22000, includeInMonthlyPayroll: true },
+  ],
+});
+const mgtColaMealPay = calculatePayrollEarnings(mgtColaMeal, { useHrisPackageLines: true, includePeriodAdjustments: true, period: '2026-09' });
+assert.equal(mgtColaMealPay.profileId, 'management-cola-permanent');
+assert.equal(mgtColaMealPay.paidEarningLines.find((line) => /PER_MEAL|^MEAL$|TCMMEAL/i.test(line.code))?.amount, 22000, 'MGTCOLA meal package line must stay on payroll');
+
+const mgtColaMealSupplement = employee({
+  employeeCode: 'P0399',
+  employeeId: 'P0399',
+  employmentType: 'Permanent',
+  salaryGrade: 'MGTCOLA',
+  periodSalary: 518255,
+  sagePayrollEarnings: [
+    { code: 'MEAL', name: 'Meal Allowance', amount: 22000, runFrequency: 'monthly', sourceAmount: 22000 },
+  ],
+});
+const mgtColaMealSupplementPay = calculatePayrollEarnings(mgtColaMealSupplement, { useHrisPackageLines: true });
+assert.equal(mgtColaMealSupplementPay.paidEarningLines.find((line) => line.code === 'MEAL')?.amount, 22000, 'MGTCOLA formula package must still accept captured meal');
+assert.ok(mgtColaMealSupplementPay.grossPay > 518255);
+
+const p0399SpecialMeal = employee({
+  employeeCode: 'P0399',
+  employeeId: 'P0399',
+  employmentType: 'Permanent',
+  salaryGrade: 'MGTCOLA',
+  periodSalary: 532897.17,
+  sagePayrollEarnings: [
+    { code: 'BASIC', name: 'BASIC SALARY', amount: 213158.87, runFrequency: 'monthly', sourceAmount: 213158.87, includeInMonthlyPayroll: true },
+    { code: 'HOUSING', name: 'HOUSING', amount: 85263.55, runFrequency: 'monthly', sourceAmount: 85263.55, includeInMonthlyPayroll: true },
+    { code: 'SITE_ALLOW', name: 'SITE ALLOWANCE', amount: 300000, runFrequency: 'monthly', sourceAmount: 300000, includeInMonthlyPayroll: true },
+  ],
+});
+const p0399SpecialMealPay = calculatePayrollEarnings(p0399SpecialMeal, { useHrisPackageLines: true });
+assert.equal(p0399SpecialMealPay.paidEarningLines.find((line) => line.code === 'MEAL')?.amount, 300000, 'P0399 special standing meal must hit payroll');
+assert.equal(p0399SpecialMealPay.paidEarningLines.filter((line) => /MEAL/i.test(line.code)).length, 1);
+
+const mgtColaWithMealSnapshot = [
+  { code: 'MGT1COLA_BASIC', name: 'BASIC SALARY', amount: 213158.87 },
+  { code: 'PER_MEAL', name: 'Meal Allowance', amount: 22000 },
+];
+assert.equal(sagePayslipAcceptableForEmployee(mgtColaWithMealSnapshot, false), true, 'permanent Sage snapshot with PER_MEAL must remain acceptable');
+assert.equal(
+  sanitizePermanentPayslipEarnings(mgtColaWithMealSnapshot).some((line) => line.code === 'PER_MEAL'),
+  true,
+  'permanent meal must not be stripped as a contract day-rate line',
+);
 
 assert.equal(
   leaveAllowancePaymentPeriodForYear(

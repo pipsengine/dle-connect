@@ -348,6 +348,8 @@ export const CONTRACT_LUMPSUM_SUPPLEMENTAL_EARNINGS: PayrollSupplementalEarningD
   { code: 'OTHER_PAY', name: 'OTHER PAY', taxable: false, calculation: 'Configured amount' },
   { code: 'NIGHT_ALLOW', name: 'NIGHT ALLOWANCE', taxable: false, calculation: 'Configured amount' },
   { code: 'WEEKEND_ALLOW', name: 'WEEKEND ALLOWANCE', taxable: false, calculation: 'Configured amount' },
+  { code: 'MEAL', name: 'MEAL ALLOWANCE', taxable: true, calculation: 'Configured amount' },
+  { code: 'TCMMEAL', name: 'TCM MEAL', taxable: true, calculation: 'Configured amount' },
 ];
 
 export const CONTRACT_DAY_RATE_EARNING_DEFINITIONS: PayrollFormulaDefinition[] = [
@@ -647,6 +649,27 @@ const isMealFamilyEarningCode = (code?: string | null, name?: string | null) => 
   return upper === 'MEAL' || upper === 'TCMMEAL' || upper.includes('MEAL') || label.includes('MEAL');
 };
 
+/** MGTCOLA does not auto-earn meal; these staff still receive a standing taxable meal. */
+export const SPECIAL_STANDING_MEAL_BY_EMPLOYEE: Record<string, { amount: number; code: string; name: string }> = {
+  P0399: { amount: 300000, code: 'MEAL', name: 'MEAL ALLOWANCE' },
+};
+
+export const specialStandingMealLine = (employee: Pick<DleEmployeeDirectoryRow, 'employeeCode' | 'employeeId'>): PayrollEarningLine | null => {
+  const code = compact(employee.employeeCode || employee.employeeId).toUpperCase();
+  const spec = SPECIAL_STANDING_MEAL_BY_EMPLOYEE[code];
+  if (!spec) return null;
+  return {
+    code: spec.code,
+    name: spec.name,
+    taxable: true,
+    percentOfGross: 0,
+    calculation: 'Special standing meal allowance',
+    runFrequency: 'monthly',
+    includeInMonthlyPayroll: true,
+    amount: roundMoney(spec.amount),
+  };
+};
+
 /** Sage TCM meal / explicit meal rows replace the auto ₦500×days meal — never stack both. */
 const stripAutoMealWhenLegacyMealPresent = (
   base: PayrollEarningsResult,
@@ -837,10 +860,19 @@ const mergeConfiguredPackageSupplements = (
   baseLines: PayrollEarningLine[],
   options?: { includeOneOff?: boolean },
 ) => {
-  const packageLines = configuredPackageEarningLines(employee, options);
+  const specialMeal = specialStandingMealLine(employee);
+  const packageLines = [
+    ...configuredPackageEarningLines(employee, options),
+    ...(specialMeal ? [specialMeal] : []),
+  ];
   if (!packageLines.length) return baseLines;
   const existing = new Set(baseLines.map((line) => canonicalEarningCode(line.code)));
-  const supplements = packageLines.filter((line) => !existing.has(canonicalEarningCode(line.code)));
+  const hasMeal = baseLines.some((line) => isMealFamilyEarningCode(line.code, line.name));
+  const supplements = packageLines.filter((line) => {
+    if (existing.has(canonicalEarningCode(line.code))) return false;
+    if (hasMeal && isMealFamilyEarningCode(line.code, line.name)) return false;
+    return true;
+  });
   if (!supplements.length) return baseLines;
   return [...baseLines, ...supplements];
 };

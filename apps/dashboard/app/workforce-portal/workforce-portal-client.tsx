@@ -582,7 +582,7 @@ function PayslipWorkspace({ payload, employee }: { payload: Payload | null; empl
     ['Furniture Allowance', ['FURNITURE', 'FURN']],
     ['Leave Allowance', ['LEAVE ALLOWANCE', 'LEAVE_ALLOW']],
     ['Medical Allowance', ['MEDICAL']],
-    ['Meal Allowance', ['MEAL']],
+    ['Meal Allowance', ['MEAL', 'TCMMEAL', 'PER_MEAL']],
     ['Shift Allowance', ['SHIFT']],
     ['Overtime', ['OVERTIME', 'OVT', 'WEEKDAY OVT']],
     ['Bonus', ['BONUS']],

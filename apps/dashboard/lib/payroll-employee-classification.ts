@@ -86,8 +86,19 @@ export const isPermanentPayrollEmployee = (employee: DleEmployeeDirectoryRow) =>
 export const isContractStyleEarningLine = (line: { code?: string; name?: string }) => {
   const code = String(line.code || '').trim().toUpperCase();
   const name = String(line.name || '').trim().toUpperCase();
-  return /^(JCWEEKDAY|JCWEEKDAY_NT|WEEKDAYOVT|PUBHOL|PUBLIC_OVT|SATEARN|SUNDAYEARN|SATURDAY_OVT|SUNDAY_OVT|OVT|PER_MEAL|MEAL)/.test(code)
-    || /\b(WEEKDAY EARNING|MEAL ALLOWANCE|PUBLIC HOLIDAY|SATURDAY OVERTIME|SUNDAY OVERTIME|OVERTIME EARNING)\b/.test(name);
+  // Day-rate wage codes only. PER_MEAL / TCMMEAL / Meal Allowance are standing
+  // salaried or lumpsum lines and must remain capturable on P- and L-code payroll.
+  return /^(JCWEEKDAY|JCWEEKDAY_NT|WEEKDAYOVT|PUBHOL|PUBLIC_OVT|SATEARN|SUNDAYEARN|SATURDAY_OVT|SUNDAY_OVT|OVT)$/.test(code)
+    || /\b(WEEKDAY EARNING|PUBLIC HOLIDAY|SATURDAY OVERTIME|SUNDAY OVERTIME|OVERTIME EARNING)\b/.test(name);
+};
+
+const compactEarningCode = (value?: string | null) =>
+  String(value || '').trim().toUpperCase().replace(/[^A-Z0-9]/g, '');
+
+/** ₦500/day timesheet meal — not PER_MEAL / TCMMEAL monthly package meal. */
+export const isDayRateTimesheetMealLine = (line: { code?: string; name?: string }) => {
+  const code = compactEarningCode(line.code);
+  return code === 'MEAL' || code === 'MEALALLOW';
 };
 
 /**
@@ -95,8 +106,8 @@ export const isContractStyleEarningLine = (line: { code?: string; name?: string 
  * They belong on a payroll run, not as a standing profile package.
  */
 export const isPeriodVariableDayRateEarningLine = (line: { code?: string; name?: string }) => {
-  if (isContractStyleEarningLine(line)) return true;
-  const code = String(line.code || '').trim().toUpperCase().replace(/[^A-Z0-9]/g, '');
+  if (isContractStyleEarningLine(line) || isDayRateTimesheetMealLine(line)) return true;
+  const code = compactEarningCode(line.code);
   const name = String(line.name || '').trim().toUpperCase();
   return /^(REFUND|ARREARS|NIGHTALL|NIGHTALLOW|NNDMEAL|STOCKCOUNT|OTHERPAY|MISC)$/.test(code)
     || /\b(REFUND|ARREARS|NIGHT ALLOW|STOCK COUNT)\b/.test(name);
