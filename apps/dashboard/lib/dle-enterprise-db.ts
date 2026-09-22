@@ -1898,7 +1898,7 @@ export const importSagePayrollEmployeesToDb = async (employees: SagePayrollEmplo
         .input('source_employee_id', sql.NVarChar(80), sourceEmployeeId)
         .input('preferred_name', sql.NVarChar(150), str(employee.knownAsName) || null)
         .input('title', sql.NVarChar(30), str(employee.title) || null)
-        .input('first_name', sql.NVarChar(100), (resolvedName.firstName || str(employee.knownAsName) || employeeCode).slice(0, 100))
+        .input('first_name', sql.NVarChar(100), (resolvedName.firstName || str(employee.firstNames) || employeeCode).slice(0, 100))
         .input('middle_name', sql.NVarChar(100), resolvedName.middleName || null)
         .input('last_name', sql.NVarChar(100), (resolvedName.lastName || str(employee.lastName) || resolvedName.firstName || employeeCode).slice(0, 100))
         .input('gender', sql.NVarChar(40), str(employee.gender) || null)

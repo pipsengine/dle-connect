@@ -123,6 +123,20 @@ export const resolvePersonNameParts = (parts: PersonNameParts) => {
     last = last.slice(1);
   }
 
+  const preferred = uniqueTokens(withoutTitles(tokensOf(parts.preferredName)));
+  // Known-as / other name is often saved in first_name; the real first name is then in middle_name.
+  if (
+    first.length === 1
+    && middle.length >= 1
+    && preferred.length
+    && tokenKey(first[0] || '') === tokenKey(preferred[0] || '')
+    && tokenKey(middle[0] || '') !== tokenKey(first[0] || '')
+  ) {
+    const actualFirst = [middle[0]!];
+    middle = uniqueTokens([...first, ...middle.slice(1)]);
+    first = actualFirst;
+  }
+
   middle = notIn(middle, first);
   last = notIn(last, [...first, ...middle]);
 
@@ -178,13 +192,42 @@ export const sanitizePersonDisplayName = (value: unknown) => {
   return [title, ...given].filter(Boolean).join(' ');
 };
 
-/** Welcome / greeting: Preferred Name, else First Name, title-cased. */
+const isNicknameOf = (preferred: string, first: string) => {
+  const nick = tokenKey(preferred);
+  const given = tokenKey(first);
+  if (!nick || !given) return false;
+  if (nick === given) return true;
+  if (given.startsWith(nick) && nick.length >= 3) return true;
+  if (nick.startsWith(given) && given.length >= 3) return true;
+  return false;
+};
+
+/** Welcome / greeting: first name only. Preferred name is used only when it is a nickname of the first name. */
 export const personGreetingName = (parts: PersonNameParts) => {
-  const preferred = withoutTitles(tokensOf(parts.preferredName))[0];
-  if (preferred) return prettyGivenName(preferred);
   const resolved = resolvePersonNameParts(parts);
-  if (resolved.firstName) return prettyGivenName(resolved.firstName.split(' ')[0]);
-  const sanitized = sanitizePersonDisplayName(parts.fullName || parts.fallback);
-  const given = withoutTitles(tokensOf(sanitized))[0];
+  const first = (resolved.firstName.split(' ')[0] || '').trim();
+  const middleKeys = new Set(withoutTitles(tokensOf(resolved.middleName)).map(tokenKey));
+  const lastKeys = new Set(withoutTitles(tokensOf(resolved.lastName)).map(tokenKey));
+  const preferred = withoutTitles(tokensOf(parts.preferredName))[0] || '';
+
+  const preferredIsOtherName = Boolean(
+    preferred
+    && (middleKeys.has(tokenKey(preferred)) || lastKeys.has(tokenKey(preferred))),
+  );
+  if (preferred && first && !preferredIsOtherName && isNicknameOf(preferred, first)) {
+    return prettyGivenName(preferred);
+  }
+  if (first && !middleKeys.has(tokenKey(first)) && !lastKeys.has(tokenKey(first))) {
+    return prettyGivenName(first);
+  }
+  const middleGiven = withoutTitles(tokensOf(resolved.middleName))[0];
+  if (middleGiven && !lastKeys.has(tokenKey(middleGiven))) {
+    return prettyGivenName(middleGiven);
+  }
+  const sanitized = sanitizePersonDisplayName(
+    composePersonDisplayName({ ...parts, preferredName: undefined }) || parts.fullName || parts.fallback,
+  );
+  const given = withoutTitles(tokensOf(sanitized)).find((token) => !lastKeys.has(tokenKey(token)))
+    || withoutTitles(tokensOf(sanitized))[0];
   return prettyGivenName(given);
 };

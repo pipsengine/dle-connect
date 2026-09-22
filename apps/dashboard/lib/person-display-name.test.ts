@@ -90,6 +90,39 @@ assert.equal(
 
 assert.equal(
   personGreetingName({
+    preferredName: 'ONUWABHAGBE',
+    title: 'Mr',
+    firstName: 'CHRISTIAN',
+    middleName: 'ONUWABHAGBE',
+    lastName: 'OGBAISI',
+  }),
+  'Christian',
+);
+
+assert.equal(
+  personGreetingName({
+    preferredName: 'ONUWABHAGBE',
+    title: 'Mr',
+    firstName: 'ONUWABHAGBE',
+    middleName: 'CHRISTIAN',
+    lastName: 'OGBAISI',
+  }),
+  'Christian',
+);
+
+assert.equal(
+  composePersonDisplayName({
+    preferredName: 'ONUWABHAGBE',
+    title: 'Mr',
+    firstName: 'ONUWABHAGBE',
+    middleName: 'CHRISTIAN',
+    lastName: 'OGBAISI',
+  }),
+  'Mr. CHRISTIAN ONUWABHAGBE OGBAISI',
+);
+
+assert.equal(
+  personGreetingName({
     fullName: 'Mr Mr ONUWABHAGBE Mr ONUWABHAGBE CHRISTIAN ONUWABHAGBE OGBAISI',
   }),
   'Christian',
