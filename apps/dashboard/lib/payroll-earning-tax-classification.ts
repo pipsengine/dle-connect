@@ -25,8 +25,12 @@ const FIXED_EARNING_CODE = new Set([
   'JCWEEKDAY_NT',
   'LUMPSUMTAX',
   'BASIC1_LUMPSUM',
+  'LUMSUM_AMOUNT',
   'MEAL',
   'MEAL_ALLOW',
+  'TCMTRANS',
+  'TCM_TRNSPT',
+  'TCM_TRANSPORT',
 ]);
 
 const VARIABLE_EARNING_CODE = new Set([
@@ -65,25 +69,23 @@ const isStructuralProfileCode = (code: string) =>
   /^(JNR_|SNR_|MGT1COLA_|MGT_|SNM_)/.test(code) || /_(BASIC|HOUSE|HOUSIN|LEAVE|MEDICAL|OTHERALL|TRANS|FURN|UTILITY|UTILIT)$/i.test(code);
 
 const isLumpsumBaseEarning = (code: string, text: string) =>
-  /^(LUMPSUMTAX|BASIC1_LUMPSUM)$/i.test(code) || /\bLUMPSUM ALLOWANCE\b/.test(text);
+  /^(LUMPSUMTAX|BASIC1_LUMPSUM|LUMSUM_AMOUNT)$/i.test(code)
+  || /\bLUMPSUM ALLOWANCE\b/.test(text)
+  || /\bLUMSUM AMOUNT\b/.test(text);
 
 /**
  * Variable earnings are taxed only in the month paid (not annualized).
  * Fixed earnings use the standard annualized PAYE method.
- * For lumpsum packages, only the LUMPSUM base is fixed — OT and other adds are month-only.
+ * Lumpsum monthly package items (base, TCM transport, meal) are annualized;
+ * overtime, leave, arrears and other one-offs stay month-only.
  */
-export const isVariableEarningForPaye = (line: PayeEarningLineRef, options?: { category?: string }) => {
+export const isVariableEarningForPaye = (line: PayeEarningLineRef, _options?: { category?: string }) => {
   const code = canonicalCode(line.code);
   const text = lineText(line);
-  const category = String(options?.category || '').toLowerCase();
 
   if (!code && !String(line.name || '').trim()) return false;
 
-  // Lumpsum: only the base package stays annualized; all other taxable adds are month-only.
-  if (category === 'lumpsum') {
-    return !isLumpsumBaseEarning(code, text);
-  }
-
+  if (isLumpsumBaseEarning(code, text)) return false;
   if (FIXED_EARNING_CODE.has(code)) return false;
   if (isStructuralProfileCode(code)) return false;
   if (VARIABLE_EARNING_CODE.has(code)) return true;

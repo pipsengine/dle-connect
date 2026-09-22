@@ -149,10 +149,12 @@ export const payeTaxableFromEarningLines = (
   );
 };
 
+const STATUTORY_ANNUAL_RENT_CAP = 500000;
+
 export const lumpsumAnnualRentRelief = (monthlyTaxable: number) => {
   const annualTaxable = Math.max(0, Number(monthlyTaxable || 0) * 12);
-  if (annualTaxable >= 2040000) return 500000;
-  if (annualTaxable > 876960) return roundMoney(annualTaxable - 876960);
+  if (annualTaxable >= 2040000) return STATUTORY_ANNUAL_RENT_CAP;
+  if (annualTaxable > 876960) return roundMoney(Math.min(STATUTORY_ANNUAL_RENT_CAP, annualTaxable - 876960));
   return 0;
 };
 
@@ -162,15 +164,11 @@ export const resolveSageAlignedAnnualRentRelief = (input: {
   monthlyTaxable: number;
   payeRules?: PayeCalculationRules | null;
 }) => {
-  const payeRules = input.payeRules || resolvePayeRules(input.employee);
-  if (Number.isFinite(Number(payeRules?.annualRentRelief))) return Number(payeRules?.annualRentRelief);
+  const annualRentPaid = Math.max(0, Number(input.employee?.annualRent || 0));
+  if (annualRentPaid > 0) return roundMoney(Math.min(STATUTORY_ANNUAL_RENT_CAP, annualRentPaid * 0.2));
   if (input.category === 'stipend' || input.category === 'contract') return 0;
   if (input.category === 'lumpsum') return lumpsumAnnualRentRelief(input.monthlyTaxable);
-  if (Number.isFinite(Number(input.employee?.annualRentRelief)) && Number(input.employee?.annualRentRelief) > 0) {
-    return Number(input.employee?.annualRentRelief);
-  }
-  if (normalizedGrade(input.employee?.salaryGrade || input.employee?.jobGrade) === 'MGT7') return 400000;
-  return 500000;
+  return STATUTORY_ANNUAL_RENT_CAP;
 };
 
 type PayeBand = { amount: number | null; rate: number };
@@ -314,8 +312,7 @@ const calculateFixedVariableSplitPaye = (input: {
     monthlyTaxable: fixedTaxable,
     payeRules: input.effectiveRules,
   });
-  const includePensionRelief =
-    input.category === 'permanent' && !input.effectiveRules?.disablePensionPayeRelief;
+  const includePensionRelief = input.category === 'permanent';
   const monthlyBht = bhtFromEarningLines(fixed);
   const monthlyBasic = basicFromEarningLines(fixed);
   const statutoryPensionMonthly = roundMoney(monthlyBht * 0.08);
@@ -416,11 +413,7 @@ export const hrisPayeFromEmployee = (input: {
     };
   }
 
-  const effectiveRules =
-    payeRules ||
-    (grade === 'MGT7' && category === 'permanent'
-      ? { disablePensionPayeRelief: true, annualRentRelief: 400000 }
-      : null);
+  const effectiveRules = payeRules;
 
   // Strip USD-only controls when computing Nigerian PAYE (keep ngnMonthlyPayeOverride).
   const ngnRules = isNgnRun && effectiveRules
@@ -475,11 +468,5 @@ export const payeTaxableFromPayrollEarnings = (
   const paidLines = (earnings.paidEarningLines || earnings.earningLines || []) as PayrollEarningLine[];
   const category = payeCategoryFromProfile(earnings.profileId);
   const payeRules = resolvePayeRules(employee);
-  const grade = normalizedGrade(employee.salaryGrade || employee.jobGrade);
-  const effectiveRules =
-    payeRules ||
-    (grade === 'MGT7' && category === 'permanent'
-      ? { disablePensionPayeRelief: true, annualRentRelief: 400000 }
-      : null);
-  return payeTaxableFromEarningLines(mapPayrollLines(paidLines), category, employee.salaryGrade || employee.jobGrade, effectiveRules);
+  return payeTaxableFromEarningLines(mapPayrollLines(paidLines), category, employee.salaryGrade || employee.jobGrade, payeRules);
 };

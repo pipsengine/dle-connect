@@ -829,7 +829,7 @@ const configuredPackageEarningLines = (
       amount,
     });
   }
-  return lines;
+  return collapseCanonicalEarningLines(lines);
 };
 
 const mergeConfiguredPackageSupplements = (
@@ -974,8 +974,25 @@ const canonicalEarningCode = (code: string) => {
     STIPEND: 'STIPENDNT',
     BASIC1LUMPSUM: 'LUMPSUMTAX',
     BASICLUMPSUM: 'LUMPSUMTAX',
+    LUMSUMAMOUNT: 'LUMPSUMTAX',
+    LUMSUM_AMOUNT: 'LUMPSUMTAX',
   };
   return aliases[upper] || upper;
+};
+
+const collapseCanonicalEarningLines = (lines: PayrollEarningLine[]) => {
+  const byCanonical = new Map<string, PayrollEarningLine>();
+  for (const line of lines) {
+    const key = canonicalEarningCode(line.code);
+    const existing = byCanonical.get(key);
+    if (!existing || Number(line.amount || 0) > Number(existing.amount || 0)) {
+      byCanonical.set(
+        key,
+        key === 'LUMPSUMTAX' ? { ...line, code: 'LUMPSUMTAX', name: line.name || 'LUMPSUM ALLOWANCE' } : line,
+      );
+    }
+  }
+  return [...byCanonical.values()];
 };
 
 const isSageStructuralEarningCode = (code: string) =>
@@ -1243,7 +1260,7 @@ export const calculatePayrollEarnings = (employee: DleEmployeeDirectoryRow, opti
       : baseAmounts;
   }
   if (profileId === 'contract-lumpsum') {
-    const isBaseLumpsumCode = (code: string) => /^(LUMPSUMTAX|BASIC1_LUMPSUM)$/i.test(code);
+    const isBaseLumpsumCode = (code: string) => canonicalEarningCode(code) === 'LUMPSUMTAX';
     const periodAdjustments = [
       ...periodAdjustmentLines(employee, options),
       ...leavePayrollEventLines(employee, gross, [], options),
@@ -1262,11 +1279,11 @@ export const calculatePayrollEarnings = (employee: DleEmployeeDirectoryRow, opti
           includeInMonthlyPayroll: true,
           amount: roundMoney(gross),
         }];
-    const monthlyLines = mergeConfiguredPackageSupplements(
+    const monthlyLines = collapseCanonicalEarningLines(mergeConfiguredPackageSupplements(
       employee,
       [...coreLines, ...supplementalAdjustments],
       { includeOneOff: true },
-    );
+    ));
     const taxablePay = roundMoney(monthlyLines.filter((line) => line.taxable !== false).reduce((sum, line) => sum + line.amount, 0));
     const grossPay = roundMoney(monthlyLines.reduce((sum, line) => sum + line.amount, 0));
     const basicPay = roundMoney(coreLines.reduce((sum, line) => sum + line.amount, 0));

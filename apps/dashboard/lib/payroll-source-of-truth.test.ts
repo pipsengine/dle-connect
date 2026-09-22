@@ -298,6 +298,20 @@ assert.equal(
 assert.equal(lumpsumDoublePay.paidEarningLines.find((line) => line.code === 'MEAL')?.amount, 5000);
 assert.equal(lumpsumDoublePay.paidEarningLines.find((line) => line.code === 'OVERTIME')?.amount, 10000);
 
+const lumpsumAmountAlias = employee({
+  employeeCode: 'L2718',
+  employeeId: 'L2718',
+  employmentType: 'Lumpsum',
+  periodSalary: 330347.91,
+  sagePayrollEarnings: [
+    { code: 'LUMPSUMTAX', name: 'LUMPSUM ALLOWANCE', amount: 330347.91, runFrequency: 'monthly', sourceAmount: 330347.91 },
+    { code: 'LUMSUM_AMOUNT', name: 'LUMSUM AMOUNT', amount: 330347.91, runFrequency: 'monthly', sourceAmount: 330347.91 },
+  ],
+});
+const lumpsumAmountAliasPay = calculatePayrollEarnings(lumpsumAmountAlias, { useHrisPackageLines: true });
+assert.equal(lumpsumAmountAliasPay.grossPay, 330347.91, 'LUMSUM_AMOUNT must collapse onto LUMPSUMTAX');
+assert.equal(lumpsumAmountAliasPay.paidEarningLines.filter((line) => /LUMPSUM|LUMSUM/i.test(line.code)).length, 1);
+
 const permanentLeavePackage = employee({
   employeeCode: 'P0100',
   employeeId: 'P0100',
