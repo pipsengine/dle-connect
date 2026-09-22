@@ -85,7 +85,31 @@ assert.equal(
     firstName: 'CHRISTIAN',
     lastName: 'OGBAISI',
   }),
-  'Chris',
+  'Christian',
+);
+
+assert.equal(
+  composePersonDisplayName({
+    title: 'Mr',
+    firstName: 'Mr',
+    middleName: 'ONUWABHAGBE',
+    lastName: 'Mr ONUWABHAGBE CHRISTIAN ONUWABHAGBE OGBAISI',
+    preferredName: 'CHRIS',
+    fullName: 'Mr Mr ONUWABHAGBE CHRISTIAN ONUWABHAGBE OGBAISI',
+  }),
+  'Mr. CHRISTIAN ONUWABHAGBE OGBAISI',
+);
+
+assert.equal(
+  personGreetingName({
+    title: 'Mr',
+    firstName: 'Mr',
+    middleName: 'ONUWABHAGBE',
+    lastName: 'Mr ONUWABHAGBE CHRISTIAN ONUWABHAGBE OGBAISI',
+    preferredName: 'CHRIS',
+    fullName: 'Mr Mr ONUWABHAGBE CHRISTIAN ONUWABHAGBE OGBAISI',
+  }),
+  'Christian',
 );
 
 assert.equal(
@@ -107,7 +131,7 @@ assert.equal(
     middleName: 'CHRISTIAN',
     lastName: 'OGBAISI',
   }),
-  'Christian',
+  'Onuwabhagbe',
 );
 
 assert.equal(
@@ -118,7 +142,7 @@ assert.equal(
     middleName: 'CHRISTIAN',
     lastName: 'OGBAISI',
   }),
-  'Mr. CHRISTIAN ONUWABHAGBE OGBAISI',
+  'Mr. ONUWABHAGBE CHRISTIAN OGBAISI',
 );
 
 assert.equal(
@@ -129,5 +153,16 @@ assert.equal(
 );
 
 assert.equal(sanitizePersonDisplayName('Mr. CHRISTIAN OGBAISI'), 'Mr. CHRISTIAN OGBAISI');
+
+assert.equal(
+  composePersonDisplayName({
+    title: 'Mr',
+    firstName: 'Mr',
+    middleName: 'ONUWABHAGBE',
+    lastName: 'Mr ONUWABHAGBE CHRISTIAN ONUWABHAGBE OGBAISI',
+    fallback: 'Mr Mr ONUWABHAGBE CHRISTIAN ONUWABHAGBE OGBAISI',
+  }),
+  'Mr. CHRISTIAN ONUWABHAGBE OGBAISI',
+);
 
 console.log('person display name tests passed');

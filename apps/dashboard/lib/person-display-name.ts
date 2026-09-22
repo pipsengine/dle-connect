@@ -55,15 +55,22 @@ const notIn = (tokens: string[], excluded: string[]) => {
   return tokens.filter((token) => !skip.has(tokenKey(token)));
 };
 
-const isPrefixOf = (left: string[], right: string[]) => {
-  if (!left.length || left.length > right.length) return false;
-  return left.every((token, index) => tokenKey(token) === tokenKey(right[index] || ''));
+const collapseConsecutive = (tokens: string[]) => {
+  const out: string[] = [];
+  for (const token of tokens) {
+    if (out.length && tokenKey(out[out.length - 1] || '') === tokenKey(token)) continue;
+    out.push(token);
+  }
+  return out;
 };
 
-const isSubsetOf = (left: string[], right: string[]) => {
-  if (!left.length || !right.length) return false;
-  const haystack = new Set(right.map(tokenKey));
-  return left.every((token) => haystack.has(tokenKey(token)));
+const dropLeadingSurnameEcho = (given: string[]) => {
+  const tokens = collapseConsecutive(given);
+  if (tokens.length < 2) return tokens;
+  const lead = tokenKey(tokens[0] || '');
+  if (!lead) return tokens;
+  const echoed = tokens.slice(1).some((token) => tokenKey(token) === lead);
+  return echoed ? tokens.slice(1) : tokens;
 };
 
 const prettyGivenName = (value: unknown) => {
@@ -98,47 +105,56 @@ export type PersonNameParts = {
   fullName?: unknown;
 };
 
+/**
+ * Repair already-concatenated names (session cookies, Sage displayName, last_name dumps)
+ * into Title + First + Middle + Last, without a leading surname/other-name echo.
+ */
+export const sanitizePersonDisplayName = (value: unknown) => {
+  const tokens = tokensOf(value);
+  if (!tokens.length) return '';
+  const titleToken = tokens.find((token) => isPersonTitleToken(token));
+  const title = formatPersonTitle(titleToken);
+  const given = uniqueTokens(dropLeadingSurnameEcho(withoutTitles(tokens)));
+  return [title, ...given].filter(Boolean).join(' ');
+};
+
 export const resolvePersonNameParts = (parts: PersonNameParts) => {
-  const title = formatPersonTitle(parts.title);
-  let first = uniqueTokens(withoutTitles(tokensOf(parts.firstName)));
-  let middle = uniqueTokens(withoutTitles(tokensOf(parts.middleName)));
-  let last = uniqueTokens(withoutTitles(tokensOf(parts.lastName)));
-
-  // Sage/HR dumps sometimes put the surname into first_name, and given names into middle_name.
-  if (first.length && last.length && (isPrefixOf(first, last) || isSubsetOf(first, last))) {
-    const givenFromMiddle = notIn(middle, last);
-    first = givenFromMiddle.length ? givenFromMiddle : notIn(first, last);
-    middle = notIn(notIn(middle, first), last);
+  const blob = [
+    parts.title,
+    parts.firstName,
+    parts.middleName,
+    parts.lastName,
+    parts.fullName,
+    parts.fallback,
+  ].map(compact).filter(Boolean).join(' ');
+  const sanitized = sanitizePersonDisplayName(blob);
+  const title = formatPersonTitle(parts.title)
+    || formatPersonTitle(tokensOf(sanitized)[0]);
+  const given = uniqueTokens(withoutTitles(tokensOf(sanitized)));
+  if (!given.length) {
+    return { title, firstName: '', middleName: '', lastName: '' };
   }
 
-  // Sage FirstNames often contains first + other names in one field.
-  if (first.length >= 2 && !middle.length) {
-    middle = first.slice(1);
-    first = [first[0]!];
-  }
+  const last = [given[given.length - 1]!];
+  const head = given.slice(0, -1);
+  const middleField = uniqueTokens(withoutTitles(tokensOf(parts.middleName)));
+  const middleFromField = middleField.length === 1
+    && head.some((token) => tokenKey(token) === tokenKey(middleField[0] || ''))
+    ? [middleField[0]!]
+    : [];
 
-  // Last name field sometimes contains other-name + surname together.
-  if (!middle.length && last.length >= 2) {
-    middle = [last[0]!];
-    last = last.slice(1);
+  let first: string[];
+  let middle: string[];
+  if (middleFromField.length) {
+    middle = middleFromField;
+    first = notIn(head, middle);
+  } else if (head.length >= 2) {
+    first = [head[0]!];
+    middle = head.slice(1);
+  } else {
+    first = head;
+    middle = [];
   }
-
-  const preferred = uniqueTokens(withoutTitles(tokensOf(parts.preferredName)));
-  // Known-as / other name is often saved in first_name; the real first name is then in middle_name.
-  if (
-    first.length === 1
-    && middle.length >= 1
-    && preferred.length
-    && tokenKey(first[0] || '') === tokenKey(preferred[0] || '')
-    && tokenKey(middle[0] || '') !== tokenKey(first[0] || '')
-  ) {
-    const actualFirst = [middle[0]!];
-    middle = uniqueTokens([...first, ...middle.slice(1)]);
-    first = actualFirst;
-  }
-
-  middle = notIn(middle, first);
-  last = notIn(last, [...first, ...middle]);
 
   return {
     title,
@@ -146,24 +162,6 @@ export const resolvePersonNameParts = (parts: PersonNameParts) => {
     middleName: middle.join(' '),
     lastName: last.join(' '),
   };
-};
-
-const collapseConsecutive = (tokens: string[]) => {
-  const out: string[] = [];
-  for (const token of tokens) {
-    if (out.length && tokenKey(out[out.length - 1] || '') === tokenKey(token)) continue;
-    out.push(token);
-  }
-  return out;
-};
-
-const dropLeadingSurnameEcho = (given: string[]) => {
-  const tokens = collapseConsecutive(given);
-  if (tokens.length < 2) return tokens;
-  const lead = tokenKey(tokens[0] || '');
-  if (!lead) return tokens;
-  const echoed = tokens.slice(1).some((token) => tokenKey(token) === lead);
-  return echoed ? tokens.slice(1) : tokens;
 };
 
 /**
@@ -175,59 +173,15 @@ export const composePersonDisplayName = (parts: PersonNameParts) => {
   const composed = [resolved.title, resolved.firstName, resolved.middleName, resolved.lastName]
     .filter(Boolean)
     .join(' ');
-  if (composed) return composed;
-  return sanitizePersonDisplayName(parts.fullName || parts.fallback);
+  return composed || sanitizePersonDisplayName(parts.fullName || parts.fallback);
 };
 
-/**
- * Repair already-concatenated names (session cookies, Sage displayName, etc.)
- * into Title + First + Middle + Last, without a leading surname echo.
- */
-export const sanitizePersonDisplayName = (value: unknown) => {
-  const tokens = tokensOf(value);
-  if (!tokens.length) return '';
-  const titleToken = tokens.find((token) => isPersonTitleToken(token));
-  const title = formatPersonTitle(titleToken);
-  const given = uniqueTokens(dropLeadingSurnameEcho(withoutTitles(tokens)));
-  return [title, ...given].filter(Boolean).join(' ');
-};
-
-const isNicknameOf = (preferred: string, first: string) => {
-  const nick = tokenKey(preferred);
-  const given = tokenKey(first);
-  if (!nick || !given) return false;
-  if (nick === given) return true;
-  if (given.startsWith(nick) && nick.length >= 3) return true;
-  if (nick.startsWith(given) && given.length >= 3) return true;
-  return false;
-};
-
-/** Welcome / greeting: first name only. Preferred name is used only when it is a nickname of the first name. */
+/** Welcome / greeting: official first name only — never middle/other/surname. */
 export const personGreetingName = (parts: PersonNameParts) => {
   const resolved = resolvePersonNameParts(parts);
   const first = (resolved.firstName.split(' ')[0] || '').trim();
-  const middleKeys = new Set(withoutTitles(tokensOf(resolved.middleName)).map(tokenKey));
-  const lastKeys = new Set(withoutTitles(tokensOf(resolved.lastName)).map(tokenKey));
-  const preferred = withoutTitles(tokensOf(parts.preferredName))[0] || '';
-
-  const preferredIsOtherName = Boolean(
-    preferred
-    && (middleKeys.has(tokenKey(preferred)) || lastKeys.has(tokenKey(preferred))),
-  );
-  if (preferred && first && !preferredIsOtherName && isNicknameOf(preferred, first)) {
-    return prettyGivenName(preferred);
-  }
-  if (first && !middleKeys.has(tokenKey(first)) && !lastKeys.has(tokenKey(first))) {
-    return prettyGivenName(first);
-  }
-  const middleGiven = withoutTitles(tokensOf(resolved.middleName))[0];
-  if (middleGiven && !lastKeys.has(tokenKey(middleGiven))) {
-    return prettyGivenName(middleGiven);
-  }
-  const sanitized = sanitizePersonDisplayName(
-    composePersonDisplayName({ ...parts, preferredName: undefined }) || parts.fullName || parts.fallback,
-  );
-  const given = withoutTitles(tokensOf(sanitized)).find((token) => !lastKeys.has(tokenKey(token)))
-    || withoutTitles(tokensOf(sanitized))[0];
+  if (first) return prettyGivenName(first);
+  const sanitized = sanitizePersonDisplayName(parts.fullName || parts.fallback);
+  const given = withoutTitles(tokensOf(sanitized))[0];
   return prettyGivenName(given);
 };
