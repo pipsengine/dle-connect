@@ -1307,13 +1307,16 @@ export const timesheetLineHasBookedHours = (line: {
 
 /**
  * Attendance sync / roster persist rebuild empty Absent rows. Keep paper, offshore,
- * and paid-leave hours that already exist for the same employee.
+ * paid-leave, and any already-booked hours for the same employee.
  */
+const priorTimesheetBookingShouldSurvive = (line: TimesheetLine) =>
+  isProtectedTimesheetBooking(line) || timesheetLineHasBookedHours(line);
+
 export const preserveManualTimesheetBookings = <T extends TimesheetLine>(incoming: T[], existing: T[]): T[] => {
   const restored = incoming.map((line) => {
-    if (isProtectedTimesheetBooking(line) || timesheetLineHasBookedHours(line)) return line;
+    if (priorTimesheetBookingShouldSurvive(line)) return line;
     const prior = existing.find((item) => timesheetEmployeeRecordsMatch(item, line));
-    if (!prior || !isProtectedTimesheetBooking(prior)) return line;
+    if (!prior || !priorTimesheetBookingShouldSurvive(prior)) return line;
     return {
       ...line,
       projectAllocations: prior.projectAllocations,
@@ -1330,7 +1333,7 @@ export const preserveManualTimesheetBookings = <T extends TimesheetLine>(incomin
     };
   });
   const extras = existing.filter((prior) =>
-    isProtectedTimesheetBooking(prior)
+    priorTimesheetBookingShouldSurvive(prior)
     && !restored.some((line) => timesheetEmployeeRecordsMatch(line, prior)),
   );
   return [...restored, ...extras];

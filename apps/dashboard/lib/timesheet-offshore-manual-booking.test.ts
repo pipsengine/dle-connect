@@ -262,6 +262,16 @@ assert.equal(keptExtra[0]?.employeeNo, 'C2825');
 const trueAbsent = preserveManualTimesheetBookings([rosterWipe], [{ ...rosterWipe, remarks: null }]);
 assert.equal(trueAbsent[0]?.usedHours, 0, 'true absent rows stay at 0h');
 
+const supervisorBooked = {
+  ...paperC2825,
+  remarks: null,
+  attendanceMode: 'Biometric' as const,
+  projectAllocations: [{ projectId: 'DL2424', projectCode: 'DL2424', projectName: 'DL2424', hours: 8, remarks: null }],
+};
+const restoredBooked = preserveManualTimesheetBookings([rosterWipe], [supervisorBooked]);
+assert.equal(restoredBooked[0]?.usedHours, 8, 'supervisor-booked hours survive even without PAPER_ATTENDANCE');
+assert.equal(restoredBooked[0]?.projectAllocations[0]?.projectCode, 'DL2424');
+
 const offshoreValidated = validateTimesheetLine(
   offshoreBooked,
   [],
