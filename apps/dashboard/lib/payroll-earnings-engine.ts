@@ -1135,7 +1135,7 @@ const leavePayrollEventLines = (employee: DleEmployeeDirectoryRow, periodGross: 
   const adjustmentHasLeave = readPeriodEarningAdjustmentsSync()
     .filter((row) => normalizedPeriod(row.period) === period)
     .filter((row) => employeeAdjustmentMatched(employee, row))
-    .some((row) => /LEAVEALLOW/i.test(String(row.code || '')));
+    .some((row) => /LEAVEALLOW/i.test(String(row.code || '')) && Number(row.amount || 0) > 0);
   if (adjustmentHasLeave) return [];
   return leaveAllowanceEventsForEmployeePeriod(employee, options.period).map((event) => ({
     code: event.code || 'LEAVEALLOW',

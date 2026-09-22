@@ -806,6 +806,101 @@ export const deleteApprovalMatrixRule = async (input: { matrixId: string; actor:
   return { workspace: await buildApprovalMatrixWorkspace({ autoSeed: false }) };
 };
 
+const isGmStage = (stage: string) => /^gm$|general\s*manager/i.test(compact(stage));
+
+const isCfoStage = (stage: string) => /^cfo$|chief\s*financial/i.test(compact(stage));
+
+/** True when the employee holds the General Manager seat. */
+export const isGmEmployee = (employee?: {
+  employeeCode?: string | null;
+  employeeId?: string | null;
+  fullName?: string | null;
+  jobTitle?: string | null;
+  designation?: string | null;
+} | null) => {
+  if (!employee) return false;
+  const title = compact(employee.jobTitle || employee.designation);
+  if (!title) return false;
+  if (/\b(to|for)\s+(the\s+)?(gm|general\s*manager)\b/i.test(title)) return false;
+  if (
+    /\b(pa|ea|p\.?a\.?|e\.?a\.?|personal\s+assistant|executive\s+assistant|secretary)\b/i.test(title)
+    && /\b(gm|general\s*manager)\b/i.test(title)
+  ) {
+    return false;
+  }
+  return /^gm$/i.test(title) || /\bgeneral\s*manager\b/i.test(title);
+};
+
+const insertStageBeforeCfo = (stages: string[], stage: string) => {
+  const next = stages.filter((item) => compact(item).toLowerCase() !== compact(stage).toLowerCase());
+  const cfoIndex = next.findIndex(isCfoStage);
+  if (cfoIndex >= 0) return [...next.slice(0, cfoIndex), stage, ...next.slice(cfoIndex)];
+  return [...next, stage];
+};
+
+/**
+ * GM approves once. If the requester's line manager is the GM, drop Reporting Manager
+ * and keep a single GM stage last before CFO. Never first-and-last.
+ */
+export const applyGmStageLayout = (stages: string[], gmIsLineManager: boolean) => {
+  const original = [...(stages || [])].map((stage) => compact(stage)).filter(Boolean);
+  if (!original.length) return original;
+  const hadGmStage = original.some(isGmStage);
+  if (!hadGmStage) return original;
+  if (!gmIsLineManager && original.filter(isGmStage).length <= 1) return original;
+  let next = original;
+  if (gmIsLineManager) next = next.filter((stage) => !isLineManagerStage(stage));
+  return insertStageBeforeCfo(next.filter((stage) => !isGmStage(stage)), 'GM');
+};
+
+export const applyGmApprovesOnceBeforeCfo = async (input: {
+  stages: string[];
+  requesterCode?: string | null;
+  supervisorName?: string | null;
+  projectCode?: string | null;
+  department?: string | null;
+  paymentType?: string | null;
+}): Promise<string[]> => {
+  const original = [...(input.stages || [])].map((stage) => compact(stage)).filter(Boolean);
+  if (!original.length) return original;
+  const hadGmStage = original.some(isGmStage);
+
+  let gmIsLineManager = false;
+  try {
+    const { resolvePaymentStageApprover } = await import('@/lib/finance-intelligence/payment-approval-notify');
+    const lineManager = await resolvePaymentStageApprover({
+      stage: 'Reporting Manager',
+      requesterCode: input.requesterCode,
+      supervisorName: input.supervisorName,
+      projectCode: input.projectCode,
+      department: input.department,
+      paymentType: input.paymentType,
+      principalOnly: true,
+    });
+    const gm = hadGmStage
+      ? await resolvePaymentStageApprover({
+        stage: 'GM',
+        requesterCode: input.requesterCode,
+        supervisorName: input.supervisorName,
+        projectCode: input.projectCode,
+        department: input.department,
+        paymentType: input.paymentType,
+        principalOnly: true,
+      })
+      : { code: '', employee: null as { jobTitle?: string | null; designation?: string | null } | null };
+    const lineManagerCode = compact(lineManager.code).toUpperCase();
+    const gmCode = compact(gm.code).toUpperCase();
+    gmIsLineManager = Boolean(
+      isGmEmployee(lineManager.employee)
+      || (lineManagerCode && gmCode && lineManagerCode === gmCode),
+    );
+  } catch (error) {
+    console.error('[approval-limits] GM one-approval rule failed', error);
+  }
+
+  return applyGmStageLayout(original, gmIsLineManager);
+};
+
 /** True when the employee is the Managing Director / MD-CEO. */
 export const isMdCeoEmployee = (employee?: {
   employeeCode?: string | null;
@@ -1011,6 +1106,12 @@ export const resolveApprovalChain = async (input: {
     supervisorName: input.supervisorName,
   });
   stages = await skipProjectReportingManagerWhenSameAsPm({
+    stages,
+    requesterCode: input.requesterCode,
+    supervisorName: input.supervisorName,
+    projectCode: input.projectCode,
+  });
+  stages = await applyGmApprovesOnceBeforeCfo({
     stages,
     requesterCode: input.requesterCode,
     supervisorName: input.supervisorName,

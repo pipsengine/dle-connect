@@ -165,6 +165,16 @@ CREATE TABLE [hris].[SalaryScheduleUploads] (
 );
 IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'IX_SalaryScheduleUploads_Period' AND object_id = OBJECT_ID(N'[hris].[SalaryScheduleUploads]'))
   CREATE INDEX [IX_SalaryScheduleUploads_Period] ON [hris].[SalaryScheduleUploads] ([period_code], [is_active], [applied_at] DESC);
+IF OBJECT_ID(N'[hris].[PayrollLeaveAllowanceEvents]', N'U') IS NULL
+CREATE TABLE [hris].[PayrollLeaveAllowanceEvents] (
+  [Id] NVARCHAR(180) NOT NULL CONSTRAINT [PK_PayrollLeaveAllowanceEvents] PRIMARY KEY,
+  [EmployeeCode] NVARCHAR(40) NOT NULL,
+  [Period] NVARCHAR(7) NOT NULL,
+  [LeaveYear] INT NOT NULL,
+  [StatusName] NVARCHAR(40) NOT NULL,
+  [PayloadJson] NVARCHAR(MAX) NOT NULL,
+  [UpdatedAt] DATETIME2 NOT NULL CONSTRAINT [DF_PayrollLeaveAllowanceEvents_UpdatedAt] DEFAULT SYSUTCDATETIME()
+);
 `;
 
 let schemaReady = false;

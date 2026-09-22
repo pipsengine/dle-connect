@@ -37,10 +37,19 @@ const moneyFmt = new Intl.NumberFormat('en-NG', { style: 'currency', currency: '
 const approvedStatuses = new Set(['Approved', 'Completed']);
 
 export const employeeMatchKeys = (employeeId: string, employeeCode?: string | null) =>
-  [employeeId, employeeCode].map(normalizePayrollMatchKey).filter(Boolean);
+  [employeeId, employeeCode]
+    .flatMap((value) => {
+      const text = String(value || '').trim().toUpperCase();
+      if (!text) return [];
+      const keys = [normalizePayrollMatchKey(text)];
+      const staff = text.match(/\b([PLC])0*(\d{3,5})\b/);
+      if (staff) keys.push(normalizePayrollMatchKey(`${staff[1]}${staff[2]}`));
+      return keys;
+    })
+    .filter(Boolean);
 
 export const matchesEmployeeKeys = (employeeId: string, keys: string[]) =>
-  keys.includes(normalizePayrollMatchKey(employeeId));
+  employeeMatchKeys(employeeId).some((key) => keys.includes(key));
 
 export const approvedAnnualLeaveDaysForYear = (
   applications: LeaveApplicationLike[],
@@ -59,10 +68,11 @@ export const approvedAnnualLeaveDaysForYear = (
 export const isLeaveAllowancePaymentCode = (code?: string | null) =>
   /^LEAVEALLOW$/i.test(String(code || '').trim());
 
-export const isCountableLeaveAllowanceEvent = (event: Pick<PayrollLeaveAllowanceEvent, 'code' | 'amount' | 'status'>) =>
+export const isCountableLeaveAllowanceEvent = (event: Pick<PayrollLeaveAllowanceEvent, 'code' | 'amount' | 'status'> & { audit?: Array<{ action?: string; note?: string }> }) =>
   isLeaveAllowancePaymentCode(event.code)
   && Number(event.amount || 0) > 0
-  && ['Approved', 'Posted', 'Paid'].includes(event.status);
+  && ['Approved', 'Posted', 'Paid'].includes(event.status)
+  && !(event.audit || []).some((entry) => /reversed ineligible/i.test(`${entry.action || ''} ${entry.note || ''}`));
 
 export const isLeaveAllowanceEligibleForYear = (
   applications: LeaveApplicationLike[],

@@ -2,7 +2,7 @@ import { existsSync, readFileSync, statSync } from 'node:fs';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import sql from 'mssql';
-import { loadWorkspaceEnv, type DleEmployeeDirectoryRow } from '@/lib/dle-enterprise-db';
+import { loadWorkspaceEnv, getDleEnterpriseDbPool, type DleEmployeeDirectoryRow } from '@/lib/dle-enterprise-db';
 import {
   approvedAnnualLeaveDaysForYear,
   earliestQualifyingAnnualLeaveForAllowance,
@@ -106,15 +106,102 @@ const parseEvents = (raw: string): PayrollLeaveAllowanceEvent[] => {
   return Array.isArray(parsed) ? parsed as PayrollLeaveAllowanceEvent[] : [];
 };
 
+const EVENTS_TABLE_SQL = `
+IF OBJECT_ID(N'[hris].[PayrollLeaveAllowanceEvents]', N'U') IS NULL
+CREATE TABLE [hris].[PayrollLeaveAllowanceEvents] (
+  [Id] NVARCHAR(180) NOT NULL CONSTRAINT [PK_PayrollLeaveAllowanceEvents] PRIMARY KEY,
+  [EmployeeCode] NVARCHAR(40) NOT NULL,
+  [Period] NVARCHAR(7) NOT NULL,
+  [LeaveYear] INT NOT NULL,
+  [StatusName] NVARCHAR(40) NOT NULL,
+  [PayloadJson] NVARCHAR(MAX) NOT NULL,
+  [UpdatedAt] DATETIME2 NOT NULL CONSTRAINT [DF_PayrollLeaveAllowanceEvents_UpdatedAt] DEFAULT SYSUTCDATETIME()
+);
+`;
+
+const readEventsFromSql = async (): Promise<PayrollLeaveAllowanceEvent[] | null> => {
+  const pool = await getDleEnterpriseDbPool().catch(() => null);
+  if (!pool) return null;
+  try {
+    await pool.request().query(EVENTS_TABLE_SQL);
+    const result = await pool.request().query(`SELECT [PayloadJson] FROM [hris].[PayrollLeaveAllowanceEvents];`);
+    const events: PayrollLeaveAllowanceEvent[] = [];
+    for (const row of result.recordset || []) {
+      try {
+        const parsed = JSON.parse(String(row.PayloadJson || ''));
+        if (parsed && typeof parsed === 'object') events.push(parsed as PayrollLeaveAllowanceEvent);
+      } catch {
+        // Skip a broken row and keep the rest.
+      }
+    }
+    return events;
+  } catch (error) {
+    console.warn('[Leave Allowance] SQL event read skipped:', error instanceof Error ? error.message : error);
+    return null;
+  }
+};
+
+const writeEventsToSql = async (events: PayrollLeaveAllowanceEvent[]) => {
+  const pool = await getDleEnterpriseDbPool().catch(() => null);
+  if (!pool) return;
+  if (!events.length) return;
+  try {
+    await pool.request().query(EVENTS_TABLE_SQL);
+    const transaction = pool.transaction();
+    await transaction.begin();
+    try {
+      await new sql.Request(transaction).query(`DELETE FROM [hris].[PayrollLeaveAllowanceEvents];`);
+      for (const event of events) {
+        await new sql.Request(transaction)
+          .input('Id', sql.NVarChar(180), event.id)
+          .input('EmployeeCode', sql.NVarChar(40), compact(event.employeeCode || event.employeeId).slice(0, 40))
+          .input('Period', sql.NVarChar(7), compact(event.period).slice(0, 7))
+          .input('LeaveYear', sql.Int, Number(event.leaveYear || 0))
+          .input('StatusName', sql.NVarChar(40), compact(event.status).slice(0, 40))
+          .input('PayloadJson', sql.NVarChar(sql.MAX), JSON.stringify(event))
+          .query(`
+INSERT INTO [hris].[PayrollLeaveAllowanceEvents]
+  ([Id],[EmployeeCode],[Period],[LeaveYear],[StatusName],[PayloadJson],[UpdatedAt])
+VALUES
+  (@Id,@EmployeeCode,@Period,@LeaveYear,@StatusName,@PayloadJson,SYSUTCDATETIME());`);
+      }
+      await transaction.commit();
+    } catch (error) {
+      await transaction.rollback().catch(() => undefined);
+      throw error;
+    }
+  } catch (error) {
+    console.warn('[Leave Allowance] SQL event write skipped:', error instanceof Error ? error.message : error);
+  }
+};
+
+const mergeEventsById = (...lists: PayrollLeaveAllowanceEvent[][]) => {
+  const byId = new Map<string, PayrollLeaveAllowanceEvent>();
+  for (const list of lists) {
+    for (const event of list) {
+      if (!event?.id) continue;
+      const current = byId.get(event.id);
+      if (!current || String(event.updatedAt || '') >= String(current.updatedAt || '')) byId.set(event.id, event);
+    }
+  }
+  return [...byId.values()];
+};
+
 const readEventsRaw = async (): Promise<PayrollLeaveAllowanceEvent[]> => {
+  const fromSql = await readEventsFromSql();
+  let fromFiles: PayrollLeaveAllowanceEvent[] = [];
   for (const file of EVENTS_PATHS) {
     try {
-      return parseEvents(await readFile(file, 'utf8'));
+      fromFiles = parseEvents(await readFile(file, 'utf8'));
+      break;
     } catch {
       // Try the next candidate path.
     }
   }
-  return syncCache?.events || [];
+  if (!fromFiles.length && syncCache?.events?.length) fromFiles = syncCache.events;
+  const merged = mergeEventsById(fromSql || [], fromFiles);
+  if (merged.length) syncCache = { mtime: Date.now(), events: merged, path: syncCache?.path };
+  return merged;
 };
 
 export const readPayrollLeaveAllowanceEvents = readEventsRaw;
@@ -134,6 +221,8 @@ const writeEventsFiles = async (events: PayrollLeaveAllowanceEvent[], required =
       lastError = error;
     }
   }
+  syncCache = { mtime: Date.now(), events: sorted, path: syncCache?.path };
+  await writeEventsToSql(sorted);
   if (wrote) return;
   if (required && lastError) throw lastError;
   if (lastError) {
@@ -147,6 +236,7 @@ export const writePayrollLeaveAllowanceEvents = async (
 ) => writeEventsFiles(events, options?.required === true);
 
 export const readPayrollLeaveAllowanceEventsSync = () => {
+  if (syncCache?.events) return syncCache.events;
   for (const file of EVENTS_PATHS) {
     try {
       if (!existsSync(file)) continue;
@@ -165,16 +255,11 @@ export const readPayrollLeaveAllowanceEventsSync = () => {
 export const leaveAllowanceEventsForEmployeePeriod = (employee: DleEmployeeDirectoryRow, period?: string) => {
   const normalizedPeriod = normalizePayrollPeriod(period);
   if (!normalizedPeriod) return [];
-  const employeeKeys = [
-    employee.employeeId,
-    employee.employeeCode,
-    employee.sourceEmployeeId,
-  ].map(normalizePayrollMatchKey).filter(Boolean);
+  const employeeKeys = employeeMatchKeys(employee.employeeId, employee.employeeCode || employee.sourceEmployeeId);
   return readPayrollLeaveAllowanceEventsSync().filter((event) => {
     if (!isCountableLeaveAllowanceEvent(event)) return false;
     if (event.period !== normalizedPeriod) return false;
-    const eventKeys = [event.employeeId, event.employeeCode].map(normalizePayrollMatchKey).filter(Boolean);
-    return eventKeys.some((key) => employeeKeys.includes(key));
+    return employeeMatchKeys(event.employeeId, event.employeeCode).some((key) => employeeKeys.includes(key));
   });
 };
 
@@ -364,7 +449,9 @@ export const ensureLeaveAllowanceEventsForPeriod = async (
 
   const { readPayrollEmployees } = await import('@/lib/payroll-employee-source');
   const { employees } = await readPayrollEmployees();
-  const applicationKeys = new Set(applications.map((application) => normalizePayrollMatchKey(application.employeeId)).filter(Boolean));
+  const applicationKeys = new Set(
+    applications.flatMap((application) => employeeMatchKeys(application.employeeId)).filter(Boolean),
+  );
   const candidates = employees.filter((employee) =>
     employeeMatchKeys(employee.employeeId, employee.employeeCode || employee.sourceEmployeeId)
       .some((key) => applicationKeys.has(key)));

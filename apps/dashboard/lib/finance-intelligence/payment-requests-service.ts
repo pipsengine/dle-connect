@@ -1,7 +1,7 @@
 import sql from 'mssql';
 import path from 'node:path';
 import { ensureFinanceDb } from '@/lib/finance-intelligence/store';
-import { convertAmountToNgn, resolveApprovalChain, applyMdLineManagerLastApproverRule, applyProjectReportingManagerFirst, skipProjectReportingManagerWhenSameAsPm, stripLeadingReportingManager, isProjectChainWithoutReportingManager, bandRequiresMdCeo, isProjectPaymentPath } from '@/lib/finance-intelligence/approval-matrix-service';
+import { convertAmountToNgn, resolveApprovalChain, applyMdLineManagerLastApproverRule, applyGmApprovesOnceBeforeCfo, applyProjectReportingManagerFirst, skipProjectReportingManagerWhenSameAsPm, stripLeadingReportingManager, isProjectChainWithoutReportingManager, bandRequiresMdCeo, isProjectPaymentPath } from '@/lib/finance-intelligence/approval-matrix-service';
 import {
   assertReportingManagerRoutable,
   isReportingManagerStage,
@@ -422,6 +422,14 @@ const resolveInitialStage = async (
     supervisorName: context?.supervisorName,
   });
   fallbackStages = await skipProjectReportingManagerWhenSameAsPm({
+    stages: fallbackStages,
+    requesterCode: context?.requesterCode,
+    supervisorName: context?.supervisorName,
+    projectCode: context?.projectCode,
+    department: context?.department,
+    paymentType,
+  });
+  fallbackStages = await applyGmApprovesOnceBeforeCfo({
     stages: fallbackStages,
     requesterCode: context?.requesterCode,
     supervisorName: context?.supervisorName,
@@ -1283,6 +1291,14 @@ export const repairMissingProjectLineManager = async (row: PaymentRequestRow): P
       supervisorName: row.supervisorName,
     });
     nextStages = await skipProjectReportingManagerWhenSameAsPm({
+      stages: nextStages,
+      requesterCode: row.requesterCode,
+      supervisorName: row.supervisorName,
+      projectCode: row.projectCode,
+      department: row.department,
+      paymentType: row.paymentType,
+    });
+    nextStages = await applyGmApprovesOnceBeforeCfo({
       stages: nextStages,
       requesterCode: row.requesterCode,
       supervisorName: row.supervisorName,
