@@ -15,6 +15,7 @@ import {
   repairStackedOvertimeProductiveHours,
   isTimesheetAbsentLine,
   applyNightPaperClock,
+  timesheetLineHasBookedHours,
   isIdleTimeProjectCode,
   isTimesheetPaidLeaveLine,
   idleTimeProjectHours,
@@ -177,6 +178,13 @@ export const applyTimesheetLineDefaults = (
   }
 
   const usedHours = sumProjectAllocationHours(projectAllocations);
+  if (usedHours <= 0.001 && timesheetLineHasBookedHours(working)) {
+    return {
+      ...working,
+      projectAllocations: working.projectAllocations,
+      idleAllocations,
+    };
+  }
   const idleHours = round1(idleAllocations.reduce((sum, item) => sum + Number(item.hours || 0), 0));
   const totalHours = round1(usedHours + idleHours);
   const clockDuration = attendanceDurationFromClock(working.clockIn, working.clockOut);

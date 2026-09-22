@@ -272,6 +272,16 @@ const restoredBooked = preserveManualTimesheetBookings([rosterWipe], [supervisor
 assert.equal(restoredBooked[0]?.usedHours, 8, 'supervisor-booked hours survive even without PAPER_ATTENDANCE');
 assert.equal(restoredBooked[0]?.projectAllocations[0]?.projectCode, 'DL2424');
 
+const emptyPaperIncoming = {
+  ...rosterWipe,
+  remarks: PAPER_ATTENDANCE_REMARKS_MARKER,
+  attendanceMode: 'Manual' as const,
+  idleHours: 1,
+  totalHours: 1,
+};
+const restoredEmptyPaper = preserveManualTimesheetBookings([emptyPaperIncoming], [paperC2825]);
+assert.equal(restoredEmptyPaper[0]?.usedHours, 8, 'paper marker with 0h still restores prior 8h booking');
+
 const offshoreValidated = validateTimesheetLine(
   offshoreBooked,
   [],

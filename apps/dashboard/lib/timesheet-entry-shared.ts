@@ -1314,7 +1314,8 @@ const priorTimesheetBookingShouldSurvive = (line: TimesheetLine) =>
 
 export const preserveManualTimesheetBookings = <T extends TimesheetLine>(incoming: T[], existing: T[]): T[] => {
   const restored = incoming.map((line) => {
-    if (priorTimesheetBookingShouldSurvive(line)) return line;
+    // Idle-only totalHours (1h break) is not a booking. Restore productive hours from SQL.
+    if (Number(line.usedHours || 0) > 0.001) return line;
     const prior = existing.find((item) => timesheetEmployeeRecordsMatch(item, line));
     if (!prior || !priorTimesheetBookingShouldSurvive(prior)) return line;
     return {
