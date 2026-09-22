@@ -1,6 +1,7 @@
 import { readPayrollEmployees } from '@/lib/payroll-employee-source';
 import { isDailyRatePayrollEmployee } from '@/lib/payroll-employee-classification';
 import { normalizePayrollMatchKey } from '@/lib/sage-people-payroll-store';
+import { calendarPayrollPeriod, listCalendarPayrollPeriodOptions, payrollPeriodLabel } from '@/lib/payroll-periods';
 import {
   aggregateEmployeeAttendanceForHeaders,
   buildTimesheetHoursMapForPayrollPeriod,
@@ -89,6 +90,7 @@ export type WorkforceOperationsAnalyticsPayload = {
   periodLabel: string;
   periodStartDate: string;
   periodEndDate: string;
+  periodOptions: Array<{ value: string; label: string }>;
   summary: {
     employees: number;
     withTimesheet: number;
@@ -169,7 +171,7 @@ export async function readWorkforceOperationsAnalytics(options?: {
   rebuildSnapshot?: boolean;
   actor?: string;
 }): Promise<WorkforceOperationsAnalyticsPayload> {
-  const periodToken = (options?.period || '2026-06').replace(/^per-/, '');
+  const periodToken = (options?.period || calendarPayrollPeriod()).replace(/^per-/, '');
   const periodId = `per-${periodToken}`;
   if (options?.rebuildSnapshot) {
     await rebuildPayrollSnapshotForPeriod(periodId, options.actor || 'Workforce Operations Verify').catch(() => undefined);
@@ -381,14 +383,29 @@ export async function readWorkforceOperationsAnalytics(options?: {
   const payrollReadinessPct = employeeSummaries.length ? Math.round((matchedCount / Math.max(employeeSummaries.filter((row) => row.isDailyRate).length, 1)) * 100) : 0;
   const timesheetCompletionPct = employeeDirectory.length ? Math.round((withTimesheet / employeeDirectory.length) * 100) : 0;
 
+  const periodOptionMap = new Map<string, string>();
+  const addPeriodOption = (value: string, label?: string) => {
+    const token = compact(value).replace(/^per-/i, '').slice(0, 7);
+    if (!/^\d{4}-\d{2}$/.test(token)) return;
+    if (!periodOptionMap.has(token)) periodOptionMap.set(token, compact(label) || payrollPeriodLabel(token));
+  };
+  addPeriodOption(periodToken, period?.name);
+  addPeriodOption(calendarPayrollPeriod());
+  for (const item of periods) addPeriodOption(item.id, item.name);
+  for (const option of listCalendarPayrollPeriodOptions(12)) addPeriodOption(option.value, option.label);
+  const periodOptions = [...periodOptionMap.entries()]
+    .sort((left, right) => right[0].localeCompare(left[0]))
+    .map(([value, label]) => ({ value, label }));
+
   return {
     generatedAt: new Date().toISOString(),
     source: `${employeeSource.source}; DLE Enterprise timesheet and payroll verification engine`,
     period: periodToken,
     periodId,
-    periodLabel: period?.name || `Period ${periodToken}`,
+    periodLabel: period?.name || payrollPeriodLabel(periodToken),
     periodStartDate: period?.startDate || '',
     periodEndDate: period?.endDate || '',
+    periodOptions,
     summary: {
       employees: employeeSummaries.length,
       withTimesheet,

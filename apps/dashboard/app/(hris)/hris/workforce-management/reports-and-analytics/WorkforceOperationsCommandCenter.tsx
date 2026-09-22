@@ -19,9 +19,20 @@ import {
 } from 'lucide-react';
 import type { WorkforceOperationsAnalyticsPayload, WorkforceOperationsDetailRow, WorkforceOperationsEmployeeSummary } from '@/lib/workforce-operations-analytics-store';
 import { downloadExcelFile } from '@/lib/excel-export';
+import { calendarPayrollPeriod, listCalendarPayrollPeriodOptions } from '@/lib/payroll-periods';
+
+const PAGE_SIZE_OPTIONS = [25, 50, 100];
 
 type ApiResponse<T> = { status: 'success' | 'error'; data?: T; error?: string };
 type ViewMode = 'summary' | 'detail';
+
+const pageWindow = (page: number, totalPages: number, size = 5) => {
+  const safeTotal = Math.max(1, totalPages);
+  let start = Math.max(1, page - Math.floor(size / 2));
+  const end = Math.min(safeTotal, start + size - 1);
+  start = Math.max(1, end - size + 1);
+  return Array.from({ length: end - start + 1 }, (_, index) => start + index);
+};
 
 const numberFmt = new Intl.NumberFormat('en-GB');
 const number = (value: number | undefined) => numberFmt.format(value || 0);
@@ -86,7 +97,7 @@ function ProgressRing({ value, label, status }: { value: number; label: string; 
 }
 
 export default function WorkforceOperationsCommandCenter({ role = 'HR Manager' }: { role?: string }) {
-  const [period, setPeriod] = useState('2026-06');
+  const [period, setPeriod] = useState(calendarPayrollPeriod);
   const [payload, setPayload] = useState<WorkforceOperationsAnalyticsPayload | null>(null);
   const [loading, setLoading] = useState(true);
   const [verifying, setVerifying] = useState(false);
@@ -100,7 +111,7 @@ export default function WorkforceOperationsCommandCenter({ role = 'HR Manager' }
   const [project, setProject] = useState('');
   const [verifyStatus, setVerifyStatus] = useState('');
   const [page, setPage] = useState(1);
-  const pageSize = 25;
+  const [pageSize, setPageSize] = useState(25);
 
   const load = useCallback(async (rebuild = false) => {
     setLoading(true);
@@ -123,6 +134,10 @@ export default function WorkforceOperationsCommandCenter({ role = 'HR Manager' }
   useEffect(() => {
     void load(false);
   }, [load]);
+
+  const periodOptions = payload?.periodOptions?.length
+    ? payload.periodOptions
+    : listCalendarPayrollPeriodOptions(12);
 
   const filteredSummaries = useMemo(() => {
     const rows = payload?.employeeSummaries || [];
@@ -154,7 +169,15 @@ export default function WorkforceOperationsCommandCenter({ role = 'HR Manager' }
 
   const pageRows = viewMode === 'detail' ? filteredDetails : filteredSummaries;
   const totalPages = Math.max(1, Math.ceil(pageRows.length / pageSize));
-  const visibleRows = pageRows.slice((page - 1) * pageSize, page * pageSize);
+  const currentPage = Math.min(page, totalPages);
+  const rangeStart = pageRows.length ? (currentPage - 1) * pageSize + 1 : 0;
+  const rangeEnd = Math.min(pageRows.length, currentPage * pageSize);
+  const visibleRows = pageRows.slice((currentPage - 1) * pageSize, currentPage * pageSize);
+  const pages = pageWindow(currentPage, totalPages);
+
+  useEffect(() => {
+    if (page !== currentPage) setPage(currentPage);
+  }, [page, currentPage]);
 
   const exportCsv = async (mode: ViewMode) => {
     const url = `/api/hris/workforce-management/operations-analytics?period=${encodeURIComponent(period)}&format=csv&view=${mode}`;
@@ -244,9 +267,15 @@ export default function WorkforceOperationsCommandCenter({ role = 'HR Manager' }
               </div>
             </div>
             <div className="flex flex-wrap gap-2">
-              <select value={period} onChange={(event) => setPeriod(event.target.value)} className="h-11 rounded-xl border border-[#E2E8F0] bg-white px-3 text-sm font-semibold text-[#0F172A]">
-                <option value="2026-06">June 2026</option>
-                <option value="2026-05">May 2026</option>
+              <select
+                value={periodOptions.some((item) => item.value === period) ? period : periodOptions[0]?.value || period}
+                onChange={(event) => { setPeriod(event.target.value); setPage(1); }}
+                className="h-11 min-w-[160px] rounded-xl border border-[#E2E8F0] bg-white px-3 text-sm font-semibold text-[#0F172A]"
+                aria-label="Payroll period"
+              >
+                {periodOptions.map((item) => (
+                  <option key={item.value} value={item.value}>{item.label}</option>
+                ))}
               </select>
               <button type="button" onClick={() => void load(false)} className="inline-flex h-11 items-center gap-2 rounded-xl border border-[#E2E8F0] bg-white px-4 text-sm font-bold text-[#0F172A] shadow-sm hover:bg-[#F8FAFC]">
                 <RefreshCcw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} /> Refresh
@@ -429,11 +458,39 @@ export default function WorkforceOperationsCommandCenter({ role = 'HR Manager' }
                 </table>
               </div>
 
-              <div className="mt-4 flex items-center justify-between gap-3 text-sm font-semibold text-[#64748B]">
-                <span>{pageRows.length} records · page {page} of {totalPages}</span>
-                <div className="flex gap-2">
-                  <button type="button" disabled={page <= 1} onClick={() => setPage((current) => Math.max(1, current - 1))} className="rounded-xl border border-[#E2E8F0] px-3 py-2 disabled:opacity-40">Previous</button>
-                  <button type="button" disabled={page >= totalPages} onClick={() => setPage((current) => Math.min(totalPages, current + 1))} className="rounded-xl border border-[#E2E8F0] px-3 py-2 disabled:opacity-40">Next</button>
+              <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between text-sm font-semibold text-[#64748B]">
+                <span>
+                  {pageRows.length
+                    ? `Showing ${rangeStart}–${rangeEnd} of ${pageRows.length} records`
+                    : '0 records'}
+                  {' · '}
+                  {payload?.periodLabel || period}
+                </span>
+                <div className="flex flex-wrap items-center gap-2">
+                  <label className="inline-flex items-center gap-2">
+                    <span>Rows</span>
+                    <select
+                      value={pageSize}
+                      onChange={(event) => { setPageSize(Number(event.target.value)); setPage(1); }}
+                      className="h-10 rounded-xl border border-[#E2E8F0] bg-white px-2 text-sm font-semibold text-[#0F172A]"
+                    >
+                      {PAGE_SIZE_OPTIONS.map((size) => (
+                        <option key={size} value={size}>{size}</option>
+                      ))}
+                    </select>
+                  </label>
+                  <button type="button" disabled={currentPage <= 1} onClick={() => setPage((current) => Math.max(1, current - 1))} className="rounded-xl border border-[#E2E8F0] px-3 py-2 disabled:opacity-40">Previous</button>
+                  {pages.map((item) => (
+                    <button
+                      key={item}
+                      type="button"
+                      onClick={() => setPage(item)}
+                      className={`min-w-10 rounded-xl border px-3 py-2 ${item === currentPage ? 'border-[#2563EB] bg-[#2563EB] text-white' : 'border-[#E2E8F0] bg-white text-[#0F172A]'}`}
+                    >
+                      {item}
+                    </button>
+                  ))}
+                  <button type="button" disabled={currentPage >= totalPages} onClick={() => setPage((current) => Math.min(totalPages, current + 1))} className="rounded-xl border border-[#E2E8F0] px-3 py-2 disabled:opacity-40">Next</button>
                 </div>
               </div>
             </section>

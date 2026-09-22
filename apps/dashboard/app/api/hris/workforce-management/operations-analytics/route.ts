@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { readWorkforceOperationsAnalytics, workforceOperationsRowsToCsv } from '@/lib/workforce-operations-analytics-store';
+import { calendarPayrollPeriod } from '@/lib/payroll-periods';
 
 const ok = <T,>(data: T) => NextResponse.json({ status: 'success', data });
 const err = (status: number, error: string) => NextResponse.json({ status: 'error', error }, { status });
@@ -7,7 +8,7 @@ const err = (status: number, error: string) => NextResponse.json({ status: 'erro
 export async function GET(request: Request) {
   try {
     const { searchParams } = new URL(request.url);
-    const period = searchParams.get('period') || '2026-06';
+    const period = searchParams.get('period') || calendarPayrollPeriod();
     const format = (searchParams.get('format') || 'json').toLowerCase();
     const view = (searchParams.get('view') || 'summary').toLowerCase();
     const rebuildSnapshot = searchParams.get('rebuildSnapshot') === 'true' || searchParams.get('verify') === 'true';

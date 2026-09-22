@@ -266,7 +266,7 @@ export const resolvePaymentStageApprover = async (input: {
       try {
         const { resolveDepartmentLineManager } = await import('@/lib/department-reporting-manager-sync');
         const { isGmEmployee } = await import('@/lib/finance-intelligence/approval-matrix-service');
-        const hod = await resolveDepartmentLineManager(input.costCentre);
+        const hod = await resolveDepartmentLineManager(compact(input.costCentre));
         if (hod?.employee && isGmEmployee(hod.employee)) {
           matched = hod.employee;
         }
