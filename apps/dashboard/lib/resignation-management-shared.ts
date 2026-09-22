@@ -178,6 +178,8 @@ export const noticeStatusLabel = (row: Pick<ResignationRecord, 'noticePeriodDays
 
 export const formatNoticeMonths = (days: number) => {
   if (days <= 0) return '—';
+  if (days === 7) return '1 Week';
+  if (days === 14) return '2 Weeks';
   const months = Math.round((days / 30) * 10) / 10;
   if (months === 1) return '1 Month';
   if (Number.isInteger(months)) return `${months} Months`;
@@ -202,6 +204,8 @@ export const resignationReadyForFinalPayroll = (
 
 export const noticePeriodLabelFromDays = (days: number) => {
   if (days <= 0) return 'None';
+  if (days === 7) return '1 Week';
+  if (days === 14) return '2 Weeks';
   if (days === 30) return '1 Month';
   if (days === 60) return '2 Months';
   if (days === 90) return '3 Months';

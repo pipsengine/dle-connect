@@ -596,7 +596,7 @@ export default function NewFinalPayrollSettlementWorkspace({
               <label>Notice Period</label>
               <div className={styles.input}>
                 <select value={noticePeriod} onChange={(event) => setNoticePeriod(event.target.value)}>
-                  {['1 Month', '2 Months', '3 Months', 'None'].map((item) => (
+                  {['1 Week', '2 Weeks', '1 Month', '2 Months', '3 Months', 'None'].map((item) => (
                     <option key={item} value={item}>{item}</option>
                   ))}
                 </select>

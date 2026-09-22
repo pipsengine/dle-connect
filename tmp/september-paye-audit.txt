@@ -1,0 +1,15 @@
+Period 2026-09 · DLE Salaries NGN
+Headcount 149 · PAYE incorrect 1
+Current PAYE total 17,296,604.00 · NTA-correct total 17,278,858.43
+Understated 0.00 · Overstated 17,745.57
+Rent relief above ₦500,000 cap: 0
+Lumpsum meal taxed as one-off: 0
+
+Attached examples
+L2216 REUBEN AUDU  current 6,225.00  correct 6,225.00  delta 0.00  matches NTA
+L2374 GBEMISOLA AJAYI SAMUEL  current 10,695.00  correct 10,695.00  delta 0.00  matches NTA
+P0059 Mrs. AJIERE NDIDI AGNES  current 87,119.61  correct 87,119.61  delta 0.00  matches NTA
+
+ALL employees whose PAYE is not correct (1)
+code	name	category	grade	gross	current_paye	correct_paye	delta	reason
+P0370	Mr JOHN EJEMBI OCHIGBO	permanent	MGT7	3,165,213.77	67,725.42	49,979.85	-17,745.57	nta_paye_differs

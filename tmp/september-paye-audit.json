@@ -1,0 +1,136 @@
+{
+  "summary": {
+    "period": "2026-09",
+    "pack": "DLE Salaries NGN",
+    "headcount": 149,
+    "incorrectCount": 1,
+    "rentReliefOverCap": 0,
+    "lumpsumMealNotAnnualized": 0,
+    "currentPayeTotal": 17296604,
+    "expectedPayeTotal": 17278858.43,
+    "understatedTotal": 0,
+    "overstatedTotal": 17745.57
+  },
+  "examples": [
+    {
+      "code": "L2216",
+      "name": "REUBEN AUDU",
+      "grade": "LUMPSUM_REM - LUMPSUM REMUNERATION",
+      "profile": "contract-lumpsum",
+      "category": "lumpsum",
+      "department": "ADMINSTRATION",
+      "gross": 170000,
+      "currentPaye": 6225,
+      "expectedPaye": 6225,
+      "delta": 0,
+      "currentRent": 500000,
+      "expectedRent": 500000,
+      "currentFixedTaxable": 149000,
+      "currentVariableTaxable": 10000,
+      "expectedFixedTaxable": 149000,
+      "expectedVariableTaxable": 10000,
+      "pension": 0,
+      "meal": [
+        {
+          "code": "MEAL",
+          "amount": 11000,
+          "taxable": false
+        }
+      ],
+      "unionEarning": [],
+      "reasons": [],
+      "example": true
+    },
+    {
+      "code": "L2374",
+      "name": "GBEMISOLA AJAYI SAMUEL",
+      "grade": "LUMPSUM_REM - LUMPSUM REMUNERATION",
+      "profile": "contract-lumpsum",
+      "category": "lumpsum",
+      "department": "ADMINSTRATION",
+      "gross": 199800,
+      "currentPaye": 10695,
+      "expectedPaye": 10695,
+      "delta": 0,
+      "currentRent": 500000,
+      "expectedRent": 500000,
+      "currentFixedTaxable": 178800,
+      "currentVariableTaxable": 10000,
+      "expectedFixedTaxable": 178800,
+      "expectedVariableTaxable": 10000,
+      "pension": 0,
+      "meal": [
+        {
+          "code": "MEAL",
+          "amount": 11000,
+          "taxable": false
+        }
+      ],
+      "unionEarning": [],
+      "reasons": [],
+      "example": true
+    },
+    {
+      "code": "P0059",
+      "name": "Mrs. AJIERE NDIDI AGNES",
+      "grade": "SS5",
+      "profile": "senior-permanent",
+      "category": "permanent",
+      "department": "PROCUREMENT",
+      "gross": 673428.37,
+      "currentPaye": 87119.61,
+      "expectedPaye": 87119.61,
+      "delta": 0,
+      "currentRent": 500000,
+      "expectedRent": 500000,
+      "currentFixedTaxable": 651428.37,
+      "currentVariableTaxable": 0,
+      "expectedFixedTaxable": 651428.37,
+      "expectedVariableTaxable": 0,
+      "pension": 28541.64,
+      "meal": [
+        {
+          "code": "MEAL",
+          "amount": 22000,
+          "taxable": false
+        }
+      ],
+      "unionEarning": [
+        {
+          "code": "SNRUNION",
+          "amount": 45000,
+          "taxable": true
+        }
+      ],
+      "reasons": [],
+      "example": true
+    }
+  ],
+  "incorrect": [
+    {
+      "code": "P0370",
+      "name": "Mr JOHN EJEMBI OCHIGBO",
+      "grade": "MGT7",
+      "profile": "final-settlement",
+      "category": "permanent",
+      "department": "PRODUCTION",
+      "gross": 3165213.77,
+      "currentPaye": 67725.42,
+      "expectedPaye": 49979.85,
+      "delta": -17745.57,
+      "currentRent": 500000,
+      "expectedRent": 500000,
+      "currentFixedTaxable": 437557.47,
+      "currentVariableTaxable": 0,
+      "expectedFixedTaxable": 437557.47,
+      "expectedVariableTaxable": 0,
+      "pension": 21002.76,
+      "meal": [],
+      "unionEarning": [],
+      "reasons": [
+        "nta_paye_differs"
+      ],
+      "example": false
+    }
+  ]
+}

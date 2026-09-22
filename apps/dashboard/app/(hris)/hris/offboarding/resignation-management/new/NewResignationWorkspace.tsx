@@ -38,6 +38,8 @@ const REASONS = [
 ] as const;
 
 const NOTICE_OPTIONS = [
+  { label: '1 Week (7 days)', days: 7 },
+  { label: '2 Weeks (14 days)', days: 14 },
   { label: '1 Month (30 days)', days: 30 },
   { label: '2 Months (60 days)', days: 60 },
   { label: '3 Months (90 days)', days: 90 },

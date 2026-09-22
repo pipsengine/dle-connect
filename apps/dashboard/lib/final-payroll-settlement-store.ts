@@ -332,6 +332,8 @@ const parseNoticePeriodDays = (noticePeriod?: string | null, fallbackDays = 30) 
   const text = compact(noticePeriod).toLowerCase();
   if (!text) return fallbackDays;
   if (/^(none|n\/a|waived|0)$/i.test(text)) return 0;
+  const weekMatch = text.match(/(\d+(?:\.\d+)?)\s*week/);
+  if (weekMatch) return Math.round(Number(weekMatch[1]) * 7);
   const monthMatch = text.match(/(\d+(?:\.\d+)?)\s*month/);
   if (monthMatch) return Math.round(Number(monthMatch[1]) * 30);
   const dayMatch = text.match(/(\d+)\s*day/);
