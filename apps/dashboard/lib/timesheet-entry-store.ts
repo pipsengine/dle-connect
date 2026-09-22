@@ -9,7 +9,7 @@ import { composePersonDisplayName } from '@/lib/person-display-name';
 import { normalizePayrollMatchKey, readActiveSagePayrollEmployeeKeys, type SagePayrollEmployee } from '@/lib/sage-people-payroll-store';
 import { approvedPaidLeaveForDate } from '@/lib/leave-management-store';
 import { assignmentMatchesSupervisor, readSupervisorAssignments } from '@/lib/supervisor-assignment-store';
-import { extractSupervisorEmployeeCode, normalizeTimesheetLocationLabel, supervisorCodesMatch, tidyTimesheetEmployeeName, timesheetCrewMatchesLocation, timesheetLocationsMatch } from '@/lib/timesheet-agege-blasting';
+import { extractSupervisorEmployeeCode, normalizeTimesheetLocationLabel, supervisorCodesMatch, tidyTimesheetEmployeeName, timesheetCrewMatchesLocation, timesheetEmployeeRecordsMatch, timesheetLocationsMatch } from '@/lib/timesheet-agege-blasting';
 import { timesheetAttendanceMatchKeys } from '@/lib/timesheet-attendance-match';
 import { clearEmployeeFromDraftHeaders, employeeAlreadyCommittedOnOtherTimesheet, employeeIsOtherTimesheetSupervisor } from '@/lib/timesheet-booking-clash';
 import { canonicalProjectManagerForCode, withCanonicalProjectManager } from '@/lib/timesheet-canonical-project-managers';
@@ -34,6 +34,7 @@ import {
   timesheetHeaderMatchesShift,
   timesheetLineMatchesShift,
   timesheetLineHasBookedHours,
+  preserveManualTimesheetBookings,
   buildTimesheetHeaderId,
   selectTimesheetHeaderForLocation,
   weekdayOvertimeHoursFromLine,
@@ -2210,7 +2211,10 @@ VALUES (@Id,@HeaderId,@EmployeeId,@EmployeeNo,@EmployeeName,@BiometricId,@Attend
 export async function writeTimesheetHeaderLines(header: TimesheetHeader, lines: TimesheetLine[]) {
   const pool = await db();
   const tx = new sql.Transaction(pool);
-  const safeLines = dedupeTimesheetLinesByEmployee(lines).lines;
+  const existingHeaderLines = (await readTimesheetDataUncached()).lines.filter((line) => line.headerId === header.id);
+  const safeLines = dedupeTimesheetLinesByEmployee(
+    preserveManualTimesheetBookings(lines, existingHeaderLines),
+  ).lines;
   await tx.begin();
   try {
     await new sql.Request(tx)
@@ -3974,7 +3978,12 @@ export async function syncAttendanceForTimesheet(
     const employeeName = tidyTimesheetEmployeeName(
       assignedName || (payrollEmployee ? formatSageEmployeeFullName(payrollEmployee, att.employeeName) : att.employeeName),
     ) || att.employeeName;
-    const existingLine = existingHeaderLines.find((l) => l.employeeId === employeeCode);
+    const existingLine = existingHeaderLines.find((l) =>
+      timesheetEmployeeRecordsMatch(l, { employeeId: employeeCode, employeeNo: employeeCode, employeeName })
+      || attendanceMatchKeys(l.employeeId, l.employeeNo, l.employeeName).some((key) =>
+        attendanceMatchKeys(employeeCode, employeeName, att.employeeId, att.employeeName).includes(key),
+      )
+    );
     const approvedLeave = attendanceMatchKeys(employeeCode, employeeName, att.employeeId, att.employeeName)
       .map((key) => approvedLeaveByKey.get(key))
       .find(Boolean);
@@ -4068,12 +4077,15 @@ export async function syncAttendanceForTimesheet(
     }
     return [line];
   });
-  const persistLines = overlayMissingTimesheetClocks(
-    [...newLines, ...parkedOtherLocationLines],
-    lines.filter((line) => line.headerId !== header!.id && timesheetHeaderMatchesShift(
-      headers.find((item) => item.id === line.headerId)?.shiftLabel,
-      shift.label,
-    )),
+  const persistLines = preserveManualTimesheetBookings(
+    overlayMissingTimesheetClocks(
+      [...newLines, ...parkedOtherLocationLines],
+      lines.filter((line) => line.headerId !== header!.id && timesheetHeaderMatchesShift(
+        headers.find((item) => item.id === line.headerId)?.shiftLabel,
+        shift.label,
+      )),
+    ),
+    existingHeaderLines,
   );
 
   if (persist) {

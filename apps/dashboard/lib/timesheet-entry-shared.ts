@@ -1204,6 +1204,16 @@ export const isPaperAttendanceLine = (line: {
   remarks?: string | null;
 }) => String(line.remarks || '').includes(PAPER_ATTENDANCE_REMARKS_MARKER);
 
+export const isProtectedTimesheetBooking = (line: {
+  remarks?: string | null;
+  attendanceMode?: 'Biometric' | 'Manual' | null;
+  offshoreAllowanceHours?: number | null;
+  projectAllocations?: Array<{ projectCode?: string; hours?: number }> | null;
+}) =>
+  isPaperAttendanceLine(line)
+  || isManualOffshoreLine(line)
+  || isTimesheetPaidLeaveLine(line);
+
 export const isTimesheetAbsentLine = (line: {
   clockIn?: string | null;
   attendanceMode?: 'Biometric' | 'Manual' | null;
@@ -1294,6 +1304,37 @@ export const timesheetLineHasBookedHours = (line: {
   Number(line.usedHours || 0) > 0.001
   || Number(line.totalHours || 0) > 0.001
   || (line.projectAllocations || []).some((item) => Number(item.hours || 0) > 0.001);
+
+/**
+ * Attendance sync / roster persist rebuild empty Absent rows. Keep paper, offshore,
+ * and paid-leave hours that already exist for the same employee.
+ */
+export const preserveManualTimesheetBookings = <T extends TimesheetLine>(incoming: T[], existing: T[]): T[] => {
+  const restored = incoming.map((line) => {
+    if (isProtectedTimesheetBooking(line) || timesheetLineHasBookedHours(line)) return line;
+    const prior = existing.find((item) => timesheetEmployeeRecordsMatch(item, line));
+    if (!prior || !isProtectedTimesheetBooking(prior)) return line;
+    return {
+      ...line,
+      projectAllocations: prior.projectAllocations,
+      idleAllocations: prior.idleAllocations,
+      usedHours: prior.usedHours,
+      idleHours: prior.idleHours,
+      totalHours: prior.totalHours,
+      variance: prior.variance,
+      remarks: prior.remarks,
+      validationStatus: prior.validationStatus,
+      validationMessage: prior.validationMessage,
+      attendanceMode: prior.attendanceMode || line.attendanceMode,
+      offshoreAllowanceHours: prior.offshoreAllowanceHours || line.offshoreAllowanceHours,
+    };
+  });
+  const extras = existing.filter((prior) =>
+    isProtectedTimesheetBooking(prior)
+    && !restored.some((line) => timesheetEmployeeRecordsMatch(line, prior)),
+  );
+  return [...restored, ...extras];
+};
 
 /** Job hours only. Break / idle time is attendance, not a booking on another work centre. */
 export const timesheetLineHasProductiveHours = (line: {
@@ -1454,6 +1495,7 @@ export const buildPaperAttendanceLine = (input: {
 
 const linePersistenceScore = (line: TimesheetLine) =>
   (line.clockIn ? 1_000 : 0)
+  + (isProtectedTimesheetBooking(line) ? 500 : 0)
   + Number(line.totalHours || 0) * 10
   + Number(line.attendanceDuration || 0)
   + (line.validationStatus === 'Valid' ? 1 : 0);

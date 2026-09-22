@@ -6,6 +6,7 @@ import {
   isOffshoreTimesheetContext,
   isTimesheetAbsentLine,
   isPaperAttendanceLine,
+  preserveManualTimesheetBookings,
   markLineAsManualOffshore,
   buildManualOffshoreLine,
   buildPaperAttendanceLine,
@@ -224,6 +225,42 @@ assert.equal(paperPresent.usedHours, 8);
 assert.equal(paperPresent.clockIn, null);
 assert.ok(String(paperPresent.remarks || '').includes(PAPER_ATTENDANCE_REMARKS_MARKER));
 assert.equal(canBookTimesheetHoursWithoutClock(paperPresent, 'Welding', 'Day (07:00-16:00)', 'AGEGE'), true);
+
+const rosterWipe = {
+  ...paperPresent,
+  id: 'line-hdr-2-C2825',
+  employeeId: 'C2825',
+  employeeNo: 'C2825',
+  employeeName: 'Akande Ismaila',
+  usedHours: 0,
+  idleHours: 0,
+  totalHours: 0,
+  remarks: null,
+  projectAllocations: [],
+  idleAllocations: [],
+  attendanceMode: 'Biometric' as const,
+  validationStatus: 'Incomplete' as const,
+  validationMessage: 'Awaiting time allocation.',
+};
+const paperC2825 = {
+  ...paperPresent,
+  id: 'ts-paper-hdr-2-C2825',
+  employeeId: '',
+  employeeNo: 'C2825',
+  employeeName: 'Akande Ismaila',
+};
+const restored = preserveManualTimesheetBookings([rosterWipe], [paperC2825]);
+assert.equal(restored.length, 1);
+assert.equal(restored[0]?.usedHours, 8, 'paper hours survive an empty attendance-sync rebuild');
+assert.equal(isPaperAttendanceLine(restored[0]!), true);
+assert.equal(restored[0]?.id, 'line-hdr-2-C2825', 'canonical roster id is kept after restore');
+
+const keptExtra = preserveManualTimesheetBookings([], [paperC2825]);
+assert.equal(keptExtra.length, 1, 'paper rows missing from the persist payload are not dropped');
+assert.equal(keptExtra[0]?.employeeNo, 'C2825');
+
+const trueAbsent = preserveManualTimesheetBookings([rosterWipe], [{ ...rosterWipe, remarks: null }]);
+assert.equal(trueAbsent[0]?.usedHours, 0, 'true absent rows stay at 0h');
 
 const offshoreValidated = validateTimesheetLine(
   offshoreBooked,

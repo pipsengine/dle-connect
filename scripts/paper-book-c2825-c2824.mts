@@ -8,7 +8,6 @@
  *   npx tsx --tsconfig apps/dashboard/tsconfig.json scripts/paper-book-c2825-c2824.mts --apply
  */
 import sql from 'mssql';
-import { randomUUID } from 'node:crypto';
 import { getDleEnterpriseDbPool, loadWorkspaceEnv } from '../apps/dashboard/lib/dle-enterprise-db';
 import {
   DAILY_BREAK_HOURS,
@@ -141,7 +140,18 @@ ORDER BY Id DESC
 };
 
 const insertLine = async (pool: sql.ConnectionPool, headerId: string, code: string, name: string) => {
-  const lineId = `tsl-${randomUUID()}`;
+  const found = await pool.request()
+    .input('headerId', sql.NVarChar(160), headerId)
+    .input('code', sql.NVarChar(40), code)
+    .query(`
+SELECT TOP 1 Id FROM [hris].[TimesheetLines]
+WHERE CONVERT(NVARCHAR(4000), HeaderId) = CONVERT(NVARCHAR(4000), @headerId)
+  AND (EmployeeNo = @code OR EmployeeId = @code)
+ORDER BY CASE WHEN Id LIKE N'line-%' THEN 0 ELSE 1 END, Id
+`);
+  if (found.recordset[0]?.Id) return String(found.recordset[0].Id);
+
+  const lineId = `line-${headerId}-${code.replace(/[^A-Za-z0-9]/g, '')}`;
   await pool.request()
     .input('id', sql.NVarChar(220), lineId)
     .input('headerId', sql.NVarChar(160), headerId)
