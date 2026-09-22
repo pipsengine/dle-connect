@@ -406,6 +406,22 @@ const lumpsumTcmMealPay = calculatePayrollEarnings(lumpsumTcmMeal, { useHrisPack
 assert.equal(lumpsumTcmMealPay.paidEarningLines.find((line) => line.code === 'TCMMEAL')?.amount, 150000);
 assert.equal(lumpsumTcmMealPay.grossPay, 1476651.3);
 
+const lumpsumTcmSiteAllowances = employee({
+  employeeCode: 'L1939',
+  employeeId: 'L1939',
+  employmentType: 'Lumpsum',
+  periodSalary: 436876.13,
+  sagePayrollEarnings: [
+    { code: 'BASIC1_LUMPSUM', name: 'LUMSUM AMOUNT', amount: 436876.13, runFrequency: 'monthly', sourceAmount: 436876.13 },
+    { code: 'TCMMEAL', name: 'MEAL', amount: 31500, runFrequency: 'monthly', sourceAmount: 31500 },
+    { code: 'TCM_TRNSPT', name: 'TCM TRANSPORT', amount: 31500, runFrequency: 'monthly', sourceAmount: 31500 },
+  ],
+});
+const lumpsumTcmSitePay = calculatePayrollEarnings(lumpsumTcmSiteAllowances, { useHrisPackageLines: true, period: '2026-09' });
+assert.equal(lumpsumTcmSitePay.paidEarningLines.find((line) => line.code === 'TCMMEAL')?.amount, 31500, 'TCM meal earning line must hit lumpsum payroll');
+assert.equal(lumpsumTcmSitePay.paidEarningLines.find((line) => line.code === 'TCMTRANS')?.amount, 31500, 'Sage TCM_TRNSPT must pay as TCM transport');
+assert.equal(lumpsumTcmSitePay.grossPay, 499876.13);
+
 const mgtColaMeal = employee({
   employeeCode: 'P0399',
   employeeId: 'P0399',

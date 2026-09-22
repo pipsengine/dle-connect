@@ -221,6 +221,7 @@ export const STANDING_EARNING_LINE_PRESETS: Array<Omit<FlexiblePayrollLineDraft,
   { code: 'TRANSPORT_WK', name: 'Weekly Transport Claim', taxable: true, frequency: 'weekly' },
   { code: 'MEAL', name: 'Meal Allowance', taxable: true, frequency: 'monthly' },
   { code: 'TCMMEAL', name: 'TCM Meal', taxable: true, frequency: 'monthly' },
+  { code: 'TCMTRANS', name: 'TCM Transport', taxable: true, frequency: 'monthly' },
   { code: 'SITE', name: 'Site Allowance', taxable: true, frequency: 'monthly' },
   { code: 'UTILITY', name: 'Utility Allowance', taxable: true, frequency: 'monthly' },
 ];
@@ -263,8 +264,11 @@ export const isStructuralPayrollPackageCode = (code: string) =>
 
 const inferredFrequencyForLegacyLine = (line: SagePayrollLineItem): PayrollLineFrequency => {
   if (isPeriodOnlyPackageEarningLine(line)) return 'one-off';
-  const code = String(line.code || '').toUpperCase();
-  if (/TRANSPORT|WEEKLY/.test(code)) return 'weekly';
+  const code = compactPayrollCode(line.code);
+  if (/^TCM(TRNSPT|TRANS|TRANSPORT|TRANSP)$/.test(code)) return 'monthly';
+  if (/^(TRANSPORTWK|TRANSPORT_WK)$/.test(code) || (code === 'TRANSPORT' && /WEEKLY/i.test(String(line.name || '')))) return 'weekly';
+  if (code === 'TRANSPORT') return 'monthly';
+  if (/WEEKLY/.test(code)) return 'weekly';
   return 'monthly';
 };
 
@@ -311,6 +315,41 @@ export const leftoverStoredPeriodOnlyLines = <T extends {
   payrollPeriod?: string | null;
 }>(lines: T[] | null | undefined, period?: string | null) =>
   (lines || []).filter((line) => isPeriodOnlyPackageEarningLine(line) && !packageLinePaysInPeriod(line, period));
+
+const standingPackageCodeKey = (code?: string | null) => {
+  const compact = compactPayrollCode(code);
+  if (/^TCM(TRNSPT|TRANS|TRANSPORT|TRANSP)$/.test(compact)) return 'TCMTRANS';
+  return compact;
+};
+
+/** Keep HRIS TCM / standing supplements when an Excel salary schedule is written back to the package. */
+export const keepUnscheduledStandingPackageLines = (
+  scheduleLines: StoredPayrollPackageLine[],
+  existing: SagePayrollLineItem[] | null | undefined,
+): StoredPayrollPackageLine[] => {
+  const next = [...scheduleLines];
+  const codes = new Set(next.map((line) => standingPackageCodeKey(line.code)).filter(Boolean));
+  for (const line of existing || []) {
+    const key = standingPackageCodeKey(line.code);
+    if (!key || codes.has(key)) continue;
+    if (isPeriodOnlyPackageEarningLine(line)) continue;
+    const amount = roundMoney(Number(line.sourceAmount ?? line.amount ?? 0));
+    if (!(amount > 0)) continue;
+    next.push({
+      code: String(line.code || '').trim(),
+      name: String(line.name || line.code || '').trim(),
+      amount: roundMoney(Number(line.amount || amount)),
+      sourceAmount: amount,
+      runFrequency: line.runFrequency || 'monthly',
+      includeInMonthlyPayroll: line.includeInMonthlyPayroll ?? true,
+      taxableAmount: line.taxableAmount,
+      ytdTotal: line.ytdTotal,
+      payrollPeriod: line.payrollPeriod,
+    });
+    codes.add(key);
+  }
+  return next;
+};
 
 /** Keep standing lines plus one-offs stamped to this payroll period; drop leftover variable pay. */
 export const storedPackageLinesForPayrollSave = (

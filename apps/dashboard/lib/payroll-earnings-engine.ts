@@ -1,7 +1,7 @@
 import { existsSync, readFileSync, statSync } from 'node:fs';
 import { payeTaxableFromPayrollEarnings } from '@/lib/payroll-sage-pay-rules';
 import type { DleEmployeeDirectoryRow } from '@/lib/dle-enterprise-db';
-import { contractEmployeeCode, isDailyRatePayrollEmployee, isContractStyleEarningLine, isPeriodVariableDayRateEarningLine, isPermanentPayrollEmployee } from '@/lib/payroll-employee-classification';
+import { contractEmployeeCode, isDailyRatePayrollEmployee, isContractStyleEarningLine, isDayRateTimesheetMealLine, isPeriodVariableDayRateEarningLine, isPermanentPayrollEmployee } from '@/lib/payroll-employee-classification';
 import { isLeaveAllowancePaymentCode } from '@/lib/leave-allowance-policy';
 import { leaveAllowanceEventsForEmployeePeriod } from '@/lib/payroll-leave-allowance-store';
 import { isSagePayslipEarningSyncSource } from '@/lib/payroll-employee-classification';
@@ -861,21 +861,34 @@ const mergeConfiguredPackageSupplements = (
   baseLines: PayrollEarningLine[],
   options?: { includeOneOff?: boolean; period?: string },
 ) => {
-  const specialMeal = specialStandingMealLine(employee);
+  const configured = configuredPackageEarningLines(employee, options);
+  const hasPackageMeal = configured.some((line) => isMealFamilyEarningCode(line.code, line.name));
+  const specialMeal = hasPackageMeal ? null : specialStandingMealLine(employee);
   const packageLines = [
-    ...configuredPackageEarningLines(employee, options),
+    ...configured,
     ...(specialMeal ? [specialMeal] : []),
   ];
   if (!packageLines.length) return baseLines;
-  const existing = new Set(baseLines.map((line) => canonicalEarningCode(line.code)));
-  const hasMeal = baseLines.some((line) => isMealFamilyEarningCode(line.code, line.name));
-  const supplements = packageLines.filter((line) => {
-    if (existing.has(canonicalEarningCode(line.code))) return false;
-    if (hasMeal && isMealFamilyEarningCode(line.code, line.name)) return false;
+  const packageByCanonical = new Map<string, PayrollEarningLine>();
+  for (const line of packageLines) {
+    const key = canonicalEarningCode(line.code);
+    const existing = packageByCanonical.get(key);
+    if (!existing || Number(line.amount || 0) > Number(existing.amount || 0)) packageByCanonical.set(key, line);
+  }
+  const merged = baseLines.map((line) => {
+    const key = canonicalEarningCode(line.code);
+    const incoming = packageByCanonical.get(key);
+    if (!incoming) return line;
+    packageByCanonical.delete(key);
+    return incoming;
+  });
+  const hasMeal = merged.some((line) => isMealFamilyEarningCode(line.code, line.name));
+  const extras = [...packageByCanonical.values()].filter((line) => {
+    if (specialMeal && canonicalEarningCode(line.code) === canonicalEarningCode(specialMeal.code)) return true;
+    if (isDayRateTimesheetMealLine(line) && hasMeal) return false;
     return true;
   });
-  if (!supplements.length) return baseLines;
-  return [...baseLines, ...supplements];
+  return collapseCanonicalEarningLines([...merged, ...extras]);
 };
 
 const basicPercentForProfile = (profileId: PayrollEarningProfileId) => {
@@ -1011,8 +1024,13 @@ const canonicalEarningCode = (code: string) => {
     BASICLUMPSUM: 'LUMPSUMTAX',
     LUMSUMAMOUNT: 'LUMPSUMTAX',
     LUMSUM_AMOUNT: 'LUMPSUMTAX',
+    TCMTRNSPT: 'TCMTRANS',
+    TCMTRANSPORT: 'TCMTRANS',
+    TCMTRANSP: 'TCMTRANS',
+    TCM_TRANSPORT: 'TCMTRANS',
   };
   if (/^(STIPEND(NT)?|NYSCALLOW(ANCE)?|ITALLOW(ANCE)?)$/.test(upper)) return 'STIPENDNT';
+  if (/^TCM(TRNSPT|TRANS|TRANSPORT|TRANSP)$/.test(upper)) return 'TCMTRANS';
   return aliases[upper] || upper;
 };
 
@@ -1028,7 +1046,9 @@ const collapseCanonicalEarningLines = (lines: PayrollEarningLine[]) => {
           ? { ...line, code: 'STIPEND_NT', name: line.name || 'NYSC / IT STIPEND', taxable: false }
           : key === 'LUMPSUMTAX'
             ? { ...line, code: 'LUMPSUMTAX', name: line.name || 'LUMPSUM ALLOWANCE' }
-            : line,
+            : key === 'TCMTRANS'
+              ? { ...line, code: 'TCMTRANS', name: line.name || 'TCM TRANSPORT' }
+              : line,
       );
     }
   }

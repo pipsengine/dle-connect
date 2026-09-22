@@ -10,10 +10,11 @@ import { isDailyRatePayrollEmployee } from '@/lib/payroll-employee-classificatio
 import { readPayrollEmployees, invalidatePayrollEmployeeCache } from '@/lib/payroll-employee-source';
 import { normalizePayrollCompany } from '@/lib/payroll-schedule-scope';
 import type { StoredPayrollPackageLine } from '@/lib/payroll-package-lines';
-import { isPeriodOnlyPackageEarningLine, roundMoney } from '@/lib/payroll-package-lines';
+import { isPeriodOnlyPackageEarningLine, keepUnscheduledStandingPackageLines, roundMoney } from '@/lib/payroll-package-lines';
 import { excelRowCurrency, readAppliedSalaryScheduleOverride } from '@/lib/salary-schedule-upload-sql';
 import { salaryScheduleEmployeeKeys, type SalaryScheduleRow } from '@/lib/salary-schedule-xlsx';
 import { payrollCompanyFromSalaryScheduleRow } from '@/lib/salary-schedule-overlay';
+import { payrollExcelAmountOverlayApplies } from '@/lib/payroll-source-of-truth';
 
 const compact = (value: unknown) => String(value || '').trim();
 
@@ -111,13 +112,13 @@ const persistNow = async (period: string) => {
         periodSalary: writeLocal ? null : pkg.periodSalary,
         annualSalary: pkg.annualSalary,
         basicSalary: writeLocal ? null : pkg.basicSalary,
-        sageEarningLinesJson: writeLocal ? null : (pkg.earnings.length ? JSON.stringify(pkg.earnings) : null),
+        sageEarningLinesJson: writeLocal ? null : (pkg.earnings.length ? JSON.stringify(keepUnscheduledStandingPackageLines(pkg.earnings, match.sagePayrollEarnings)) : null),
         sageDeductionLinesJson: writeLocal ? null : (pkg.deductions.length ? JSON.stringify(pkg.deductions) : null),
         writeLocalNgnPackage: writeLocal,
         localPayrollGroup: writeLocal ? company : null,
         localPayCurrency: writeLocal ? 'NGN' : null,
         localPeriodSalary: writeLocal ? pkg.periodSalary : null,
-        sageLocalEarningLinesJson: writeLocal && pkg.earnings.length ? JSON.stringify(pkg.earnings) : null,
+        sageLocalEarningLinesJson: writeLocal && pkg.earnings.length ? JSON.stringify(keepUnscheduledStandingPackageLines(pkg.earnings, match.sageLocalPayrollEarnings || match.sagePayrollEarnings)) : null,
         sageLocalDeductionLinesJson: writeLocal && pkg.deductions.length ? JSON.stringify(pkg.deductions) : null,
       });
       saved += 1;
@@ -165,10 +166,12 @@ const persistNow = async (period: string) => {
   return { saved, skipped };
 };
 
-/** Persist applied Excel packages onto HRIS employees (deduped per period for ~60s). */
+/** Persist applied Excel packages onto HRIS employees (deduped per period for ~60s).
+ * From September 2026 Excel is not live payroll authority — do not overwrite HRIS earning lines. */
 export const persistAppliedPayrollSchedulesToHris = async (period: string) => {
   const normalized = compact(period).replace(/\//g, '-').slice(0, 7);
   if (!normalized) return { saved: 0, skipped: 0 };
+  if (!payrollExcelAmountOverlayApplies(normalized)) return { saved: 0, skipped: 0 };
   const existing = persistMemos.get(normalized);
   if (existing) return existing;
   const work = persistNow(normalized).catch((error) => {

@@ -549,7 +549,7 @@ const EARNING_PATTERN_BY_LABEL: Record<string, RegExp> = {
   'SITE ALLOWANCE (Earning)': /SITE ALLOW/i,
   'SNR UNION (Earning)': /SNR UNION(?! DUES)/i,
   'STOCK COUNT (Earning)': /STOCK COUNT/i,
-  'TCM TRANSPORT (Earning)': /TCM.?TRANS/i,
+  'TCM TRANSPORT (Earning)': /TCM.?TRN|TCMTRANS|TCM_TRNSPT/i,
   'TRANSPORT ALLOWANCE (Earning)': /TRANSPORT ALLOW|(?<!EXP_.{0,20})(?<!SNM)(?<!TCM)(?<!WEEKLY)^TRANS/i,
   'UTILITIES (Earning)': /^UTILITIES$/i,
   'UTILITY (Earning)': /^UTILITY$/i,
@@ -1383,7 +1383,7 @@ const buildDayrateDetailSheet = (
     const transport = lineAmount(record.earningLines, /TRANSPORT ALLOW|EXP_TRANS|^TRANSPORT$/i);
     const site = lineAmount(record.earningLines, /SITE ALLOW/i) || Number(att?.siteAllowanceTotal || 0);
     const tcmMeal = lineAmount(record.earningLines, /TCMMEAL/i);
-    const tcmTransport = lineAmount(record.earningLines, /TCM.?TRANS/i);
+    const tcmTransport = lineAmount(record.earningLines, /TCM.?TRN|TCMTRANS|TCM_TRNSPT/i);
     const arrears = lineAmount(record.earningLines, /ARREARS/i);
     const totalEarnings = roundMoney(Number(record.grossPay || 0))
       || roundMoney(wkdEarning + wkdOvtAmt + satAmt + sunAmt + phAmt + nightAmt + meal + transport + site + tcmMeal + tcmTransport + arrears);
@@ -1489,7 +1489,7 @@ const buildDayrateDetailSheet = (
           const transport = lineAmount(record.earningLines, /TRANSPORT ALLOW|EXP_TRANS|^TRANSPORT$/i);
           const site = lineAmount(record.earningLines, /SITE ALLOW/i) || Number(att?.siteAllowanceTotal || 0);
           const tcmMeal = lineAmount(record.earningLines, /TCMMEAL/i);
-          const tcmTransport = lineAmount(record.earningLines, /TCM.?TRANS/i);
+          const tcmTransport = lineAmount(record.earningLines, /TCM.?TRN|TCMTRANS|TCM_TRNSPT/i);
           const arrears = lineAmount(record.earningLines, /ARREARS/i);
           const totalEarnings = Number(record.grossPay || 0)
             || wkdEarning + wkdOvtAmt + satAmt + sunAmt + nightAmt + meal + transport + site + tcmMeal + tcmTransport + arrears;

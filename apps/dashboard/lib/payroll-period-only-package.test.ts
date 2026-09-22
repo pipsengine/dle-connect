@@ -6,6 +6,7 @@ import assert from 'node:assert/strict';
 import {
   effectiveHrisPayrollLines,
   isPeriodOnlyPackageEarningLine,
+  keepUnscheduledStandingPackageLines,
   mergePayrollEarningLinesForSave,
   packageLinePaysInPeriod,
   splitDraftEarningLinesByScope,
@@ -115,5 +116,15 @@ const standingSitePay = calculatePayrollEarnings(employee({
   ],
 }), { useHrisPackageLines: true, period: '2026-09' });
 assert.equal(standingSitePay.paidEarningLines.find((line) => line.code === 'SITE')?.amount, 300000, 'HRIS monthly site allowance stays standing');
+
+const preservedTcm = keepUnscheduledStandingPackageLines(
+  [{ code: 'LUMPSUMTAX', name: 'LUMPSUM', amount: 436876.13, runFrequency: 'monthly', sourceAmount: 436876.13 }],
+  [
+    { code: 'TCMMEAL', name: 'MEAL', amount: 31500, runFrequency: 'monthly', sourceAmount: 31500 },
+    { code: 'TCM_TRNSPT', name: 'TCM TRANSPORT', amount: 31500, runFrequency: 'monthly', sourceAmount: 31500 },
+  ],
+);
+assert.equal(preservedTcm.some((line) => line.code === 'TCMMEAL' && line.amount === 31500), true, 'salary schedule persist must keep TCM meal');
+assert.equal(preservedTcm.some((line) => /TCM/i.test(line.code) && /TRANS|TRNSPT/i.test(line.code) && line.amount === 31500), true, 'salary schedule persist must keep TCM transport');
 
 console.log('payroll-period-only-package tests passed');
