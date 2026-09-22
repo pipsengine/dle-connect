@@ -13,6 +13,7 @@ import { readPayrollEmployees } from '@/lib/payroll-employee-source';
 import { readTimesheetWorkCenters } from '@/lib/timesheet-entry-store';
 import { readActiveSagePayrollEmployees } from '@/lib/sage-people-payroll-store';
 import { listNigeriaBanks, nigeriaBankNames } from '@/lib/nigeria-banks-store';
+import { composePersonDisplayName } from '@/lib/person-display-name';
 
 type Role =
   | 'Super Admin'
@@ -561,7 +562,12 @@ export async function GET(request: Request, ctx: { params: Promise<{ action: str
         draftId: rec.draftId,
         status: rec.status,
         updatedAt: rec.updatedAt,
-        fullName: `${rec.draft.personal?.firstName || ''} ${rec.draft.personal?.lastName || ''}`.trim(),
+        fullName: composePersonDisplayName({
+          title: rec.draft.personal?.title,
+          firstName: rec.draft.personal?.firstName,
+          middleName: rec.draft.personal?.middleName,
+          lastName: rec.draft.personal?.lastName,
+        }),
         department: rec.draft.job?.department || '—',
         jobTitle: rec.draft.job?.jobTitle || '—',
         reportingManager: rec.draft.job?.reportingManager || '—',

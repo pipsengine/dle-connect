@@ -9,6 +9,7 @@ import {
 import { resolvePayCurrency } from '@/lib/payroll-currency';
 import { withNormalizedBankCodes } from '@/lib/payroll-bank-constants';
 import { resolveNigeriaPersonalLocation } from '@/lib/nigeria-locations';
+import { composePersonDisplayName, resolvePersonNameParts } from '@/lib/person-display-name';
 
 const DEFAULT_IT_NYSC_STIPEND_GRADE = 'IT_NYSC_REM - IT_NYSC';
 
@@ -582,17 +583,15 @@ const isLocalNationality = (value: unknown) => {
   return ['nigeria', 'nigerian', 'ng'].includes(normalized);
 };
 
-const composedEmployeeFullName = (row: Record<string, unknown>, fallback: string) => {
-  const firstName = str(row.first_name);
-  const middleName = str(row.middle_name);
-  const parts = [
-    str(row.title),
-    firstName,
-    middleName && !firstName.toLowerCase().includes(middleName.toLowerCase()) ? middleName : '',
-    str(row.last_name),
-  ].filter(Boolean);
-  return parts.join(' ') || str(row.full_name) || fallback;
-};
+const composedEmployeeFullName = (row: Record<string, unknown>, fallback: string) => (
+  composePersonDisplayName({
+    title: row.title,
+    firstName: row.first_name,
+    middleName: row.middle_name,
+    lastName: row.last_name,
+    fallback: str(row.full_name) || fallback,
+  }) || fallback
+);
 
 const employeeTypeCode = (employeeType: string) => {
   const normalized = employeeType.trim().toLowerCase();
@@ -743,20 +742,15 @@ const sageStatus = (statusName: unknown, statusCode: unknown) => {
   return str(statusName) || 'Active';
 };
 
-const sageFullName = (employee: SagePayrollEmployeeImportRow, employeeCode: string) => {
-  const firstNames = str(employee.firstNames);
-  const middleName = str(employee.middleName);
-  const parts = [
-    str(employee.title),
-    firstNames,
-    middleName && !firstNames.toLowerCase().includes(middleName.toLowerCase()) ? middleName : '',
-    str(employee.lastName),
-  ].filter(Boolean).join(' ');
-  if (parts) return parts;
-  const display = str(employee.displayName);
-  if (display) return display;
-  return parts || employeeCode;
-};
+const sageFullName = (employee: SagePayrollEmployeeImportRow, employeeCode: string) => (
+  composePersonDisplayName({
+    title: employee.title,
+    firstName: employee.firstNames,
+    middleName: employee.middleName,
+    lastName: employee.lastName,
+    fallback: str(employee.displayName) || employeeCode,
+  }) || employeeCode
+);
 
 const parseSourceJson = (value: unknown) => {
   if (!value) return null;
@@ -816,7 +810,12 @@ const snapshot = (rec: Pick<DraftRecordLike, 'draft'>) => {
   const j = rec.draft?.job || {};
   return {
     employeeCode: nullable(e.employeeId),
-    fullName: `${str(p.firstName)} ${str(p.lastName)}`.trim() || null,
+    fullName: composePersonDisplayName({
+      title: p.title,
+      firstName: p.firstName,
+      middleName: p.middleName,
+      lastName: p.lastName,
+    }) || null,
     officialEmail: nullable(c.officialEmail),
     personalEmail: nullable(c.personalEmail),
     primaryPhone: nullable(c.primaryPhone),
@@ -1588,6 +1587,9 @@ export const readTimesheetApprovalEmployeeMeta = async (_keys?: string[]): Promi
     SELECT
       v.employee_code,
       v.full_name,
+      v.first_name,
+      v.middle_name,
+      v.last_name,
       v.department,
       v.business_unit,
       v.employment_type,
@@ -1606,7 +1608,12 @@ export const readTimesheetApprovalEmployeeMeta = async (_keys?: string[]): Promi
   for (const row of rs.recordset || []) {
     storeEmployeeMeta(lookup, {
       employeeCode: str(row.employee_code),
-      fullName: str(row.full_name),
+      fullName: composePersonDisplayName({
+        firstName: row.first_name,
+        middleName: row.middle_name,
+        lastName: row.last_name,
+        fallback: row.full_name,
+      }) || str(row.full_name),
       department: str(row.department) || 'Unassigned',
       businessUnit: str(row.business_unit) || 'DLE',
       employmentType: str(row.employment_type) || 'Unassigned',
@@ -1865,8 +1872,12 @@ export const importSagePayrollEmployeesToDb = async (employees: SagePayrollEmplo
     const employeeCode = sageEmployeeCode(employee);
     const employeeType = sageEmployeeType(employeeCode);
     const fullName = sageFullName(employee, employeeCode);
-    const firstName = str(employee.firstNames) || fullName;
-    const lastName = str(employee.lastName) || fullName;
+    const resolvedName = resolvePersonNameParts({
+      title: employee.title,
+      firstName: employee.firstNames,
+      middleName: employee.middleName,
+      lastName: employee.lastName,
+    });
     const sourceEmployeeId = String(employee.employeeId);
     const nationality = str(employee.nationality);
     const isExpatriate = Boolean(nationality && !isLocalNationality(nationality));
@@ -1887,9 +1898,9 @@ export const importSagePayrollEmployeesToDb = async (employees: SagePayrollEmplo
         .input('source_employee_id', sql.NVarChar(80), sourceEmployeeId)
         .input('preferred_name', sql.NVarChar(150), str(employee.knownAsName) || null)
         .input('title', sql.NVarChar(30), str(employee.title) || null)
-        .input('first_name', sql.NVarChar(100), firstName.slice(0, 100))
-        .input('middle_name', sql.NVarChar(100), str(employee.middleName) || null)
-        .input('last_name', sql.NVarChar(100), lastName.slice(0, 100))
+        .input('first_name', sql.NVarChar(100), (resolvedName.firstName || str(employee.knownAsName) || employeeCode).slice(0, 100))
+        .input('middle_name', sql.NVarChar(100), resolvedName.middleName || null)
+        .input('last_name', sql.NVarChar(100), (resolvedName.lastName || str(employee.lastName) || resolvedName.firstName || employeeCode).slice(0, 100))
         .input('gender', sql.NVarChar(40), str(employee.gender) || null)
         .input('date_of_birth', sql.Date, sourceDate(employee.birthDate))
         .input('marital_status', sql.NVarChar(50), str(employee.maritalStatus) || null)
@@ -2959,7 +2970,13 @@ export const createEmployeeFromDraftInDb = async (draftId: string, employeeCode:
     const owner = await findEmployeeByOfficialEmailInDb(officialEmail);
     if (owner) throw new Error(officialEmailAlreadyUsedMessage(owner, officialEmail));
   }
-  const fullName = `${str(personal.firstName)} ${str(personal.lastName)}`.trim() || employeeCode;
+  const fullName = composePersonDisplayName({
+    title: personal.title,
+    firstName: personal.firstName,
+    middleName: personal.middleName,
+    lastName: personal.lastName,
+    fallback: employeeCode,
+  }) || employeeCode;
   const isStipendEmployee = isStipendEmployeeDraft(employeeCode, employment, job);
   const defaultStipendSalary = Number(process.env.HRIS_DEFAULT_IT_NYSC_STIPEND_NGN || 100000);
   const stipendGrade = str(payroll.salaryGrade) || str(job.jobGrade) || DEFAULT_IT_NYSC_STIPEND_GRADE;
@@ -3365,9 +3382,13 @@ export const syncHrisEmployeeProfileToDb = async (input: HrisEmployeeProfileSync
   const job = input.jobDetails || {};
   const payroll = input.payrollSetup || {};
   const fullName =
-    str(input.fullName) ||
-    `${str(personal.firstName)} ${str(personal.lastName)}`.trim() ||
-    employeeCode;
+    composePersonDisplayName({
+      title: personal.title,
+      firstName: personal.firstName,
+      middleName: personal.middleName,
+      lastName: personal.lastName,
+      fallback: input.fullName || employeeCode,
+    }) || employeeCode;
   const preferredName = nullable(personal.preferredName ?? input.preferredName);
   const employmentStatus = nullable(employment.employmentStatus ?? input.employmentStatus) || 'Active';
   const employmentType = canonicalEmploymentType(employment.employmentType ?? input.employmentType);

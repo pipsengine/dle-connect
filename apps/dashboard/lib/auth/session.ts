@@ -12,6 +12,7 @@ import {
   SESSION_PASSWORD_CHANGE_GRACE_SECONDS,
 } from '@/lib/auth/session-timeout';
 import { cookieSafeExtraPermissions } from '@/lib/auth/resolve-access-session';
+import { sanitizePersonDisplayName } from '@/lib/person-display-name';
 
 export type SessionUser = {
   userId: string;
@@ -175,7 +176,7 @@ export const refreshSessionToken = async (session: SessionPayload, permissions?:
 export const normalizeSession = (session: SessionPayload): SessionPayload => ({
   ...session,
   username: String(session.username || '').trim(),
-  fullName: String(session.fullName || session.username || 'User').trim(),
+  fullName: sanitizePersonDisplayName(session.fullName || session.username || 'User') || 'User',
   roles: Array.isArray(session.roles) ? session.roles.filter(Boolean) : [],
   permissions: Array.isArray(session.permissions) ? session.permissions.filter(Boolean) : [],
   firstLoginRequired: Boolean(session.firstLoginRequired),

@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import EmployeeAvatar from '@/components/hris/EmployeeAvatar';
+import { sanitizePersonDisplayName } from '@/lib/person-display-name';
 import {
   Bell,
   CalendarDays,
@@ -280,6 +281,7 @@ export function EnterpriseUserProfile({
       : {}),
   } as ProfileUser;
   user.role = displayRole(user.role) || user.role;
+  const displayName = sanitizePersonDisplayName(user.name) || user.name;
   const resolvedPhotoUrl = resolveProfilePhotoUrl(user);
   const useEmployeePhoto = Boolean(resolvedPhotoUrl) || !isPlaceholderEmployeeCode(user.employeeCode);
   const tone = contextTone(context);
@@ -304,7 +306,7 @@ export function EnterpriseUserProfile({
       >
         <span className="relative h-8 w-8 shrink-0">
           <EmployeeAvatar
-            fullName={user.name}
+            fullName={displayName}
             employeeCode={user.employeeCode}
             photoUrl={resolvedPhotoUrl || undefined}
             hasPhoto={user.hasPhoto || useEmployeePhoto}
@@ -316,7 +318,7 @@ export function EnterpriseUserProfile({
         </span>
         <span className="hidden min-w-0 flex-col leading-tight min-[1920px]:flex">
           <span className="flex min-w-0 items-center gap-1.5">
-            <span className="truncate text-sm font-black">{user.name}</span>
+            <span className="truncate text-sm font-black">{displayName}</span>
             <span className="shrink-0 rounded-full border border-slate-200 bg-white px-1.5 py-0.5 text-[10px] font-black uppercase tracking-wide text-slate-600">
               {user.rbacRole || 'Employee'}
             </span>
@@ -334,7 +336,7 @@ export function EnterpriseUserProfile({
           <div className="flex items-start gap-3">
             <span className="relative h-14 w-14 shrink-0">
               <EmployeeAvatar
-                fullName={user.name}
+                fullName={displayName}
                 employeeCode={user.employeeCode}
                 photoUrl={resolvedPhotoUrl || undefined}
                 hasPhoto={user.hasPhoto || useEmployeePhoto}
@@ -345,7 +347,7 @@ export function EnterpriseUserProfile({
               <span className={`absolute bottom-1 right-1 h-3 w-3 rounded-full border-2 border-white ${user.onlineStatus === 'Online' ? 'bg-emerald-500' : 'bg-slate-400'}`} />
             </span>
             <div className="min-w-0 flex-1">
-              <p className="truncate text-base font-black text-slate-950">{user.name}</p>
+              <p className="truncate text-base font-black text-slate-950">{displayName}</p>
               <p className="truncate text-sm font-semibold text-slate-600">{user.role}</p>
               <div className="mt-2 flex flex-wrap gap-1.5">
                 <span className={`rounded-full border px-2 py-1 text-[11px] font-black ${statusTone(user.employmentStatus)}`}>{user.employmentStatus || 'Unknown'}</span>

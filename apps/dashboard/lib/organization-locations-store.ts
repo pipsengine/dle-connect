@@ -1,6 +1,7 @@
 import sql from 'mssql';
 import { getDleEnterpriseDbPool, type DleEmployeeDirectoryRow } from '@/lib/dle-enterprise-db';
 import type { HealthStatus, LocationSiteRecord, StructureInsight } from '@/lib/organization-data';
+import { composePersonDisplayName } from '@/lib/person-display-name';
 import { readPayrollEmployees } from '@/lib/payroll-employee-source';
 import { readActiveSagePayrollEmployeeKeys, type SagePayrollEmployee } from '@/lib/sage-people-payroll-store';
 import {
@@ -203,7 +204,13 @@ export const personFromSageEmployee = (employee: SagePayrollEmployee): Organizat
   const status = `${clean(employee.statusName)} ${clean(employee.statusCode)}`.toLowerCase();
   return {
     employeeCode: clean(employee.employeeCode) || clean(employee.directoryEmployeeCode),
-    fullName: clean(employee.displayName),
+    fullName: composePersonDisplayName({
+      title: employee.title,
+      firstName: employee.firstNames,
+      middleName: employee.middleName,
+      lastName: employee.lastName,
+      fallback: employee.displayName,
+    }) || clean(employee.displayName),
     managerName: clean(employee.managerName),
     managerCode: clean(employee.managerEmployeeCode),
     department: clean(employee.departmentName) || clean(employee.hierarchyDepartmentName),

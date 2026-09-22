@@ -5,6 +5,7 @@ import { buildBaseAttendanceRecords } from '@/lib/attendance-data';
 import { readLiveClockingActivity } from '@/lib/biometric-live-attendance-store';
 import { dleEnterpriseLastPoolError, getDleEnterpriseDbPool } from '@/lib/dle-enterprise-db';
 import { readPayrollEmployees } from '@/lib/payroll-employee-source';
+import { composePersonDisplayName } from '@/lib/person-display-name';
 import { normalizePayrollMatchKey, readActiveSagePayrollEmployeeKeys, type SagePayrollEmployee } from '@/lib/sage-people-payroll-store';
 import { approvedPaidLeaveForDate } from '@/lib/leave-management-store';
 import { assignmentMatchesSupervisor, readSupervisorAssignments } from '@/lib/supervisor-assignment-store';
@@ -413,14 +414,15 @@ const bucketForHourType = (hourType: HourType): AllocationBucket => {
 
 const catalogByCode = new Map(projectCatalog.map((item) => [item.code, item]));
 
-const cleanNamePart = (value: string | null | undefined) => String(value ?? '').trim().replace(/\s+/g, ' ');
-
-const formatSageEmployeeFullName = (employee: SagePayrollEmployee, fallback: string) => {
-  const firstNames = cleanNamePart(employee.firstNames);
-  const lastName = cleanNamePart(employee.lastName);
-  const fullName = [firstNames, lastName].filter(Boolean).join(' ');
-  return fullName || cleanNamePart(employee.displayName) || fallback;
-};
+const formatSageEmployeeFullName = (employee: SagePayrollEmployee, fallback: string) => (
+  composePersonDisplayName({
+    title: employee.title,
+    firstName: employee.firstNames,
+    middleName: employee.middleName,
+    lastName: employee.lastName,
+    fallback: employee.displayName || fallback,
+  }) || fallback
+);
 
 const sageTimesheetEmployeeCode = (employee: SagePayrollEmployee, fallback: string) =>
   (employee.directoryEmployeeCode || employee.employeeCode || fallback).trim().toUpperCase();

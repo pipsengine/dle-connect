@@ -15,29 +15,14 @@ import {
   Wallet,
 } from 'lucide-react';
 import type { EmployeePaymentDashboard } from '@/lib/finance-intelligence/payment-requests-service';
+import { personGreetingName } from '@/lib/person-display-name';
 
 type Props = {
   dashboard: EmployeePaymentDashboard;
   employeeName?: string;
 };
 
-const NAME_HONORIFICS = new Set([
-  'mr', 'mrs', 'ms', 'miss', 'dr', 'prof', 'professor', 'engr', 'eng', 'chief',
-  'alhaji', 'alhaja', 'hajia', 'mallam', 'pastor', 'rev', 'reverend', 'hon', 'honourable',
-  'barr', 'barrister', 'arc', 'architect', 'pharm', 'sir', 'dame', 'lady',
-]);
-
-const greetingGivenName = (fullName?: string) => {
-  const parts = String(fullName || '')
-    .trim()
-    .split(/[\s,]+/)
-    .map((part) => part.replace(/\.+$/g, ''))
-    .filter(Boolean);
-  while (parts.length && NAME_HONORIFICS.has(parts[0].toLowerCase())) {
-    parts.shift();
-  }
-  return parts[0] || '';
-};
+const greetingGivenName = (fullName?: string) => personGreetingName({ fullName: fullName });
 
 const money = (amount: number, currency = 'NGN') =>
   new Intl.NumberFormat('en-NG', {

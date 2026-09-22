@@ -15,6 +15,7 @@ import { employeeReportsToManager } from '@/lib/reporting-manager-match';
 import { isGenericPayrollGrade } from '@/lib/payroll-earnings-engine';
 import { payslipIdentityMap } from '@/lib/payroll-payslip-identity-store';
 import { normalizePayrollMatchKey } from '@/lib/sage-people-payroll-store';
+import { personGreetingName, sanitizePersonDisplayName } from '@/lib/person-display-name';
 
 export type PayrollEmployeeSource = {
   employees: DleEmployeeDirectoryRow[];
@@ -295,16 +296,18 @@ const enrichPayrollEmployeeMaster = async (employees: DleEmployeeDirectoryRow[])
   return enrichStipendPayrollDefaults(await enrichEmployeesFromPayslipIdentities(employees, identities));
 };
 
-const emptyEmployee = (employeeId: string, fullName: string): DleEmployeeDirectoryRow => ({
+const emptyEmployee = (employeeId: string, fullName: string): DleEmployeeDirectoryRow => {
+  const cleaned = sanitizePersonDisplayName(fullName) || fullName;
+  return {
   id: employeeId,
   employeeId,
   employeeCode: employeeId,
   employeeDbId: Math.abs(employeeId.split('').reduce((sum, char) => sum + char.charCodeAt(0), 0)),
-  fullName,
+  fullName: cleaned,
   title: '',
-  firstName: fullName.split(' ')[0] || fullName,
+  firstName: personGreetingName({ fullName: cleaned }) || cleaned,
   middleName: '',
-  lastName: fullName.split(' ').slice(1).join(' '),
+  lastName: cleaned.split(/\s+/).slice(-1).join(' '),
   gender: '',
   dateOfBirth: '',
   maritalStatus: '',
@@ -391,7 +394,8 @@ const emptyEmployee = (employeeId: string, fullName: string): DleEmployeeDirecto
   modifiedAt: '',
   aiRiskScore: 0,
   trainingCompliance: 'Compliant',
-});
+  };
+};
 
 const readJson = async <T,>(fileName: string, fallback: T): Promise<T> => {
   try {

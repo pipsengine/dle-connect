@@ -26,6 +26,7 @@ import { invalidatePayrollCalculationCache } from '@/lib/payroll-calculation-ser
 import { invalidatePayrollEmployeeOptionsCache } from '@/lib/payroll-employee-options-store';
 import { resolveHrisEmployeeRoute } from '@/lib/hris-employee-route';
 import { AUTH_COOKIE, verifySessionToken } from '@/lib/auth/session';
+import { composePersonDisplayName } from '@/lib/person-display-name';
 import {
   resolveEmployeeProfileAccess,
   type EmployeeProfilePermissions,
@@ -5156,7 +5157,13 @@ async function patchEmployeeRecord(request: Request, ctx: { params: Promise<{ id
       next.dateOfBirth = /^\d{4}-\d{2}-\d{2}$/.test(dob) ? dob : next.dateOfBirth;
     }
     rec.profile.personalInfo = next;
-    const composedName = [next.firstName, next.middleName, next.lastName].map((part) => String(part || '').trim()).filter(Boolean).join(' ');
+    const composedName = composePersonDisplayName({
+      title: next.title,
+      firstName: next.firstName,
+      middleName: next.middleName,
+      lastName: next.lastName,
+      fallback: rec.profile.fullName,
+    });
     if (composedName) rec.profile.fullName = composedName;
     // Keep contact-table mirrors in sync so DB MERGE writes the values just edited here.
     rec.profile.contacts = {

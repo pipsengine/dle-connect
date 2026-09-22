@@ -1,3 +1,5 @@
+import { sanitizePersonDisplayName } from '@/lib/person-display-name';
+
 /**
  * Fixed timesheet context for Agege blaster supervisor C1001 and crew.
  * Location = AGEGE, work center = Blasting (not Painting / trade-as-location).
@@ -169,7 +171,7 @@ export const timesheetCrewMatchesLocation = (
 const TIMESHEET_NAME_NOISE = /\s*[-–,/|]+\s*(galvanizing|maintenance|fitting|cutting|welding|painting|blasting|machining|rigging|department|production).*$/i;
 
 export const tidyTimesheetEmployeeName = (value: string | null | undefined) => {
-  const raw = clean(value).replace(TIMESHEET_NAME_NOISE, '').replace(/\s+/g, ' ').trim();
+  const raw = sanitizePersonDisplayName(clean(value).replace(TIMESHEET_NAME_NOISE, '').replace(/\s+/g, ' ').trim());
   if (!raw) return '';
   const letters = raw.replace(/[^A-Za-z]/g, '');
   const upperRatio = letters

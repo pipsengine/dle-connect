@@ -1,5 +1,6 @@
 import sql from 'mssql';
 import { getDleEnterpriseDbPool } from '@/lib/dle-enterprise-db';
+import { composePersonDisplayName } from '@/lib/person-display-name';
 import type { DepartmentRecord, HealthStatus, NodeKind, StructureInsight } from '@/lib/organization-data';
 
 type DepartmentPayload = {
@@ -366,7 +367,7 @@ const readSystemEmployeeDepartmentRows = async (): Promise<SystemEmployeeDepartm
 
   return (result.recordset || []).map((row: any) => ({
     employeeCode: clean(row.employee_code),
-    fullName: clean(row.full_name),
+    fullName: composePersonDisplayName({ fallback: row.full_name }) || clean(row.full_name),
     employmentStatus: clean(row.employment_status),
     department: clean(row.department),
     division: clean(row.division),
@@ -562,14 +563,17 @@ WHERE e.employment_status NOT LIKE N'%Inactive%'
   ${searchSql}
 ORDER BY e.full_name, e.employee_code;
 `);
-  return (result.recordset || []).map((row: any) => ({
+  return (result.recordset || []).map((row: any) => {
+    const fullName = composePersonDisplayName({ fallback: row.full_name }) || clean(row.full_name);
+    return {
     employeeCode: clean(row.employee_code),
-    fullName: clean(row.full_name),
+    fullName,
     jobTitle: clean(row.job_title),
     department: clean(row.department),
     status: clean(row.employment_status),
-    label: `${clean(row.employee_code)} - ${clean(row.full_name)}`,
-  })).filter((row: { employeeCode: string; fullName: string }) => row.employeeCode && row.fullName);
+    label: `${clean(row.employee_code)} - ${fullName}`,
+  };
+  }).filter((row: { employeeCode: string; fullName: string }) => row.employeeCode && row.fullName);
 }
 
 export async function refreshDepartmentsFromSystemEmployees(): Promise<DepartmentPayload> {

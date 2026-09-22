@@ -15,6 +15,7 @@ import { formatPayrollMoney } from '@/lib/payroll-currency';
 import { getNigeriaLgas, getNigeriaStates } from '@/lib/nigeria-locations';
 import { humanizeHttpErrorBody } from '@/lib/http-client-error';
 import { hrisEmployeeProfileHref, hrisEmployeeResourceUrl } from '@/lib/hris-employee-route';
+import { composePersonDisplayName } from '@/lib/person-display-name';
 import {
   resolveEmployeeProfileAccess,
   type EmployeeProfilePermissions,
@@ -1871,10 +1872,13 @@ export default function EmployeeProfileClient({
                                       viewerEmployeeId,
                                     });
                                     updateProfile((p) => {
-                                      const composed = [next.firstName, next.middleName, next.lastName]
-                                        .map((part) => String(part || '').trim())
-                                        .filter(Boolean)
-                                        .join(' ');
+                                      const composed = composePersonDisplayName({
+                                        title: next.title,
+                                        firstName: next.firstName,
+                                        middleName: next.middleName,
+                                        lastName: next.lastName,
+                                        fallback: p.fullName,
+                                      });
                                       return {
                                         ...p,
                                         personalInfo: next,

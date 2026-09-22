@@ -4,6 +4,7 @@ import path from 'node:path';
 import type { SagePayrollEmployee } from '@/lib/sage-people-payroll-store';
 import { normalizePayrollMatchKey, readActiveSagePayrollEmployees, readSagePayrollEmployeeBankDetails, type SagePayrollBankDetail } from '@/lib/sage-people-payroll-store';
 import { withNormalizedBankCodes } from '@/lib/payroll-bank-constants';
+import { composePersonDisplayName } from '@/lib/person-display-name';
 
 export type PayslipEmployeeIdentity = {
   employeeId: string;
@@ -90,7 +91,13 @@ export const payslipIdentityFromSage = (employee: SagePayrollEmployee, options?:
   employeeId: compact(options?.employeeId || employee.directoryEmployeeCode || employee.employeeCode),
   employeeCode: compact(employee.directoryEmployeeCode || employee.employeeCode),
   sourceEmployeeCode: compact(employee.employeeCode),
-  fullName: compact(employee.displayName),
+  fullName: composePersonDisplayName({
+    title: employee.title,
+    firstName: employee.firstNames,
+    middleName: employee.middleName,
+    lastName: employee.lastName,
+    fallback: employee.displayName,
+  }) || compact(employee.displayName),
   jobTitle: compact(employee.jobTitle),
   department: compact(employee.departmentName || employee.hierarchyDepartmentName),
   businessUnit: compact(employee.companyCode || employee.companyName),

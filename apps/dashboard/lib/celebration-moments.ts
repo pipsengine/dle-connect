@@ -1,3 +1,5 @@
+import { personGreetingName, sanitizePersonDisplayName } from '@/lib/person-display-name';
+
 export type CelebrationKind = 'birthday' | 'anniversary';
 
 export type CelebrationDirectoryPerson = {
@@ -5,6 +7,9 @@ export type CelebrationDirectoryPerson = {
   employeeCode?: string;
   fullName?: string;
   firstName?: string;
+  middleName?: string;
+  lastName?: string;
+  title?: string;
   preferredName?: string;
   department?: string;
   status?: string;
@@ -72,14 +77,18 @@ export const codesMatch = (left?: string | null, right?: string | null) => {
   return Boolean(a && b && a === b);
 };
 
-export const displayFirstName = (person: Pick<CelebrationDirectoryPerson, 'firstName' | 'preferredName' | 'fullName'>) => {
-  const preferred = prettyPersonName(person.preferredName);
-  if (preferred) return preferred.split(/\s+/)[0];
-  const first = prettyPersonName(person.firstName);
-  if (first) return first.split(/\s+/)[0];
-  const parts = prettyPersonName(person.fullName).split(/\s+/).filter(Boolean);
-  return parts[0] || prettyPersonName(person.fullName) || 'Colleague';
-};
+export const displayFirstName = (
+  person: Pick<CelebrationDirectoryPerson, 'firstName' | 'preferredName' | 'fullName' | 'middleName' | 'lastName' | 'title'>,
+) => (
+  personGreetingName({
+    preferredName: person.preferredName,
+    title: person.title,
+    firstName: person.firstName,
+    middleName: person.middleName,
+    lastName: person.lastName,
+    fullName: person.fullName,
+  }) || 'Colleague'
+);
 
 export const initialsForName = (name: string) =>
   compact(name)
@@ -125,7 +134,7 @@ const toMoment = (
   today: string,
   years?: number,
 ): CelebrationMoment | null => {
-  const fullName = prettyPersonName(person.fullName);
+  const fullName = prettyPersonName(sanitizePersonDisplayName(person.fullName) || person.fullName);
   const employeeId = compact(person.employeeId);
   const employeeCode = compact(person.employeeCode || person.employeeId);
   if (!fullName || !employeeCode) return null;

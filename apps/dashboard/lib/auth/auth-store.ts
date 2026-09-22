@@ -14,6 +14,7 @@ import {
   isProtectedGlobalSuperAdminIdentity,
   protectedGlobalSuperAdminRoles,
 } from '@/lib/auth/protected-global-admin';
+import { sanitizePersonDisplayName } from '@/lib/person-display-name';
 
 export type UserStatus = 'Active' | 'Inactive' | 'Disabled' | 'Locked' | 'Pending First Login' | 'Password Reset Required';
 
@@ -370,7 +371,7 @@ const userFromEmployee = (employee: DleEmployeeDirectoryRow): UserAccount => {
     username,
     employeeId: employee.employeeId,
     employeeCode: employee.employeeCode || employee.employeeId,
-    fullName: employee.fullName,
+    fullName: sanitizePersonDisplayName(employee.fullName) || employee.fullName,
     surname: surname,
     email: employee.officialEmail || employee.email || employee.personalEmail || '',
     department: employee.department || '',
@@ -407,7 +408,7 @@ const mergeEmployee = (user: UserAccount, employee: DleEmployeeDirectoryRow): Us
     ...user,
     employeeId: employee.employeeId || user.employeeId,
     employeeCode: employee.employeeCode || user.employeeCode,
-    fullName: employee.fullName || user.fullName,
+    fullName: sanitizePersonDisplayName(employee.fullName || user.fullName) || user.fullName,
     surname: surnameOf(employee) || user.surname,
     email: employee.officialEmail || employee.email || employee.personalEmail || user.email,
     department: employee.department || user.department,
@@ -565,7 +566,7 @@ export const readUsersForAccessControl = async () => {
       id: user.id,
       username: user.username,
       employeeCode: user.employeeCode,
-      fullName: user.fullName,
+      fullName: sanitizePersonDisplayName(user.fullName) || user.fullName,
       department: user.department,
       jobTitle: user.jobTitle,
       status: user.status,
@@ -650,7 +651,7 @@ const publicUser = async (user: UserAccount): Promise<SessionUser> => {
     username: user.username,
     employeeId: user.employeeId,
     employeeCode: user.employeeCode,
-    fullName: user.fullName,
+    fullName: sanitizePersonDisplayName(user.fullName) || user.fullName,
     email: user.email,
     department: user.department,
     unit: user.unit,

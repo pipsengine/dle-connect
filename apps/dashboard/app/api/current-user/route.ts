@@ -7,6 +7,7 @@ import { AUTH_COOKIE, verifySessionToken } from '@/lib/auth/session';
 import { isEmergencyUnlinkedGlobalAdmin } from '@/lib/auth/protected-global-admin';
 import { unreadNotificationCountForSession } from '@/lib/enterprise-notifications-feed';
 import { payslipIdentityMap } from '@/lib/payroll-payslip-identity-store';
+import { sanitizePersonDisplayName } from '@/lib/person-display-name';
 import { resolveReportingManagerDisplay } from '@/lib/reporting-manager-match';
 
 type CurrentUserContext = 'enterprise' | 'hris' | 'ess';
@@ -140,7 +141,7 @@ export async function GET(request: Request) {
     return NextResponse.json({
       status: 'success',
       data: {
-        name: session.fullName,
+        name: sanitizePersonDisplayName(session.fullName) || session.fullName,
         role: 'Emergency System Administration',
         employeeCode: 'Admin',
         department: 'System Administration',
@@ -198,7 +199,7 @@ export async function GET(request: Request) {
   return NextResponse.json({
     status: 'success',
     data: {
-      name: employee?.fullName || session?.fullName || session?.username || 'Signed-in User',
+      name: sanitizePersonDisplayName(employee?.fullName || session?.fullName || session?.username || 'Signed-in User') || 'Signed-in User',
       role: employee ? displayJobTitle(employee) : sessionRole,
       employeeCode: employee?.employeeCode || employee?.employeeId || sessionCode || 'SIGNED-IN',
       department: employee?.department || employee?.businessUnit || sessionDepartment,

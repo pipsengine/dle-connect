@@ -14,6 +14,7 @@ import {
   getRegionForState,
   NIGERIA_REGIONS,
 } from '@/lib/nigeria-locations';
+import { composePersonDisplayName } from '@/lib/person-display-name';
 import {
   AlertTriangle,
   BadgeCheck,
@@ -1021,7 +1022,12 @@ export default function AddNewEmployeeClient({ initialNow, initialDraftId, initi
           method: 'POST',
           role,
           body: JSON.stringify({
-            fullName: `${draft.personal.firstName} ${draft.personal.lastName}`.trim(),
+            fullName: composePersonDisplayName({
+              title: draft.personal.title,
+              firstName: draft.personal.firstName,
+              middleName: draft.personal.middleName,
+              lastName: draft.personal.lastName,
+            }),
             officialEmail: draft.contact.officialEmail,
             personalEmail: draft.contact.personalEmail,
             primaryPhone: draft.contact.primaryPhone,
@@ -1110,7 +1116,12 @@ export default function AddNewEmployeeClient({ initialNow, initialDraftId, initi
         method: 'POST',
         role,
         body: JSON.stringify({
-          fullName: `${draft.personal.firstName} ${draft.personal.lastName}`.trim(),
+          fullName: composePersonDisplayName({
+            title: draft.personal.title,
+            firstName: draft.personal.firstName,
+            middleName: draft.personal.middleName,
+            lastName: draft.personal.lastName,
+          }),
           officialEmail: draft.contact.officialEmail,
           personalEmail: draft.contact.personalEmail,
           primaryPhone: draft.contact.primaryPhone,
@@ -2148,7 +2159,12 @@ export default function AddNewEmployeeClient({ initialNow, initialDraftId, initi
         <div className="mt-5 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
           <div className="rounded-2xl border border-slate-100 bg-slate-50 p-4">
             <div className="text-[11px] font-extrabold text-slate-600">Employee</div>
-            <div className="text-sm font-extrabold text-slate-900 mt-1">{`${draft.personal.firstName} ${draft.personal.lastName}`.trim() || '—'}</div>
+            <div className="text-sm font-extrabold text-slate-900 mt-1">{composePersonDisplayName({
+              title: draft.personal.title,
+              firstName: draft.personal.firstName,
+              middleName: draft.personal.middleName,
+              lastName: draft.personal.lastName,
+            }) || '—'}</div>
             <div className="text-xs text-slate-500 font-semibold mt-1">{draft.job.jobTitle || '—'}</div>
           </div>
           <div className="rounded-2xl border border-slate-100 bg-slate-50 p-4">

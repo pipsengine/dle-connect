@@ -26,6 +26,9 @@ import { canAccessSecurityPortal } from '@/lib/access/security-access';
 import { effectivePermissionsForUser } from '@/lib/auth/access-control-store';
 import { hasAnyPermission } from '@/lib/auth/permission-match';
 import { AUTH_COOKIE, verifySessionToken } from '@/lib/auth/session';
+import { resolveDirectoryEmployeeForSession } from '@/lib/directory-employee-resolve';
+import { personGreetingName } from '@/lib/person-display-name';
+import { readDirectoryEmployees } from '@/lib/payroll-employee-source';
 import { WORKFORCE_PORTAL_ENABLED } from '@/lib/workforce-portal-availability';
 
 const getSessionPermissions = async () => {
@@ -33,9 +36,30 @@ const getSessionPermissions = async () => {
   const session = await verifySessionToken(token);
   if (!session) return { permissions: [] as string[], name: 'Signed-in user', session: null, isGlobalAdmin: false };
   const permissions = await effectivePermissionsForUser(session.sub, session.roles).catch(() => session.permissions);
+  let greeting = personGreetingName({ fullName: session.fullName }) || session.username;
+  try {
+    const source = await readDirectoryEmployees();
+    const employee = resolveDirectoryEmployeeForSession(source.employees, {
+      employeeCode: session.employeeCode,
+      employeeId: session.employeeId,
+      username: session.username,
+    });
+    if (employee) {
+      greeting = personGreetingName({
+        preferredName: employee.preferredName,
+        title: employee.title,
+        firstName: employee.firstName,
+        middleName: employee.middleName,
+        lastName: employee.lastName,
+        fullName: employee.fullName || session.fullName,
+      }) || greeting;
+    }
+  } catch {
+    /* keep session greeting */
+  }
   return {
     permissions,
-    name: session.fullName || session.username,
+    name: greeting,
     session: { ...session, permissions },
     isGlobalAdmin: Boolean(session.isGlobalAdmin),
   };
