@@ -53,6 +53,29 @@ assert.equal(
   ),
   true,
 );
+assert.equal(
+  timesheetEmployeeRecordsMatch(
+    { employeeNo: 'C2585', employeeId: 'C2585', employeeName: 'EMMANUEL AZIEKWE' },
+    { employeeNo: 'C1734', employeeId: 'C1734', employeeName: 'EMMANUEL AZIEKWE' },
+  ),
+  true,
+  'biometric C1734 is the same person as HRIS C2585',
+);
+assert.equal(
+  timesheetEmployeeRecordsMatch(
+    { employeeNo: 'C2825', employeeId: 'C2825', employeeName: 'AKANDE ISMAILA' },
+    { employeeNo: 'C1817', employeeId: 'C1817', employeeName: 'AKANDE ISMAILA' },
+  ),
+  true,
+  'biometric C1817 is the same person as HRIS C2825',
+);
+assert.equal(
+  timesheetEmployeeRecordsMatch(
+    { employeeNo: 'C2585', employeeId: 'C2585', employeeName: 'EMMANUEL AZIEKWE' },
+    { employeeNo: 'C2825', employeeId: 'C2825', employeeName: 'AKANDE ISMAILA' },
+  ),
+  false,
+);
 assert.ok(supervisorCodeLookupVariants('P0013').includes('0013'));
 assert.ok(supervisorCodeLookupVariants('0013').includes('P0013'));
 

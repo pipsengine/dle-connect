@@ -1,6 +1,7 @@
 /** Client-safe timesheet types and constants (no Node/SQL imports). */
 
 import { supervisorCodesMatch, timesheetEmployeeRecordsMatch, timesheetLocationsMatch } from '@/lib/timesheet-agege-blasting';
+import { canonicalTimesheetEmployeeCode, timesheetEmployeeCodesAreSamePerson } from '@/lib/timesheet-employee-code-aliases';
 
 export const STANDARD_TIMESHEET_HOURS = 8;
 export const DAILY_BREAK_HOURS = 1;
@@ -1063,7 +1064,8 @@ export const isTimesheetPaidLeaveLine = (line: {
 
 export const normalizeEmployeeLineKey = (line: { employeeId?: string | null; employeeNo?: string | null }) => {
   const value = String(line.employeeId || line.employeeNo || '').trim().toUpperCase();
-  return value.replace(/[^A-Z0-9]/g, '');
+  const compact = value.replace(/[^A-Z0-9]/g, '');
+  return canonicalTimesheetEmployeeCode(compact) || compact;
 };
 
 export type TimesheetLineValidationStatus = 'Valid' | 'Error' | 'Warning' | 'Incomplete';
@@ -1527,6 +1529,7 @@ export const dedupeTimesheetLinesByEmployee = <T extends TimesheetLine>(lines: T
       if (leftCodes.length && rightCodes.length) {
         return leftCodes.some((left) => rightCodes.some((right) => (
           supervisorCodesMatch(left, right)
+          || timesheetEmployeeCodesAreSamePerson(left, right)
           || normalizeEmployeeLineKey({ employeeId: left }) === normalizeEmployeeLineKey({ employeeId: right })
         )));
       }

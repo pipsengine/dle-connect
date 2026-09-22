@@ -1,4 +1,5 @@
 import { normalizePayrollMatchKey } from '@/lib/sage-people-payroll-store';
+import { timesheetEmployeeCodeEquivalents } from '@/lib/timesheet-employee-code-aliases';
 
 const NAME_STOP_WORDS = new Set(['MR', 'MRS', 'MISS', 'MS', 'DR', 'THE', 'AND']);
 
@@ -18,13 +19,18 @@ export const timesheetAttendanceMatchKeys = (...values: Array<string | number | 
   for (const value of values) {
     const raw = String(value ?? '').trim().toUpperCase();
     const embeddedCodes = raw.match(/\b[PCLNI]\d{3,6}\b/g) || [];
-    for (const code of embeddedCodes) keys.add(code);
+    for (const code of embeddedCodes) {
+      keys.add(code);
+      timesheetEmployeeCodeEquivalents(code).forEach((equiv) => keys.add(equiv));
+    }
     const normalized = normalizePayrollMatchKey(value);
     if (normalized) {
       keys.add(normalized);
       const prefixed = raw.replace(/[^A-Z0-9]/g, '').match(/^([PCLNI]+)0*(\d+)$/);
       if (prefixed) {
-        keys.add(`${prefixed[1]}${prefixed[2]}`);
+        const compactPrefixed = `${prefixed[1]}${prefixed[2]}`;
+        keys.add(compactPrefixed);
+        timesheetEmployeeCodeEquivalents(compactPrefixed).forEach((equiv) => keys.add(equiv));
         if (prefixed[1] === 'C' && prefixed[2].length === 5 && prefixed[2].startsWith('1')) {
           keys.add(`C${prefixed[2].slice(1)}`);
         }

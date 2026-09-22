@@ -11,6 +11,7 @@ import { approvedPaidLeaveForDate } from '@/lib/leave-management-store';
 import { assignmentMatchesSupervisor, readSupervisorAssignments } from '@/lib/supervisor-assignment-store';
 import { extractSupervisorEmployeeCode, normalizeTimesheetLocationLabel, supervisorCodesMatch, tidyTimesheetEmployeeName, timesheetCrewMatchesLocation, timesheetEmployeeRecordsMatch, timesheetLocationsMatch } from '@/lib/timesheet-agege-blasting';
 import { timesheetAttendanceMatchKeys } from '@/lib/timesheet-attendance-match';
+import { canonicalTimesheetEmployeeCode, isTimesheetEmployeeCodeAlias } from '@/lib/timesheet-employee-code-aliases';
 import { clearEmployeeFromDraftHeaders, employeeAlreadyCommittedOnOtherTimesheet, employeeIsOtherTimesheetSupervisor } from '@/lib/timesheet-booking-clash';
 import { canonicalProjectManagerForCode, withCanonicalProjectManager } from '@/lib/timesheet-canonical-project-managers';
 import {
@@ -425,8 +426,15 @@ const formatSageEmployeeFullName = (employee: SagePayrollEmployee, fallback: str
   }) || fallback
 );
 
-const sageTimesheetEmployeeCode = (employee: SagePayrollEmployee, fallback: string) =>
-  (employee.directoryEmployeeCode || employee.employeeCode || fallback).trim().toUpperCase();
+const sageTimesheetEmployeeCode = (employee: SagePayrollEmployee, fallback: string) => {
+  const raw = (employee.directoryEmployeeCode || employee.employeeCode || fallback).trim().toUpperCase();
+  return canonicalTimesheetEmployeeCode(raw) || raw;
+};
+
+const timesheetLineEmployeeCode = (payrollEmployee: SagePayrollEmployee | undefined, attendanceId: string) =>
+  payrollEmployee
+    ? sageTimesheetEmployeeCode(payrollEmployee, attendanceId)
+    : (canonicalTimesheetEmployeeCode(attendanceId) || attendanceId.trim().toUpperCase());
 
 const buildAllocation = (employeeId: string, code: string, hours: number, labourRateNgn: number, suffix: string): TimesheetAllocation => {
   const meta = catalogByCode.get(code) || projectCatalog[0];
@@ -3629,13 +3637,19 @@ const supervisorEmployeeScope = async (supervisorId: string) => {
         .map((assignment) => String(assignment.employeeCode || '').trim().toLowerCase())
         .filter(Boolean),
     );
-    for (const assignment of matchedAssignments) {
-      const employeeCode = assignment.employeeCode || '';
+    const sortedAssignments = [...matchedAssignments].sort((left, right) =>
+      Number(isTimesheetEmployeeCodeAlias(left.employeeCode)) - Number(isTimesheetEmployeeCodeAlias(right.employeeCode)),
+    );
+    for (const assignment of sortedAssignments) {
+      const rawCode = assignment.employeeCode || '';
+      const employeeCode = canonicalTimesheetEmployeeCode(rawCode) || rawCode;
       const fullName = assignment.employeeName || employeeCode;
-      const payroll = payrollByCode.get(employeeCode.toLowerCase());
-      existingCodes.add(employeeCode.toLowerCase());
+      const payroll = payrollByCode.get(employeeCode.toLowerCase()) || payrollByCode.get(rawCode.toLowerCase());
+      attendanceMatchKeys(rawCode, employeeCode, fullName).forEach((key) => keys.add(key));
+      const codeKey = employeeCode.toLowerCase();
+      if (!employeeCode || existingCodes.has(codeKey)) continue;
+      existingCodes.add(codeKey);
       employees.push({ employeeCode, fullName, location: payroll?.location || '' });
-      attendanceMatchKeys(employeeCode, fullName).forEach((key) => keys.add(key));
     }
   } catch (error) {
     console.warn('Timesheet supervisor assignment scope could not be loaded; falling back to reporting manager data:', error);
@@ -3644,18 +3658,21 @@ const supervisorEmployeeScope = async (supervisorId: string) => {
   for (const employee of source.employees) {
     if (['Resigned', 'Terminated', 'Retired'].includes(employee.status)) continue;
     if (!supervisorMatchesEmployee(employee.managerName, selected)) continue;
-    const employeeCode = employee.employeeCode || employee.employeeId;
-    if (!employeeCode) continue;
+    const rawCode = employee.employeeCode || employee.employeeId;
+    if (!rawCode) continue;
+    const employeeCode = canonicalTimesheetEmployeeCode(rawCode) || rawCode;
     const codeKey = employeeCode.toLowerCase();
-    if (existingCodes.has(codeKey) || assignedElsewhere.has(codeKey)) continue;
-    existingCodes.add(codeKey);
-    employees.push({ employeeCode, fullName: employee.fullName, location: payrollLocation(employee) });
     [
       employee.employeeId,
       employee.employeeCode,
       employee.fullName,
       employee.sourceEmployeeId,
+      rawCode,
+      employeeCode,
     ].flatMap((value) => attendanceMatchKeys(value)).forEach((key) => keys.add(key));
+    if (existingCodes.has(codeKey) || assignedElsewhere.has(codeKey) || assignedElsewhere.has(rawCode.toLowerCase())) continue;
+    existingCodes.add(codeKey);
+    employees.push({ employeeCode, fullName: employee.fullName, location: payrollLocation(employee) });
   }
   }
   let supervisorLocation = '';
@@ -3669,7 +3686,8 @@ const supervisorEmployeeScope = async (supervisorId: string) => {
       ),
     );
     supervisorLocation = payrollLocation(self);
-    const selfCode = String(self?.employeeCode || self?.employeeId || selectedCode).trim();
+    const selfCode = canonicalTimesheetEmployeeCode(self?.employeeCode || self?.employeeId || selectedCode)
+      || String(self?.employeeCode || self?.employeeId || selectedCode).trim();
     if (selfCode && !existingCodes.has(selfCode.toLowerCase())) {
       existingCodes.add(selfCode.toLowerCase());
       employees.unshift({ employeeCode: selfCode, fullName: self?.fullName || selected, location: supervisorLocation });
@@ -3761,7 +3779,15 @@ export async function syncAttendanceForTimesheet(
         employee.entityCode,
         employee.displayName,
       ).forEach((key) => {
-        if (key && !activeEmployeeByKey.has(key)) activeEmployeeByKey.set(key, employee);
+        if (!key) return;
+        const existing = activeEmployeeByKey.get(key);
+        if (!existing) {
+          activeEmployeeByKey.set(key, employee);
+          return;
+        }
+        const incomingIsCanonical = !isTimesheetEmployeeCodeAlias(employee.employeeCode || employee.employeeId);
+        const existingIsAlias = isTimesheetEmployeeCodeAlias(existing.employeeCode || existing.employeeId);
+        if (incomingIsCanonical && existingIsAlias) activeEmployeeByKey.set(key, employee);
       });
     }
   } else {
@@ -3937,9 +3963,7 @@ export async function syncAttendanceForTimesheet(
     status: header.status,
   };
   attendanceForDay = attendanceForDay.filter(({ attendance, payrollEmployee }) => {
-    const employeeCode = payrollEmployee
-      ? sageTimesheetEmployeeCode(payrollEmployee, attendance.employeeId)
-      : attendance.employeeId.trim().toUpperCase();
+    const employeeCode = timesheetLineEmployeeCode(payrollEmployee, attendance.employeeId);
     const employeeName = payrollEmployee
       ? formatSageEmployeeFullName(payrollEmployee, attendance.employeeName)
       : attendance.employeeName;
@@ -3959,9 +3983,7 @@ export async function syncAttendanceForTimesheet(
   const preservedNightLines = shift.kind === 'Night'
     ? existingHeaderLines.filter((line) => {
         const alreadyListed = attendanceForDay.some((item) => {
-          const employeeCode = item.payrollEmployee
-            ? sageTimesheetEmployeeCode(item.payrollEmployee, item.attendance.employeeId)
-            : item.attendance.employeeId.trim().toUpperCase();
+          const employeeCode = timesheetLineEmployeeCode(item.payrollEmployee, item.attendance.employeeId);
           return employeeCode === line.employeeId;
         });
         if (alreadyListed) return false;
@@ -3973,7 +3995,7 @@ export async function syncAttendanceForTimesheet(
     : [];
 
   const syncedFromAttendance: TimesheetLine[] = attendanceForDay.map(({ attendance: att, payrollEmployee }) => {
-    const employeeCode = payrollEmployee ? sageTimesheetEmployeeCode(payrollEmployee, att.employeeId) : att.employeeId.trim().toUpperCase();
+    const employeeCode = timesheetLineEmployeeCode(payrollEmployee, att.employeeId);
     const assignedName = assignedSupervisorEmployees.find((employee) => supervisorCodesMatch(employee.employeeCode, employeeCode))?.fullName;
     const employeeName = tidyTimesheetEmployeeName(
       assignedName || (payrollEmployee ? formatSageEmployeeFullName(payrollEmployee, att.employeeName) : att.employeeName),
@@ -4041,6 +4063,7 @@ export async function syncAttendanceForTimesheet(
   const syncedKeys = new Set(newLines.flatMap((line) => attendanceMatchKeys(line.employeeId, line.employeeNo, line.employeeName)));
   const parkedOtherLocationLines = existingHeaderLines.flatMap((line) => {
     if (attendanceMatchKeys(line.employeeId, line.employeeNo, line.employeeName).some((key) => syncedKeys.has(key))) return [];
+    if (newLines.some((synced) => timesheetEmployeeRecordsMatch(synced, line))) return [];
     const lineKeys = attendanceMatchKeys(line.employeeId, line.employeeNo, line.employeeName);
     const matchedClock = attendanceCandidates.find((candidate) =>
       attendanceCandidateKeys(candidate).some((key) => lineKeys.includes(key)),

@@ -1,4 +1,5 @@
 import { sanitizePersonDisplayName } from '@/lib/person-display-name';
+import { timesheetEmployeeCodesAreSamePerson } from '@/lib/timesheet-employee-code-aliases';
 
 /**
  * Fixed timesheet context for Agege blaster supervisor C1001 and crew.
@@ -63,7 +64,7 @@ export const timesheetEmployeeRecordsMatch = (
   const rightCodes = [right.employeeNo, right.employeeId].map(clean).filter(Boolean);
   for (const a of leftCodes) {
     for (const b of rightCodes) {
-      if (supervisorCodesMatch(a, b)) return true;
+      if (supervisorCodesMatch(a, b) || timesheetEmployeeCodesAreSamePerson(a, b)) return true;
     }
   }
   const leftName = compactPersonName(left.employeeName);

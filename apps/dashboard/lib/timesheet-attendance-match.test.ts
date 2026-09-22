@@ -55,4 +55,39 @@ assert.equal(
   '16-char biometric truncation OJIKA CHUKWUDUME must match OJIKA CHUKWUDUMEBI',
 );
 
+const aziekweHris = new Set(timesheetAttendanceMatchKeys('C2585', 'EMMANUEL AZIEKWE'));
+assert.equal(
+  timesheetAttendanceMatchKeys('C1734', 'EMMANUEL AZIEKWE').some((key) => aziekweHris.has(key)),
+  true,
+  'biometric C1734 Emmanuel Aziekwe must match HRIS C2585',
+);
+assert.equal(
+  clockingRecordsForSupervisorCrew(
+    [{ employeeId: 'C1734', employeeName: 'EMMANUEL AZIEKWE', location: 'Unassigned', site: 'Gate' }],
+    aziekweHris,
+  ).length,
+  1,
+  'Shittu roster C2585 must pick up C1734 clocks',
+);
+
+const akandeHris = new Set(timesheetAttendanceMatchKeys('C2825', 'AKANDE ISMAILA'));
+assert.equal(
+  timesheetAttendanceMatchKeys('C1817', 'AKANDE ISMAILA').some((key) => akandeHris.has(key)),
+  true,
+  'biometric C1817 Akande Ismaila must match HRIS C2825',
+);
+assert.equal(
+  clockingRecordsForSupervisorCrew(
+    [{ employeeId: 'C1817', employeeName: 'AKANDE ISMAILA', location: 'AGEGE', site: 'AGEGE' }],
+    akandeHris,
+  ).length,
+  1,
+  'Shittu roster C2825 must pick up C1817 clocks',
+);
+assert.equal(
+  timesheetAttendanceMatchKeys('C1001').some((key) => timesheetAttendanceMatchKeys('C2585').includes(key)),
+  false,
+  'unrelated contract codes must not alias',
+);
+
 console.log('timesheet-attendance-match.test.ts: ok');
