@@ -3785,8 +3785,8 @@ export async function syncAttendanceForTimesheet(
           activeEmployeeByKey.set(key, employee);
           return;
         }
-        const incomingIsCanonical = !isTimesheetEmployeeCodeAlias(employee.employeeCode || employee.employeeId);
-        const existingIsAlias = isTimesheetEmployeeCodeAlias(existing.employeeCode || existing.employeeId);
+        const incomingIsCanonical = !isTimesheetEmployeeCodeAlias(employee.directoryEmployeeCode || employee.employeeCode);
+        const existingIsAlias = isTimesheetEmployeeCodeAlias(existing.directoryEmployeeCode || existing.employeeCode);
         if (incomingIsCanonical && existingIsAlias) activeEmployeeByKey.set(key, employee);
       });
     }

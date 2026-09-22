@@ -2,8 +2,10 @@
  * Biometric terminals sometimes still punch a previous contract code after HRIS
  * reissued the employee. Clocks must land on the current HRIS timesheet code.
  */
-const compactEmployeeCode = (value?: string | null) =>
-  String(value || '')
+type EmployeeCodeValue = string | number | null | undefined;
+
+const compactEmployeeCode = (value?: EmployeeCodeValue) =>
+  String(value ?? '')
     .trim()
     .toUpperCase()
     .replace(/[^A-Z0-9]/g, '');
@@ -14,13 +16,13 @@ export const TIMESHEET_BIOMETRIC_CODE_ALIASES: Record<string, string> = {
   C1817: 'C2825', // Akande Ismaila
 };
 
-export const canonicalTimesheetEmployeeCode = (value?: string | null) => {
+export const canonicalTimesheetEmployeeCode = (value?: EmployeeCodeValue) => {
   const code = compactEmployeeCode(value);
   if (!code) return '';
   return TIMESHEET_BIOMETRIC_CODE_ALIASES[code] || code;
 };
 
-export const timesheetEmployeeCodeEquivalents = (value?: string | null) => {
+export const timesheetEmployeeCodeEquivalents = (value?: EmployeeCodeValue) => {
   const code = compactEmployeeCode(value);
   if (!code) return [];
   const canonical = TIMESHEET_BIOMETRIC_CODE_ALIASES[code] || code;
@@ -30,10 +32,10 @@ export const timesheetEmployeeCodeEquivalents = (value?: string | null) => {
   return [...new Set([canonical, ...aliases, code])];
 };
 
-export const isTimesheetEmployeeCodeAlias = (value?: string | null) =>
+export const isTimesheetEmployeeCodeAlias = (value?: EmployeeCodeValue) =>
   Boolean(TIMESHEET_BIOMETRIC_CODE_ALIASES[compactEmployeeCode(value)]);
 
-export const timesheetEmployeeCodesAreSamePerson = (left?: string | null, right?: string | null) => {
+export const timesheetEmployeeCodesAreSamePerson = (left?: EmployeeCodeValue, right?: EmployeeCodeValue) => {
   const a = canonicalTimesheetEmployeeCode(left);
   const b = canonicalTimesheetEmployeeCode(right);
   return Boolean(a && b && a === b);
