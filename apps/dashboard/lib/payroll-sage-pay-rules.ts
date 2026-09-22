@@ -1,6 +1,6 @@
 import type { DleEmployeeDirectoryRow } from '@/lib/dle-enterprise-db';
 import type { PayrollEarningLine, PayrollEarningsResult, PayrollEarningProfileId } from '@/lib/payroll-earnings-engine';
-import { splitEarningLinesForPaye } from '@/lib/payroll-earning-tax-classification';
+import { isMealEarningForPaye, splitEarningLinesForPaye } from '@/lib/payroll-earning-tax-classification';
 import { isSagePayeRefundEarning } from '@/lib/payroll-refund-policy';
 
 export type PayeCalculationRules = {
@@ -57,6 +57,7 @@ export const basicFromEarningLines = (lines: SagePayeEarningLine[]) =>
   roundMoney(lines.filter((line) => isBasicEarningCode(line.code)).reduce((sum, line) => sum + Number(line.amount || 0), 0));
 
 const taxablePositive = (line: SagePayeEarningLine) => {
+  if (isMealEarningForPaye(line)) return Number(line.amount || 0) > 0 ? Number(line.amount || 0) : 0;
   if (line.taxableAmount !== null && line.taxableAmount !== undefined) {
     return Number(line.taxableAmount) > 0 ? Number(line.taxableAmount) : 0;
   }
@@ -122,10 +123,7 @@ export const payeTaxableFromEarningLines = (
     let monthly = roundMoney(
       lines
         .filter((line) => !excluded.has(String(line.code || '').toUpperCase()))
-        .reduce((sum, line) => {
-          if (line.taxableAmount !== null && line.taxableAmount !== undefined) return sum + Number(line.taxableAmount || 0);
-          return sum + Number(line.amount || 0);
-        }, 0),
+        .reduce((sum, line) => sum + taxablePositive(line), 0),
     );
     if (includeRefund) {
       monthly = roundMoney(
@@ -135,7 +133,7 @@ export const payeTaxableFromEarningLines = (
     return monthly;
   }
 
-  const nonTaxableCodes = /^(PER_MEAL|PER_MEAL_JNR|SNR_NJIC|SNR_NTC|JNR_NJIC|REFUND)$/i;
+  const nonTaxableCodes = /^(SNR_NJIC|SNR_NTC|JNR_NJIC|REFUND)$/i;
   return roundMoney(
     lines
       .filter((line) => {
@@ -271,13 +269,17 @@ export const calculateUsdSeniorManagementPaye = (monthlyTaxable: number, rate = 
   roundMoney(Math.max(0, Number(monthlyTaxable || 0)) * Number(rate));
 
 const mapPayrollLines = (lines: PayrollEarningLine[]): SagePayeEarningLine[] =>
-  lines.map((line) => ({
-    code: line.code,
-    name: line.name,
-    amount: line.amount,
-    taxableAmount: line.taxable === false ? 0 : line.amount,
-    taxable: line.taxable,
-  }));
+  lines.map((line) => {
+    const meal = isMealEarningForPaye(line);
+    const taxable = meal || line.taxable !== false;
+    return {
+      code: line.code,
+      name: line.name,
+      amount: line.amount,
+      taxableAmount: taxable ? line.amount : 0,
+      taxable,
+    };
+  });
 
 /** Fixed + variable PAYE split (permanent and lumpsum).
  * Fixed package is annualized (×12). Variable earnings (OT, etc.) are added once

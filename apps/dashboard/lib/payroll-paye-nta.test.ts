@@ -39,23 +39,23 @@ const reuben = hrisPayeFromEmployee({
   employee: employee({ employeeCode: 'L2216', employmentType: 'Lumpsum' }),
   earnings: earnings('contract-lumpsum', [
     { code: 'LUMPSUMTAX', name: 'LUMPSUM ALLOWANCE', amount: 149000, taxable: true },
-    { code: 'MEAL', name: 'MEAL ALLOWANCE', amount: 11000, taxable: false },
+    { code: 'MEAL', name: 'MEAL ALLOWANCE', amount: 11000, taxable: true },
     { code: 'OVERTIME', name: 'OVERTIME', amount: 10000, taxable: true },
   ]),
   nhfApplicable: false,
 });
-assert.equal(reuben.paye, 6225, 'Reuben-style lumpsum PAYE after rent cap, OT month-only');
+assert.equal(reuben.paye, 7875, 'Reuben-style lumpsum PAYE after rent cap, taxable meal, OT month-only');
 
 const tcmLumpsum = hrisPayeFromEmployee({
   employee: employee({ employeeCode: 'L2237', employmentType: 'Lumpsum' }),
   earnings: earnings('contract-lumpsum', [
     { code: 'LUMPSUMTAX', name: 'LUMPSUM ALLOWANCE', amount: 250000, taxable: true },
-    { code: 'MEAL', name: 'MEAL', amount: 33000, taxable: false },
+    { code: 'MEAL', name: 'MEAL', amount: 33000, taxable: true },
     { code: 'TCMTRANS', name: 'TCM TRANSPORT', amount: 33000, taxable: true },
   ]),
   nhfApplicable: false,
 });
-assert.equal(tcmLumpsum.paye, 26200, 'TCM transport is annualized with the lumpsum base');
+assert.equal(tcmLumpsum.paye, 31880, 'TCM transport and meal are annualized with the lumpsum base');
 
 const mgt7 = hrisPayeFromEmployee({
   employee: employee({
@@ -82,7 +82,7 @@ const senior = hrisPayeFromEmployee({
   earnings: earnings('senior-permanent', [
     { code: 'BASIC', name: 'BASIC SALARY', amount: 260425.52, taxable: true },
     { code: 'HOUSING', name: 'HOUSING', amount: 70615.38, taxable: true },
-    { code: 'MEAL', name: 'Meal Allowance', amount: 22000, taxable: false },
+    { code: 'MEAL', name: 'Meal Allowance', amount: 22000, taxable: true },
     { code: 'MEDICAL', name: 'MEDICAL', amount: 32114.97, taxable: true },
     { code: 'OTHERALL', name: 'OTHER ALLOWANCE', amount: 204709.49, taxable: true },
     { code: 'SNRUNION', name: 'SNR UNION', amount: 45000, taxable: true },
@@ -91,6 +91,6 @@ const senior = hrisPayeFromEmployee({
   ]),
   nhfApplicable: false,
 });
-assert.equal(senior.paye, 87119.61, 'P0059 NTA PAYE is unchanged when meal is non-taxable');
+assert.equal(senior.paye, 91079.61, 'P0059 NTA PAYE includes taxable meal allowance');
 
 console.log('payroll-paye-nta.test.ts passed');

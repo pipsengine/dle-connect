@@ -33,7 +33,7 @@ export const salaryRowToHrisPackageLines = (row: SalaryScheduleRow) => {
       sourceAmount: amount,
       runFrequency: oneOff ? 'one-off' : 'monthly',
       includeInMonthlyPayroll: !oneOff,
-      taxableAmount: /^MEAL$/i.test(line.code) ? 0 : amount,
+      taxableAmount: amount,
       ytdTotal: 0,
     });
   }

@@ -335,7 +335,7 @@ export const PERMANENT_SUPPLEMENTAL_EARNINGS: PayrollSupplementalEarningDefiniti
   { code: 'OVERTIME', name: 'OVERTIME', taxable: false, calculation: 'Overtime rule' },
   { code: 'MISC', name: 'MISCELLANEOUS', taxable: false, calculation: 'Configured amount' },
   { code: 'OTHER_PAY', name: 'OTHER PAY', taxable: false, calculation: 'Configured amount' },
-  { code: 'PERM_MEAL', name: 'PERMANENT MEAL ALLOWANCE', taxable: false, calculation: 'NGN 500 * number of days' },
+  { code: 'PERM_MEAL', name: 'PERMANENT MEAL ALLOWANCE', taxable: true, calculation: 'NGN 500 * number of days' },
   { code: 'NIGHT_ALLOW', name: 'NIGHT ALLOWANCE', taxable: false, calculation: 'Configured amount' },
   { code: 'SPECIAL_ALLOW', name: 'SPECIAL ALLOWANCE', taxable: false, calculation: 'Configured amount' },
 ];
@@ -368,7 +368,7 @@ export const CONTRACT_DAY_RATE_SUPPLEMENTAL_EARNINGS: PayrollSupplementalEarning
   { code: 'OTHER_PAY', name: 'OTHER PAY', taxable: false, calculation: 'Configured amount' },
   { code: 'NIGHT_ALLOW', name: 'NIGHT ALLOWANCE', taxable: false, calculation: 'Configured amount' },
   { code: 'SPECIAL_ALLOW', name: 'SPECIAL ALLOWANCE', taxable: false, calculation: 'Configured amount' },
-  { code: 'MEAL_ALLOW', name: 'MEAL ALLOWANCE', taxable: false, calculation: 'NGN 500 / day' },
+  { code: 'MEAL_ALLOW', name: 'MEAL ALLOWANCE', taxable: true, calculation: 'NGN 500 / day' },
 ];
 
 export const JUNIOR_OVERTIME_RULES: Record<OvertimeDayType, PayrollOvertimeRule> = {
@@ -433,7 +433,7 @@ const contractMealAllowanceLine = (daysWorked: number, mealAmount?: number | nul
   return {
     code: 'MEAL',
     name: 'MEAL ALLOWANCE',
-    taxable: false,
+    taxable: true,
     percentOfGross: 0,
     calculation: scheduleDriven ? 'HR dayrate schedule meal allowance' : 'NGN 500 * number of days worked',
     runFrequency: 'formula',
@@ -817,7 +817,7 @@ const configuredPackageEarningLines = (
     lines.push({
       code: compact(line.code),
       name: compact(line.name || line.code),
-      taxable: taxableAmount > 0,
+      taxable: isMealFamilyEarningCode(line.code, line.name) || taxableAmount > 0,
       percentOfGross: 0,
       calculation: frequency === 'one-off'
         ? 'HRIS one-off earning line'

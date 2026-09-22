@@ -57,7 +57,7 @@ const overlayRecord = (base: PayrollCalculationRecord, excel: SalaryScheduleRow)
     code: line.code,
     name: line.name,
     amount: roundMoney(line.amount),
-    taxable: !/^MEAL$/i.test(line.code),
+    taxable: true,
   }));
   const deductionLines = excel.deductions
     .map((line) => ({ code: line.code, label: line.name, amount: roundMoney(line.amount) }))

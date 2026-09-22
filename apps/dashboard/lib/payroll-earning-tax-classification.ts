@@ -13,6 +13,13 @@ const canonicalCode = (value: unknown) =>
 const lineText = (line: PayeEarningLineRef) =>
   `${canonicalCode(line.code)} ${String(line.name || '').toUpperCase()}`;
 
+/** Meal allowance is taxable and annualized with the monthly package. */
+export const isMealEarningForPaye = (line: PayeEarningLineRef) => {
+  const code = canonicalCode(line.code);
+  const text = lineText(line);
+  return /MEAL/.test(code) || /\bMEAL\b/.test(text);
+};
+
 /** Fixed monthly structural / supplemental earnings — annualized for PAYE. */
 const FIXED_EARNING_CODE = new Set([
   'PER_MEAL',
