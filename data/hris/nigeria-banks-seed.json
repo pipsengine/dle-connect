@@ -1,0 +1,3031 @@
+{
+  "source": "Banks_HO_SortCode_PDF revv.pdf",
+  "asOf": "2024-09-17",
+  "banks": [
+    {
+      "name": "78 FINANCE COMPANY LIMITED",
+      "bankCode": "110072",
+      "sortCode": "F59150001"
+    },
+    {
+      "name": "9 PAYMENT SERVICE BANK",
+      "bankCode": "120001",
+      "sortCode": "B97150001"
+    },
+    {
+      "name": "AAA FINANCE AND INVESTMENT COMPANY LIMIT",
+      "bankCode": "050005",
+      "sortCode": "E48150001"
+    },
+    {
+      "name": "AB MICROFINANCE BANK",
+      "bankCode": "090270",
+      "sortCode": "B16150001"
+    },
+    {
+      "name": "ABBEY MORTGAGE BANK",
+      "bankCode": "070010",
+      "sortCode": "A34150001"
+    },
+    {
+      "name": "ABOVE ONLY MICROFINANCE BANK",
+      "bankCode": "090260",
+      "sortCode": "B26150001"
+    },
+    {
+      "name": "ABSU MICROFINANCE BANK",
+      "bankCode": "090640",
+      "sortCode": "F35150001"
+    },
+    {
+      "name": "ABU MICROFINANCE BANK",
+      "bankCode": "090197",
+      "sortCode": "B07150001"
+    },
+    {
+      "name": "ABUCOOP MICROFINANCE BANK",
+      "bankCode": "090424",
+      "sortCode": "C34150001"
+    },
+    {
+      "name": "ABULESORO MICROFINANCE BANK LTD",
+      "bankCode": "090545",
+      "sortCode": "E25150001"
+    },
+    {
+      "name": "ACCESS BANK NIGERIA PLC",
+      "bankCode": "044",
+      "sortCode": "044150149"
+    },
+    {
+      "name": "ACCESS MOBILE",
+      "bankCode": "100013",
+      "sortCode": "323150001"
+    },
+    {
+      "name": "ACCION MICROFINANCE BANK",
+      "bankCode": "090134",
+      "sortCode": "A41150001"
+    },
+    {
+      "name": "ADA MFB",
+      "bankCode": "090483",
+      "sortCode": "D12150001"
+    },
+    {
+      "name": "ADDOSSER MICROFINANCE BANK",
+      "bankCode": "090160",
+      "sortCode": "A64150001"
+    },
+    {
+      "name": "ADEYEMI COLLEGE STAFF MICROFINANCE BANK",
+      "bankCode": "090268",
+      "sortCode": "B20150001"
+    },
+    {
+      "name": "AELLA MFB",
+      "bankCode": "090614",
+      "sortCode": "E97150001"
+    },
+    {
+      "name": "AFEKHAFE MICROFINANCE BANK",
+      "bankCode": "090292",
+      "sortCode": "B41150001"
+    },
+    {
+      "name": "AFEMAI MICROFINANCE BANK",
+      "bankCode": "090518",
+      "sortCode": "D81150001"
+    },
+    {
+      "name": "AG MORTGAGE BANK PLC",
+      "bankCode": "100028",
+      "sortCode": "A07150001"
+    },
+    {
+      "name": "AGOSASA MFB",
+      "bankCode": "090371",
+      "sortCode": "C35150001"
+    },
+    {
+      "name": "AKPO MICROFINANCE BANK",
+      "bankCode": "090608",
+      "sortCode": "E89150001"
+    },
+    {
+      "name": "AKU MICROFINANCE BANK",
+      "bankCode": "090531",
+      "sortCode": "D99150001"
+    },
+    {
+      "name": "AKUCHUKWU MICROFINANCE BANK",
+      "bankCode": "090561",
+      "sortCode": "E49150001"
+    },
+    {
+      "name": "AKWA SAVINGS AND LOANS LIMITED",
+      "bankCode": "070025",
+      "sortCode": "E05150001"
+    },
+    {
+      "name": "AL-BARAKAH MICROFINANCE BANK",
+      "bankCode": "090133",
+      "sortCode": "A38150001"
+    },
+    {
+      "name": "AL-HAYAT MICROFINANCE BANK",
+      "bankCode": "090277",
+      "sortCode": "B29150001"
+    },
+    {
+      "name": "ALEKUN MICROFINANCE BANK",
+      "bankCode": "090259",
+      "sortCode": "B12150001"
+    },
+    {
+      "name": "ALERT MICROFINANCE BANK",
+      "bankCode": "090297",
+      "sortCode": "B52150001"
+    },
+    {
+      "name": "ALLWORKERS MICROFINANCE BANK",
+      "bankCode": "090131",
+      "sortCode": "A37150001"
+    },
+    {
+      "name": "ALLY MICROFINANCE BANK",
+      "bankCode": "090548",
+      "sortCode": "E28150001"
+    },
+    {
+      "name": "ALPHA KAPITAL MICROFINANCE BANK",
+      "bankCode": "090169",
+      "sortCode": "A81150001"
+    },
+    {
+      "name": "ALTERNATIVE BANK LIMITED",
+      "bankCode": "000037",
+      "sortCode": "F50150001"
+    },
+    {
+      "name": "ALVANA MICROFINANCE BANK",
+      "bankCode": "090489",
+      "sortCode": "D46150001"
+    },
+    {
+      "name": "AMAC MICROFINANCE BANK",
+      "bankCode": "090394",
+      "sortCode": "C65150001"
+    },
+    {
+      "name": "AMEGY MICROFINANCE BANK",
+      "bankCode": "090629",
+      "sortCode": "F09150001"
+    },
+    {
+      "name": "AMJU UNIQUE MICROFINANCE BANK",
+      "bankCode": "090180",
+      "sortCode": "A91150001"
+    },
+    {
+      "name": "AMML MICROFINANCE BANK",
+      "bankCode": "090116",
+      "sortCode": "A08150001"
+    },
+    {
+      "name": "AMOYE MICROFINANCE BANK",
+      "bankCode": "090610",
+      "sortCode": "E90150001"
+    },
+    {
+      "name": "AMUCHA MICROFINANCE BANK",
+      "bankCode": "090645",
+      "sortCode": "F29150001"
+    },
+    {
+      "name": "ANCHORAGE MICROFINANCE BANK",
+      "bankCode": "090476",
+      "sortCode": "D08150001"
+    },
+    {
+      "name": "ANIOCHA MICROFINANCE BANK",
+      "bankCode": "090469",
+      "sortCode": "D14150001"
+    },
+    {
+      "name": "APEKS MICROFINANCE BANK",
+      "bankCode": "090143",
+      "sortCode": "A55150001"
+    },
+    {
+      "name": "APPLE MICROFINANCE BANK",
+      "bankCode": "090376",
+      "sortCode": "C08150001"
+    },
+    {
+      "name": "ARAMOKO MICROFINANCE BANK",
+      "bankCode": "090307",
+      "sortCode": "D98150001"
+    },
+    {
+      "name": "ARISE MICROFINANCE BANK",
+      "bankCode": "090282",
+      "sortCode": "B32150001"
+    },
+    {
+      "name": "ASO SAVINGS AND LOANS",
+      "bankCode": "090001",
+      "sortCode": "401150001"
+    },
+    {
+      "name": "ASPIRE MICROFINANCE BANK LTD",
+      "bankCode": "090544",
+      "sortCode": "E24150001"
+    },
+    {
+      "name": "ASSETMATRIX MICROFINANCE BANK",
+      "bankCode": "090287",
+      "sortCode": "B47150001"
+    },
+    {
+      "name": "ASSETS MICROFINANCE BANK",
+      "bankCode": "090473",
+      "sortCode": "D01150001"
+    },
+    {
+      "name": "ASTRAPOLARIS MICROFINANCE BANK",
+      "bankCode": "090172",
+      "sortCode": "B10150001"
+    },
+    {
+      "name": "ATBU MICROFINANCE BANK",
+      "bankCode": "090451",
+      "sortCode": "C83150001"
+    },
+    {
+      "name": "AUCHI MICROFINANCE BANK",
+      "bankCode": "090264",
+      "sortCode": "B17150001"
+    },
+    {
+      "name": "AVE MARIA MICROFINANCE BANK",
+      "bankCode": "090600",
+      "sortCode": "E85150001"
+    },
+    {
+      "name": "AVUENEGBE MICROFINANCE BANK",
+      "bankCode": "090478",
+      "sortCode": "D150001"
+    },
+    {
+      "name": "AWACASH MICROFINANCE BANK",
+      "bankCode": "090633",
+      "sortCode": "F23150001"
+    },
+    {
+      "name": "AWESOME MICROFINANCE BANK",
+      "bankCode": "090662",
+      "sortCode": "F51150001"
+    },
+    {
+      "name": "AZTEC MICROFINANCE BANK",
+      "bankCode": "090540",
+      "sortCode": "E09150001"
+    },
+    {
+      "name": "BABURA MICROFINANCE BANK",
+      "bankCode": "090625",
+      "sortCode": "F25150001"
+    },
+    {
+      "name": "BAINES CREDIT MICROFINANCE BANK",
+      "bankCode": "090188",
+      "sortCode": "A95150001"
+    },
+    {
+      "name": "BALERA MICROFINANCE BANK",
+      "bankCode": "090563",
+      "sortCode": "E52150001"
+    },
+    {
+      "name": "BALOGUN FULANI MICROFINANCE BANK",
+      "bankCode": "090181",
+      "sortCode": "C84150001"
+    },
+    {
+      "name": "BALOGUN GAMBARI MICROFINANCE",
+      "bankCode": "090326",
+      "sortCode": "B61150001"
+    },
+    {
+      "name": "BAM MICROFINANCE BANK",
+      "bankCode": "090651",
+      "sortCode": "F76150001"
+    },
+    {
+      "name": "BANC CORP MICROFINANCE BANK",
+      "bankCode": "090581",
+      "sortCode": "E94150001"
+    },
+    {
+      "name": "BANEX MICROFINANCE BANK",
+      "bankCode": "090425",
+      "sortCode": "C53150001"
+    },
+    {
+      "name": "BANKLY MICROFINANCE BANK",
+      "bankCode": "090529",
+      "sortCode": "D85150001"
+    },
+    {
+      "name": "BAOBAB MICROFINANCE BANK",
+      "bankCode": "090136",
+      "sortCode": "A44150001"
+    },
+    {
+      "name": "BAYERO MICROFINANCE BANK",
+      "bankCode": "090316",
+      "sortCode": "D16150001"
+    },
+    {
+      "name": "BC KASH MICROFINANCE BANK",
+      "bankCode": "090127",
+      "sortCode": "A27150001"
+    },
+    {
+      "name": "BELLBANK MICROFONANCE BANK",
+      "bankCode": "090672",
+      "sortCode": "F81150001"
+    },
+    {
+      "name": "BENYSTA MICROFINANCE BANK",
+      "bankCode": "090413",
+      "sortCode": "C33150001"
+    },
+    {
+      "name": "BERACHAH MFB",
+      "bankCode": "090618",
+      "sortCode": "F56150001"
+    },
+    {
+      "name": "BESTSTAR MICROFINANCE BANK",
+      "bankCode": "090615",
+      "sortCode": "E99150001"
+    },
+    {
+      "name": "BETA/ACCESS YELLO",
+      "bankCode": "100052",
+      "sortCode": "B42150001"
+    },
+    {
+      "name": "BETHEL MICROFINANCE BANK",
+      "bankCode": "090683",
+      "sortCode": "F75150001"
+    },
+    {
+      "name": "BIPC MICROFINANCE BANK",
+      "bankCode": "090336",
+      "sortCode": "B75150001"
+    },
+    {
+      "name": "BISHOPGATE MICROFINANCE BANK",
+      "bankCode": "090555",
+      "sortCode": "E42150001"
+    },
+    {
+      "name": "BLUEPRINT INVESTMENTS MICROFINANCE BANK",
+      "bankCode": "090538",
+      "sortCode": "E10150001"
+    },
+    {
+      "name": "BLUEWHALES MICROFINANCE BANK",
+      "bankCode": "090431",
+      "sortCode": "C37150001"
+    },
+    {
+      "name": "BOCTRUST MICROFINANCE BANK LIMITED",
+      "bankCode": "090117",
+      "sortCode": "A09150001"
+    },
+    {
+      "name": "BOI MICROFINANCE BANK",
+      "bankCode": "090444",
+      "sortCode": "C60150001"
+    },
+    {
+      "name": "BOJI BOJI MICROFINANCE BANK",
+      "bankCode": "090494",
+      "sortCode": "D54150001"
+    },
+    {
+      "name": "BOKKOS MFB",
+      "bankCode": "090703",
+      "sortCode": "F86150001"
+    },
+    {
+      "name": "BONGHE MICROFINANCE BANK",
+      "bankCode": "090319",
+      "sortCode": "C82150001"
+    },
+    {
+      "name": "BORGU MICROFINANCE BANK",
+      "bankCode": "090395",
+      "sortCode": "D17150001"
+    },
+    {
+      "name": "BORNO RENAISSANCE MICROFINANCE",
+      "bankCode": "090508",
+      "sortCode": "D78150001"
+    },
+    {
+      "name": "BOROMU MICROFINANCE BANK",
+      "bankCode": "090501",
+      "sortCode": "D77150001"
+    },
+    {
+      "name": "BORSTAL MICROFINANCE BANK",
+      "bankCode": "090454",
+      "sortCode": "C68150001"
+    },
+    {
+      "name": "BOSAK MICROFINANCE BANK",
+      "bankCode": "090176",
+      "sortCode": "B09150001"
+    },
+    {
+      "name": "BOWEN MICROFINANCE BANK",
+      "bankCode": "090148",
+      "sortCode": "A59150001"
+    },
+    {
+      "name": "BRANCH INTERNATIONAL FINANCIAL SERVICES",
+      "bankCode": "050006",
+      "sortCode": "E59150001"
+    },
+    {
+      "name": "BRENT MORTGAGE BANK",
+      "bankCode": "070015",
+      "sortCode": "A71150001"
+    },
+    {
+      "name": "BRETHREN MICROFINANCE BANK",
+      "bankCode": "090293",
+      "sortCode": "B55150001"
+    },
+    {
+      "name": "BRIDGEWAY MICROFINANCE BANK",
+      "bankCode": "090393",
+      "sortCode": "C10150001"
+    },
+    {
+      "name": "BRIGHTWAY MICROFINANCE BANK",
+      "bankCode": "090308",
+      "sortCode": "B53150001"
+    },
+    {
+      "name": "BRIYTH-COVENANT MICROFINANCE BANK",
+      "bankCode": "090636",
+      "sortCode": "F20150001"
+    },
+    {
+      "name": "BROADVIEW MICROFINANCE BANK",
+      "bankCode": "090568",
+      "sortCode": "E56150001"
+    },
+    {
+      "name": "BUBAYERO MICORFINANCE BANK",
+      "bankCode": "090512",
+      "sortCode": "D67150001"
+    },
+    {
+      "name": "BUNDI MICROFINANCE BANK",
+      "bankCode": "090661",
+      "sortCode": "F53150001"
+    },
+    {
+      "name": "BUNKURE MICROFINANCE BANK",
+      "bankCode": "090655",
+      "sortCode": "F41150001"
+    },
+    {
+      "name": "BUSINESS SUPPORT MICROFINANCE",
+      "bankCode": "090406",
+      "sortCode": "D18150001"
+    },
+    {
+      "name": "BUYPOWER MICROFINANACE BANK",
+      "bankCode": "090682",
+      "sortCode": "F78150001"
+    },
+    {
+      "name": "CALABAR MICROFINANCE BANK",
+      "bankCode": "090415",
+      "sortCode": "D19150001"
+    },
+    {
+      "name": "CANAAN MICROFINANCE BANK",
+      "bankCode": "090647",
+      "sortCode": "F39150001"
+    },
+    {
+      "name": "CAPITALMETRIQ SWIFT MICROFINANCE",
+      "bankCode": "090509",
+      "sortCode": "D62150001"
+    },
+    {
+      "name": "CAPSTONE MICROFINANCE BANK",
+      "bankCode": "090445",
+      "sortCode": "C74150001"
+    },
+    {
+      "name": "CARBON",
+      "bankCode": "100026",
+      "sortCode": "565150001"
+    },
+    {
+      "name": "CARETAKER MICROFINANCE BANK",
+      "bankCode": "090472",
+      "sortCode": "D02150001"
+    },
+    {
+      "name": "CASHBRIDGE MICROFINANCE BANK",
+      "bankCode": "090634",
+      "sortCode": "F13150001"
+    },
+    {
+      "name": "CASHCONNECT MFB",
+      "bankCode": "090360",
+      "sortCode": "B79150001"
+    },
+    {
+      "name": "CASHRITE MICROFINANCE BANK",
+      "bankCode": "090649",
+      "sortCode": "F49150001"
+    },
+    {
+      "name": "CATLAND MICROFINANCE BANK",
+      "bankCode": "090498",
+      "sortCode": "D93150001"
+    },
+    {
+      "name": "CEDAR MICROFINANCE BANK",
+      "bankCode": "090562",
+      "sortCode": "E44150001"
+    },
+    {
+      "name": "CELLULANT",
+      "bankCode": "100005",
+      "sortCode": "317150001"
+    },
+    {
+      "name": "CEMCS MICROFINANCE BANK",
+      "bankCode": "090154",
+      "sortCode": "A72150001"
+    },
+    {
+      "name": "CENTRAL BANK OF NIGERIA",
+      "bankCode": "000028",
+      "sortCode": "001080032"
+    },
+    {
+      "name": "CHAMS",
+      "bankCode": "100015",
+      "sortCode": "303150001"
+    },
+    {
+      "name": "CHANELLE MICROFINANCE BANK",
+      "bankCode": "090397",
+      "sortCode": "C24150001"
+    },
+    {
+      "name": "CHANGHAN RTS MICROFINANCE BANK",
+      "bankCode": "090470",
+      "sortCode": "D09150001"
+    },
+    {
+      "name": "CHASE MICROFINANCE BANK",
+      "bankCode": "090523",
+      "sortCode": "D83150001"
+    },
+    {
+      "name": "CHERISH MICROFINANCE BANK",
+      "bankCode": "090440",
+      "sortCode": "C63150001"
+    },
+    {
+      "name": "CHIBUEZE MFB",
+      "bankCode": "090416",
+      "sortCode": "C27150001"
+    },
+    {
+      "name": "CHIKUM MICROFINANCE BANK",
+      "bankCode": "090141",
+      "sortCode": "A52150001"
+    },
+    {
+      "name": "CHUKWUNENYE MICROFINANCE BANK",
+      "bankCode": "090490",
+      "sortCode": "D47150001"
+    },
+    {
+      "name": "CIT MICROFINANCE BANK",
+      "bankCode": "090144",
+      "sortCode": "A51150001"
+    },
+    {
+      "name": "CITIZEN TRUST MICROFINANCE BANK",
+      "bankCode": "LTD",
+      "sortCode": "090343"
+    },
+    {
+      "name": "D21150001 CITYCODE MORTGAGE BANK",
+      "bankCode": "070027",
+      "sortCode": "F67150001"
+    },
+    {
+      "name": "CLOVER LEAF MICROFINANCE BANK",
+      "bankCode": "090511",
+      "sortCode": "D65150001"
+    },
+    {
+      "name": "COALCAMP MICROFINANCE BANK",
+      "bankCode": "090254",
+      "sortCode": "C93150001"
+    },
+    {
+      "name": "COASTLINE MICRO FINANCE BANK",
+      "bankCode": "090374",
+      "sortCode": "B91150001"
+    },
+    {
+      "name": "CONFIDENCE MICROFINANCE BANK",
+      "bankCode": "090530",
+      "sortCode": "E11150001"
+    },
+    {
+      "name": "CONSISTENT TRUST MICROFINANCE",
+      "bankCode": "090553",
+      "sortCode": "E36150001"
+    },
+    {
+      "name": "CONSUMER MICROFINANCE BANK",
+      "bankCode": "090130",
+      "sortCode": "A30150001"
+    },
+    {
+      "name": "CONTEC GLOBAL INFOTECH LIMITED (NOWNOW)",
+      "bankCode": "100032",
+      "sortCode": "A69150001"
+    },
+    {
+      "name": "COOP MORTGAGE BANK",
+      "bankCode": "070021",
+      "sortCode": "C23150001"
+    },
+    {
+      "name": "COOPFUND MFB",
+      "bankCode": "090717",
+      "sortCode": "G09150001"
+    },
+    {
+      "name": "CORESTEP MICROFINANCE BANK",
+      "bankCode": "090365",
+      "sortCode": "B90150001"
+    },
+    {
+      "name": "CORONATION MERCHANT BANK",
+      "bankCode": "060001",
+      "sortCode": "559150001"
+    },
+    {
+      "name": "COUNTY FINANCE LIMITED",
+      "bankCode": "050001",
+      "sortCode": "E38150001"
+    },
+    {
+      "name": "Covenant 070006 A01 CREDIT AFRIQUE MICROFINANCE BANK",
+      "bankCode": "090159",
+      "sortCode": "A80150001"
+    },
+    {
+      "name": "CREDITVILLE MICROFINANCE BANK",
+      "bankCode": "090611",
+      "sortCode": "E98150001"
+    },
+    {
+      "name": "CRESCENT MICROFINANCE BANK",
+      "bankCode": "090526",
+      "sortCode": "D94150001"
+    },
+    {
+      "name": "CROSS RIVER MICROFINANCE BANK",
+      "bankCode": "090429",
+      "sortCode": "C85150001"
+    },
+    {
+      "name": "CRUTECH MICROFINANCE BANK",
+      "bankCode": "090414",
+      "sortCode": "C55150001"
+    },
+    {
+      "name": "CS ADVANCE FINANCE COMPANY LIMITED",
+      "bankCode": "050017",
+      "sortCode": "F15150001"
+    },
+    {
+      "name": "CSD MICROFINANCE BANK",
+      "bankCode": "090686",
+      "sortCode": "F93150001"
+    },
+    {
+      "name": "DAL MFB",
+      "bankCode": "090596",
+      "sortCode": "F90150001"
+    },
+    {
+      "name": "DAVENPORT MICROFINANCE BANK",
+      "bankCode": "090673",
+      "sortCode": "F64150001"
+    },
+    {
+      "name": "DAVODANI MICROFINANCE BANK",
+      "bankCode": "090391",
+      "sortCode": "B92150001"
+    },
+    {
+      "name": "DAYLIGHT MICROFINANCE BANK",
+      "bankCode": "090167",
+      "sortCode": "A77150001"
+    },
+    {
+      "name": "DELTA TRUST MORTGAGE BANK",
+      "bankCode": "070023",
+      "sortCode": "D55150001"
+    },
+    {
+      "name": "DESTINY MFB",
+      "bankCode": "090723",
+      "sortCode": "G16150001"
+    },
+    {
+      "name": "DIGNITY FINANCE AND INVESTMENT LIMITED",
+      "bankCode": "050013",
+      "sortCode": "E91150001"
+    },
+    {
+      "name": "DOT MICROFINANCE BANK",
+      "bankCode": "D09",
+      "sortCode": "D09150001"
+    },
+    {
+      "name": "E-BARCS MICROFINANCE BANK",
+      "bankCode": "090156",
+      "sortCode": "A79150001"
+    },
+    {
+      "name": "E-FINANCE",
+      "bankCode": "050016",
+      "sortCode": "F10150001"
+    },
+    {
+      "name": "E-TRANZACT",
+      "bankCode": "100006",
+      "sortCode": "306150001"
+    },
+    {
+      "name": "EAGLE FLIGHT MICROFINANCE BANK",
+      "bankCode": "090294",
+      "sortCode": "B85150001"
+    },
+    {
+      "name": "EARNWELL MICROFINANCE BANK",
+      "bankCode": "090674",
+      "sortCode": "F65150001"
+    },
+    {
+      "name": "Eartholeum 100021 A02 EBSU MFB",
+      "bankCode": "090427",
+      "sortCode": "C45150001"
+    },
+    {
+      "name": "ECOBANK PLC",
+      "bankCode": "050",
+      "sortCode": "050150311"
+    },
+    {
+      "name": "ECOBANK XPRESS ACCOUNT",
+      "bankCode": "100008",
+      "sortCode": "307150001"
+    },
+    {
+      "name": "EDFIN MICROFINANCE BANK",
+      "bankCode": "090310",
+      "sortCode": "B58150001"
+    },
+    {
+      "name": "EGWAFIN MICROFINANCE BANK",
+      "bankCode": "090556",
+      "sortCode": "E75150001"
+    },
+    {
+      "name": "EJINDU MFB",
+      "bankCode": "090694",
+      "sortCode": "F94150001"
+    },
+    {
+      "name": "EK-RELIABLE MICROFINANCE BANK",
+      "bankCode": "090389",
+      "sortCode": "B94150001"
+    },
+    {
+      "name": "EKIMOGUN MICROFINANCE BANK",
+      "bankCode": "090552",
+      "sortCode": "E31150001"
+    },
+    {
+      "name": "EKONDO MICROFINANCE BANK",
+      "bankCode": "090097",
+      "sortCode": "562150001"
+    },
+    {
+      "name": "EMAAR MFB",
+      "bankCode": "090712",
+      "sortCode": "G07150001"
+    },
+    {
+      "name": "EMERALDS MICROFINANCE BANK",
+      "bankCode": "090273",
+      "sortCode": "B25150001"
+    },
+    {
+      "name": "EMPIRE TRUST MICROFINANCE BANK",
+      "bankCode": "090114",
+      "sortCode": "A10150001"
+    },
+    {
+      "name": "ENAIRA",
+      "bankCode": "000033",
+      "sortCode": "E13150001"
+    },
+    {
+      "name": "ENCO FINANCE COMPANY LTD",
+      "bankCode": "050012",
+      "sortCode": "E83150001"
+    },
+    {
+      "name": "ENTITY MICROFINANCE BANK",
+      "bankCode": "090656",
+      "sortCode": "F60150001"
+    },
+    {
+      "name": "ESAN MICROFINANCE BANK",
+      "bankCode": "090189",
+      "sortCode": "A95150001"
+    },
+    {
+      "name": "ESO-E MICROFINANCE BANK",
+      "bankCode": "090166",
+      "sortCode": "A75150001"
+    },
+    {
+      "name": "EVANGEL MICROFINANCE BANK",
+      "bankCode": "090304",
+      "sortCode": "B72150001"
+    },
+    {
+      "name": "EVERGREEN MICROFINANCE BANK",
+      "bankCode": "090332",
+      "sortCode": "B71150001"
+    },
+    {
+      "name": "EWT MICROFINANCE BANK",
+      "bankCode": "090572",
+      "sortCode": "E64150001"
+    },
+    {
+      "name": "EXCEL MICROFINANCE BANK",
+      "bankCode": "090678",
+      "sortCode": "F71150001"
+    },
+    {
+      "name": "EXCELLENT MICROFINANCE BANK",
+      "bankCode": "090541",
+      "sortCode": "E22150001"
+    },
+    {
+      "name": "EYOWO",
+      "bankCode": "090328",
+      "sortCode": "B69150001"
+    },
+    {
+      "name": "FAIRMONEY MICROFINANCE BANK LTD",
+      "bankCode": "090551",
+      "sortCode": "E30150001"
+    },
+    {
+      "name": "FAME MICROFINANCE BANK",
+      "bankCode": "090330",
+      "sortCode": "C54150001"
+    },
+    {
+      "name": "FAST CREDIT LIMITED",
+      "bankCode": "050009",
+      "sortCode": "E69150001"
+    },
+    {
+      "name": "FAST MICROFINANCE BANK",
+      "bankCode": "090179",
+      "sortCode": "A92150001"
+    },
+    {
+      "name": "FBN M-MONEY",
+      "bankCode": "100014",
+      "sortCode": "309150001"
+    },
+    {
+      "name": "FBN MERCHANT BANK",
+      "bankCode": "060002",
+      "sortCode": "A31150001"
+    },
+    {
+      "name": "FCMB EASY ACCOUNT",
+      "bankCode": "100031",
+      "sortCode": "A83150001"
+    },
+    {
+      "name": "FCMB MFB",
+      "bankCode": "090409",
+      "sortCode": "F45150001"
+    },
+    {
+      "name": "FCT MICROFINANCE BANK",
+      "bankCode": "090290",
+      "sortCode": "C17150001"
+    },
+    {
+      "name": "FEDERAL POLYTECHNIC NEKEDE MICROFINANCE",
+      "bankCode": "090398",
+      "sortCode": "C07150001"
+    },
+    {
+      "name": "FEDETH MFB",
+      "bankCode": "090482",
+      "sortCode": "D25150001"
+    },
+    {
+      "name": "FEDPOLY NASARAWA MICROFINANCE",
+      "bankCode": "090298",
+      "sortCode": "B56150001"
+    },
+    {
+      "name": "FEDRAL UNIVERSITY DUTSE MICROFINANCE BAN",
+      "bankCode": "090318",
+      "sortCode": "B82150001"
+    },
+    {
+      "name": "FETS 100001 A03 FEWCHORE FINANCE COMPANY LIMITED",
+      "bankCode": "050002",
+      "sortCode": "D95150001"
+    },
+    {
+      "name": "FFS MICROFINANCE BANK",
+      "bankCode": "090153",
+      "sortCode": "A63150001"
+    },
+    {
+      "name": "FHA MORTGAGE BANK",
+      "bankCode": "070026",
+      "sortCode": "E65150001"
+    },
+    {
+      "name": "FIDELITY BANK PLC",
+      "bankCode": "070",
+      "sortCode": "070150003"
+    },
+    {
+      "name": "FIDELITY MOBILE",
+      "bankCode": "100019",
+      "sortCode": "318150001"
+    },
+    {
+      "name": "FIDFUND MICROFINANCE BANK",
+      "bankCode": "090126",
+      "sortCode": "A24150001"
+    },
+    {
+      "name": "FIMS MICROFINANCE BANK",
+      "bankCode": "090507",
+      "sortCode": "D66150001"
+    },
+    {
+      "name": "FINATRUST MICROFINANCE BANK",
+      "bankCode": "090111",
+      "sortCode": "608150001"
+    },
+    {
+      "name": "FINCA MICROFINANCE BANK",
+      "bankCode": "090400",
+      "sortCode": "C01150001"
+    },
+    {
+      "name": "FIRMUS MICROFINANCE BANK",
+      "bankCode": "090366",
+      "sortCode": "C18150001"
+    },
+    {
+      "name": "FIRST BANK OF NIGERIA PLC",
+      "bankCode": "011",
+      "sortCode": "011151003"
+    },
+    {
+      "name": "FIRST CITY MONUMENT BANK",
+      "bankCode": "214",
+      "sortCode": "214150018"
+    },
+    {
+      "name": "FIRST GENERATION MORTGAGE BANK",
+      "bankCode": "070014",
+      "sortCode": "A93150001"
+    },
+    {
+      "name": "FIRST HERITAGE MFB",
+      "bankCode": "090479",
+      "sortCode": "D27150001"
+    },
+    {
+      "name": "FIRST MIDAS MICROFINANCE BANK",
+      "bankCode": "090575",
+      "sortCode": "E61150001"
+    },
+    {
+      "name": "FIRST MULTIPLE MFB",
+      "bankCode": "090163",
+      "sortCode": "D28150001"
+    },
+    {
+      "name": "FIRST OPTION MICROFINANCE BANK",
+      "bankCode": "090285",
+      "sortCode": "B44150001"
+    },
+    {
+      "name": "FIRST ROYAL MICROFINANCE BANK",
+      "bankCode": "090164",
+      "sortCode": "A89150001"
+    },
+    {
+      "name": "FirstTrust Mortgage Bank",
+      "bankCode": "090107",
+      "sortCode": "413150001"
+    },
+    {
+      "name": "FORESIGHT MICROFINANCE BANK",
+      "bankCode": "090521",
+      "sortCode": "D82150001"
+    },
+    {
+      "name": "FORTIS MICROFINANCE BANK 070002",
+      "bankCode": "A05",
+      "sortCode": "FortisMobile"
+    },
+    {
+      "name": "100016 A04 FORTRESS MICROFINANCE BANK",
+      "bankCode": "090486",
+      "sortCode": "D43150001"
+    },
+    {
+      "name": "FSDH MERCHANT BANK LIMITED",
+      "bankCode": "400001",
+      "sortCode": "501150000"
+    },
+    {
+      "name": "FULLRANGE MICROFINANCE BANK",
+      "bankCode": "090145",
+      "sortCode": "A53150001"
+    },
+    {
+      "name": "FUNDQUEST FINANCIAL SERVICES LIMITED",
+      "bankCode": "050010",
+      "sortCode": "E76150001"
+    },
+    {
+      "name": "FUTMINNA MICROFINANCE BANK",
+      "bankCode": "090438",
+      "sortCode": "C51150001"
+    },
+    {
+      "name": "FUTO MICROFINANCE BANK",
+      "bankCode": "090158",
+      "sortCode": "A70150001"
+    },
+    {
+      "name": "GABASAWA MICROFINANCE BANK",
+      "bankCode": "090582",
+      "sortCode": "F11150001"
+    },
+    {
+      "name": "GABSYN MICROFINANCE BANK",
+      "bankCode": "090591",
+      "sortCode": "E79150001"
+    },
+    {
+      "name": "GARKI MFB",
+      "bankCode": "090484",
+      "sortCode": "D29150001"
+    },
+    {
+      "name": "GASHUA MICROFINANCE BANK",
+      "bankCode": "090168",
+      "sortCode": "A82150001"
+    },
+    {
+      "name": "GATEWAY MORTGAGE BANK",
+      "bankCode": "070009",
+      "sortCode": "A33150001"
+    },
+    {
+      "name": "GBEDE MICROFINANCE BANK",
+      "bankCode": "090579",
+      "sortCode": "E66150001"
+    },
+    {
+      "name": "GDL FINANCE",
+      "bankCode": "050026",
+      "sortCode": "F87150001"
+    },
+    {
+      "name": "GIANT STRIDE MFB",
+      "bankCode": "090475",
+      "sortCode": "D05150001"
+    },
+    {
+      "name": "GIDAUNIYAR ALHERI MICROFINANCE",
+      "bankCode": "090621",
+      "sortCode": "F02150001"
+    },
+    {
+      "name": "GIGINYA MICROFINANCE BANK",
+      "bankCode": "090411",
+      "sortCode": "C22150001"
+    },
+    {
+      "name": "GIREI MICROFINANCE BANK",
+      "bankCode": "090186",
+      "sortCode": "C04150001"
+    },
+    {
+      "name": "GIWA MICROFINANCE BANK",
+      "bankCode": "090441",
+      "sortCode": "C73150001"
+    },
+    {
+      "name": "GLOBAL INITIATIVE MICROFINANCE BANK",
+      "bankCode": "090639",
+      "sortCode": "F19150001"
+    },
+    {
+      "name": "GLOBUS BANK",
+      "bankCode": "103",
+      "sortCode": "103150001"
+    },
+    {
+      "name": "GLORY MICROFINANCE BANK",
+      "bankCode": "090278",
+      "sortCode": "B34150001"
+    },
+    {
+      "name": "GMB MICROFINANCE BANK",
+      "bankCode": "090408",
+      "sortCode": "C15010001"
+    },
+    {
+      "name": "GOLDMAN MFB",
+      "bankCode": "090574",
+      "sortCode": "E68150001"
+    },
+    {
+      "name": "GOMBE MICROFINANCE BANK LIMITED",
+      "bankCode": "090586",
+      "sortCode": "F31150001"
+    },
+    {
+      "name": "GOOD NEIGHBOURS MICROFINANCE",
+      "bankCode": "090467",
+      "sortCode": "C98150001"
+    },
+    {
+      "name": "GOOD SHEPHARD MICRO FINANCE BANK",
+      "bankCode": "090664",
+      "sortCode": "F61150001"
+    },
+    {
+      "name": "GOSIFECHUKWU MFB",
+      "bankCode": "090687",
+      "sortCode": "F83150001"
+    },
+    {
+      "name": "GOWANS MFB",
+      "bankCode": "090122",
+      "sortCode": "A35150001"
+    },
+    {
+      "name": "GRANT MF BANK",
+      "bankCode": "090335",
+      "sortCode": "C88150001"
+    },
+    {
+      "name": "GREEN ENERGY MICROFINANCE BANK",
+      "bankCode": "LTD",
+      "sortCode": "090550"
+    },
+    {
+      "name": "E29150001 GREENACRES MICROFINANCE BANK LTD",
+      "bankCode": "090599",
+      "sortCode": "F35150001"
+    },
+    {
+      "name": "GREENBANK MICROFINANCE BANK",
+      "bankCode": "090178",
+      "sortCode": "A88150001"
+    },
+    {
+      "name": "GREENVILLE MICROFINANCE BANK",
+      "bankCode": "090269",
+      "sortCode": "B19150001"
+    },
+    {
+      "name": "GREENWICH MERCHANT BANK",
+      "bankCode": "060004",
+      "sortCode": "C59150001"
+    },
+    {
+      "name": "GROOMING MICROFINANCE BANK",
+      "bankCode": "090195",
+      "sortCode": "B05150001"
+    },
+    {
+      "name": "GT MOBILE MONEY",
+      "bankCode": "100009",
+      "sortCode": "315150001"
+    },
+    {
+      "name": "GTI MICROFINANCE BANK",
+      "bankCode": "090385",
+      "sortCode": "B93150001"
+    },
+    {
+      "name": "GUARANTY TRUST BANK PLC",
+      "bankCode": "058",
+      "sortCode": "058152052"
+    },
+    {
+      "name": "GWONG MICROFINANCE BANK",
+      "bankCode": "090500",
+      "sortCode": "F54150001"
+    },
+    {
+      "name": "HACKMAN MICROFINANCE BANK",
+      "bankCode": "090147",
+      "sortCode": "A66150001"
+    },
+    {
+      "name": "HAGGAI MORTGAGE BANK LIMITED",
+      "bankCode": "070017",
+      "sortCode": "A75150001"
+    },
+    {
+      "name": "HALA MFB",
+      "bankCode": "090291",
+      "sortCode": "D30150001"
+    },
+    {
+      "name": "HALO MICROFINANCE BANK",
+      "bankCode": "090539",
+      "sortCode": "E04150001"
+    },
+    {
+      "name": "HASAL MICROFINANCE BANK",
+      "bankCode": "090121",
+      "sortCode": "A29150001"
+    },
+    {
+      "name": "HEADWAY MICROFINANCE BANK",
+      "bankCode": "090363",
+      "sortCode": "B87150001"
+    },
+    {
+      "name": "HEDONMARK MOBILE",
+      "bankCode": "100017",
+      "sortCode": "324150001"
+    },
+    {
+      "name": "HIGHLAND MICROFINANCE BANK",
+      "bankCode": "090418",
+      "sortCode": "C36150001"
+    },
+    {
+      "name": "HOMEBASE MORTGAGE BANK",
+      "bankCode": "070024",
+      "sortCode": "D73150001"
+    },
+    {
+      "name": "HOPE PAYMENT SERVICE BANK",
+      "bankCode": "120002",
+      "sortCode": "C12150001"
+    },
+    {
+      "name": "IBA MICROFINANCE BANK",
+      "bankCode": "090598",
+      "sortCode": "E81150001"
+    },
+    {
+      "name": "IBANK MICROFINANCE BANK",
+      "bankCode": "090115",
+      "sortCode": "567150001"
+    },
+    {
+      "name": "IBETO MICROFINANCE BANK",
+      "bankCode": "090439",
+      "sortCode": "C62150001"
+    },
+    {
+      "name": "IBILE MICROFINANCE BANK",
+      "bankCode": "090118",
+      "sortCode": "A23150001"
+    },
+    {
+      "name": "IBOLO MICORFINANCE BANK LTD",
+      "bankCode": "090532",
+      "sortCode": "E19150001"
+    },
+    {
+      "name": "IBOM FADAMA MICROFINANCE BANK",
+      "bankCode": "090519",
+      "sortCode": "D75150001"
+    },
+    {
+      "name": "IBU-AJE MICROFINANCE BANK",
+      "bankCode": "090488",
+      "sortCode": "D97150001"
+    },
+    {
+      "name": "IC GLOBAL MICROFINANCE BANK",
+      "bankCode": "090520",
+      "sortCode": "D76150001"
+    },
+    {
+      "name": "IHIALA MFB",
+      "bankCode": "090725",
+      "sortCode": "G14150001"
+    },
+    {
+      "name": "IJEBU-IFE MICROFINANCE BANK LTD",
+      "bankCode": "090546",
+      "sortCode": "E26150001"
+    },
+    {
+      "name": "IKENNE MICROFINANCE BANK",
+      "bankCode": "090324",
+      "sortCode": "B64150001"
+    },
+    {
+      "name": "IKIRE MICROFINANCE BANK",
+      "bankCode": "090275",
+      "sortCode": "B48150001"
+    },
+    {
+      "name": "IKIRE MICROFINANCE BANK",
+      "bankCode": "090279",
+      "sortCode": "B48150001"
+    },
+    {
+      "name": "IKOYI ILE MICROFINANCEBANK",
+      "bankCode": "090681",
+      "sortCode": "F77150001"
+    },
+    {
+      "name": "IKOYI-OSUN MICROFINANCE BANK",
+      "bankCode": "090536",
+      "sortCode": "E01150001"
+    },
+    {
+      "name": "ILARO POLY MICROFINANCE BANK",
+      "bankCode": "090571",
+      "sortCode": "E47150001"
+    },
+    {
+      "name": "ILISAN MICROFINANCE BANK",
+      "bankCode": "090370",
+      "sortCode": "C02150001"
+    },
+    {
+      "name": "ILORA MICROFINANCE BANK",
+      "bankCode": "090430",
+      "sortCode": "C44150001"
+    },
+    {
+      "name": "ILORIN MFB",
+      "bankCode": "090350",
+      "sortCode": "C57150001"
+    },
+    {
+      "name": "IMO STATE MICROFINANCE BANK",
+      "bankCode": "090258",
+      "sortCode": "B21150001"
+    },
+    {
+      "name": "IMOWO MICROFINANCE BANK",
+      "bankCode": "090417",
+      "sortCode": "C43150001"
+    },
+    {
+      "name": "IMPERIAL HOMES MORTGAGE BANK",
+      "bankCode": "100024",
+      "sortCode": "415150001"
+    },
+    {
+      "name": "IMSU MICROFINANCE BANK",
+      "bankCode": "090670",
+      "sortCode": "F63150001"
+    },
+    {
+      "name": "INFINITY MICROFINANCE BANK",
+      "bankCode": "090157",
+      "sortCode": "A68150001"
+    },
+    {
+      "name": "INFINITY TRUST MORTGAGE BANK",
+      "bankCode": "070016",
+      "sortCode": "A57150001"
+    },
+    {
+      "name": "INSIGHT MICROFINANCE BANK",
+      "bankCode": "090434",
+      "sortCode": "C52150001"
+    },
+    {
+      "name": "INTERLAND MICROFINANCE BANK",
+      "bankCode": "090386",
+      "sortCode": "C19150001"
+    },
+    {
+      "name": "INTERSWITCH FINANCIAL INCLUSION SERVICES",
+      "bankCode": "110010",
+      "sortCode": "C96150001"
+    },
+    {
+      "name": "IPERU MFB",
+      "bankCode": "090493",
+      "sortCode": "D52150001"
+    },
+    {
+      "name": "IRL MICROFINANCE BANK",
+      "bankCode": "090149",
+      "sortCode": "A58150001"
+    },
+    {
+      "name": "ISALE OYO MICROFINANCE BANK LTD",
+      "bankCode": "090377",
+      "sortCode": "C20150001"
+    },
+    {
+      "name": "ISHIE MICROFINANCE BANK",
+      "bankCode": "090428",
+      "sortCode": "D07150001"
+    },
+    {
+      "name": "ISLAND MICROFINANCE BANK",
+      "bankCode": "090584",
+      "sortCode": "E87150001"
+    },
+    {
+      "name": "ISUOFIA MFB",
+      "bankCode": "090353",
+      "sortCode": "E16150001"
+    },
+    {
+      "name": "IWADE MICROFINANCE BANK",
+      "bankCode": "090578",
+      "sortCode": "E71150001"
+    },
+    {
+      "name": "IWOAMA MICROFINANCE BANK",
+      "bankCode": "090543",
+      "sortCode": "E54150001"
+    },
+    {
+      "name": "IYAMOYE MICROFINANCE BANK",
+      "bankCode": "090570",
+      "sortCode": "E55150001"
+    },
+    {
+      "name": "IYERU OKIN MICROFINANCE BANK LTD",
+      "bankCode": "090337",
+      "sortCode": "E50150001"
+    },
+    {
+      "name": "IYIN EKITI MICROFINANCE BANK",
+      "bankCode": "090620",
+      "sortCode": "F07150001"
+    },
+    {
+      "name": "IZON MICROFINANCE BANK",
+      "bankCode": "090421",
+      "sortCode": "C31150001"
+    },
+    {
+      "name": "JAIZ BANK",
+      "bankCode": "301",
+      "sortCode": "301150000"
+    },
+    {
+      "name": "JESSEFIELD MICROFINANCE",
+      "bankCode": "090352",
+      "sortCode": "D51150001"
+    },
+    {
+      "name": "JIGAWA SAVINGS AND LOANS LIMITED.",
+      "bankCode": "070029",
+      "sortCode": "G23150001"
+    },
+    {
+      "name": "JubileeLife 090003 A06 KADPOLY MICROFINANCE BANK",
+      "bankCode": "090320",
+      "sortCode": "D32150001"
+    },
+    {
+      "name": "KADUPE MICROFINANCE BANK",
+      "bankCode": "090669",
+      "sortCode": "F57150001"
+    },
+    {
+      "name": "KANOPOLY MICROFINANCE BANK LIMITED",
+      "bankCode": "090592",
+      "sortCode": "E84150001"
+    },
+    {
+      "name": "KAYI MICROFINANCE BANK",
+      "bankCode": "090667",
+      "sortCode": "F74150001"
+    },
+    {
+      "name": "KAYVEE MICROFINANCE BANK LTD",
+      "bankCode": "090554",
+      "sortCode": "E35150001"
+    },
+    {
+      "name": "KC MICROFINANCE BANK",
+      "bankCode": "090549",
+      "sortCode": "E46150001"
+    },
+    {
+      "name": "KCMB MICROFINANCE BANK",
+      "bankCode": "090191",
+      "sortCode": "A97150001"
+    },
+    {
+      "name": "KEGOW",
+      "bankCode": "100036",
+      "sortCode": "D33150001"
+    },
+    {
+      "name": "KENECHUKWU MICROFINANCE BANK",
+      "bankCode": "090602",
+      "sortCode": "E80150001"
+    },
+    {
+      "name": "KEYSTONE BANK LIMITED",
+      "bankCode": "082",
+      "sortCode": "082150004"
+    },
+    {
+      "name": "KINGDOM COLLEGE MICROFINANCE",
+      "bankCode": "090487",
+      "sortCode": "D45150001"
+    },
+    {
+      "name": "KKU MICROFINANCE BANK",
+      "bankCode": "090606",
+      "sortCode": "F03150001"
+    },
+    {
+      "name": "KOLOMONI MICROFINANCE BANK",
+      "bankCode": "090480",
+      "sortCode": "D20150001"
+    },
+    {
+      "name": "KONGAPAY",
+      "bankCode": "100025",
+      "sortCode": "A13150001"
+    },
+    {
+      "name": "KONTAGORA MICROFINANCE BANK",
+      "bankCode": "090299",
+      "sortCode": "B78150001"
+    },
+    {
+      "name": "KOPO KOPE MICROFINANCE BANK",
+      "bankCode": "090617",
+      "sortCode": "F16150001"
+    },
+    {
+      "name": "KREDI MONEY MICROFINANCE BANK LTD",
+      "bankCode": "090380",
+      "sortCode": "C64150001"
+    },
+    {
+      "name": "KUDA MICROFINANCE BANK",
+      "bankCode": "090267",
+      "sortCode": "B14150001"
+    },
+    {
+      "name": "KWASU MICROFINANCE BANK",
+      "bankCode": "090450",
+      "sortCode": "C71150001"
+    },
+    {
+      "name": "LA FAYETTE MICROFINANCE BANK",
+      "bankCode": "090155",
+      "sortCode": "A94150001"
+    },
+    {
+      "name": "LAGOS BUILDING INVESTMENT COMPANY",
+      "bankCode": "070012",
+      "sortCode": "A43150001"
+    },
+    {
+      "name": "LANDGOLD MICROFINANCE BANK",
+      "bankCode": "090422",
+      "sortCode": "C40150001"
+    },
+    {
+      "name": "LAPO MICROFINANCE BANK",
+      "bankCode": "090177",
+      "sortCode": "B23150001"
+    },
+    {
+      "name": "LAVENDER MICROFINANCE BANK",
+      "bankCode": "090271",
+      "sortCode": "B22150001"
+    },
+    {
+      "name": "LAWYERS MFB",
+      "bankCode": "090724",
+      "sortCode": "G13150001"
+    },
+    {
+      "name": "LEADCITY MICROFINANCE BANK",
+      "bankCode": "090650",
+      "sortCode": "F40150001"
+    },
+    {
+      "name": "LEGEND MICROFINANCE BANK",
+      "bankCode": "090372",
+      "sortCode": "B80150001"
+    },
+    {
+      "name": "LETSHEGO MICROFINANCE BANK",
+      "bankCode": "090420",
+      "sortCode": "C30150001"
+    },
+    {
+      "name": "LIFEGATE MICROFINANCE BANK",
+      "bankCode": "090514",
+      "sortCode": "E41150001"
+    },
+    {
+      "name": "LIFEGATE MICROFINANCE BANK",
+      "bankCode": "090557",
+      "sortCode": "E41150001"
+    },
+    {
+      "name": "LIGHT MICROFINANCE BANK",
+      "bankCode": "090477",
+      "sortCode": "D10150001"
+    },
+    {
+      "name": "LINKS MICROFINANCE BANK",
+      "bankCode": "090435",
+      "sortCode": "C47150001"
+    },
+    {
+      "name": "LOBREM MICROFINANCE BANK",
+      "bankCode": "090537",
+      "sortCode": "E12150001"
+    },
+    {
+      "name": "LOTUS BANK",
+      "bankCode": "303",
+      "sortCode": "303150026"
+    },
+    {
+      "name": "LOVONUS MICROFINANCE BANK",
+      "bankCode": "090265",
+      "sortCode": "B18150001"
+    },
+    {
+      "name": "LUKEFIELD FINANCE COMPANY LIMITED",
+      "bankCode": "050015",
+      "sortCode": "F08150001"
+    },
+    {
+      "name": "M&M MICROFINANCE BANK",
+      "bankCode": "090685",
+      "sortCode": "F80150001"
+    },
+    {
+      "name": "M-KUDI",
+      "bankCode": "100011",
+      "sortCode": "313150001"
+    },
+    {
+      "name": "M36",
+      "bankCode": "100035",
+      "sortCode": "C14150001"
+    },
+    {
+      "name": "MAB ALLIANZ MICROFINANCE BANK",
+      "bankCode": "090623",
+      "sortCode": "F04150001"
+    },
+    {
+      "name": "MABINAS MICROFINANCE BANK",
+      "bankCode": "090630",
+      "sortCode": "F24150001"
+    },
+    {
+      "name": "MACROD MICROFINANCE BANK LIMITED",
+      "bankCode": "090603",
+      "sortCode": "E96150001"
+    },
+    {
+      "name": "MADOBI MICROFINANCE BANK",
+      "bankCode": "090605",
+      "sortCode": "F12150001"
+    },
+    {
+      "name": "MAINLAND MICROFINANCE BANK",
+      "bankCode": "090323",
+      "sortCode": "B59150001"
+    },
+    {
+      "name": "MAINSTREET MICROFINANCE BANK",
+      "bankCode": "090171",
+      "sortCode": "A84150001"
+    },
+    {
+      "name": "MAINTRUST MFB",
+      "bankCode": "090465",
+      "sortCode": "C97150001"
+    },
+    {
+      "name": "MALACHY MICROFINANCE BANK",
+      "bankCode": "090174",
+      "sortCode": "A86150001"
+    },
+    {
+      "name": "MANNY MICROFINANCE BANK",
+      "bankCode": "090383",
+      "sortCode": "B99150001"
+    },
+    {
+      "name": "MARITIME MICROFINANCE BANK",
+      "bankCode": "090410",
+      "sortCode": "C42150001"
+    },
+    {
+      "name": "MAUTECH MICROFINANCE BANK",
+      "bankCode": "090423",
+      "sortCode": "C46150001"
+    },
+    {
+      "name": "MAYFAIR MICROFINANCE BANK",
+      "bankCode": "090321",
+      "sortCode": "B65150001"
+    },
+    {
+      "name": "MAYFRESH MORTGAGE BANK",
+      "bankCode": "070019",
+      "sortCode": "B63150001"
+    },
+    {
+      "name": "MEDEF MICROFINANCE BANK",
+      "bankCode": "090612",
+      "sortCode": "E92150001"
+    },
+    {
+      "name": "MEGAPRAISE MICROFINANCE BANK",
+      "bankCode": "090280",
+      "sortCode": "B31150001"
+    },
+    {
+      "name": "MEMPHIS MICROFINANCE BANK",
+      "bankCode": "090432",
+      "sortCode": "C49150001"
+    },
+    {
+      "name": "MERCURY MICROFINANCE BANK",
+      "bankCode": "090589",
+      "sortCode": "E77150001"
+    },
+    {
+      "name": "MGBIDI MICROFINANCE BANK",
+      "bankCode": "090528",
+      "sortCode": "E06150001"
+    },
+    {
+      "name": "MICHAEL OKPARA UNIAGRIC MICROFINANCE BAN",
+      "bankCode": "090659",
+      "sortCode": "F48150001"
+    },
+    {
+      "name": "MICROBIZ MICROFINANCE BANK",
+      "bankCode": "090587",
+      "sortCode": "E73150001"
+    },
+    {
+      "name": "MICROVIS MICROFINANCE BANK",
+      "bankCode": "090113",
+      "sortCode": "A50150001"
+    },
+    {
+      "name": "MIDLAND MICROFINANCE BANK",
+      "bankCode": "090192",
+      "sortCode": "A98150001"
+    },
+    {
+      "name": "MIMONEY",
+      "bankCode": "100027",
+      "sortCode": "330150001"
+    },
+    {
+      "name": "MINJIBIR MICROFINANCE BANK",
+      "bankCode": "090607",
+      "sortCode": "F21150001"
+    },
+    {
+      "name": "MINT-FINEX MFB",
+      "bankCode": "090281",
+      "sortCode": "B51150001"
+    },
+    {
+      "name": "MKOBO MICROFINANCE BANK",
+      "bankCode": "090455",
+      "sortCode": "E74150001"
+    },
+    {
+      "name": "MOLUSI MICROFINANCE BANK",
+      "bankCode": "090362",
+      "sortCode": "B76150001"
+    },
+    {
+      "name": "MOMO PSB",
+      "bankCode": "120003",
+      "sortCode": "D70150001"
+    },
+    {
+      "name": "MONARCH MICROFINANCE BANK",
+      "bankCode": "090462",
+      "sortCode": "C91150001"
+    },
+    {
+      "name": "MONEY MASTER PSB",
+      "bankCode": "120005",
+      "sortCode": "D86150001"
+    },
+    {
+      "name": "MoneyBox",
+      "bankCode": "100020",
+      "sortCode": "325150001"
+    },
+    {
+      "name": "MONEYTRUST MICROFINANCE BANK",
+      "bankCode": "090129",
+      "sortCode": "A65150001"
+    },
+    {
+      "name": "MONIEPOINT MICROFINANCE BANK",
+      "bankCode": "090405",
+      "sortCode": "C13150001"
+    },
+    {
+      "name": "MOYOFADE MICROFINANCE BANK",
+      "bankCode": "090448",
+      "sortCode": "C61150001"
+    },
+    {
+      "name": "MOZFIN MICROFINANCE BANK",
+      "bankCode": "090392",
+      "sortCode": "C41150001"
+    },
+    {
+      "name": "MUTUAL ALLIANCE MORTGAGE BANK",
+      "bankCode": "070028",
+      "sortCode": "F82150001"
+    },
+    {
+      "name": "MUTUAL BENEFITS MICROFINANCE BANK",
+      "bankCode": "090190",
+      "sortCode": "A99150001"
+    },
+    {
+      "name": "MUTUAL TRUST MICROFINANCE BANK",
+      "bankCode": "090151",
+      "sortCode": "A56150001"
+    },
+    {
+      "name": "NAGARTA MICROFINANCE BANK",
+      "bankCode": "090152",
+      "sortCode": "B02150001"
+    },
+    {
+      "name": "NASARAWA MICROFINANCE BANK",
+      "bankCode": "090349",
+      "sortCode": "E07150001"
+    },
+    {
+      "name": "NDDC MICROFINANCE BANK",
+      "bankCode": "090679",
+      "sortCode": "F72150001"
+    },
+    {
+      "name": "NDIORAH MICROFINANCE BANK",
+      "bankCode": "090128",
+      "sortCode": "A28150001"
+    },
+    {
+      "name": "NEPTUNE MICROFINANCE BANK",
+      "bankCode": "090329",
+      "sortCode": "B77150001"
+    },
+    {
+      "name": "NET MFB",
+      "bankCode": "090675",
+      "sortCode": "F79150001"
+    },
+    {
+      "name": "NEW DAWN MICROFINANCE BANK",
+      "bankCode": "090205",
+      "sortCode": "B28150001"
+    },
+    {
+      "name": "NEW GOLDEN PASTURES MICROFINANCE",
+      "bankCode": "090378",
+      "sortCode": "B88150001"
+    },
+    {
+      "name": "NEW PRUDENTIAL BANK",
+      "bankCode": "561",
+      "sortCode": "561150001"
+    },
+    {
+      "name": "NEXIM BANK",
+      "bankCode": "030001",
+      "sortCode": "F42150001"
+    },
+    {
+      "name": "NICE MICROFINANCE BANK",
+      "bankCode": "090459",
+      "sortCode": "C79150001"
+    },
+    {
+      "name": "NIGERIA INTL BANK LTD (CITIBANK)",
+      "bankCode": "023",
+      "sortCode": "023150005"
+    },
+    {
+      "name": "NIGERIA PRISONS MICROFINANCE BANK",
+      "bankCode": "090505",
+      "sortCode": "D68150001"
+    },
+    {
+      "name": "NIGERIAN NAVY MICROFINANCE BANK",
+      "bankCode": "090263",
+      "sortCode": "B46150001"
+    },
+    {
+      "name": "NIRSAL MICROFINANCE BANK",
+      "bankCode": "090194",
+      "sortCode": "B08150001"
+    },
+    {
+      "name": "NNEW WOMEN MFB",
+      "bankCode": "090283",
+      "sortCode": "D36150001"
+    },
+    {
+      "name": "NOVA BANK LTD",
+      "bankCode": "060003",
+      "sortCode": "A73150001"
+    },
+    {
+      "name": "NPF Microfinance Bank",
+      "bankCode": "070001",
+      "sortCode": "552150001"
+    },
+    {
+      "name": "NPOLU-UST MICROFINANCE BANK",
+      "bankCode": "090535",
+      "sortCode": "E20150001"
+    },
+    {
+      "name": "NSEHE MICROFINANCE BANK",
+      "bankCode": "090628",
+      "sortCode": "F17150001"
+    },
+    {
+      "name": "NSUK MICROFINANCE BANK",
+      "bankCode": "090491",
+      "sortCode": "D53150001"
+    },
+    {
+      "name": "NUGGETS MFB",
+      "bankCode": "090676",
+      "sortCode": "F95150001"
+    },
+    {
+      "name": "NUMO MICROFINANCE BANK",
+      "bankCode": "090516",
+      "sortCode": "D80150001"
+    },
+    {
+      "name": "NUTURE MICROFINANCE BANK",
+      "bankCode": "090364",
+      "sortCode": "B74150001"
+    },
+    {
+      "name": "NWANNEGADI MICROFINANCE BANK",
+      "bankCode": "090399",
+      "sortCode": "C03150001"
+    },
+    {
+      "name": "OAKLAND MICROFINANCE BANK",
+      "bankCode": "090437",
+      "sortCode": "D37150001"
+    },
+    {
+      "name": "OAU MICROFINANCE BANK",
+      "bankCode": "090345",
+      "sortCode": "E57150001"
+    },
+    {
+      "name": "OCHE MICROFINANCE BANK",
+      "bankCode": "090333",
+      "sortCode": "B70150001"
+    },
+    {
+      "name": "OCTOPUS MICROFINANCE BANK",
+      "bankCode": "090576",
+      "sortCode": "E58150001"
+    },
+    {
+      "name": "ODOAKPU MICROFINANCE BANK LIMITED",
+      "bankCode": "090654",
+      "sortCode": "F43150001"
+    },
+    {
+      "name": "OHAFIA MICROFINANCE BANK",
+      "bankCode": "090119",
+      "sortCode": "A22150001"
+    },
+    {
+      "name": "OHHA MICROFINANCE BANK",
+      "bankCode": "090626",
+      "sortCode": "F18150001"
+    },
+    {
+      "name": "OJOKORO MICROFINANCE BANK",
+      "bankCode": "090527",
+      "sortCode": "D69150001"
+    },
+    {
+      "name": "OKE-ARO OREDEGBE MICROFINANCE",
+      "bankCode": "090565",
+      "sortCode": "E43150001"
+    },
+    {
+      "name": "OKENGWE MICROFINANCE BANK",
+      "bankCode": "090646",
+      "sortCode": "F37150001"
+    },
+    {
+      "name": "OKPOGA MICROFINANCE BANK",
+      "bankCode": "090161",
+      "sortCode": "A67150001"
+    },
+    {
+      "name": "OKUKU MICROFINANCE BANK",
+      "bankCode": "090566",
+      "sortCode": "E53150001"
+    },
+    {
+      "name": "OLABISI ONABANJO UNIVERSITY MICROFINANCE",
+      "bankCode": "090272",
+      "sortCode": "B27150001"
+    },
+    {
+      "name": "OLIVE MFB",
+      "bankCode": "090696",
+      "sortCode": "F89150001"
+    },
+    {
+      "name": "OLOFIN OWENA MICROFINANCE BANK",
+      "bankCode": "090468",
+      "sortCode": "C86150001"
+    },
+    {
+      "name": "OLOWOLAGBA MICROFINANCE BANK",
+      "bankCode": "090404",
+      "sortCode": "C16150001"
+    },
+    {
+      "name": "OLUCHUKWU MICROFINANCE BANK",
+      "bankCode": "090471",
+      "sortCode": "C99150001"
+    },
+    {
+      "name": "OMIYE MICROFINANCE BANK",
+      "bankCode": "090295",
+      "sortCode": "B43150001"
+    },
+    {
+      "name": "OMOLUABI SAVINGS & LOANS",
+      "bankCode": "070007",
+      "sortCode": "606150001"
+    },
+    {
+      "name": "OPTIMUS BANK",
+      "bankCode": "000036",
+      "sortCode": "E82150001"
+    },
+    {
+      "name": "ORAUKWU MICROFINANCE BANK",
+      "bankCode": "090492",
+      "sortCode": "D48150001"
+    },
+    {
+      "name": "ORISUN MICROFINANCE BANK",
+      "bankCode": "090588",
+      "sortCode": "E78150001"
+    },
+    {
+      "name": "ORITABASORUN MICROFINANCE BANK",
+      "bankCode": "090460",
+      "sortCode": "C77150001"
+    },
+    {
+      "name": "OROKAM MICROFINANCE BANK",
+      "bankCode": "090567",
+      "sortCode": "E45150001"
+    },
+    {
+      "name": "OSCOTECH MICROFINANCE BANK",
+      "bankCode": "090396",
+      "sortCode": "C05150001"
+    },
+    {
+      "name": "OSPOLY MICROFINANCE BANK",
+      "bankCode": "090456",
+      "sortCode": "C66150001"
+    },
+    {
+      "name": "OTECH MICROFINANCE BANK",
+      "bankCode": "090580",
+      "sortCode": "E63150001"
+    },
+    {
+      "name": "OTUO MICROFINANCE BANK LTD",
+      "bankCode": "090542",
+      "sortCode": "E23150001"
+    },
+    {
+      "name": "OYAN MICROFINANCE BANK",
+      "bankCode": "090635",
+      "sortCode": "F22150001"
+    },
+    {
+      "name": "PAGATECH",
+      "bankCode": "100002",
+      "sortCode": "327150001"
+    },
+    {
+      "name": "PAGE MFBANK",
+      "bankCode": "070008",
+      "sortCode": "560150001"
+    },
+    {
+      "name": "PALMCOAST MICROFINANCE BANK",
+      "bankCode": "090497",
+      "sortCode": "D61150001"
+    },
+    {
+      "name": "PALMPAY",
+      "bankCode": "100033",
+      "sortCode": "B54150001"
+    },
+    {
+      "name": "PARALLEX BANK",
+      "bankCode": "104",
+      "sortCode": "104150001"
+    },
+    {
+      "name": "PARKWAY (READY CASH)",
+      "bankCode": "100003",
+      "sortCode": "311150001"
+    },
+    {
+      "name": "PARKWAY MICROFINANCE BANK",
+      "bankCode": "090390",
+      "sortCode": "C70150001"
+    },
+    {
+      "name": "PATHFINDER MICROFINANACE BANK LIMITED",
+      "bankCode": "090680",
+      "sortCode": "F70150001"
+    },
+    {
+      "name": "PATRICKGOLD MICROFINANCE BANK",
+      "bankCode": "090317",
+      "sortCode": "B60150001"
+    },
+    {
+      "name": "PAYATTITUDE ONLINE",
+      "bankCode": "110001",
+      "sortCode": "329150001"
+    },
+    {
+      "name": "PAYCOM (OPAY)",
+      "bankCode": "100004",
+      "sortCode": "305150001"
+    },
+    {
+      "name": "PEACE MICROFINANCE BANK",
+      "bankCode": "090402",
+      "sortCode": "C29150001"
+    },
+    {
+      "name": "PECANTRUST MICROFINANCE BANK",
+      "bankCode": "090137",
+      "sortCode": "A49150001"
+    },
+    {
+      "name": "PENIEL MICROFINANCE BANK LTD",
+      "bankCode": "090379",
+      "sortCode": "E17150001"
+    },
+    {
+      "name": "PENNYWISE MICROFINANCE BANK",
+      "bankCode": "090196",
+      "sortCode": "B04150001"
+    },
+    {
+      "name": "PERSONAL TRUST MICROFINANCE BANK",
+      "bankCode": "090135",
+      "sortCode": "A42150001"
+    },
+    {
+      "name": "PETRA MICROFINANCE BANK",
+      "bankCode": "090165",
+      "sortCode": "A74150001"
+    },
+    {
+      "name": "PFI FINANCE COMPANY LIMITED",
+      "bankCode": "050021",
+      "sortCode": "F73150001"
+    },
+    {
+      "name": "PILLAR MICROFINANCE BANK",
+      "bankCode": "090289",
+      "sortCode": "B38150001"
+    },
+    {
+      "name": "PLATINUM MORTGAGE BANK",
+      "bankCode": "070013",
+      "sortCode": "A46150001"
+    },
+    {
+      "name": "POLARIS BANK LIMITED",
+      "bankCode": "076",
+      "sortCode": "076151006"
+    },
+    {
+      "name": "POLYBADAN MICROFINANCE BANK",
+      "bankCode": "090534",
+      "sortCode": "E08150001"
+    },
+    {
+      "name": "POLYUWANA MICROFINANCE BANK",
+      "bankCode": "090296",
+      "sortCode": "B45150001"
+    },
+    {
+      "name": "PREEMINENT MICROFINANCE BANK",
+      "bankCode": "090412",
+      "sortCode": "C25150001"
+    },
+    {
+      "name": "PREMIUMTRUST BANK",
+      "bankCode": "105",
+      "sortCode": "105150001"
+    },
+    {
+      "name": "PRESTIGE MICROFINANCE BANK",
+      "bankCode": "090274",
+      "sortCode": "B33150001"
+    },
+    {
+      "name": "PRISCO MFB",
+      "bankCode": "090481",
+      "sortCode": "D39150001"
+    },
+    {
+      "name": "PRISTINE DIVITIS MICROFINANCE BANK",
+      "bankCode": "090499",
+      "sortCode": "D49150001"
+    },
+    {
+      "name": "PROJECTS MICROFINANCE BANK",
+      "bankCode": "090503",
+      "sortCode": "D59150001"
+    },
+    {
+      "name": "PROSPA CAPITAL MICROFINANCE BANK",
+      "bankCode": "090495",
+      "sortCode": "D50150001"
+    },
+    {
+      "name": "PROSPECTS MFB",
+      "bankCode": "090689",
+      "sortCode": "F84150001"
+    },
+    {
+      "name": "PROSPERITY MICROFINANCE BANK",
+      "bankCode": "090642",
+      "sortCode": "F30150001"
+    },
+    {
+      "name": "PROVIDUS BANK",
+      "bankCode": "101",
+      "sortCode": "101150001"
+    },
+    {
+      "name": "PRUDENT MICROFINANCE BANK",
+      "bankCode": "090690",
+      "sortCode": "F91150001"
+    },
+    {
+      "name": "PURPLEMONEY MICROFINANCE BANK",
+      "bankCode": "090303",
+      "sortCode": "B49150001"
+    },
+    {
+      "name": "PYRAMID MICROFINANCE BANK",
+      "bankCode": "090657",
+      "sortCode": "F46150001"
+    },
+    {
+      "name": "QUBE MICROFINANCE BANK",
+      "bankCode": "090569",
+      "sortCode": "E70150001"
+    },
+    {
+      "name": "QUICKFUND MICROFINANCE BANK",
+      "bankCode": "090261",
+      "sortCode": "B11150001"
+    },
+    {
+      "name": "RAHAMA MICROFINANCE BANK",
+      "bankCode": "090170",
+      "sortCode": "A90150001"
+    },
+    {
+      "name": "RAND MERCHANT BANK",
+      "bankCode": "000024",
+      "sortCode": "502150018"
+    },
+    {
+      "name": "RANDALPHA MICROFINANCE BANK",
+      "bankCode": "090496",
+      "sortCode": "E34150001"
+    },
+    {
+      "name": "RAYYAN MICROFINANCE BANK",
+      "bankCode": "090616",
+      "sortCode": "F01150001"
+    },
+    {
+      "name": "REFUGE MORTGAGE BANK",
+      "bankCode": "070011",
+      "sortCode": "A40150001"
+    },
+    {
+      "name": "REGENT MICROFINANCE BANK",
+      "bankCode": "090125",
+      "sortCode": "A26150001"
+    },
+    {
+      "name": "REHOBOTH MICROFINANCE BANK",
+      "bankCode": "090463",
+      "sortCode": "C87150001"
+    },
+    {
+      "name": "RELIANCE MICROFINANCE BANK",
+      "bankCode": "090173",
+      "sortCode": "A85150001"
+    },
+    {
+      "name": "RENMONEY MICROFINANCE BANK",
+      "bankCode": "090198",
+      "sortCode": "B03150001"
+    },
+    {
+      "name": "REPHIDIM MICROFINANCE BANK",
+      "bankCode": "090322",
+      "sortCode": "B67150001"
+    },
+    {
+      "name": "RESIDENT FINTECH LIMITED",
+      "bankCode": "110024",
+      "sortCode": "D87150001"
+    },
+    {
+      "name": "REVELATION MICROFINANCE BANK",
+      "bankCode": "090666",
+      "sortCode": "F55150001"
+    },
+    {
+      "name": "RIC MFB",
+      "bankCode": "090720",
+      "sortCode": "G12150001"
+    },
+    {
+      "name": "RICHWAY MICROFINANCE BANK",
+      "bankCode": "090132",
+      "sortCode": "A39150001"
+    },
+    {
+      "name": "RIGO MICROFINANCE BANK",
+      "bankCode": "090433",
+      "sortCode": "C48150001"
+    },
+    {
+      "name": "RIMA GROWTH PATHWAY MICROFINANCE",
+      "bankCode": "090515",
+      "sortCode": "D79150001"
+    },
+    {
+      "name": "RIMA MICROFINANCE BANK",
+      "bankCode": "090443",
+      "sortCode": "D40150001"
+    },
+    {
+      "name": "ROCKSHIELD MICROFINANCE BANK",
+      "bankCode": "090547",
+      "sortCode": "E27150001"
+    },
+    {
+      "name": "ROYAL BLUE MICROFINANCE BANK",
+      "bankCode": "090622",
+      "sortCode": "F44150001"
+    },
+    {
+      "name": "ROYAL EXCHANGE MICROFINANCE BANK",
+      "bankCode": "090138",
+      "sortCode": "A45A50001"
+    },
+    {
+      "name": "RUBIES MICROFINANCE BANK",
+      "bankCode": "090175",
+      "sortCode": "A87150001"
+    },
+    {
+      "name": "SAFE HAVEN MICROFINANCE BANK",
+      "bankCode": "090286",
+      "sortCode": "B39150001"
+    },
+    {
+      "name": "SAFEGATE MICROFINANCE BANK",
+      "bankCode": "090485",
+      "sortCode": "C75150001"
+    },
+    {
+      "name": "SAFETRUST MORTGAGE BANK",
+      "bankCode": "090006",
+      "sortCode": "403150001"
+    },
+    {
+      "name": "SAGAMU MICROFINANCE BANK",
+      "bankCode": "090140",
+      "sortCode": "A60150001"
+    },
+    {
+      "name": "SAGE GREY FINACE LIMITED",
+      "bankCode": "050003",
+      "sortCode": "E15150001"
+    },
+    {
+      "name": "SEAP MICROFINANCE BANK",
+      "bankCode": "090513",
+      "sortCode": "D69150001"
+    },
+    {
+      "name": "SEED CAPITAL MICROFINANCE BANK",
+      "bankCode": "090112",
+      "sortCode": "609150001"
+    },
+    {
+      "name": "SEEDVEST MICROFINANCE BANK",
+      "bankCode": "090369",
+      "sortCode": "B86150001"
+    },
+    {
+      "name": "SHALOM MICROFINANCE BANK",
+      "bankCode": "090502",
+      "sortCode": "D56150001"
+    },
+    {
+      "name": "SHERPERD TRUST MICROFINANCE BANK",
+      "bankCode": "090401",
+      "sortCode": "C11150001"
+    },
+    {
+      "name": "SHIELD MICROFINANCE BANK",
+      "bankCode": "090559",
+      "sortCode": "E40150001"
+    },
+    {
+      "name": "SHONGOM MICROFINANCE BANK",
+      "bankCode": "090558",
+      "sortCode": "E51150001"
+    },
+    {
+      "name": "SIGNATURE BANK LTD",
+      "bankCode": "106",
+      "sortCode": "106080005"
+    },
+    {
+      "name": "SIMPLE FINANCE LIMITED",
+      "bankCode": "050008",
+      "sortCode": "F06150001"
+    },
+    {
+      "name": "SLS MICROFINANCE BANK",
+      "bankCode": "090449",
+      "sortCode": "C80150001"
+    },
+    {
+      "name": "SMARTCASH PAYMENT SERVICE BANK",
+      "bankCode": "120004",
+      "sortCode": "D71150001"
+    },
+    {
+      "name": "SNOW MICROFINANCE BANK",
+      "bankCode": "090573",
+      "sortCode": "E60150001"
+    },
+    {
+      "name": "SOLID ALLIANZE MICROFINANCE BANK",
+      "bankCode": "090506",
+      "sortCode": "D63150001"
+    },
+    {
+      "name": "SOLIDROCK MICROFINANCE BANK",
+      "bankCode": "090524",
+      "sortCode": "D74150001"
+    },
+    {
+      "name": "SOURCE MICROFINANCE BANK",
+      "bankCode": "090641",
+      "sortCode": "F27150001"
+    },
+    {
+      "name": "SPARKLE",
+      "bankCode": "090325",
+      "sortCode": "B57150001"
+    },
+    {
+      "name": "SPECTRUM MICROFINANCE BANK",
+      "bankCode": "090436",
+      "sortCode": "C56150001"
+    },
+    {
+      "name": "STANBIC-IBTC BANK PLC",
+      "bankCode": "221",
+      "sortCode": "221150014"
+    },
+    {
+      "name": "STANBICMONEY",
+      "bankCode": "100007",
+      "sortCode": "304150001"
+    },
+    {
+      "name": "STANDARD CHARTERED BANK",
+      "bankCode": "068",
+      "sortCode": "068150015"
+    },
+    {
+      "name": "STANDARD MFB",
+      "bankCode": "090182",
+      "sortCode": "C89150001"
+    },
+    {
+      "name": "STANFORD MICROFINANCE BANK",
+      "bankCode": "090162",
+      "sortCode": "A78150001"
+    },
+    {
+      "name": "STATESIDE MICROFINANCE BANK",
+      "bankCode": "090583",
+      "sortCode": "E62150001"
+    },
+    {
+      "name": "STB MORTGAGE BANK",
+      "bankCode": "070022",
+      "sortCode": "C50150001"
+    },
+    {
+      "name": "STELLAS MICROFINANCE BANK",
+      "bankCode": "090262",
+      "sortCode": "B13150001"
+    },
+    {
+      "name": "STERLING BANK",
+      "bankCode": "232",
+      "sortCode": "232150016"
+    },
+    {
+      "name": "STERLING MOBILE",
+      "bankCode": "100022",
+      "sortCode": "326150001"
+    },
+    {
+      "name": "STOCK CORP MICROFINANCE BANK",
+      "bankCode": "090340",
+      "sortCode": "C81150001"
+    },
+    {
+      "name": "SULSPAP MICROFINANCE BANK",
+      "bankCode": "090305",
+      "sortCode": "B50150001"
+    },
+    {
+      "name": "SUNBEAM MICROFINANCE BANK",
+      "bankCode": "090302",
+      "sortCode": "C39150001"
+    },
+    {
+      "name": "SUNTOP MICROFINANCE",
+      "bankCode": "090644",
+      "sortCode": "F33150001"
+    },
+    {
+      "name": "SUNTRUST BANK",
+      "bankCode": "100",
+      "sortCode": "100150001"
+    },
+    {
+      "name": "SUPPORT MICROFINANCE BANK",
+      "bankCode": "090446",
+      "sortCode": "C67150001"
+    },
+    {
+      "name": "SUPREME MICROFINANCE BANK",
+      "bankCode": "090564",
+      "sortCode": "E37150001"
+    },
+    {
+      "name": "TAGPAY (VISUAL ICT)",
+      "bankCode": "100023",
+      "sortCode": "328150001"
+    },
+    {
+      "name": "TAJ_PINSPAY",
+      "bankCode": "080002",
+      "sortCode": "D58150001"
+    },
+    {
+      "name": "TAJBANK",
+      "bankCode": "302",
+      "sortCode": "302080016"
+    },
+    {
+      "name": "TANADI MICROFINANCE BANK",
+      "bankCode": "090560",
+      "sortCode": "E39150001"
+    },
+    {
+      "name": "TANGALE MICROFINANCE BANK",
+      "bankCode": "090638",
+      "sortCode": "F26150001"
+    },
+    {
+      "name": "TANGERINE MONEY",
+      "bankCode": "090426",
+      "sortCode": "C38150001"
+    },
+    {
+      "name": "TASUED MICROFINANCE BANK",
+      "bankCode": "090593",
+      "sortCode": "E86150001"
+    },
+    {
+      "name": "TEASY MOBILE",
+      "bankCode": "100010",
+      "sortCode": "319150001"
+    },
+    {
+      "name": "TEKLA FACTORING AND FINANCE LIMITED",
+      "bankCode": "050007",
+      "sortCode": "E88150001"
+    },
+    {
+      "name": "TENN MFB",
+      "bankCode": "090716",
+      "sortCode": "G10150001"
+    },
+    {
+      "name": "THE MILLENNIUM MFB",
+      "bankCode": "090711",
+      "sortCode": "G03150001"
+    },
+    {
+      "name": "THINK FINANCE MICROFINANCE BANK",
+      "bankCode": "090373",
+      "sortCode": "B84150001"
+    },
+    {
+      "name": "TITAN TRUST BANK LTD",
+      "bankCode": "102",
+      "sortCode": "102150001"
+    },
+    {
+      "name": "TITAN-PAYSTACK",
+      "bankCode": "100039",
+      "sortCode": "E14150001"
+    },
+    {
+      "name": "TOFA MFB",
+      "bankCode": "090714",
+      "sortCode": "G04150001"
+    },
+    {
+      "name": "TOTAL TRUST MICROFINANCE BANK",
+      "bankCode": "090613",
+      "sortCode": "F14150001"
+    },
+    {
+      "name": "TREASURES MICROFINANCE BANK",
+      "bankCode": "090663",
+      "sortCode": "F58150001"
+    },
+    {
+      "name": "TRIDENT MICROFINANCE BANK",
+      "bankCode": "090146",
+      "sortCode": "A54150001"
+    },
+    {
+      "name": "TRINITY FINANCIAL",
+      "bankCode": "050014",
+      "sortCode": "E95150001"
+    },
+    {
+      "name": "TRIPLE A MICROFINANCE BANK",
+      "bankCode": "090525",
+      "sortCode": "D84150001"
+    },
+    {
+      "name": "TRIVES FINANCE COMPANY LTD",
+      "bankCode": "050023",
+      "sortCode": "F69150001"
+    },
+    {
+      "name": "TRUST MICROFINANCE BANK",
+      "bankCode": "090327",
+      "sortCode": "B66150001"
+    },
+    {
+      "name": "TRUSTBANC J6 MICROFINANCE BANK",
+      "bankCode": "090123",
+      "sortCode": "A25150001"
+    },
+    {
+      "name": "TRUSTBOND MORTGAGE",
+      "bankCode": "090005",
+      "sortCode": "523150001"
+    },
+    {
+      "name": "TRUSTFUND MICROFINANCE BANK",
+      "bankCode": "090276",
+      "sortCode": "B24150001"
+    },
+    {
+      "name": "U & C MICROFINANCE BANK",
+      "bankCode": "090315",
+      "sortCode": "B81150001"
+    },
+    {
+      "name": "UBA PLC.",
+      "bankCode": "033",
+      "sortCode": "033150011"
+    },
+    {
+      "name": "UDA MICROFINANCE BANK",
+      "bankCode": "090403",
+      "sortCode": "E18150001"
+    },
+    {
+      "name": "UHURU MICROFINANCE BANK",
+      "bankCode": "090517",
+      "sortCode": "D72150001"
+    },
+    {
+      "name": "UMMAH MICROFINANCE BANK",
+      "bankCode": "090609",
+      "sortCode": "E93150001"
+    },
+    {
+      "name": "UMUCHUKWU MICROFINANCE BANK",
+      "bankCode": "090652",
+      "sortCode": "F38150001"
+    },
+    {
+      "name": "UMUNNACHI MICROFINANCE BANK",
+      "bankCode": "090510",
+      "sortCode": "D64150001"
+    },
+    {
+      "name": "UNAAB MICROFINANCE BANK",
+      "bankCode": "090331",
+      "sortCode": "B83150001"
+    },
+    {
+      "name": "UNIBADAN MICROFINANCE BANK",
+      "bankCode": "090461",
+      "sortCode": "C76150001"
+    },
+    {
+      "name": "UNIBEN MICROFINANCE BANK",
+      "bankCode": "090266",
+      "sortCode": "B15150001"
+    },
+    {
+      "name": "UNICAL MICROFINANCE BANK",
+      "bankCode": "090193",
+      "sortCode": "B01150001"
+    },
+    {
+      "name": "UNIFUND MICROFINANCE BANK LIMITED",
+      "bankCode": "090637",
+      "sortCode": "F28150001"
+    },
+    {
+      "name": "UNIILORIN MICROFINANCE BANK",
+      "bankCode": "090341",
+      "sortCode": "C58150001"
+    },
+    {
+      "name": "UNILAG MICROFINANCE BANK",
+      "bankCode": "090452",
+      "sortCode": "C69150001"
+    },
+    {
+      "name": "UNIMAID MICROFINANCE BANK",
+      "bankCode": "090464",
+      "sortCode": "C92150001"
+    },
+    {
+      "name": "UNION BANK",
+      "bankCode": "032",
+      "sortCode": "032154568"
+    },
+    {
+      "name": "UNITY BANK PLC",
+      "bankCode": "215",
+      "sortCode": "215153593"
+    },
+    {
+      "name": "UNIUYO MICROFINANCE BANK",
+      "bankCode": "090338",
+      "sortCode": "C94150001"
+    },
+    {
+      "name": "UNN MICROFINANCE BANK",
+      "bankCode": "090251",
+      "sortCode": "B06150001"
+    },
+    {
+      "name": "URE MICROFINANCE BANK",
+      "bankCode": "090619",
+      "sortCode": "F92150001"
+    },
+    {
+      "name": "UZONDU MF BANK",
+      "bankCode": "090453",
+      "sortCode": "C90150001"
+    },
+    {
+      "name": "VALE FINANCE LIMITED",
+      "bankCode": "050020",
+      "sortCode": "F47150001"
+    },
+    {
+      "name": "VERDANT MICROFINANCE BANK",
+      "bankCode": "090474",
+      "sortCode": "D04150001"
+    },
+    {
+      "name": "VFD MICROFINANCE BANK",
+      "bankCode": "090110",
+      "sortCode": "566150001"
+    },
+    {
+      "name": "VIRTUE MICROFINANCE BANK",
+      "bankCode": "090150",
+      "sortCode": "A62150001"
+    },
+    {
+      "name": "VISA MICROFINANCE BANK",
+      "bankCode": "090139",
+      "sortCode": "A48150001"
+    },
+    {
+      "name": "VTNETWORK",
+      "bankCode": "100012",
+      "sortCode": "320150001"
+    },
+    {
+      "name": "WAYA MICROFINANCE BANK",
+      "bankCode": "090590",
+      "sortCode": "E72150001"
+    },
+    {
+      "name": "WEMA BANK PLC",
+      "bankCode": "035",
+      "sortCode": "035150103"
+    },
+    {
+      "name": "WETLAND MICROFINANCE BANK",
+      "bankCode": "090120",
+      "sortCode": "A21150001"
+    },
+    {
+      "name": "WINVIEW MICROFINANCE BANK",
+      "bankCode": "090419",
+      "sortCode": "C32150001"
+    },
+    {
+      "name": "WUDIL MICROFINANCE BANK",
+      "bankCode": "090253",
+      "sortCode": "F68150001"
+    },
+    {
+      "name": "XPRESS WALLET",
+      "bankCode": "100040",
+      "sortCode": "F32150001"
+    },
+    {
+      "name": "XSLNCE MICROFINANCE BANK",
+      "bankCode": "090124",
+      "sortCode": "A36150001"
+    },
+    {
+      "name": "YCT MICROFINANCE BANK",
+      "bankCode": "090466",
+      "sortCode": "C95150001"
+    },
+    {
+      "name": "YES MICROFINANCE BANK",
+      "bankCode": "090142",
+      "sortCode": "A47150001"
+    },
+    {
+      "name": "YOBE MICROFINANCE BANK",
+      "bankCode": "090252",
+      "sortCode": "C21150001"
+    },
+    {
+      "name": "ZEDVANCE FINANCE LIMITED",
+      "bankCode": "050019",
+      "sortCode": "G15150001"
+    },
+    {
+      "name": "ZENITH BANK EAZYMONEY",
+      "bankCode": "100018",
+      "sortCode": "322150001"
+    },
+    {
+      "name": "ZENITH BANK PLC",
+      "bankCode": "057",
+      "sortCode": "057150013"
+    },
+    {
+      "name": "ZENITH EAZY WALLET",
+      "bankCode": "100034",
+      "sortCode": "C06150001"
+    },
+    {
+      "name": "ZIKORA MICROFINANCE BANK",
+      "bankCode": "090504",
+      "sortCode": "D57150001"
+    }
+  ]
+}

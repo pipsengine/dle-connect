@@ -1,0 +1,47 @@
+[
+  {
+    "id": "reg-dle-emp-00001",
+    "employeeId": "DLE-EMP-00001",
+    "reviewStatus": "Verified",
+    "verifiedBy": "Attendance Control Desk",
+    "payrollReady": true,
+    "note": null,
+    "reviewedAt": "2026-05-29T08:20:00.000Z"
+  },
+  {
+    "id": "reg-dle-emp-00002",
+    "employeeId": "DLE-EMP-00002",
+    "reviewStatus": "Flagged",
+    "verifiedBy": "Attendance Control Desk",
+    "payrollReady": false,
+    "note": "Late arrival above tolerance threshold requires supervisor comment.",
+    "reviewedAt": "2026-05-29T08:40:00.000Z"
+  },
+  {
+    "id": "reg-dle-emp-00010",
+    "employeeId": "DLE-EMP-00010",
+    "reviewStatus": "Flagged",
+    "verifiedBy": "Attendance Control Desk",
+    "payrollReady": false,
+    "note": "Absence has not yet been regularized.",
+    "reviewedAt": "2026-05-29T09:00:00.000Z"
+  },
+  {
+    "id": "reg-dle-emp-00012",
+    "employeeId": "DLE-EMP-00012",
+    "reviewStatus": "Pending Review",
+    "verifiedBy": "Attendance Control Desk",
+    "payrollReady": false,
+    "note": "Night shift still open; awaiting shift close.",
+    "reviewedAt": "2026-05-29T09:10:00.000Z"
+  },
+  {
+    "id": "reg-dle-emp-00018",
+    "employeeId": "DLE-EMP-00018",
+    "reviewStatus": "Flagged",
+    "verifiedBy": "Attendance Control Desk",
+    "payrollReady": false,
+    "note": "No punch on record and no exception approval yet.",
+    "reviewedAt": "2026-05-29T09:15:00.000Z"
+  }
+]

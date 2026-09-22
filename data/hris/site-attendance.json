@@ -1,0 +1,52 @@
+[
+  {
+    "id": "site-att-lagos-head-office",
+    "location": "Lagos HQ",
+    "site": "Head Office",
+    "escalationStatus": "Normal Monitoring",
+    "actionOwner": "B. Adeyemi",
+    "transportRisk": "Low",
+    "nextReviewAt": "2026-05-29T12:00:00.000Z",
+    "controlNote": "Corporate site operating within expected attendance tolerance."
+  },
+  {
+    "id": "site-att-portharcourt-onne-yard",
+    "location": "Port Harcourt",
+    "site": "Onne Yard",
+    "escalationStatus": "HR Escalation",
+    "actionOwner": "M. Ibrahim",
+    "transportRisk": "Medium",
+    "nextReviewAt": "2026-05-29T10:30:00.000Z",
+    "controlNote": "Late arrivals and one absence require supervisor confirmation and cover review."
+  },
+  {
+    "id": "site-att-warri-fabrication-yard",
+    "location": "Warri",
+    "site": "Fabrication Yard",
+    "escalationStatus": "Supervisor Follow-Up",
+    "actionOwner": "K. Johnson",
+    "transportRisk": "Medium",
+    "nextReviewAt": "2026-05-29T11:00:00.000Z",
+    "controlNote": "Monitor shift punctuality and confirm yard access timing."
+  },
+  {
+    "id": "site-att-bonny-marine-base",
+    "location": "Bonny",
+    "site": "Marine Base",
+    "escalationStatus": "Critical Response",
+    "actionOwner": "S. Danjuma",
+    "transportRisk": "High",
+    "nextReviewAt": "2026-05-29T09:15:00.000Z",
+    "controlNote": "Terminal outage and attendance exceptions require immediate operational oversight."
+  },
+  {
+    "id": "site-att-abuja-liaison-office",
+    "location": "Abuja",
+    "site": "Liaison Office",
+    "escalationStatus": "Normal Monitoring",
+    "actionOwner": "L. Yusuf",
+    "transportRisk": "Low",
+    "nextReviewAt": "2026-05-29T13:00:00.000Z",
+    "controlNote": "Small site monitored through mobile attendance and remote coverage."
+  }
+]

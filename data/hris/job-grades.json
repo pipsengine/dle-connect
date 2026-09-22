@@ -1,0 +1,242 @@
+[
+  {
+    "id": "jg-01",
+    "code": "G01",
+    "name": "Executive Leadership",
+    "family": "Executive",
+    "level": "Strategic",
+    "minSalaryNgn": 180000,
+    "midpointSalaryNgn": 235000,
+    "maxSalaryNgn": 310000,
+    "employeeCount": 6,
+    "openPositions": 1,
+    "successionCoveragePct": 78,
+    "attritionRiskPct": 6,
+    "internalMobilityPct": 12,
+    "averageTenureYears": 9.4,
+    "femaleRepresentationPct": 33,
+    "healthStatus": "Healthy",
+    "benchmarkPosition": "Executive Director",
+    "nextGradeCode": null,
+    "keyRoles": [
+      "Executive Director, Operations",
+      "Executive Director, Projects",
+      "Executive Director, Corporate Services"
+    ],
+    "gradeMix": [
+      {
+        "unit": "Corporate Services",
+        "headcount": 2
+      },
+      {
+        "unit": "Projects Division",
+        "headcount": 2
+      },
+      {
+        "unit": "Operations Division",
+        "headcount": 2
+      }
+    ],
+    "description": "Top strategic leadership grade for enterprise direction, governance, and P&L accountability."
+  },
+  {
+    "id": "jg-02",
+    "code": "G02",
+    "name": "General Management",
+    "family": "Management",
+    "level": "Senior",
+    "minSalaryNgn": 105000,
+    "midpointSalaryNgn": 138000,
+    "maxSalaryNgn": 172000,
+    "employeeCount": 18,
+    "openPositions": 2,
+    "successionCoveragePct": 72,
+    "attritionRiskPct": 8,
+    "internalMobilityPct": 18,
+    "averageTenureYears": 7.8,
+    "femaleRepresentationPct": 28,
+    "healthStatus": "Needs Attention",
+    "benchmarkPosition": "General Manager / Head of Function",
+    "nextGradeCode": "G01",
+    "keyRoles": [
+      "GM, Fabrication",
+      "GM, Field Execution",
+      "Head, Human Capital"
+    ],
+    "gradeMix": [
+      {
+        "unit": "Operations Division",
+        "headcount": 8
+      },
+      {
+        "unit": "Projects Division",
+        "headcount": 5
+      },
+      {
+        "unit": "Corporate Services",
+        "headcount": 5
+      }
+    ],
+    "description": "Senior leadership grade for business-unit heads and enterprise functional leads."
+  },
+  {
+    "id": "jg-03",
+    "code": "G03",
+    "name": "Functional Leadership",
+    "family": "Management",
+    "level": "Senior",
+    "minSalaryNgn": 72000,
+    "midpointSalaryNgn": 91000,
+    "maxSalaryNgn": 118000,
+    "employeeCount": 41,
+    "openPositions": 5,
+    "successionCoveragePct": 69,
+    "attritionRiskPct": 11,
+    "internalMobilityPct": 22,
+    "averageTenureYears": 6.1,
+    "femaleRepresentationPct": 31,
+    "healthStatus": "Needs Attention",
+    "benchmarkPosition": "Manager / Lead Specialist",
+    "nextGradeCode": "G02",
+    "keyRoles": [
+      "Manager, HR Operations",
+      "Manager, Planning",
+      "Lead Project Engineer"
+    ],
+    "gradeMix": [
+      {
+        "unit": "Projects Division",
+        "headcount": 17
+      },
+      {
+        "unit": "Operations Division",
+        "headcount": 12
+      },
+      {
+        "unit": "Corporate Services",
+        "headcount": 12
+      }
+    ],
+    "description": "Functional leadership grade for managers and senior specialists running teams or critical disciplines."
+  },
+  {
+    "id": "jg-04",
+    "code": "G04",
+    "name": "Professional Core",
+    "family": "Professional",
+    "level": "Mid",
+    "minSalaryNgn": 36000,
+    "midpointSalaryNgn": 47000,
+    "maxSalaryNgn": 62000,
+    "employeeCount": 146,
+    "openPositions": 9,
+    "successionCoveragePct": 74,
+    "attritionRiskPct": 10,
+    "internalMobilityPct": 26,
+    "averageTenureYears": 4.8,
+    "femaleRepresentationPct": 36,
+    "healthStatus": "Healthy",
+    "benchmarkPosition": "Engineer / Analyst / Officer",
+    "nextGradeCode": "G03",
+    "keyRoles": [
+      "Project Engineer",
+      "HR Analyst",
+      "Cost Controller"
+    ],
+    "gradeMix": [
+      {
+        "unit": "Projects Division",
+        "headcount": 61
+      },
+      {
+        "unit": "Operations Division",
+        "headcount": 47
+      },
+      {
+        "unit": "Corporate Services",
+        "headcount": 38
+      }
+    ],
+    "description": "Core professional grade for engineers, analysts, commercial specialists, and experienced officers."
+  },
+  {
+    "id": "jg-05",
+    "code": "G05",
+    "name": "Technical Specialists",
+    "family": "Technical",
+    "level": "Mid",
+    "minSalaryNgn": 28000,
+    "midpointSalaryNgn": 36500,
+    "maxSalaryNgn": 45500,
+    "employeeCount": 212,
+    "openPositions": 14,
+    "successionCoveragePct": 63,
+    "attritionRiskPct": 14,
+    "internalMobilityPct": 19,
+    "averageTenureYears": 4.1,
+    "femaleRepresentationPct": 18,
+    "healthStatus": "Critical",
+    "benchmarkPosition": "Supervisor / Specialist Technician",
+    "nextGradeCode": "G04",
+    "keyRoles": [
+      "Site Supervisor",
+      "Instrument Specialist",
+      "QA Specialist"
+    ],
+    "gradeMix": [
+      {
+        "unit": "Operations Division",
+        "headcount": 118
+      },
+      {
+        "unit": "Projects Division",
+        "headcount": 66
+      },
+      {
+        "unit": "Corporate Services",
+        "headcount": 28
+      }
+    ],
+    "description": "High-demand specialist and supervisory grade supporting field execution, maintenance, and technical delivery."
+  },
+  {
+    "id": "jg-06",
+    "code": "G06",
+    "name": "Operations Support",
+    "family": "Operations Support",
+    "level": "Entry",
+    "minSalaryNgn": 14000,
+    "midpointSalaryNgn": 18800,
+    "maxSalaryNgn": 24500,
+    "employeeCount": 327,
+    "openPositions": 11,
+    "successionCoveragePct": 71,
+    "attritionRiskPct": 9,
+    "internalMobilityPct": 24,
+    "averageTenureYears": 3.6,
+    "femaleRepresentationPct": 29,
+    "healthStatus": "Healthy",
+    "benchmarkPosition": "Coordinator / Assistant / Technician",
+    "nextGradeCode": "G05",
+    "keyRoles": [
+      "Technician",
+      "Project Coordinator",
+      "Administrative Officer"
+    ],
+    "gradeMix": [
+      {
+        "unit": "Operations Division",
+        "headcount": 149
+      },
+      {
+        "unit": "Projects Division",
+        "headcount": 96
+      },
+      {
+        "unit": "Corporate Services",
+        "headcount": 82
+      }
+    ],
+    "description": "Entry and support grade covering coordinators, assistants, technicians, and junior operational staff."
+  }
+]

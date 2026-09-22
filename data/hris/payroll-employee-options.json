@@ -1,0 +1,1490 @@
+[
+  {
+    "employeeId": "0000",
+    "employeeCode": "P0000",
+    "nhfApplicable": false,
+    "updatedAt": "2026-06-27T00:30:08.003Z",
+    "updatedBy": "Sage PAYE rules seed",
+    "payeCalculation": {
+      "excludedEarningCodes": [
+        "LUMPSUMTAX"
+      ],
+      "includeRefundInTaxable": false,
+      "disablePensionPayeRelief": false,
+      "annualRentRelief": 0
+    }
+  },
+  {
+    "employeeId": "0013",
+    "employeeCode": "P0013",
+    "nhfApplicable": false,
+    "updatedAt": "2026-06-27T00:30:08.334Z",
+    "updatedBy": "Sage PAYE rules seed",
+    "payeCalculation": {
+      "excludedEarningCodes": [
+        "SNR_MEDICAL",
+        "SNR_NJIC",
+        "SNR_UTILITIES"
+      ],
+      "includeRefundInTaxable": false,
+      "disablePensionPayeRelief": true,
+      "annualRentRelief": 250000,
+      "monthlyPayeOverride": 183595.27
+    }
+  },
+  {
+    "employeeId": "0027",
+    "employeeCode": "P0027",
+    "nhfApplicable": true,
+    "updatedAt": "2026-06-27T00:18:59.190Z",
+    "updatedBy": "Sage cutover sync"
+  },
+  {
+    "employeeId": "0033",
+    "employeeCode": "P0033",
+    "nhfApplicable": false,
+    "updatedAt": "2026-06-27T00:18:59.190Z",
+    "updatedBy": "Sage cutover sync"
+  },
+  {
+    "employeeId": "0040",
+    "employeeCode": "P0040",
+    "nhfApplicable": false,
+    "updatedAt": "2026-06-27T00:18:59.190Z",
+    "updatedBy": "Sage cutover sync"
+  },
+  {
+    "employeeId": "0043",
+    "employeeCode": "P0043",
+    "nhfApplicable": false,
+    "updatedAt": "2026-06-27T00:18:59.190Z",
+    "updatedBy": "Sage cutover sync"
+  },
+  {
+    "employeeId": "0044",
+    "employeeCode": "P0044",
+    "nhfApplicable": false,
+    "updatedAt": "2026-06-27T00:18:59.190Z",
+    "updatedBy": "Sage cutover sync"
+  },
+  {
+    "employeeId": "0045",
+    "employeeCode": "P0045",
+    "nhfApplicable": false,
+    "updatedAt": "2026-06-27T00:18:59.190Z",
+    "updatedBy": "Sage cutover sync"
+  },
+  {
+    "employeeId": "0050",
+    "employeeCode": "P0050",
+    "nhfApplicable": false,
+    "updatedAt": "2026-06-27T00:18:59.190Z",
+    "updatedBy": "Sage cutover sync"
+  },
+  {
+    "employeeId": "0051",
+    "employeeCode": "P0051",
+    "nhfApplicable": false,
+    "updatedAt": "2026-06-27T00:18:59.190Z",
+    "updatedBy": "Sage cutover sync"
+  },
+  {
+    "employeeId": "0059",
+    "employeeCode": "P0059",
+    "nhfApplicable": false,
+    "updatedAt": "2026-06-27T00:18:59.190Z",
+    "updatedBy": "Sage cutover sync"
+  },
+  {
+    "employeeId": "0060",
+    "employeeCode": "P0060",
+    "nhfApplicable": false,
+    "updatedAt": "2026-06-27T00:18:59.190Z",
+    "updatedBy": "Sage cutover sync"
+  },
+  {
+    "employeeId": "0061",
+    "employeeCode": "P0061",
+    "nhfApplicable": false,
+    "updatedAt": "2026-06-27T00:18:59.190Z",
+    "updatedBy": "Sage cutover sync"
+  },
+  {
+    "employeeId": "0072",
+    "employeeCode": "P0072",
+    "nhfApplicable": false,
+    "updatedAt": "2026-06-27T00:18:59.190Z",
+    "updatedBy": "Sage cutover sync"
+  },
+  {
+    "employeeId": "0076",
+    "employeeCode": "P0076",
+    "nhfApplicable": false,
+    "updatedAt": "2026-06-27T00:18:59.190Z",
+    "updatedBy": "Sage cutover sync"
+  },
+  {
+    "employeeId": "0080",
+    "employeeCode": "0080",
+    "nhfApplicable": false,
+    "updatedAt": "2026-06-19T00:00:00.000Z",
+    "updatedBy": "Payroll Officer"
+  },
+  {
+    "employeeId": "0092",
+    "employeeCode": "P0092",
+    "nhfApplicable": false,
+    "updatedAt": "2026-06-27T00:27:33.422Z",
+    "updatedBy": "Sage PAYE rules seed"
+  },
+  {
+    "employeeId": "0181",
+    "employeeCode": "P0181",
+    "nhfApplicable": true,
+    "updatedAt": "2026-06-27T00:18:59.190Z",
+    "updatedBy": "Sage cutover sync"
+  },
+  {
+    "employeeId": "0182",
+    "employeeCode": "P0182",
+    "nhfApplicable": false,
+    "updatedAt": "2026-06-27T00:18:59.190Z",
+    "updatedBy": "Sage cutover sync"
+  },
+  {
+    "employeeId": "0185",
+    "employeeCode": "P0185",
+    "nhfApplicable": false,
+    "updatedAt": "2026-06-27T00:18:59.190Z",
+    "updatedBy": "Sage cutover sync"
+  },
+  {
+    "employeeId": "0194",
+    "employeeCode": "P0194",
+    "nhfApplicable": false,
+    "updatedAt": "2026-06-27T00:18:59.190Z",
+    "updatedBy": "Sage cutover sync"
+  },
+  {
+    "employeeId": "0268",
+    "employeeCode": "P0268",
+    "nhfApplicable": false,
+    "updatedAt": "2026-06-27T00:18:59.190Z",
+    "updatedBy": "Sage cutover sync"
+  },
+  {
+    "employeeId": "0272",
+    "employeeCode": "P0272",
+    "nhfApplicable": true,
+    "updatedAt": "2026-06-27T00:18:59.190Z",
+    "updatedBy": "Sage cutover sync"
+  },
+  {
+    "employeeId": "0277",
+    "employeeCode": "P0277",
+    "nhfApplicable": false,
+    "updatedAt": "2026-06-27T00:18:59.190Z",
+    "updatedBy": "Sage cutover sync"
+  },
+  {
+    "employeeId": "0279",
+    "employeeCode": "P0279",
+    "nhfApplicable": true,
+    "updatedAt": "2026-06-27T00:18:59.190Z",
+    "updatedBy": "Sage cutover sync"
+  },
+  {
+    "employeeId": "0289",
+    "employeeCode": "P0289",
+    "nhfApplicable": true,
+    "updatedAt": "2026-06-27T00:18:59.190Z",
+    "updatedBy": "Sage cutover sync"
+  },
+  {
+    "employeeId": "0290",
+    "employeeCode": "P0290",
+    "nhfApplicable": false,
+    "updatedAt": "2026-06-27T00:18:59.190Z",
+    "updatedBy": "Sage cutover sync"
+  },
+  {
+    "employeeId": "0295",
+    "employeeCode": "P0295",
+    "nhfApplicable": false,
+    "updatedAt": "2026-06-27T00:18:59.190Z",
+    "updatedBy": "Sage cutover sync"
+  },
+  {
+    "employeeId": "0309",
+    "employeeCode": "0309",
+    "nhfApplicable": true,
+    "annualRentRelief": 500000,
+    "updatedAt": "2026-06-19T00:00:00.000Z",
+    "updatedBy": "Payroll Officer"
+  },
+  {
+    "employeeId": "0315",
+    "employeeCode": "P0315",
+    "nhfApplicable": false,
+    "updatedAt": "2026-06-27T00:18:59.190Z",
+    "updatedBy": "Sage cutover sync"
+  },
+  {
+    "employeeId": "0316",
+    "employeeCode": "P0316",
+    "nhfApplicable": true,
+    "updatedAt": "2026-06-27T00:18:59.190Z",
+    "updatedBy": "Sage cutover sync"
+  },
+  {
+    "employeeId": "0318",
+    "employeeCode": "P0318",
+    "nhfApplicable": false,
+    "updatedAt": "2026-06-27T00:18:59.190Z",
+    "updatedBy": "Sage cutover sync"
+  },
+  {
+    "employeeId": "0320",
+    "employeeCode": "P0320",
+    "nhfApplicable": false,
+    "updatedAt": "2026-06-27T00:18:59.190Z",
+    "updatedBy": "Sage cutover sync"
+  },
+  {
+    "employeeId": "0321",
+    "employeeCode": "P0321",
+    "nhfApplicable": false,
+    "updatedAt": "2026-06-27T00:18:59.190Z",
+    "updatedBy": "Sage cutover sync"
+  },
+  {
+    "employeeId": "0330",
+    "employeeCode": "P0330",
+    "nhfApplicable": false,
+    "updatedAt": "2026-06-27T00:18:59.190Z",
+    "updatedBy": "Sage cutover sync"
+  },
+  {
+    "employeeId": "0334",
+    "employeeCode": "P0334",
+    "nhfApplicable": false,
+    "updatedAt": "2026-06-27T00:18:59.190Z",
+    "updatedBy": "Sage cutover sync"
+  },
+  {
+    "employeeId": "0364",
+    "employeeCode": "P0364",
+    "nhfApplicable": false,
+    "updatedAt": "2026-08-31T17:58:17.418Z",
+    "updatedBy": "P0364 salary replicated from P0458",
+    "payeCalculation": {
+      "excludedEarningCodes": [],
+      "includeRefundInTaxable": false,
+      "disablePensionPayeRelief": false,
+      "annualRentRelief": 500000,
+      "usdFlatRate": 0.22,
+      "monthlyPayeOverride": 956
+    }
+  },
+  {
+    "employeeId": "0366",
+    "employeeCode": "0366",
+    "nhfApplicable": true,
+    "annualRentRelief": 500000,
+    "updatedAt": "2026-06-19T00:00:00.000Z",
+    "updatedBy": "Payroll Officer"
+  },
+  {
+    "employeeId": "0370",
+    "employeeCode": "P0370",
+    "nhfApplicable": false,
+    "updatedAt": "2026-06-27T00:30:08.367Z",
+    "updatedBy": "Sage PAYE rules seed",
+    "payeCalculation": {
+      "excludedEarningCodes": [],
+      "includeRefundInTaxable": false,
+      "disablePensionPayeRelief": false,
+      "annualRentRelief": 500000
+    }
+  },
+  {
+    "employeeId": "0380",
+    "employeeCode": "P0380",
+    "nhfApplicable": false,
+    "updatedAt": "2026-06-27T00:18:59.190Z",
+    "updatedBy": "Sage cutover sync"
+  },
+  {
+    "employeeId": "0384",
+    "employeeCode": "P0384",
+    "nhfApplicable": true,
+    "updatedAt": "2026-06-27T00:18:59.190Z",
+    "updatedBy": "Sage cutover sync"
+  },
+  {
+    "employeeId": "0385",
+    "employeeCode": "P0385",
+    "nhfApplicable": false,
+    "updatedAt": "2026-06-27T00:27:33.453Z",
+    "updatedBy": "Sage PAYE rules seed"
+  },
+  {
+    "employeeId": "0387",
+    "employeeCode": "P0387",
+    "nhfApplicable": false,
+    "updatedAt": "2026-06-27T00:18:59.190Z",
+    "updatedBy": "Sage cutover sync"
+  },
+  {
+    "employeeId": "0388",
+    "employeeCode": "P0388",
+    "nhfApplicable": true,
+    "updatedAt": "2026-06-27T00:18:59.190Z",
+    "updatedBy": "Sage cutover sync"
+  },
+  {
+    "employeeId": "0392",
+    "employeeCode": "P0392",
+    "nhfApplicable": true,
+    "updatedAt": "2026-06-27T00:18:59.190Z",
+    "updatedBy": "Sage cutover sync"
+  },
+  {
+    "employeeId": "0399",
+    "employeeCode": "P0399",
+    "nhfApplicable": false,
+    "updatedAt": "2026-06-27T00:18:59.190Z",
+    "updatedBy": "Sage cutover sync"
+  },
+  {
+    "employeeId": "0413",
+    "employeeCode": "P0413",
+    "nhfApplicable": false,
+    "updatedAt": "2026-09-08T11:09:01.834Z",
+    "updatedBy": "Activate DLE USD MD/Nayak",
+    "excludedFromPayrollRun": false,
+    "setupAssignedToPayroll": true,
+    "payrollGroup": "DLE_USD"
+  },
+  {
+    "employeeId": "0415",
+    "employeeCode": "P0415",
+    "nhfApplicable": false,
+    "updatedAt": "2026-06-27T00:18:59.190Z",
+    "updatedBy": "Sage cutover sync"
+  },
+  {
+    "employeeId": "0420",
+    "employeeCode": "0420",
+    "nhfApplicable": true,
+    "annualRentRelief": 521880,
+    "updatedAt": "2026-06-27T00:30:08.404Z",
+    "updatedBy": "Sage PAYE rules seed",
+    "payeCalculation": {
+      "excludedEarningCodes": [
+        "SNM_HOUS"
+      ],
+      "includeRefundInTaxable": false,
+      "disablePensionPayeRelief": false,
+      "annualRentRelief": 521880
+    }
+  },
+  {
+    "employeeId": "0425",
+    "employeeCode": "P0425",
+    "nhfApplicable": false,
+    "updatedAt": "2026-06-27T00:30:08.447Z",
+    "updatedBy": "Sage PAYE rules seed",
+    "payeCalculation": {
+      "excludedEarningCodes": [
+        "MGT_TRANS",
+        "MGT_UTILITY"
+      ],
+      "includeRefundInTaxable": true,
+      "disablePensionPayeRelief": true,
+      "annualRentRelief": 400000,
+      "monthlyPayeOverride": 727964.05
+    }
+  },
+  {
+    "employeeId": "0429",
+    "employeeCode": "P0429",
+    "nhfApplicable": false,
+    "updatedAt": "2026-06-27T00:18:59.190Z",
+    "updatedBy": "Sage cutover sync"
+  },
+  {
+    "employeeId": "0432",
+    "employeeCode": "P0432",
+    "nhfApplicable": false,
+    "updatedAt": "2026-06-27T00:27:33.483Z",
+    "updatedBy": "Sage PAYE rules seed"
+  },
+  {
+    "employeeId": "0433",
+    "employeeCode": "P0433",
+    "nhfApplicable": true,
+    "updatedAt": "2026-06-27T00:30:08.457Z",
+    "updatedBy": "Sage PAYE rules seed",
+    "payeCalculation": {
+      "excludedEarningCodes": [],
+      "includeRefundInTaxable": false,
+      "disablePensionPayeRelief": false,
+      "annualRentRelief": 500000
+    }
+  },
+  {
+    "employeeId": "0436",
+    "employeeCode": "P0436",
+    "nhfApplicable": true,
+    "updatedAt": "2026-06-27T00:18:59.190Z",
+    "updatedBy": "Sage cutover sync"
+  },
+  {
+    "employeeId": "0438",
+    "employeeCode": "P0438",
+    "nhfApplicable": true,
+    "updatedAt": "2026-06-27T00:18:59.190Z",
+    "updatedBy": "Sage cutover sync"
+  },
+  {
+    "employeeId": "0442",
+    "employeeCode": "P0442",
+    "nhfApplicable": false,
+    "updatedAt": "2026-08-12T12:35:00.000Z",
+    "updatedBy": "P0442 NGN PAYE: restore 500k rent relief (EE2 washed by PENSION_REFUND)",
+    "payeCalculation": {
+      "excludedEarningCodes": [],
+      "includeRefundInTaxable": false,
+      "disablePensionPayeRelief": false,
+      "annualRentRelief": 500000,
+      "usdFlatRate": 0.22,
+      "monthlyPayeOverride": 982
+    }
+  },
+  {
+    "employeeId": "0443",
+    "employeeCode": "P0443",
+    "nhfApplicable": false,
+    "updatedAt": "2026-06-27T00:18:59.190Z",
+    "updatedBy": "Sage cutover sync"
+  },
+  {
+    "employeeId": "0445",
+    "employeeCode": "P0445",
+    "nhfApplicable": false,
+    "updatedAt": "2026-06-27T00:18:59.190Z",
+    "updatedBy": "Sage cutover sync"
+  },
+  {
+    "employeeId": "0446",
+    "employeeCode": "P0446",
+    "nhfApplicable": false,
+    "updatedAt": "2026-06-27T00:30:08.525Z",
+    "updatedBy": "Sage PAYE rules seed",
+    "payeCalculation": {
+      "excludedEarningCodes": [],
+      "includeRefundInTaxable": true,
+      "disablePensionPayeRelief": true,
+      "annualRentRelief": 0,
+      "monthlyPayeOverride": 34474.25
+    }
+  },
+  {
+    "employeeId": "0447",
+    "employeeCode": "P0447",
+    "nhfApplicable": false,
+    "updatedAt": "2026-06-27T00:18:59.190Z",
+    "updatedBy": "Sage cutover sync"
+  },
+  {
+    "employeeId": "0448",
+    "employeeCode": "P0448",
+    "nhfApplicable": false,
+    "updatedAt": "2026-06-27T00:18:59.190Z",
+    "updatedBy": "Sage cutover sync"
+  },
+  {
+    "employeeId": "0449",
+    "employeeCode": "P0449",
+    "nhfApplicable": false,
+    "updatedAt": "2026-06-27T00:30:08.554Z",
+    "updatedBy": "Sage PAYE rules seed",
+    "payeCalculation": {
+      "excludedEarningCodes": [],
+      "includeRefundInTaxable": false,
+      "disablePensionPayeRelief": false,
+      "annualRentRelief": 500000
+    }
+  },
+  {
+    "employeeId": "0450",
+    "employeeCode": "P0450",
+    "nhfApplicable": false,
+    "updatedAt": "2026-06-27T00:18:59.190Z",
+    "updatedBy": "Sage cutover sync"
+  },
+  {
+    "employeeId": "0452",
+    "employeeCode": "P0452",
+    "nhfApplicable": false,
+    "updatedAt": "2026-06-27T00:27:33.523Z",
+    "updatedBy": "Sage PAYE rules seed"
+  },
+  {
+    "employeeId": "0453",
+    "employeeCode": "P0453",
+    "nhfApplicable": false,
+    "updatedAt": "2026-06-27T00:18:59.190Z",
+    "updatedBy": "Sage cutover sync"
+  },
+  {
+    "employeeId": "0454",
+    "employeeCode": "P0454",
+    "nhfApplicable": true,
+    "updatedAt": "2026-06-27T00:27:33.531Z",
+    "updatedBy": "Sage PAYE rules seed"
+  },
+  {
+    "employeeId": "0455",
+    "employeeCode": "P0455",
+    "nhfApplicable": false,
+    "updatedAt": "2026-06-27T00:30:08.586Z",
+    "updatedBy": "Sage PAYE rules seed",
+    "payeCalculation": {
+      "excludedEarningCodes": [],
+      "includeRefundInTaxable": false,
+      "disablePensionPayeRelief": false,
+      "annualRentRelief": 500000
+    }
+  },
+  {
+    "employeeId": "0457",
+    "employeeCode": "P0457",
+    "nhfApplicable": false,
+    "updatedAt": "2026-08-19T09:20:00.000Z",
+    "updatedBy": "HR: P0457 USD package is $1,000 gross and net (Sage PAYE_EXP 0)",
+    "payeCalculation": {
+      "excludedEarningCodes": [],
+      "includeRefundInTaxable": false,
+      "disablePensionPayeRelief": false,
+      "usdFlatRate": 0,
+      "monthlyPayeOverride": 0
+    }
+  },
+  {
+    "employeeId": "0458",
+    "employeeCode": "P0458",
+    "nhfApplicable": false,
+    "updatedAt": "2026-08-12T12:35:00.000Z",
+    "updatedBy": "P0458 NGN PAYE: restore 500k rent relief (EE2 washed by PENSION_REFUND)",
+    "payeCalculation": {
+      "excludedEarningCodes": [],
+      "includeRefundInTaxable": false,
+      "disablePensionPayeRelief": false,
+      "annualRentRelief": 500000,
+      "usdFlatRate": 0.22,
+      "monthlyPayeOverride": 956
+    }
+  },
+  {
+    "employeeId": "0459",
+    "employeeCode": "P0459",
+    "nhfApplicable": false,
+    "updatedAt": "2026-06-27T00:27:33.633Z",
+    "updatedBy": "Sage PAYE rules seed"
+  },
+  {
+    "employeeId": "0460",
+    "employeeCode": "P0460",
+    "nhfApplicable": false,
+    "updatedAt": "2026-06-27T00:27:33.651Z",
+    "updatedBy": "Sage PAYE rules seed"
+  },
+  {
+    "employeeId": "0461",
+    "employeeCode": "P0461",
+    "nhfApplicable": false,
+    "updatedAt": "2026-06-27T00:18:59.190Z",
+    "updatedBy": "Sage cutover sync"
+  },
+  {
+    "employeeId": "0462",
+    "employeeCode": "P0462",
+    "nhfApplicable": false,
+    "updatedAt": "2026-06-27T00:18:59.190Z",
+    "updatedBy": "Sage cutover sync"
+  },
+  {
+    "employeeId": "0463",
+    "employeeCode": "P0463",
+    "nhfApplicable": false,
+    "updatedAt": "2026-06-27T00:27:33.669Z",
+    "updatedBy": "Sage PAYE rules seed"
+  },
+  {
+    "employeeId": "0464",
+    "employeeCode": "P0464",
+    "nhfApplicable": true,
+    "updatedAt": "2026-06-27T00:18:59.190Z",
+    "updatedBy": "Sage cutover sync"
+  },
+  {
+    "employeeId": "C2763",
+    "employeeCode": "C2763",
+    "excludedFromPayrollRun": true,
+    "updatedBy": "Global Super Administrator",
+    "updatedAt": "2026-06-25T16:56:13.954Z"
+  },
+  {
+    "employeeId": "C2765",
+    "employeeCode": "C2765",
+    "excludedFromPayrollRun": true,
+    "updatedBy": "Global Super Administrator",
+    "updatedAt": "2026-06-25T16:56:33.169Z"
+  },
+  {
+    "employeeId": "C2767",
+    "employeeCode": "C2767",
+    "excludedFromPayrollRun": true,
+    "updatedBy": "Global Super Administrator",
+    "updatedAt": "2026-06-25T16:56:33.219Z"
+  },
+  {
+    "employeeId": "C2768",
+    "employeeCode": "C2768",
+    "excludedFromPayrollRun": true,
+    "updatedBy": "Global Super Administrator",
+    "updatedAt": "2026-06-25T16:56:33.336Z"
+  },
+  {
+    "employeeId": "C2769",
+    "employeeCode": "C2769",
+    "excludedFromPayrollRun": true,
+    "updatedBy": "Global Super Administrator",
+    "updatedAt": "2026-06-25T16:56:34.849Z"
+  },
+  {
+    "employeeId": "C2772",
+    "employeeCode": "C2772",
+    "excludedFromPayrollRun": true,
+    "updatedBy": "Global Super Administrator",
+    "updatedAt": "2026-06-25T16:56:35.124Z"
+  },
+  {
+    "employeeId": "C2774",
+    "employeeCode": "C2774",
+    "excludedFromPayrollRun": true,
+    "updatedBy": "Global Super Administrator",
+    "updatedAt": "2026-06-25T16:56:36.150Z"
+  },
+  {
+    "employeeId": "C2775",
+    "employeeCode": "C2775",
+    "excludedFromPayrollRun": true,
+    "updatedBy": "Global Super Administrator",
+    "updatedAt": "2026-06-25T16:56:37.341Z"
+  },
+  {
+    "employeeId": "C2778",
+    "employeeCode": "C2778",
+    "excludedFromPayrollRun": true,
+    "updatedBy": "Global Super Administrator",
+    "updatedAt": "2026-06-25T16:56:37.841Z"
+  },
+  {
+    "employeeId": "C2780",
+    "employeeCode": "C2780",
+    "excludedFromPayrollRun": true,
+    "updatedBy": "Global Super Administrator",
+    "updatedAt": "2026-06-25T16:56:39.657Z"
+  },
+  {
+    "employeeId": "C2781",
+    "employeeCode": "C2781",
+    "excludedFromPayrollRun": true,
+    "updatedBy": "Global Super Administrator",
+    "updatedAt": "2026-06-25T16:56:39.795Z"
+  },
+  {
+    "employeeId": "C2782",
+    "employeeCode": "C2782",
+    "excludedFromPayrollRun": true,
+    "updatedBy": "Global Super Administrator",
+    "updatedAt": "2026-06-25T16:56:40.361Z"
+  },
+  {
+    "employeeId": "C2783",
+    "employeeCode": "C2783",
+    "excludedFromPayrollRun": true,
+    "updatedBy": "Global Super Administrator",
+    "updatedAt": "2026-06-25T16:56:40.591Z"
+  },
+  {
+    "employeeId": "C2785",
+    "employeeCode": "C2785",
+    "excludedFromPayrollRun": true,
+    "updatedBy": "Global Super Administrator",
+    "updatedAt": "2026-06-25T16:56:40.862Z"
+  },
+  {
+    "employeeId": "C2786",
+    "employeeCode": "C2786",
+    "excludedFromPayrollRun": true,
+    "updatedBy": "Global Super Administrator",
+    "updatedAt": "2026-06-25T16:56:42.889Z"
+  },
+  {
+    "employeeId": "C2787",
+    "employeeCode": "C2787",
+    "excludedFromPayrollRun": true,
+    "updatedBy": "Global Super Administrator",
+    "updatedAt": "2026-06-25T16:56:42.998Z"
+  },
+  {
+    "employeeId": "C2827",
+    "employeeCode": "C2827",
+    "nhfApplicable": true,
+    "payrollGroup": "DLE",
+    "setupAssignedToPayroll": true,
+    "excludedFromPayrollRun": false,
+    "hoursPerDay": 8,
+    "updatedBy": "HR Officer",
+    "updatedAt": "2026-08-24T12:36:58.813Z"
+  },
+  {
+    "employeeId": "C2828",
+    "employeeCode": "C2828",
+    "nhfApplicable": true,
+    "payrollGroup": "DLE",
+    "setupAssignedToPayroll": true,
+    "excludedFromPayrollRun": false,
+    "hoursPerDay": 8,
+    "updatedBy": "HR Officer",
+    "updatedAt": "2026-08-24T12:42:14.217Z"
+  },
+  {
+    "employeeId": "EX001",
+    "employeeCode": "PEX001",
+    "nhfApplicable": false,
+    "excludedFromPayrollRun": false,
+    "updatedAt": "2026-09-08T11:09:01.858Z",
+    "updatedBy": "Activate DLE USD MD/Nayak",
+    "setupAssignedToPayroll": true,
+    "payrollGroup": "DLE_USD",
+    "payeCalculation": {
+      "monthlyPayeOverride": 616.91
+    }
+  },
+  {
+    "employeeId": "IT0106",
+    "employeeCode": "PIT0106",
+    "nhfApplicable": false,
+    "updatedAt": "2026-06-27T00:18:59.190Z",
+    "updatedBy": "Sage cutover sync"
+  },
+  {
+    "employeeId": "IT0107",
+    "employeeCode": "PIT0107",
+    "nhfApplicable": false,
+    "updatedAt": "2026-06-27T00:18:59.190Z",
+    "updatedBy": "Sage cutover sync"
+  },
+  {
+    "employeeId": "IT0109",
+    "employeeCode": "PIT0109",
+    "nhfApplicable": false,
+    "updatedAt": "2026-06-27T00:18:59.190Z",
+    "updatedBy": "Sage cutover sync"
+  },
+  {
+    "employeeId": "IT0110",
+    "employeeCode": "PIT0110",
+    "nhfApplicable": false,
+    "updatedAt": "2026-06-27T00:18:59.190Z",
+    "updatedBy": "Sage cutover sync"
+  },
+  {
+    "employeeId": "IT0112",
+    "employeeCode": "PIT0112",
+    "nhfApplicable": false,
+    "updatedAt": "2026-06-27T00:18:59.190Z",
+    "updatedBy": "Sage cutover sync"
+  },
+  {
+    "employeeId": "IT0113",
+    "employeeCode": "PIT0113",
+    "nhfApplicable": false,
+    "updatedAt": "2026-06-27T00:18:59.190Z",
+    "updatedBy": "Sage cutover sync"
+  },
+  {
+    "employeeId": "IT0114",
+    "employeeCode": "PIT0114",
+    "nhfApplicable": false,
+    "updatedAt": "2026-06-27T00:18:59.190Z",
+    "updatedBy": "Sage cutover sync"
+  },
+  {
+    "employeeId": "IT0115",
+    "employeeCode": "PIT0115",
+    "nhfApplicable": false,
+    "updatedAt": "2026-06-27T00:18:59.190Z",
+    "updatedBy": "Sage cutover sync"
+  },
+  {
+    "employeeId": "IT0116",
+    "employeeCode": "PIT0116",
+    "nhfApplicable": false,
+    "updatedAt": "2026-06-27T00:18:59.190Z",
+    "updatedBy": "Sage cutover sync"
+  },
+  {
+    "employeeId": "IT0117",
+    "employeeCode": "PIT0117",
+    "nhfApplicable": false,
+    "updatedAt": "2026-06-27T00:18:59.190Z",
+    "updatedBy": "Sage cutover sync"
+  },
+  {
+    "employeeId": "IT0119",
+    "employeeCode": "PIT0119",
+    "nhfApplicable": false,
+    "updatedAt": "2026-06-27T00:18:59.190Z",
+    "updatedBy": "Sage cutover sync"
+  },
+  {
+    "employeeId": "IT0120",
+    "employeeCode": "PIT0120",
+    "nhfApplicable": false,
+    "updatedAt": "2026-06-27T00:18:59.190Z",
+    "updatedBy": "Sage cutover sync"
+  },
+  {
+    "employeeId": "IT0121",
+    "employeeCode": "PIT0121",
+    "nhfApplicable": false,
+    "updatedAt": "2026-06-27T00:18:59.190Z",
+    "updatedBy": "Sage cutover sync"
+  },
+  {
+    "employeeId": "IT0122",
+    "employeeCode": "PIT0122",
+    "nhfApplicable": false,
+    "updatedAt": "2026-06-27T00:18:59.190Z",
+    "updatedBy": "Sage cutover sync"
+  },
+  {
+    "employeeId": "L0191",
+    "employeeCode": "L0191",
+    "nhfApplicable": false,
+    "updatedAt": "2026-06-27T00:18:59.189Z",
+    "updatedBy": "Sage cutover sync"
+  },
+  {
+    "employeeId": "L0263",
+    "employeeCode": "L0263",
+    "nhfApplicable": false,
+    "updatedAt": "2026-06-27T00:18:59.189Z",
+    "updatedBy": "Sage cutover sync"
+  },
+  {
+    "employeeId": "L0297",
+    "employeeCode": "L0297",
+    "nhfApplicable": false,
+    "updatedAt": "2026-06-27T00:18:59.189Z",
+    "updatedBy": "Sage cutover sync"
+  },
+  {
+    "employeeId": "L0862",
+    "employeeCode": "L0862",
+    "nhfApplicable": false,
+    "updatedAt": "2026-06-27T00:18:59.189Z",
+    "updatedBy": "Sage cutover sync"
+  },
+  {
+    "employeeId": "L1047",
+    "employeeCode": "L1047",
+    "nhfApplicable": false,
+    "updatedAt": "2026-06-27T00:18:59.189Z",
+    "updatedBy": "Sage cutover sync"
+  },
+  {
+    "employeeId": "L1050",
+    "employeeCode": "L1050",
+    "nhfApplicable": false,
+    "updatedAt": "2026-06-27T00:18:59.189Z",
+    "updatedBy": "Sage cutover sync"
+  },
+  {
+    "employeeId": "L1090",
+    "employeeCode": "L1090",
+    "nhfApplicable": false,
+    "updatedAt": "2026-06-27T00:18:59.189Z",
+    "updatedBy": "Sage cutover sync"
+  },
+  {
+    "employeeId": "L1204",
+    "employeeCode": "L1204",
+    "nhfApplicable": false,
+    "updatedAt": "2026-06-27T00:18:59.189Z",
+    "updatedBy": "Sage cutover sync"
+  },
+  {
+    "employeeId": "L1547",
+    "employeeCode": "L1547",
+    "nhfApplicable": false,
+    "updatedAt": "2026-06-27T00:18:59.189Z",
+    "updatedBy": "Sage cutover sync"
+  },
+  {
+    "employeeId": "L1615",
+    "employeeCode": "L1615",
+    "nhfApplicable": false,
+    "updatedAt": "2026-06-27T00:18:59.189Z",
+    "updatedBy": "Sage cutover sync"
+  },
+  {
+    "employeeId": "L1618",
+    "employeeCode": "L1618",
+    "nhfApplicable": false,
+    "updatedAt": "2026-06-27T00:18:59.189Z",
+    "updatedBy": "Sage cutover sync"
+  },
+  {
+    "employeeId": "L1687",
+    "employeeCode": "L1687",
+    "nhfApplicable": false,
+    "updatedAt": "2026-06-27T00:18:59.189Z",
+    "updatedBy": "Sage cutover sync"
+  },
+  {
+    "employeeId": "L1714",
+    "employeeCode": "L1714",
+    "nhfApplicable": false,
+    "updatedAt": "2026-06-27T00:18:59.189Z",
+    "updatedBy": "Sage cutover sync"
+  },
+  {
+    "employeeId": "L1868",
+    "employeeCode": "L1868",
+    "nhfApplicable": false,
+    "updatedAt": "2026-06-27T00:18:59.189Z",
+    "updatedBy": "Sage cutover sync"
+  },
+  {
+    "employeeId": "L1925",
+    "employeeCode": "L1925",
+    "nhfApplicable": false,
+    "updatedAt": "2026-06-27T00:18:59.189Z",
+    "updatedBy": "Sage cutover sync"
+  },
+  {
+    "employeeId": "L1939",
+    "employeeCode": "L1939",
+    "nhfApplicable": false,
+    "updatedAt": "2026-06-27T00:18:59.189Z",
+    "updatedBy": "Sage cutover sync"
+  },
+  {
+    "employeeId": "L1940",
+    "employeeCode": "L1940",
+    "nhfApplicable": false,
+    "updatedAt": "2026-06-27T00:18:59.189Z",
+    "updatedBy": "Sage cutover sync"
+  },
+  {
+    "employeeId": "L1963",
+    "employeeCode": "L1963",
+    "nhfApplicable": false,
+    "updatedAt": "2026-06-27T00:18:59.189Z",
+    "updatedBy": "Sage cutover sync"
+  },
+  {
+    "employeeId": "L1968",
+    "employeeCode": "L1968",
+    "nhfApplicable": false,
+    "updatedAt": "2026-06-27T00:18:59.189Z",
+    "updatedBy": "Sage cutover sync"
+  },
+  {
+    "employeeId": "L1986",
+    "employeeCode": "L1986",
+    "nhfApplicable": false,
+    "updatedAt": "2026-06-27T00:18:59.189Z",
+    "updatedBy": "Sage cutover sync"
+  },
+  {
+    "employeeId": "L2020",
+    "employeeCode": "L2020",
+    "nhfApplicable": false,
+    "updatedAt": "2026-06-27T00:18:59.189Z",
+    "updatedBy": "Sage cutover sync"
+  },
+  {
+    "employeeId": "L2067",
+    "employeeCode": "L2067",
+    "nhfApplicable": false,
+    "updatedAt": "2026-06-27T00:18:59.189Z",
+    "updatedBy": "Sage cutover sync"
+  },
+  {
+    "employeeId": "L2123",
+    "employeeCode": "L2123",
+    "nhfApplicable": false,
+    "updatedAt": "2026-06-27T00:18:59.189Z",
+    "updatedBy": "Sage cutover sync"
+  },
+  {
+    "employeeId": "L2125",
+    "employeeCode": "L2125",
+    "nhfApplicable": false,
+    "updatedAt": "2026-06-27T00:18:59.189Z",
+    "updatedBy": "Sage cutover sync"
+  },
+  {
+    "employeeId": "L2142",
+    "employeeCode": "L2142",
+    "nhfApplicable": false,
+    "updatedAt": "2026-06-27T00:18:59.189Z",
+    "updatedBy": "Sage cutover sync"
+  },
+  {
+    "employeeId": "L2144",
+    "employeeCode": "L2144",
+    "nhfApplicable": false,
+    "updatedAt": "2026-06-27T00:18:59.189Z",
+    "updatedBy": "Sage cutover sync"
+  },
+  {
+    "employeeId": "L2191",
+    "employeeCode": "L2191",
+    "nhfApplicable": false,
+    "updatedAt": "2026-06-27T00:18:59.189Z",
+    "updatedBy": "Sage cutover sync"
+  },
+  {
+    "employeeId": "L2214",
+    "employeeCode": "L2214",
+    "nhfApplicable": false,
+    "updatedAt": "2026-06-27T00:18:59.189Z",
+    "updatedBy": "Sage cutover sync"
+  },
+  {
+    "employeeId": "L2216",
+    "employeeCode": "L2216",
+    "nhfApplicable": false,
+    "updatedAt": "2026-06-27T00:18:59.189Z",
+    "updatedBy": "Sage cutover sync"
+  },
+  {
+    "employeeId": "L2237",
+    "employeeCode": "L2237",
+    "nhfApplicable": false,
+    "updatedAt": "2026-06-27T00:18:59.189Z",
+    "updatedBy": "Sage cutover sync"
+  },
+  {
+    "employeeId": "L2289",
+    "employeeCode": "L2289",
+    "nhfApplicable": false,
+    "updatedAt": "2026-06-27T00:18:59.189Z",
+    "updatedBy": "Sage cutover sync"
+  },
+  {
+    "employeeId": "L2330",
+    "employeeCode": "L2330",
+    "nhfApplicable": false,
+    "updatedAt": "2026-06-27T00:18:59.189Z",
+    "updatedBy": "Sage cutover sync"
+  },
+  {
+    "employeeId": "L2331",
+    "employeeCode": "L2331",
+    "nhfApplicable": false,
+    "updatedAt": "2026-06-27T00:18:59.189Z",
+    "updatedBy": "Sage cutover sync"
+  },
+  {
+    "employeeId": "L2336",
+    "employeeCode": "L2336",
+    "nhfApplicable": false,
+    "updatedAt": "2026-06-27T00:18:59.189Z",
+    "updatedBy": "Sage cutover sync"
+  },
+  {
+    "employeeId": "L2347",
+    "employeeCode": "L2347",
+    "nhfApplicable": false,
+    "updatedAt": "2026-06-27T00:30:08.597Z",
+    "updatedBy": "Sage PAYE rules seed",
+    "payeCalculation": {
+      "excludedEarningCodes": [],
+      "includeRefundInTaxable": false,
+      "disablePensionPayeRelief": false,
+      "annualRentRelief": 383040,
+      "monthlyPayeOverride": 1060.5
+    }
+  },
+  {
+    "employeeId": "L2374",
+    "employeeCode": "L2374",
+    "nhfApplicable": false,
+    "updatedAt": "2026-06-27T00:18:59.190Z",
+    "updatedBy": "Sage cutover sync"
+  },
+  {
+    "employeeId": "L2375",
+    "employeeCode": "L2375",
+    "nhfApplicable": false,
+    "updatedAt": "2026-06-27T00:18:59.190Z",
+    "updatedBy": "Sage cutover sync"
+  },
+  {
+    "employeeId": "L2578",
+    "employeeCode": "L2578",
+    "nhfApplicable": false,
+    "updatedAt": "2026-06-27T00:18:59.190Z",
+    "updatedBy": "Sage cutover sync"
+  },
+  {
+    "employeeId": "L2580",
+    "employeeCode": "L2580",
+    "nhfApplicable": false,
+    "updatedAt": "2026-06-27T00:18:59.190Z",
+    "updatedBy": "Sage cutover sync"
+  },
+  {
+    "employeeId": "L2581",
+    "employeeCode": "L2581",
+    "nhfApplicable": false,
+    "updatedAt": "2026-06-27T00:18:59.190Z",
+    "updatedBy": "Sage cutover sync"
+  },
+  {
+    "employeeId": "L2611",
+    "employeeCode": "L2611",
+    "nhfApplicable": false,
+    "updatedAt": "2026-06-27T00:18:59.190Z",
+    "updatedBy": "Sage cutover sync"
+  },
+  {
+    "employeeId": "L2631",
+    "employeeCode": "L2631",
+    "nhfApplicable": false,
+    "updatedAt": "2026-06-27T00:18:59.190Z",
+    "updatedBy": "Sage cutover sync"
+  },
+  {
+    "employeeId": "L2635",
+    "employeeCode": "L2635",
+    "nhfApplicable": false,
+    "updatedAt": "2026-06-27T00:18:59.190Z",
+    "updatedBy": "Sage cutover sync"
+  },
+  {
+    "employeeId": "L2644",
+    "employeeCode": "L2644",
+    "nhfApplicable": false,
+    "updatedAt": "2026-06-27T00:18:59.190Z",
+    "updatedBy": "Sage cutover sync"
+  },
+  {
+    "employeeId": "L2718",
+    "employeeCode": "L2718",
+    "nhfApplicable": false,
+    "updatedAt": "2026-06-27T00:18:59.190Z",
+    "updatedBy": "Sage cutover sync"
+  },
+  {
+    "employeeId": "L2719",
+    "employeeCode": "L2719",
+    "nhfApplicable": false,
+    "updatedAt": "2026-06-27T00:18:59.190Z",
+    "updatedBy": "Sage cutover sync"
+  },
+  {
+    "employeeId": "L2729",
+    "employeeCode": "L2729",
+    "nhfApplicable": false,
+    "updatedAt": "2026-06-27T00:18:59.190Z",
+    "updatedBy": "Sage cutover sync"
+  },
+  {
+    "employeeId": "L2753",
+    "employeeCode": "L2753",
+    "nhfApplicable": false,
+    "updatedAt": "2026-06-27T00:18:59.190Z",
+    "updatedBy": "Sage cutover sync"
+  },
+  {
+    "employeeId": "L2754",
+    "employeeCode": "L2754",
+    "nhfApplicable": false,
+    "updatedAt": "2026-06-27T00:18:59.190Z",
+    "updatedBy": "Sage cutover sync"
+  },
+  {
+    "employeeId": "L2763",
+    "employeeCode": "L2763",
+    "nhfApplicable": false,
+    "updatedAt": "2026-06-27T00:18:59.190Z",
+    "updatedBy": "Sage cutover sync"
+  },
+  {
+    "employeeId": "L2764",
+    "employeeCode": "L2764",
+    "nhfApplicable": false,
+    "updatedAt": "2026-06-27T00:18:59.190Z",
+    "updatedBy": "Sage cutover sync"
+  },
+  {
+    "employeeId": "L2768",
+    "employeeCode": "L2768",
+    "nhfApplicable": false,
+    "updatedAt": "2026-06-27T00:18:59.190Z",
+    "updatedBy": "Sage cutover sync"
+  },
+  {
+    "employeeId": "P0467",
+    "employeeCode": "P0467",
+    "nhfApplicable": false,
+    "updatedAt": "2026-09-11T14:51:30.913Z",
+    "updatedBy": "Archive L2770 inactive after P0467 conversion",
+    "setupAssignedToPayroll": true,
+    "excludedFromPayrollRun": false
+  },
+  {
+    "employeeId": "L2771",
+    "employeeCode": "L2771",
+    "nhfApplicable": false,
+    "updatedAt": "2026-06-27T00:18:59.190Z",
+    "updatedBy": "Sage cutover sync"
+  },
+  {
+    "employeeId": "L2772",
+    "employeeCode": "L2772",
+    "nhfApplicable": false,
+    "updatedAt": "2026-06-27T00:18:59.190Z",
+    "updatedBy": "Sage cutover sync"
+  },
+  {
+    "employeeId": "L2773",
+    "employeeCode": "L2773",
+    "nhfApplicable": false,
+    "updatedAt": "2026-06-27T00:18:59.190Z",
+    "updatedBy": "Sage cutover sync"
+  },
+  {
+    "employeeId": "L2774",
+    "employeeCode": "L2774",
+    "nhfApplicable": false,
+    "updatedAt": "2026-06-27T00:18:59.190Z",
+    "updatedBy": "Sage cutover sync"
+  },
+  {
+    "employeeId": "L2775",
+    "employeeCode": "L2775",
+    "nhfApplicable": false,
+    "updatedAt": "2026-06-27T00:18:59.190Z",
+    "updatedBy": "Sage cutover sync"
+  },
+  {
+    "employeeId": "L2776",
+    "employeeCode": "L2776",
+    "nhfApplicable": false,
+    "updatedAt": "2026-06-27T00:18:59.190Z",
+    "updatedBy": "Sage cutover sync"
+  },
+  {
+    "employeeId": "L2777",
+    "employeeCode": "L2777",
+    "nhfApplicable": false,
+    "updatedAt": "2026-06-27T00:18:59.190Z",
+    "updatedBy": "Sage cutover sync"
+  },
+  {
+    "employeeId": "L2778",
+    "employeeCode": "L2778",
+    "nhfApplicable": false,
+    "updatedAt": "2026-06-27T00:18:59.190Z",
+    "updatedBy": "Sage cutover sync"
+  },
+  {
+    "employeeId": "L2779",
+    "employeeCode": "L2779",
+    "nhfApplicable": false,
+    "updatedAt": "2026-06-27T00:18:59.190Z",
+    "updatedBy": "Sage cutover sync"
+  },
+  {
+    "employeeId": "L2781",
+    "employeeCode": "L2781",
+    "nhfApplicable": false,
+    "updatedAt": "2026-06-27T00:18:59.190Z",
+    "updatedBy": "Sage cutover sync"
+  },
+  {
+    "employeeId": "L2782",
+    "employeeCode": "L2782",
+    "nhfApplicable": false,
+    "updatedAt": "2026-06-27T00:18:59.190Z",
+    "updatedBy": "Sage cutover sync"
+  },
+  {
+    "employeeId": "L2783",
+    "employeeCode": "L2783",
+    "nhfApplicable": false,
+    "updatedAt": "2026-06-27T00:18:59.190Z",
+    "updatedBy": "Sage cutover sync"
+  },
+  {
+    "employeeId": "L2784",
+    "employeeCode": "L2784",
+    "nhfApplicable": false,
+    "updatedAt": "2026-06-27T00:18:59.190Z",
+    "updatedBy": "Sage cutover sync"
+  },
+  {
+    "employeeId": "L2785",
+    "employeeCode": "L2785",
+    "nhfApplicable": false,
+    "updatedAt": "2026-06-27T00:18:59.190Z",
+    "updatedBy": "Sage cutover sync"
+  },
+  {
+    "employeeId": "NYSC0018",
+    "employeeCode": "PNYSC0018",
+    "nhfApplicable": false,
+    "updatedAt": "2026-06-27T00:18:59.190Z",
+    "updatedBy": "Sage cutover sync"
+  },
+  {
+    "employeeId": "NYSC0023",
+    "employeeCode": "PNYSC0023",
+    "nhfApplicable": false,
+    "updatedAt": "2026-06-27T00:18:59.190Z",
+    "updatedBy": "Sage cutover sync"
+  },
+  {
+    "employeeId": "NYSC0024",
+    "employeeCode": "PNYSC0024",
+    "nhfApplicable": false,
+    "updatedAt": "2026-06-27T00:18:59.190Z",
+    "updatedBy": "Sage cutover sync"
+  },
+  {
+    "employeeId": "NYSC0025",
+    "employeeCode": "PNYSC0025",
+    "nhfApplicable": false,
+    "updatedAt": "2026-06-27T00:18:59.190Z",
+    "updatedBy": "Sage cutover sync"
+  },
+  {
+    "employeeId": "NYSC0026",
+    "employeeCode": "PNYSC0026",
+    "nhfApplicable": false,
+    "updatedAt": "2026-06-27T00:18:59.190Z",
+    "updatedBy": "Sage cutover sync"
+  },
+  {
+    "employeeId": "NYSC0027",
+    "employeeCode": "PNYSC0027",
+    "nhfApplicable": false,
+    "updatedAt": "2026-06-27T00:18:59.190Z",
+    "updatedBy": "Sage cutover sync"
+  },
+  {
+    "employeeId": "NYSC0028",
+    "employeeCode": "PNYSC0028",
+    "nhfApplicable": false,
+    "updatedAt": "2026-06-27T00:18:59.190Z",
+    "updatedBy": "Sage cutover sync"
+  },
+  {
+    "employeeId": "NYSC0029",
+    "employeeCode": "PNYSC0029",
+    "nhfApplicable": false,
+    "updatedAt": "2026-06-27T00:18:59.190Z",
+    "updatedBy": "Sage cutover sync"
+  },
+  {
+    "employeeId": "NYSC0030",
+    "employeeCode": "PNYSC0030",
+    "nhfApplicable": false,
+    "updatedAt": "2026-06-27T00:18:59.190Z",
+    "updatedBy": "Sage cutover sync"
+  },
+  {
+    "employeeId": "NYSC0031",
+    "employeeCode": "PNYSC0031",
+    "nhfApplicable": false,
+    "updatedAt": "2026-06-27T00:18:59.190Z",
+    "updatedBy": "Sage cutover sync"
+  },
+  {
+    "employeeId": "NYSC0032",
+    "employeeCode": "PNYSC0032",
+    "nhfApplicable": false,
+    "updatedAt": "2026-06-27T00:18:59.190Z",
+    "updatedBy": "Sage cutover sync"
+  },
+  {
+    "employeeId": "NYSC0033",
+    "employeeCode": "PNYSC0033",
+    "nhfApplicable": false,
+    "updatedAt": "2026-06-27T00:18:59.190Z",
+    "updatedBy": "Sage cutover sync"
+  },
+  {
+    "employeeId": "NYSC0034",
+    "employeeCode": "PNYSC0034",
+    "nhfApplicable": false,
+    "updatedAt": "2026-06-27T00:18:59.190Z",
+    "updatedBy": "Sage cutover sync"
+  },
+  {
+    "employeeId": "NYSC0035",
+    "employeeCode": "PNYSC0035",
+    "nhfApplicable": false,
+    "updatedAt": "2026-06-27T00:18:59.190Z",
+    "updatedBy": "Sage cutover sync"
+  },
+  {
+    "employeeId": "NYSC0036",
+    "employeeCode": "PNYSC0036",
+    "nhfApplicable": false,
+    "updatedAt": "2026-06-27T00:18:59.190Z",
+    "updatedBy": "Sage cutover sync"
+  },
+  {
+    "employeeId": "NYSC0037",
+    "employeeCode": "PNYSC0037",
+    "nhfApplicable": false,
+    "updatedAt": "2026-06-27T00:18:59.190Z",
+    "updatedBy": "Sage cutover sync"
+  },
+  {
+    "employeeId": "NYSC0038",
+    "employeeCode": "PNYSC0038",
+    "nhfApplicable": false,
+    "updatedAt": "2026-06-27T00:18:59.191Z",
+    "updatedBy": "Sage cutover sync"
+  },
+  {
+    "employeeId": "P0146",
+    "employeeCode": "P0146",
+    "nhfApplicable": false,
+    "updatedAt": "2026-06-19T00:00:00.000Z",
+    "updatedBy": "Payroll Officer"
+  },
+  {
+    "employeeId": "L2770",
+    "employeeCode": "L2770",
+    "nhfApplicable": false,
+    "updatedAt": "2026-09-11T14:51:30.913Z",
+    "updatedBy": "Archive L2770 inactive after P0467 conversion",
+    "setupAssignedToPayroll": false,
+    "excludedFromPayrollRun": true
+  }
+]
