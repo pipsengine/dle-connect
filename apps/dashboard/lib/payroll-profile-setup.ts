@@ -12,6 +12,7 @@ import {
 import { isHrisConfiguredPayrollLine } from '@/lib/sage-payroll-line-parser';
 import { resolvePayCurrency } from '@/lib/payroll-currency';
 import type { DleEmployeeDirectoryRow } from '@/lib/dle-enterprise-db';
+import { isDailyRatePayrollEmployee, isPeriodVariableDayRateEarningLine } from '@/lib/payroll-employee-classification';
 import type { PayrollSetupDraft } from '@/app/(hris)/hris/employees/add-new-employee/PayrollSetupStep';
 import { normalizePayrollDraftBeforeSave, lumpsumBaseAmountFromDraftLines } from '@/lib/payroll-draft-normalize';
 
@@ -33,6 +34,12 @@ export type ProfilePayrollSummary = {
   earningLines?: FlexiblePayrollLineDraft[];
   legacyEarningLines?: FlexiblePayrollLineDraft[];
   deductionLines?: FlexiblePayrollLineDraft[];
+  payrollRunPeriod?: string | null;
+  payrollRunPeriodLabel?: string | null;
+  payrollRunEarningLines?: FlexiblePayrollLineDraft[];
+  payrollRunDeductionLines?: FlexiblePayrollLineDraft[];
+  payrollRunGrossPay?: number | null;
+  payrollRunNetPay?: number | null;
   payCurrency?: string | null;
   nhfApplicable?: boolean;
   nhfNumber?: string | null;
@@ -57,13 +64,69 @@ export const payrollDisplayCurrencyFromRow = (row: DleEmployeeDirectoryRow) =>
     businessUnit: row.businessUnit,
   });
 
-export const hrisEarningLinesFromEmployeeRow = (row: DleEmployeeDirectoryRow): FlexiblePayrollLineDraft[] =>
-  storedLinesToDraft(effectiveHrisPayrollLines(row.sagePayrollEarnings));
+export const hrisEarningLinesFromEmployeeRow = (row: DleEmployeeDirectoryRow): FlexiblePayrollLineDraft[] => {
+  const standing = isDailyRatePayrollEmployee(row)
+    ? effectiveHrisPayrollLines(row.sagePayrollEarnings).filter((line) => !isPeriodVariableDayRateEarningLine(line))
+    : effectiveHrisPayrollLines(row.sagePayrollEarnings);
+  return storedLinesToDraft(standing);
+};
 
 export const legacyEarningLinesFromEmployeeRow = (row: DleEmployeeDirectoryRow): FlexiblePayrollLineDraft[] => {
+  if (isDailyRatePayrollEmployee(row)) return [];
   const all = (row.sagePayrollEarnings || []) as StoredPayrollPackageLine[];
   const legacy = all.filter((line) => !isHrisConfiguredPayrollLine(line) && !isLegacySupplementLine(line));
   return storedLinesToDraft(legacy);
+};
+
+const draftLineFromRunItem = (
+  line: { code?: unknown; name?: unknown; label?: unknown; amount?: unknown; taxable?: unknown },
+  index: number,
+  prefix: string,
+): FlexiblePayrollLineDraft | null => {
+  const amount = Number(line.amount || 0);
+  if (!Number.isFinite(amount) || amount === 0) return null;
+  const code = String(line.code || '').trim() || `${prefix}${index + 1}`;
+  const name = String(line.name || line.label || line.code || '').trim() || code;
+  return {
+    id: `run-${prefix}-${index}-${code}`,
+    code,
+    name,
+    amount: String(amount),
+    taxable: line.taxable !== false && Number(line.taxable ?? amount) !== 0,
+    frequency: 'one-off',
+  };
+};
+
+export type LatestPayrollRunProfileSlice = {
+  period: string;
+  periodLabel: string;
+  processedAt?: string | null;
+  grossPay?: number | null;
+  netPay?: number | null;
+  earningLines?: Array<{ code?: unknown; name?: unknown; amount?: unknown; taxable?: unknown }>;
+  deductionLines?: Array<{ code?: unknown; label?: unknown; name?: unknown; amount?: unknown }>;
+};
+
+export const applyLatestPayrollRunToSummary = (
+  summary: ProfilePayrollSummary,
+  run: LatestPayrollRunProfileSlice,
+): ProfilePayrollSummary => {
+  const payrollRunEarningLines = (run.earningLines || [])
+    .map((line, index) => draftLineFromRunItem(line, index, 'earn'))
+    .filter((line): line is FlexiblePayrollLineDraft => Boolean(line));
+  const payrollRunDeductionLines = (run.deductionLines || [])
+    .map((line, index) => draftLineFromRunItem(line, index, 'ded'))
+    .filter((line): line is FlexiblePayrollLineDraft => Boolean(line));
+  return {
+    ...summary,
+    lastPayrollProcessed: run.processedAt || summary.lastPayrollProcessed,
+    payrollRunPeriod: run.period,
+    payrollRunPeriodLabel: run.periodLabel,
+    payrollRunEarningLines: payrollRunEarningLines.length ? payrollRunEarningLines : undefined,
+    payrollRunDeductionLines: payrollRunDeductionLines.length ? payrollRunDeductionLines : undefined,
+    payrollRunGrossPay: Number(run.grossPay || 0) > 0 ? Number(run.grossPay) : null,
+    payrollRunNetPay: Number(run.netPay || 0) > 0 ? Number(run.netPay) : null,
+  };
 };
 
 export const earningLinesFromEmployeeRow = hrisEarningLinesFromEmployeeRow;
@@ -80,17 +143,25 @@ export const enrichPayrollSummaryFromRow = (summary: ProfilePayrollSummary, row:
   const isLumpsum = /lumpsum|lump\s*sum/i.test(String(row.employmentType || ''))
     || /^L\d+/i.test(String(row.employeeCode || ''));
   const lumpsumBase = lumpsumBaseAmountFromDraftLines(earningLines);
-  const monthlyPackageGross = isLumpsum
-    ? (lumpsumBase > 0
-      ? lumpsumBase
-      : (row.periodSalary ?? row.basicSalary ?? summary.monthlyPackageGross ?? summary.basicSalary ?? null))
-    : (monthlyFromLines > 0
-      ? monthlyFromLines
-      : (row.periodSalary ?? row.basicSalary ?? summary.monthlyPackageGross ?? summary.basicSalary ?? null));
+  const dailyRate = isDailyRatePayrollEmployee(row);
+  const monthlyPackageGross = dailyRate
+    ? null
+    : isLumpsum
+      ? (lumpsumBase > 0
+        ? lumpsumBase
+        : (row.periodSalary ?? row.basicSalary ?? summary.monthlyPackageGross ?? summary.basicSalary ?? null))
+      : (monthlyFromLines > 0
+        ? monthlyFromLines
+        : (row.periodSalary ?? row.basicSalary ?? summary.monthlyPackageGross ?? summary.basicSalary ?? null));
+  const basicSalary = dailyRate
+    ? null
+    : (isLumpsum && monthlyPackageGross != null ? monthlyPackageGross : summary.basicSalary);
   return {
     ...summary,
     earningLines,
     legacyEarningLines: legacyEarningLines.length ? legacyEarningLines : undefined,
+    basicSalary,
+    allowances: dailyRate ? null : summary.allowances,
     payCurrency: payrollDisplayCurrencyFromRow(row),
     deductionLines,
     accountNumber: row.accountNo || summary.accountNumber || null,
@@ -103,7 +174,6 @@ export const enrichPayrollSummaryFromRow = (summary: ProfilePayrollSummary, row:
     hoursPerDay: row.hoursPerDay ?? summary.hoursPerDay ?? null,
     setupAssignedToPayroll: row.setupAssignedToPayroll ?? summary.setupAssignedToPayroll ?? true,
     monthlyPackageGross: monthlyPackageGross ?? null,
-    basicSalary: isLumpsum && monthlyPackageGross != null ? monthlyPackageGross : summary.basicSalary,
   };
 };
 

@@ -745,6 +745,60 @@ export const readAllPayrollSnapshotsByPeriods = async (periods: string[]) => {
   return byPeriod;
 };
 
+const payrollRecordMatchesEmployee = (record: PayrollCalculationRecord, employeeCode: string) => {
+  const code = employeeCode.trim().toUpperCase();
+  return [
+    record.employeeCode,
+    record.sageActual?.directoryEmployeeCode,
+    record.sageActual?.employeeCode,
+  ].some((value) => String(value || '').trim().toUpperCase() === code);
+};
+
+export type LatestEmployeePayrollRunRecord = {
+  period: string;
+  periodLabel: string;
+  runId: string;
+  processedAt: string | null;
+  record: PayrollCalculationRecord;
+};
+
+/** Latest payroll snapshot lines for an employee — used on C-code profiles instead of leftover package amounts. */
+export const findLatestPayrollRunRecordForEmployee = async (
+  employeeCode: string,
+  options?: { pack?: PayrollRunPack | null },
+): Promise<LatestEmployeePayrollRunRecord | null> => {
+  const code = String(employeeCode || '').trim().toUpperCase();
+  if (!code) return null;
+  const state = await readState();
+  const pack = options?.pack || null;
+  const runs = [...state.runs]
+    .filter((run) => !pack || resolvePayrollRunPack(run) === pack)
+    .sort((a, b) => {
+      const period = b.period.localeCompare(a.period);
+      if (period) return period;
+      const released = Number(isPayrollRunReleasedForEmployeeAccess(b)) - Number(isPayrollRunReleasedForEmployeeAccess(a));
+      if (released) return released;
+      return b.updatedAt.localeCompare(a.updatedAt);
+    });
+
+  for (const run of runs.slice(0, 16)) {
+    const snapshot = state.snapshots[run.id] || await readPayrollSnapshot(run.id);
+    const record = snapshot?.records?.find((row) => payrollRecordMatchesEmployee(row, code));
+    if (!record) continue;
+    const hasLines = Array.isArray(record.earningLines)
+      && record.earningLines.some((line) => Number(line.amount || 0) !== 0);
+    if (!hasLines && !(Number(record.grossPay || 0) > 0)) continue;
+    return {
+      period: run.period,
+      periodLabel: run.periodLabel,
+      runId: run.id,
+      processedAt: run.releasedAt || run.payslipsGeneratedAt || snapshot?.capturedAt || run.updatedAt || null,
+      record,
+    };
+  }
+  return null;
+};
+
 export const readPayrollSnapshotsByPeriods = async (periods: string[]) => {
   const snapshots = new Map<string, PayrollRunSnapshot>();
   const all = await readAllPayrollSnapshotsByPeriods(periods);

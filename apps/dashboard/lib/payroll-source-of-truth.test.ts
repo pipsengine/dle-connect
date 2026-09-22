@@ -12,12 +12,17 @@ import {
 import type { DayrateScheduleRow } from './dayrate-schedule-xlsx';
 import {
   isTimesheetWagePayrollEmployee,
+  isPeriodVariableDayRateEarningLine,
   resolvePayrollRunPackForEmployee,
 } from './payroll-employee-classification';
 import {
   calculatePayrollEarnings,
   mergeTimesheetDayRateEarnings,
 } from './payroll-earnings-engine';
+import {
+  employeeMatchKeys,
+  leaveAllowancePaymentPeriodForYear,
+} from './leave-allowance-policy';
 import {
   explicitPayrollDayRate,
   isPayrollProfileTimesheetSourcePeriod,
@@ -94,6 +99,12 @@ assert.equal(isTimesheetWagePayrollEmployee(lumpsum), false);
 assert.equal(isTimesheetWagePayrollEmployee(nysc), false);
 assert.equal(isTimesheetWagePayrollEmployee(intern), false);
 assert.equal(isTimesheetWagePayrollEmployee(dayRate), true);
+assert.equal(isPeriodVariableDayRateEarningLine({ code: 'JCWEEKDAY', name: 'WEEKDAY EARNING' }), true);
+assert.equal(isPeriodVariableDayRateEarningLine({ code: 'SATURDAY_OVT', name: 'SATURDAY OVERTIME' }), true);
+assert.equal(isPeriodVariableDayRateEarningLine({ code: 'REFUND', name: 'REFUND' }), true);
+assert.equal(isPeriodVariableDayRateEarningLine({ code: 'NIGHTALL', name: 'NIGHT ALLOWANCE' }), true);
+assert.equal(isPeriodVariableDayRateEarningLine({ code: 'MEAL', name: 'MEAL ALLOWANCE' }), true);
+assert.equal(isPeriodVariableDayRateEarningLine({ code: 'LOAN', name: 'Loan Recovery' }), false);
 assert.equal(resolvePayrollRunPackForEmployee(permanent), 'salaried');
 assert.equal(resolvePayrollRunPackForEmployee(lumpsum), 'salaried');
 assert.equal(resolvePayrollRunPackForEmployee(nysc), 'salaried');
@@ -195,6 +206,40 @@ const septemberTimesheet = mergeTimesheetDayRateEarnings(dayRate, { ratePerDay: 
 assert.equal(septemberTimesheet.grossPay, 105000, 'September ignores Excel days and uses timesheet × profile rate');
 assert.equal(payrollRecordUsesExcelOverlay(septemberTimesheet), false);
 
+const dayRateWithSnapshot = employee({
+  employeeCode: 'C0100',
+  employeeId: 'C0100',
+  employmentType: 'Daily Rate',
+  ratePerDay: 10000,
+  hoursPerDay: 8,
+  sagePayrollEarnings: [
+    { code: 'JCWEEKDAY', name: 'WEEKDAY EARNING', amount: 198000 },
+    { code: 'MEAL', name: 'MEAL ALLOWANCE', amount: 3000 },
+    { code: 'SATURDAY_OVT', name: 'SATURDAY OVERTIME', amount: 50000 },
+    { code: 'WEEKDAYOVT', name: 'WEEKDAY OVERTIME', amount: 8000 },
+    { code: 'REFUND', name: 'REFUND', amount: 20000 },
+    { code: 'NIGHTALL', name: 'NIGHT ALLOWANCE', amount: 4000 },
+  ],
+});
+const septemberIgnoresPackageSnapshot = mergeTimesheetDayRateEarnings(dayRateWithSnapshot, {
+  ratePerDay: 10000,
+  daysWorked: 10,
+  period: '2026-09',
+});
+assert.equal(
+  septemberIgnoresPackageSnapshot.grossPay,
+  105000,
+  'leftover C-code package OT/refund/weekday/meal must not pay again after timesheet cutover',
+);
+assert.equal(
+  septemberIgnoresPackageSnapshot.paidEarningLines.some((line) => line.code === 'REFUND'),
+  false,
+);
+assert.equal(
+  septemberIgnoresPackageSnapshot.paidEarningLines.some((line) => line.code === 'SATURDAY_OVT'),
+  false,
+);
+
 const hours = new Map<string, { daysWorked: number; bookedHours: number }>([
   ['C0100', { daysWorked: 10, bookedHours: 80 }],
 ]);
@@ -204,6 +249,107 @@ applyDayrateScheduleOverrideToHoursMap('2026-08', hours);
 assert.equal(hours.get('C0100')?.daysWorked, 22, 'August hours map still follows Excel weekday days');
 
 assert.equal(explicitPayrollDayRate(dayRateNoRate).ratePerDay, 0, 'missing ratePerDay must not fall back to periodSalary');
+
+const internDouble = employee({
+  employeeCode: 'IT0100',
+  employeeId: 'IT0100',
+  employmentType: 'Industrial Training',
+  periodSalary: 70000,
+  sagePayrollEarnings: [
+    { code: 'ITALLOW', name: 'IT ALLOWANCE', amount: 70000, runFrequency: 'monthly', sourceAmount: 70000 },
+  ],
+});
+const internDoublePay = calculatePayrollEarnings(internDouble, { useHrisPackageLines: true });
+assert.equal(internDoublePay.grossPay, 70000, 'IT stipend must not stack STIPEND_NT on stored ITALLOW');
+assert.equal(
+  internDoublePay.paidEarningLines.filter((line) => /STIPEND|ITALLOW|NYSCALLOW/i.test(line.code)).length,
+  1,
+);
+
+const nyscDouble = employee({
+  employeeCode: 'NYSC0100',
+  employeeId: 'NYSC0100',
+  employmentType: 'NYSC',
+  periodSalary: 80000,
+  sagePayrollEarnings: [
+    { code: 'NYSCALLOW', name: 'NYSC ALLOWANCE', amount: 80000, runFrequency: 'monthly', sourceAmount: 80000 },
+  ],
+});
+const nyscDoublePay = calculatePayrollEarnings(nyscDouble, { useHrisPackageLines: true });
+assert.equal(nyscDoublePay.grossPay, 80000, 'NYSC stipend must not stack STIPEND_NT on stored NYSCALLOW');
+
+const lumpsumDouble = employee({
+  employeeCode: 'L0100',
+  employeeId: 'L0100',
+  employmentType: 'Lumpsum',
+  periodSalary: 250000,
+  sagePayrollEarnings: [
+    { code: 'BASIC1_LUMPSUM', name: 'LUMSUM AMOUNT', amount: 250000, runFrequency: 'monthly', sourceAmount: 250000 },
+    { code: 'MEAL', name: 'MEAL ALLOWANCE', amount: 5000, runFrequency: 'monthly', sourceAmount: 5000 },
+    { code: 'OVERTIME', name: 'OVERTIME', amount: 10000, runFrequency: 'one-off', sourceAmount: 10000, includeInMonthlyPayroll: false },
+  ],
+});
+const lumpsumDoublePay = calculatePayrollEarnings(lumpsumDouble, { useHrisPackageLines: true });
+assert.equal(lumpsumDoublePay.grossPay, 265000, 'lumpsum formula must not stack LUMPSUMTAX on BASIC1_LUMPSUM; meal/OT stay');
+assert.equal(
+  lumpsumDoublePay.paidEarningLines.filter((line) => /^(LUMPSUMTAX|BASIC1_LUMPSUM)$/i.test(line.code)).length,
+  1,
+);
+assert.equal(lumpsumDoublePay.paidEarningLines.find((line) => line.code === 'MEAL')?.amount, 5000);
+assert.equal(lumpsumDoublePay.paidEarningLines.find((line) => line.code === 'OVERTIME')?.amount, 10000);
+
+const permanentLeavePackage = employee({
+  employeeCode: 'P0100',
+  employeeId: 'P0100',
+  employmentType: 'Permanent',
+  salaryGrade: 'SNR',
+  periodSalary: 500000,
+  sagePayrollEarnings: [
+    { code: 'SNR_BASIC', name: 'BASIC SALARY', amount: 200000, runFrequency: 'monthly', sourceAmount: 200000, includeInMonthlyPayroll: true },
+    { code: 'SNR_HOUSE', name: 'HOUSING', amount: 100000, runFrequency: 'monthly', sourceAmount: 100000, includeInMonthlyPayroll: true },
+    { code: 'LEAVEALLOW', name: 'LEAVE ALLOWANCE', amount: 180000, runFrequency: 'monthly', sourceAmount: 180000, includeInMonthlyPayroll: true },
+  ],
+});
+const permanentLeavePay = calculatePayrollEarnings(permanentLeavePackage, {
+  useHrisPackageLines: true,
+  includePeriodAdjustments: true,
+  period: '2026-09',
+});
+assert.equal(
+  permanentLeavePay.paidEarningLines.some((line) => /LEAVEALLOW/i.test(line.code) || /LEAVE ALLOWANCE/i.test(line.name)),
+  false,
+  'stored August leave allowance must not pay again from the standing package',
+);
+assert.equal(permanentLeavePay.grossPay, 300000);
+
+assert.equal(
+  leaveAllowancePaymentPeriodForYear(
+    [{ id: 'p0453-sep', employeeId: 'P0453', leaveType: 'Annual Leave', startDate: '2026-09-07', endDate: '2026-09-18', days: 10, status: 'Approved' }],
+    employeeMatchKeys('P0453'),
+    2026,
+  ),
+  '2026-09',
+);
+assert.equal(
+  leaveAllowancePaymentPeriodForYear(
+    [
+      { id: 'aug', employeeId: 'P0100', leaveType: 'Annual Leave', startDate: '2026-08-03', endDate: '2026-08-14', days: 10, status: 'Approved' },
+      { id: 'sep', employeeId: 'P0100', leaveType: 'Annual Leave', startDate: '2026-09-07', endDate: '2026-09-18', days: 12, status: 'Approved' },
+    ],
+    employeeMatchKeys('P0100'),
+    2026,
+  ),
+  '2026-08',
+  'August qualifying leave must not create a second September leave-allowance payment',
+);
+assert.equal(
+  leaveAllowancePaymentPeriodForYear(
+    [{ id: 'short', employeeId: 'P0200', leaveType: 'Annual Leave', startDate: '2026-09-07', endDate: '2026-09-11', days: 5, status: 'Approved' }],
+    employeeMatchKeys('P0200'),
+    2026,
+  ),
+  null,
+);
 
 const septemberLabels = [permanentPay, lumpsumPay, nyscPay, internPay, septemberTimesheet];
 assert.equal(

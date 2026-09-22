@@ -1,7 +1,7 @@
 import { existsSync, readFileSync, statSync } from 'node:fs';
 import { payeTaxableFromPayrollEarnings } from '@/lib/payroll-sage-pay-rules';
 import type { DleEmployeeDirectoryRow } from '@/lib/dle-enterprise-db';
-import { contractEmployeeCode, isDailyRatePayrollEmployee, isContractStyleEarningLine, isPermanentPayrollEmployee } from '@/lib/payroll-employee-classification';
+import { contractEmployeeCode, isDailyRatePayrollEmployee, isContractStyleEarningLine, isPeriodVariableDayRateEarningLine, isPermanentPayrollEmployee } from '@/lib/payroll-employee-classification';
 import { isLeaveAllowancePaymentCode } from '@/lib/leave-allowance-policy';
 import { leaveAllowanceEventsForEmployeePeriod } from '@/lib/payroll-leave-allowance-store';
 import { isSagePayslipEarningSyncSource } from '@/lib/payroll-employee-classification';
@@ -779,6 +779,21 @@ const pensionablePayFromLines = (lines: PayrollEarningLine[]) => {
   };
 };
 
+const isLeaveAllowanceLine = (line: Pick<PayrollEarningLine, 'code' | 'name'>) =>
+  isLeaveAllowancePaymentCode(line.code)
+  || /LEAVEALLOW/i.test(String(line.code || ''))
+  || /\bLEAVE ALLOWANCE\b/i.test(String(line.name || ''));
+
+/** Standing package must not re-pay annual leave allowance every month. */
+const isStoredLeaveAllowancePackageLine = (
+  line: Pick<PayrollEarningLine, 'code' | 'name'> & { runFrequency?: string },
+) => {
+  if (isLeaveAllowanceLine(line)) return true;
+  const compactCode = compact(line.code).toUpperCase().replace(/[^A-Z0-9]/g, '');
+  if (/LEAVETAX$/.test(compactCode)) return true;
+  return line.runFrequency === 'one-off' && /LEAVE/i.test(compact(line.code));
+};
+
 const configuredPackageEarningLines = (
   employee: DleEmployeeDirectoryRow,
   options?: { includeOneOff?: boolean },
@@ -786,6 +801,8 @@ const configuredPackageEarningLines = (
   const includeOneOff = options?.includeOneOff !== false;
   const lines: PayrollEarningLine[] = [];
   for (const line of employee.sagePayrollEarnings || []) {
+    if (isDailyRatePayrollEmployee(employee) && isPeriodVariableDayRateEarningLine(line)) continue;
+    if (isStoredLeaveAllowancePackageLine(line)) continue;
     const stored = line as StoredPayrollPackageLine;
     const frequency = stored.runFrequency || 'monthly';
     const includeInMonthly = stored.includeInMonthlyPayroll ?? (frequency !== 'one-off');
@@ -827,9 +844,6 @@ const mergeConfiguredPackageSupplements = (
   if (!supplements.length) return baseLines;
   return [...baseLines, ...supplements];
 };
-
-const isLeaveAllowanceLine = (line: Pick<PayrollEarningLine, 'code' | 'name'>) =>
-  isLeaveAllowancePaymentCode(line.code) || /\bLEAVE ALLOWANCE\b/i.test(String(line.name || ''));
 
 const basicPercentForProfile = (profileId: PayrollEarningProfileId) => {
   if (profileId === 'fallback' || profileId === 'contract-day-rate' || profileId === 'stipend-non-taxable') return 0;
@@ -955,6 +969,11 @@ const canonicalEarningCode = (code: string) => {
     EXPHOUSINGTAX: 'EXPHOUSINGTAX',
     EXPOTHALL: 'EXPOTHALL',
     EXPTRANSP: 'EXPTRANSP',
+    ITALLOW: 'STIPENDNT',
+    NYSCALLOW: 'STIPENDNT',
+    STIPEND: 'STIPENDNT',
+    BASIC1LUMPSUM: 'LUMPSUMTAX',
+    BASICLUMPSUM: 'LUMPSUMTAX',
   };
   return aliases[upper] || upper;
 };

@@ -3006,9 +3006,21 @@ export default function EmployeeProfileClient({
                         <div className="space-y-5">
                           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
                             <Field label="Salary Grade" value={v(profileData.payrollSummary.salaryGrade)} />
-                            <Field label="Monthly Package Gross" value={payrollMoney(profileData.payrollSummary.monthlyPackageGross ?? profileData.payrollSummary.basicSalary, payrollCurrency)} masked={!perms.canViewPayroll} />
-                            <Field label="Basic Salary" value={payrollMoney(profileData.payrollSummary.basicSalary, payrollCurrency)} masked={!perms.canViewPayroll} />
-                            <Field label="Allowances" value={payrollMoney(profileData.payrollSummary.allowances, payrollCurrency)} masked={!perms.canViewPayroll} />
+                            {profileData.payrollClassification?.isDailyRate || /daily rate|day rate/i.test(profileData.employmentType || '') ? (
+                              <>
+                                <Field label="Daily Rate" value={payrollMoney(profileData.payrollSummary.ratePerDay, payrollCurrency)} masked={!perms.canViewPayroll} />
+                                <Field label="Rate Per Hour" value={payrollMoney(profileData.payrollSummary.ratePerHour, payrollCurrency)} masked={!perms.canViewPayroll} />
+                                <Field label="Hours Per Day" value={profileData.payrollSummary.hoursPerDay != null ? String(profileData.payrollSummary.hoursPerDay) : '—'} />
+                                <Field label="Last Payroll Gross" value={payrollMoney(profileData.payrollSummary.payrollRunGrossPay, payrollCurrency)} masked={!perms.canViewPayroll} />
+                                <Field label="Last Payroll Net" value={payrollMoney(profileData.payrollSummary.payrollRunNetPay, payrollCurrency)} masked={!perms.canViewPayroll} />
+                              </>
+                            ) : (
+                              <>
+                                <Field label="Monthly Package Gross" value={payrollMoney(profileData.payrollSummary.monthlyPackageGross ?? profileData.payrollSummary.basicSalary, payrollCurrency)} masked={!perms.canViewPayroll} />
+                                <Field label="Basic Salary" value={payrollMoney(profileData.payrollSummary.basicSalary, payrollCurrency)} masked={!perms.canViewPayroll} />
+                                <Field label="Allowances" value={payrollMoney(profileData.payrollSummary.allowances, payrollCurrency)} masked={!perms.canViewPayroll} />
+                              </>
+                            )}
                             <Field label="Deductions" value={payrollMoney(profileData.payrollSummary.deductions, payrollCurrency)} masked={!perms.canViewPayroll} />
                             <Field label="Pay Currency" value={payrollCurrency} masked={!perms.canViewPayroll} />
                             <Field label="Bank Name" value={v(profileData.payrollSummary.bankName)} masked={!perms.canViewPayroll} />
@@ -3016,9 +3028,61 @@ export default function EmployeeProfileClient({
                             <Field label="Pension Provider" value={v(profileData.payrollSummary.pensionProvider)} masked={!perms.canViewPayroll} />
                             <Field label="Tax ID" value={v(profileData.payrollSummary.taxId)} masked={!perms.canViewPayroll} />
                             <Field label="Payroll Group" value={v(profileData.payrollSummary.payrollGroup)} masked={!perms.canViewPayroll} />
-                            <Field label="Last Payroll Processed" value={profileData.payrollSummary.lastPayrollProcessed ? formatDateUtc(profileData.payrollSummary.lastPayrollProcessed) : '—'} />
+                            <Field
+                              label="Last Payroll Processed"
+                              value={
+                                profileData.payrollSummary.payrollRunPeriodLabel
+                                || (!(profileData.payrollClassification?.isDailyRate || /daily rate|day rate/i.test(profileData.employmentType || ''))
+                                  && profileData.payrollSummary.lastPayrollProcessed
+                                  ? formatDateUtc(profileData.payrollSummary.lastPayrollProcessed)
+                                  : '—')
+                              }
+                            />
                           </div>
-                          {perms.canViewPayroll && (profileData.payrollSummary.earningLines?.length || profileData.payrollSummary.deductionLines?.length) ? (
+                          {perms.canViewPayroll && (profileData.payrollClassification?.isDailyRate || /daily rate|day rate/i.test(profileData.employmentType || '')) ? (
+                            <div className="space-y-4">
+                              {profileData.payrollSummary.payrollRunEarningLines?.length ? (
+                                <PayrollLinesEditor
+                                  title="Last payroll run — earning lines"
+                                  description={`Amounts paid in ${profileData.payrollSummary.payrollRunPeriodLabel || 'the last payroll run'}. These change every month from timesheets — they are not a standing package.`}
+                                  lines={profileData.payrollSummary.payrollRunEarningLines}
+                                  presets={EARNING_LINE_PRESETS}
+                                  onChange={() => undefined}
+                                  lineKind="earning"
+                                  readOnly
+                                  currency={payrollCurrency}
+                                />
+                              ) : (
+                                <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4 text-sm font-semibold text-slate-700">
+                                  Weekday pay, overtime, meal and refunds appear here after payroll is run. They are calculated from approved timesheets × daily rate, not stored as a monthly package.
+                                </div>
+                              )}
+                              {profileData.payrollSummary.payrollRunDeductionLines?.length ? (
+                                <PayrollLinesEditor
+                                  title="Last payroll run — deduction lines"
+                                  description={`Deductions from ${profileData.payrollSummary.payrollRunPeriodLabel || 'the last payroll run'}.`}
+                                  lines={profileData.payrollSummary.payrollRunDeductionLines}
+                                  presets={DEDUCTION_LINE_PRESETS}
+                                  onChange={() => undefined}
+                                  lineKind="deduction"
+                                  readOnly
+                                  currency={payrollCurrency}
+                                />
+                              ) : null}
+                              {profileData.payrollSummary.deductionLines?.length ? (
+                                <PayrollLinesEditor
+                                  title="Standing deduction lines"
+                                  description="Recurring deductions on this employee (loan, cooperative, union). These stay until removed."
+                                  lines={profileData.payrollSummary.deductionLines}
+                                  presets={DEDUCTION_LINE_PRESETS}
+                                  onChange={() => undefined}
+                                  lineKind="deduction"
+                                  readOnly
+                                  currency={payrollCurrency}
+                                />
+                              ) : null}
+                            </div>
+                          ) : perms.canViewPayroll && (profileData.payrollSummary.earningLines?.length || profileData.payrollSummary.deductionLines?.length) ? (
                             <div className="space-y-4">
                               <PayrollLinesEditor
                                 title="Earning Lines"
@@ -3071,6 +3135,7 @@ export default function EmployeeProfileClient({
                             }}
                             canViewPayroll={perms.canViewPayroll}
                             employmentType={profileData.employmentType || ''}
+                            timesheetWages={Boolean(profileData.payrollClassification?.isDailyRate)}
                             assignLabel="Employee assigned to payroll run"
                           />
                         )

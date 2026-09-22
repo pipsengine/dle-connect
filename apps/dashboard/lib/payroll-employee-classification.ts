@@ -91,6 +91,21 @@ export const isContractStyleEarningLine = (line: { code?: string; name?: string 
     || /\b(WEEKDAY EARNING|MEAL ALLOWANCE|PUBLIC HOLIDAY|SATURDAY OVERTIME|SUNDAY OVERTIME|OVERTIME EARNING)\b/.test(name);
 };
 
+/**
+ * C-code / daily-rate amounts that change with timesheets each month.
+ * They belong on a payroll run, not as a standing profile package.
+ */
+export const isPeriodVariableDayRateEarningLine = (line: { code?: string; name?: string }) => {
+  if (isContractStyleEarningLine(line)) return true;
+  const code = String(line.code || '').trim().toUpperCase().replace(/[^A-Z0-9]/g, '');
+  const name = String(line.name || '').trim().toUpperCase();
+  return /^(REFUND|ARREARS|NIGHTALL|NIGHTALLOW|NNDMEAL|STOCKCOUNT|OTHERPAY|MISC)$/.test(code)
+    || /\b(REFUND|ARREARS|NIGHT ALLOW|STOCK COUNT)\b/.test(name);
+};
+
+export const standingDayRatePackageLines = <T extends { code?: string; name?: string }>(lines: T[] | null | undefined) =>
+  (lines || []).filter((line) => !isPeriodVariableDayRateEarningLine(line));
+
 /** Permanent-staff payslip lines use structural MGT/SNR/JNR codes — not contract day-rate JCWEEKDAY rows. */
 export const permanentStyleSageEarnings = (lines: Array<{ code?: string; name?: string }>) =>
   lines.some((line) => /^(MGT|SNR|JNR|SNM|MGT1COLA|MONTHLY|BASIC|PER_)/i.test(String(line.code || line.name || '')));

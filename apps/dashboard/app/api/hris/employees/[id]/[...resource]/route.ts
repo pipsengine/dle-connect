@@ -10,9 +10,10 @@ import type { DleEmployeeDirectoryRow } from '@/lib/dle-enterprise-db';
 import { readDirectoryEmployees, invalidatePayrollEmployeeCache } from '@/lib/payroll-employee-source';
 import { invalidateHrisEmployeeCaches } from '@/lib/hris-employee-cache';
 import { ensureEmployeeLeaveFromHris } from '@/lib/hris-leave-read';
-import { contractPayrollClassification, type ContractPayrollClassification } from '@/lib/payroll-employee-classification';
+import { contractPayrollClassification, isDailyRatePayrollEmployee, isPeriodVariableDayRateEarningLine, type ContractPayrollClassification } from '@/lib/payroll-employee-classification';
 import { readEmployeeProfileExtensions, writeEmployeeProfileExtensions } from '@/lib/employee-profile-extensions-store';
 import {
+  applyLatestPayrollRunToSummary,
   buildStoredPayrollLinesFromDrafts,
   enrichPayrollSummaryFromRow,
   profileSummaryToSetupDraft,
@@ -2730,6 +2731,27 @@ const ensureRecordFromDb = async (employeeId: string) => {
   return record;
 };
 
+const attachLatestPayrollRunToRecord = async (rec: EmployeeRecord) => {
+  const code = rec.profile.employeeId;
+  const dailyRate = Boolean(rec.payrollClassification?.isDailyRate)
+    || /daily rate|day rate/i.test(String(rec.profile.employmentType || rec.profile.employmentDetails?.employmentType || ''));
+  if (!code || !dailyRate) return rec;
+  const { findLatestPayrollRunRecordForEmployee } = await import('@/lib/payroll-run-store');
+  const found = await findLatestPayrollRunRecordForEmployee(code, { pack: 'daily-rate' })
+    || await findLatestPayrollRunRecordForEmployee(code);
+  if (!found) return rec;
+  rec.payrollSummary = applyLatestPayrollRunToSummary(rec.payrollSummary, {
+    period: found.period,
+    periodLabel: found.periodLabel,
+    processedAt: found.processedAt,
+    grossPay: found.record.grossPay,
+    netPay: found.record.netPay,
+    earningLines: found.record.earningLines,
+    deductionLines: found.record.deductionLines,
+  });
+  return rec;
+};
+
 /** Action paths that must not be treated as employee IDs (use static routes / [...action] instead). */
 const RESERVED_EMPLOYEE_ACTION_IDS = new Set([
   'draft',
@@ -2845,6 +2867,12 @@ const sanitizePayrollForRole = (payroll: PayrollSummary, perms: ReturnType<typeo
     lastPayrollProcessed: null,
     earningLines: [],
     deductionLines: [],
+    payrollRunEarningLines: [],
+    payrollRunDeductionLines: [],
+    payrollRunPeriod: null,
+    payrollRunPeriodLabel: null,
+    payrollRunGrossPay: null,
+    payrollRunNetPay: null,
   };
 };
 
@@ -2918,6 +2946,10 @@ export async function GET(request: Request, ctx: { params: Promise<{ id: string;
   const rec = await ensureRecordFromDb(employeeId);
   const { root, rest } = getResource(resource);
   if (!root) return jsonErr(404, 'Not found');
+
+  if (root === 'profile' || root === 'payroll-summary') {
+    await attachLatestPayrollRunToRecord(rec);
+  }
 
   if (root === 'profile') return jsonOk(sanitizePayloadForRole(rec, perms));
   if (root === 'overview') {
@@ -5532,16 +5564,24 @@ async function patchEmployeeRecord(request: Request, ctx: { params: Promise<{ id
       (row) => row.employeeCode.toLowerCase() === String(rec.profile.employeeId || '').toLowerCase()
         || row.employeeId.toLowerCase() === String(rec.profile.employeeId || '').toLowerCase(),
     );
-    const storedEarnings = (earningLinesProvided || editorEarnings.length)
+    const dailyRateSave = Boolean(
+      (directoryRow && isDailyRatePayrollEmployee(directoryRow))
+      || rec.payrollClassification?.isDailyRate
+      || /daily rate|day rate/i.test(employmentType),
+    );
+    const storedEarnings = ((earningLinesProvided || editorEarnings.length)
       ? mergePayrollEarningLinesForSave(directoryRow?.sagePayrollEarnings, editorEarnings)
-      : editorEarnings;
+      : editorEarnings
+    ).filter((line) => !dailyRateSave || !isPeriodVariableDayRateEarningLine(line));
     const storedDeductions = buildStoredPayrollLinesFromDrafts(next.deductionLines || [], false);
     const monthlyGross = sumMonthlyPackageGross(storedEarnings);
     const isLumpsumEmployee = /lumpsum|lump\s*sum/i.test(String(employmentType || ''))
       || /^L\d+/i.test(String(rec.profile.employeeId || ''));
     const lumpsumBaseGross = lumpsumBaseAmountFromStoredLines(storedEarnings);
-    const packageBaseGross = isLumpsumEmployee && lumpsumBaseGross > 0 ? lumpsumBaseGross : monthlyGross;
-    const previousGross = Number(rec.payrollSummary?.monthlyPackageGross || rec.payrollSummary?.basicSalary || 0);
+    const packageBaseGross = dailyRateSave
+      ? 0
+      : (isLumpsumEmployee && lumpsumBaseGross > 0 ? lumpsumBaseGross : monthlyGross);
+    const previousGross = dailyRateSave ? 0 : Number(rec.payrollSummary?.monthlyPackageGross || rec.payrollSummary?.basicSalary || 0);
     const preservedPackageGross = packageBaseGross > 0
       ? packageBaseGross
       : (Number(next.monthlyPackageGross) > 0
@@ -5553,6 +5593,10 @@ async function patchEmployeeRecord(request: Request, ctx: { params: Promise<{ id
     } else if (preservedPackageGross != null) {
       next.monthlyPackageGross = preservedPackageGross;
     }
+    if (dailyRateSave) {
+      next.earningLines = (next.earningLines || []).filter((line) => !isPeriodVariableDayRateEarningLine(line));
+      next.legacyEarningLines = undefined;
+    }
     next.earningLines = next.earningLines || [];
     rec.payrollSummary = next;
     rec.audit.unshift(auditEntry('Updated payroll summary', role));
@@ -5563,9 +5607,11 @@ async function patchEmployeeRecord(request: Request, ctx: { params: Promise<{ id
         payrollGroup: cleanPayrollGroupValue(next.payrollGroup) || next.payrollGroup,
         salaryGrade: next.salaryGrade,
         payCurrency: next.payCurrency || 'NGN',
-        periodSalary: preservedPackageGross,
-        annualSalary: preservedPackageGross ? Number(preservedPackageGross) * 12 : (next.basicSalary ? Number(next.basicSalary) * 12 : null),
-        basicSalary: next.basicSalary,
+        periodSalary: dailyRateSave ? (directoryRow?.periodSalary ?? null) : preservedPackageGross,
+        annualSalary: dailyRateSave
+          ? (directoryRow?.annualSalary ?? null)
+          : (preservedPackageGross ? Number(preservedPackageGross) * 12 : (next.basicSalary ? Number(next.basicSalary) * 12 : null)),
+        basicSalary: dailyRateSave ? (directoryRow?.basicSalary ?? next.basicSalary) : next.basicSalary,
         bankName: next.bankName,
         accountNumber: normalizeStr(body.accountNumber, 50) || next.accountNumber,
         accountName: next.accountName,
@@ -5576,7 +5622,7 @@ async function patchEmployeeRecord(request: Request, ctx: { params: Promise<{ id
         ratePerDay: next.ratePerDay,
         ratePerHour: next.ratePerHour,
         hoursPerDay: next.hoursPerDay,
-        ...(earningLinesProvided || storedEarnings.length ? {
+        ...(dailyRateSave || earningLinesProvided || storedEarnings.length ? {
           sageEarningLinesJson: JSON.stringify(storedEarnings),
           replaceSageEarningLinesJson: 1,
         } : {}),
@@ -5594,6 +5640,7 @@ async function patchEmployeeRecord(request: Request, ctx: { params: Promise<{ id
     invalidatePayrollEmployeeCache();
     invalidatePayrollEmployeeOptionsCache();
     invalidatePayrollCalculationCache();
+    if (dailyRateSave) await attachLatestPayrollRunToRecord(rec);
     return jsonOk(sanitizePayrollForRole(rec.payrollSummary, perms));
   }
 

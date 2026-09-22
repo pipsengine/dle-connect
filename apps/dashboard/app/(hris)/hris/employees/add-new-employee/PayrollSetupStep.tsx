@@ -233,6 +233,7 @@ export default function PayrollSetupStep({
   assignLabel = 'Assign employee to payroll run on create',
   contractStartDate = '',
   contractEndDate = '',
+  timesheetWages = false,
 }: {
   payroll: PayrollSetupDraft;
   onChange: (next: PayrollSetupDraft) => void;
@@ -242,6 +243,7 @@ export default function PayrollSetupStep({
   assignLabel?: string;
   contractStartDate?: string;
   contractEndDate?: string;
+  timesheetWages?: boolean;
 }) {
   const currency = resolvePayrollDraftCurrency(payroll);
   const patch = (partial: Partial<PayrollSetupDraft>) => onChange({ ...payroll, ...partial });
@@ -254,7 +256,7 @@ export default function PayrollSetupStep({
   const monthlyGross = sumMonthlyPackageGross(storedEarnings);
   const monthlyFromPeriodSalary = Number(payroll.periodSalary || 0);
   const displayMonthlyGross = monthlyGross > 0 ? monthlyGross : monthlyFromPeriodSalary;
-  const isDailyRate = employmentType === 'Daily Rate';
+  const isDailyRate = timesheetWages || employmentType === 'Daily Rate';
   const isLumpsum = employmentType === 'Lumpsum';
   const showMonthlyPackageField = !isDailyRate;
 
@@ -291,11 +293,13 @@ export default function PayrollSetupStep({
   return (
     <div className="space-y-5">
       <div className="rounded-2xl border border-blue-200 bg-blue-50/70 p-4">
-        <div className="text-sm font-extrabold text-blue-900">Flexible payroll package</div>
+        <div className="text-sm font-extrabold text-blue-900">{isDailyRate ? 'Daily-rate payroll' : 'Flexible payroll package'}</div>
         <div className="mt-1 text-xs font-semibold text-blue-800">
-          Add earning and deduction lines with weekly, monthly, or one-off frequency. No fixed salary grade is required — each employee gets a custom package.
+          {isDailyRate
+            ? 'Weekday pay, overtime, meal and refunds come from the payroll run (timesheets × daily rate). Do not store last month’s amounts here.'
+            : 'Add earning and deduction lines with weekly, monthly, or one-off frequency. No fixed salary grade is required — each employee gets a custom package.'}
         </div>
-        {displayMonthlyGross > 0 ? (
+        {!isDailyRate && displayMonthlyGross > 0 ? (
           <div className="mt-3 inline-flex rounded-xl bg-white px-3 py-2 text-xs font-extrabold text-slate-800 border border-blue-200">
             Estimated monthly package gross: {formatMoney(displayMonthlyGross)}
           </div>
@@ -355,21 +359,23 @@ export default function PayrollSetupStep({
 
       {isDailyRate ? (
         <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
-          <Field label={`Daily Rate (${currencySymbol} / day)`} type="number" value={payroll.ratePerDay || payroll.dailyRate} onChange={(v) => patch({ ratePerDay: v, dailyRate: v })} hint="Timesheet-driven wages in addition to fixed lines below" />
+          <Field label={`Daily Rate (${currencySymbol} / day)`} type="number" value={payroll.ratePerDay || payroll.dailyRate} onChange={(v) => patch({ ratePerDay: v, dailyRate: v })} hint="Approved timesheets × this rate drive weekday pay on the payroll run" />
           <Field label={`Rate Per Hour (${currencySymbol})`} type="number" value={payroll.ratePerHour} onChange={(v) => patch({ ratePerHour: v })} />
           <Field label="Hours Per Day" type="number" value={payroll.hoursPerDay} onChange={(v) => patch({ hoursPerDay: v })} />
         </div>
       ) : null}
 
-      <PayrollLinesEditor
-        title="Earning Lines"
-        description="Examples: Basic Salary, Outstation Allowance (deployed staff), Weekly Transport Claim. Weekly amounts are converted to monthly (× 52/12) in payroll."
-        lines={payroll.earningLines}
-        presets={EARNING_LINE_PRESETS}
-        onChange={(earningLines) => patch({ earningLines })}
-        lineKind="earning"
-        currency={currency}
-      />
+      {isDailyRate ? null : (
+        <PayrollLinesEditor
+          title="Earning Lines"
+          description="Examples: Basic Salary, Outstation Allowance (deployed staff), Weekly Transport Claim. Weekly amounts are converted to monthly (× 52/12) in payroll."
+          lines={payroll.earningLines}
+          presets={EARNING_LINE_PRESETS}
+          onChange={(earningLines) => patch({ earningLines })}
+          lineKind="earning"
+          currency={currency}
+        />
+      )}
 
       <PayrollLinesEditor
         title="Deduction Lines"

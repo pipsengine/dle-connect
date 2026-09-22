@@ -34,7 +34,6 @@ import {
   workflowStageForEssStatus,
 } from '@/lib/leave-request-shared';
 import { invalidatePayrollEmployeeCache, readPayrollEmployees } from '@/lib/payroll-employee-source';
-import { activePayrollPeriod } from '@/lib/payroll-periods';
 import { sendLeaveApprovalRequestEmail, sendLeaveRelieverAssignmentEmail, sendLeaveWorkflowEmail, resolveEmployeeMailbox, resolveMailProvider, type MailSendResult } from '@/lib/mail-service';
 import { buildEssEmployeeLookupKeys } from '@/lib/ess-dashboard-store';
 import { normalizePayrollMatchKey } from '@/lib/sage-people-payroll-store';
@@ -2576,7 +2575,7 @@ export const transitionEssLeaveRequest = async (input: {
         leaveType: found.leaveType,
         days: Number(found.days || 0),
         startDate: normalizeLeaveDate(found.startDate),
-        period: found.payrollPeriod || activePayrollPeriod(),
+        period: normalizeLeaveDate(found.startDate).slice(0, 7),
         requestId: found.id,
         source: 'ESS Leave Approval',
         actor: input.actorName,

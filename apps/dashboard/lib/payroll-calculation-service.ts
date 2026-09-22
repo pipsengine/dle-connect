@@ -852,12 +852,10 @@ const computePayrollForPeriod = async (requestedPeriod: string): Promise<Payroll
     throw new Error('One or more active payroll configuration versions are missing.');
   }
 
-  if (!enterpriseSourceActive) {
-    try {
-      await syncLeaveAllowanceEventsForPayroll(requestedPeriod);
-    } catch (error) {
-      console.warn('[PayrollCalculation] Leave allowance sync skipped:', error instanceof Error ? error.message : error);
-    }
+  try {
+    await syncLeaveAllowanceEventsForPayroll(requestedPeriod);
+  } catch (error) {
+    console.warn('[PayrollCalculation] Leave allowance sync skipped:', error instanceof Error ? error.message : error);
   }
 
   const loanInputs = loanInputsFromApplications(employeeSource.employees, loanApplications).reduce((map, input) => {

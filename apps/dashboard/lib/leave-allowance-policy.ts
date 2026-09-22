@@ -84,6 +84,32 @@ export const primaryAnnualLeaveApplicationForAllowance = (
     })
     .sort((left, right) => Number(right.days || 0) - Number(left.days || 0))[0] || null;
 
+/** First approved Annual Leave of the year that itself meets the 10-day allowance threshold. */
+export const earliestQualifyingAnnualLeaveForAllowance = (
+  applications: LeaveApplicationLike[],
+  employeeKeys: string[],
+  leaveYear: number,
+) =>
+  applications
+    .filter((application) => {
+      if (!matchesEmployeeKeys(application.employeeId, employeeKeys)) return false;
+      if (application.leaveType !== 'Annual Leave') return false;
+      if (!approvedStatuses.has(application.status)) return false;
+      if (Number(application.days || 0) < LEAVE_ALLOWANCE_MINIMUM_ANNUAL_DAYS) return false;
+      return Number(String(application.startDate).slice(0, 4)) === leaveYear;
+    })
+    .sort((left, right) => String(left.startDate).localeCompare(String(right.startDate)))[0] || null;
+
+/** Payroll month that should carry the year's leave allowance, or null if not yet entitled. */
+export const leaveAllowancePaymentPeriodForYear = (
+  applications: LeaveApplicationLike[],
+  employeeKeys: string[],
+  leaveYear: number,
+) => {
+  const qualifying = earliestQualifyingAnnualLeaveForAllowance(applications, employeeKeys, leaveYear);
+  return qualifying ? String(qualifying.startDate).slice(0, 7) : null;
+};
+
 export const buildLeaveAllowanceApplicationStatus = (
   application: LeaveApplicationLike,
   applications: LeaveApplicationLike[],

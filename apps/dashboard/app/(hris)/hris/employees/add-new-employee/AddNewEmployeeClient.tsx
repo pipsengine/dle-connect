@@ -2008,6 +2008,7 @@ export default function AddNewEmployeeClient({ initialNow, initialDraftId, initi
       }}
       canViewPayroll={perms.canViewPayroll}
       employmentType={draft.employment.employmentType}
+      timesheetWages={draft.employment.employmentType === 'Daily Rate'}
       contractStartDate={draft.employment.contractStartDate}
       contractEndDate={draft.employment.contractEndDate}
     />,
