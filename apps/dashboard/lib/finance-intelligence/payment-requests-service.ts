@@ -1,7 +1,7 @@
 import sql from 'mssql';
 import path from 'node:path';
 import { ensureFinanceDb } from '@/lib/finance-intelligence/store';
-import { convertAmountToNgn, resolveApprovalChain, applyMdLineManagerLastApproverRule, applyGmApprovesOnceBeforeCfo, applyProjectReportingManagerFirst, skipProjectReportingManagerWhenSameAsPm, stripLeadingReportingManager, isProjectChainWithoutReportingManager, bandRequiresMdCeo, isProjectPaymentPath } from '@/lib/finance-intelligence/approval-matrix-service';
+import { convertAmountToNgn, resolveApprovalChain, applyMdLineManagerLastApproverRule, applyGmApprovesOnceBeforeCfo, applyProjectReportingManagerFirst, skipProjectReportingManagerWhenSameAsPm, stripLeadingReportingManager, isProjectChainWithoutReportingManager, bandRequiresMdCeo, isProjectPaymentPath, isGmApprovalStage } from '@/lib/finance-intelligence/approval-matrix-service';
 import {
   assertReportingManagerRoutable,
   isReportingManagerStage,
@@ -357,9 +357,20 @@ const resolveInitialStage = async (
       projectCode: context?.projectCode,
       requesterCode: context?.requesterCode,
       supervisorName: context?.supervisorName,
+      costCentre: context?.costCentre,
     });
     if (matched) {
-      const stages = await withCostCentre(applyHrManagerAfterReportingManager(matched.stages, context?.expenseNature));
+      let stages = applyHrManagerAfterReportingManager(matched.stages, context?.expenseNature);
+      stages = await withCostCentre(stages);
+      stages = await applyGmApprovesOnceBeforeCfo({
+        stages,
+        requesterCode: context?.requesterCode,
+        supervisorName: context?.supervisorName,
+        projectCode: context?.projectCode,
+        department: context?.department,
+        paymentType,
+        costCentre: context?.costCentre,
+      });
       return {
         stage: stages[0] || matched.currentStage,
         status: 'Pending Approval' as const,
@@ -436,6 +447,7 @@ const resolveInitialStage = async (
     projectCode: context?.projectCode,
     department: context?.department,
     paymentType,
+    costCentre: context?.costCentre,
   });
   fallbackStages = applyHrManagerAfterReportingManager(fallbackStages, context?.expenseNature);
   fallbackStages = await withCostCentre(fallbackStages);
@@ -1062,6 +1074,7 @@ const ensureApprovalStages = async (row: PaymentRequestRow): Promise<string[]> =
       projectCode: row.projectCode,
       requesterCode: row.requesterCode,
       supervisorName: row.supervisorName,
+      costCentre: row.costCentre,
     });
     if (matched?.stages?.length) {
       let nextStages = applyHrManagerAfterReportingManager(
@@ -1075,6 +1088,15 @@ const ensureApprovalStages = async (row: PaymentRequestRow): Promise<string[]> =
           department: row.department,
         }).catch(() => nextStages);
       }
+      nextStages = await applyGmApprovesOnceBeforeCfo({
+        stages: nextStages,
+        requesterCode: row.requesterCode,
+        supervisorName: row.supervisorName,
+        projectCode: row.projectCode,
+        department: row.department,
+        paymentType: row.paymentType,
+        costCentre: row.costCentre,
+      });
       matchedStages = nextStages;
       matchedMeta = {
         matrixRuleName: matched.ruleName,
@@ -1166,6 +1188,77 @@ const ensureApprovalStages = async (row: PaymentRequestRow): Promise<string[]> =
     repairedStages: true,
   });
   return stages;
+};
+
+/**
+ * When the cost-centre HoD is the GM, the workflow must include a GM stage
+ * last before CFO — including in-flight items that only had the non-project chain.
+ */
+export const repairMissingCostCentreGm = async (row: PaymentRequestRow): Promise<PaymentRequestRow> => {
+  if (!compact(row.costCentre)) return row;
+  if (!/pending|submitted|finance review|returned/i.test(compact(row.status))) return row;
+
+  const existing = stagesFromPayload(row.payload);
+  const stages = await ensureApprovalStages(row);
+  if (!stages.some(isGmApprovalStage)) {
+    return (await getPaymentRequestById(row.requestId)) || { ...row, payload: { ...row.payload, stages } };
+  }
+
+  const refreshed = (await getPaymentRequestById(row.requestId)) || { ...row, payload: { ...row.payload, stages } };
+  if (/returned/i.test(compact(refreshed.status))) return refreshed;
+
+  const actions = await listPaymentRequestActions(row.requestId);
+  const gmApproved = actions.some((action) =>
+    /approve/i.test(action.actionType) && isGmApprovalStage(action.stage));
+  if (gmApproved) return refreshed;
+
+  const gmStage = stages.find((stage) => isGmApprovalStage(stage)) || 'GM';
+  const gmIdx = stages.findIndex((stage) => isGmApprovalStage(stage));
+  const currentIdx = stages.findIndex((stage) =>
+    compact(stage).toLowerCase() === compact(refreshed.currentStage).toLowerCase());
+  const sittingPastGm = currentIdx > gmIdx
+    || /cfo|md\s*\/?\s*ceo|managing director|treasury/i.test(compact(refreshed.currentStage));
+  if (!sittingPastGm) return refreshed;
+  if (isGmApprovalStage(refreshed.currentStage)) return refreshed;
+
+  const pool = await ensureFinanceDb().catch(() => null);
+  if (!pool) return refreshed;
+  try {
+    await pool.request()
+      .input('RequestId', sql.NVarChar(60), row.requestId)
+      .input('CurrentStage', sql.NVarChar(80), gmStage)
+      .query(`
+UPDATE [finance].[PaymentRequests]
+SET [CurrentStage] = @CurrentStage,
+    [Status] = N'Pending Approval',
+    [UpdatedAt] = SYSUTCDATETIME()
+WHERE [RequestId] = @RequestId
+`);
+    await assignCurrentApprover({
+      requestId: row.requestId,
+      stage: gmStage,
+      requesterCode: row.requesterCode,
+      projectCode: row.projectCode,
+      department: row.department,
+      costCentre: row.costCentre,
+      supervisorName: row.supervisorName,
+      paymentType: row.paymentType,
+    });
+    if (!existing.some(isGmApprovalStage)) {
+      await logAction({
+        requestId: row.requestId,
+        actionType: 'repair-stages',
+        stage: gmStage,
+        actorName: 'System',
+        actorCode: 'system',
+        comment: 'Inserted GM approval because the cost-centre head of department is the General Manager.',
+      });
+    }
+  } catch (error) {
+    console.error('[payment-requests] repairMissingCostCentreGm failed', error);
+    return refreshed;
+  }
+  return (await getPaymentRequestById(row.requestId)) || refreshed;
 };
 
 /**
@@ -1261,6 +1354,7 @@ export const repairMissingProjectLineManager = async (row: PaymentRequestRow): P
       projectCode: row.projectCode,
       requesterCode: row.requesterCode,
       supervisorName: row.supervisorName,
+      costCentre: row.costCentre,
     });
     if (matched?.stages?.length) {
       nextStages = matched.stages;
@@ -1305,6 +1399,7 @@ export const repairMissingProjectLineManager = async (row: PaymentRequestRow): P
       projectCode: row.projectCode,
       department: row.department,
       paymentType: row.paymentType,
+      costCentre: row.costCentre,
     });
   }
   nextStages = applyHrManagerAfterReportingManager(nextStages, compact(row.payload?.expenseNature));
@@ -1403,6 +1498,7 @@ export const repairMisroutedProjectPathWithoutProject = async (row: PaymentReque
     projectCode: row.projectCode,
     requesterCode: row.requesterCode,
     supervisorName: row.supervisorName,
+    costCentre: row.costCentre,
   }).catch((error) => {
     console.error('[payment-requests] non-project reroute resolve failed', error);
     return null;
@@ -1412,6 +1508,22 @@ export const repairMisroutedProjectPathWithoutProject = async (row: PaymentReque
     ? matched.stages
     : defaultStagesForPayment(row.paymentType, row.projectCode, row.department);
   nextStages = applyHrManagerAfterReportingManager(nextStages, compact(row.payload?.expenseNature));
+  if (compact(row.costCentre)) {
+    nextStages = await applyCostCentreManagerStage(nextStages, {
+      costCentre: row.costCentre,
+      requesterCode: row.requesterCode,
+      department: row.department,
+    }).catch(() => nextStages);
+  }
+  nextStages = await applyGmApprovesOnceBeforeCfo({
+    stages: nextStages,
+    requesterCode: row.requesterCode,
+    supervisorName: row.supervisorName,
+    projectCode: row.projectCode,
+    department: row.department,
+    paymentType: row.paymentType,
+    costCentre: row.costCentre,
+  });
   if (!nextStages.length) return row;
 
   const actions = await listPaymentRequestActions(row.requestId);
@@ -2012,6 +2124,15 @@ export const buildPaymentRequestsWorkspace = async (input?: {
       rows[index] = await repairMisroutedDepartmentHatReportingManager(rows[index]);
     } catch (error) {
       console.error('[payment-requests] dual-hat reporting manager repair failed', rows[index]?.requestNumber, error);
+    }
+  }
+
+  for (let index = 0; index < rows.length; index += 1) {
+    if (!compact(rows[index]?.costCentre)) continue;
+    try {
+      rows[index] = await repairMissingCostCentreGm(rows[index]);
+    } catch (error) {
+      console.error('[payment-requests] cost-centre GM repair failed', rows[index]?.requestNumber, error);
     }
   }
 
@@ -3214,9 +3335,11 @@ export const transitionPaymentRequest = async (input: {
   const existingRaw = (await listRows()).find((row) => row.requestId === input.requestId)
     || await getPaymentRequestById(input.requestId);
   if (!existingRaw) throw new Error('Payment request not found.');
-  const existing = await repairMisroutedDepartmentHatReportingManager(
-    await repairMisroutedProjectPathWithoutProject(
-      await repairMissingProjectLineManager(await repairPrematureTreasuryHandoff(existingRaw)),
+  const existing = await repairMissingCostCentreGm(
+    await repairMisroutedDepartmentHatReportingManager(
+      await repairMisroutedProjectPathWithoutProject(
+        await repairMissingProjectLineManager(await repairPrematureTreasuryHandoff(existingRaw)),
+      ),
     ),
   );
   if (['approve', 'reject', 'return', 'clarify', 'delegate', 'escalate'].includes(input.action)) {

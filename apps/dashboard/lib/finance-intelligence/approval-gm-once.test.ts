@@ -25,6 +25,26 @@ assert.deepEqual(
   'low band without a GM stage keeps the single Reporting Manager approval',
 );
 
+assert.deepEqual(
+  applyGmStageLayout(
+    ['Reporting Manager', 'Finance Manager', 'CFO', 'MD/CEO'],
+    false,
+    { includeGm: true },
+  ),
+  ['Reporting Manager', 'Finance Manager', 'GM', 'CFO', 'MD/CEO'],
+  'Operations cost-centre HoD who is GM must appear last before CFO',
+);
+
+assert.deepEqual(
+  applyGmStageLayout(
+    ['Reporting Manager', 'Finance Manager', 'CFO', 'MD/CEO'],
+    true,
+    { includeGm: true },
+  ),
+  ['Finance Manager', 'GM', 'CFO', 'MD/CEO'],
+  'GM cost-centre HoD who is also line manager still approves once, last before CFO',
+);
+
 assert.equal(isGmEmployee({ jobTitle: 'General Manager' }), true);
 assert.equal(isGmEmployee({ jobTitle: 'GM' }), true);
 assert.equal(isGmEmployee({ jobTitle: 'PA to GM' }), false);

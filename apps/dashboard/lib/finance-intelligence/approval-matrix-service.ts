@@ -806,7 +806,10 @@ export const deleteApprovalMatrixRule = async (input: { matrixId: string; actor:
   return { workspace: await buildApprovalMatrixWorkspace({ autoSeed: false }) };
 };
 
-const isGmStage = (stage: string) => /^gm$|general\s*manager/i.test(compact(stage));
+export const isGmApprovalStage = (stage?: string | null) =>
+  /^gm$|general\s*manager/i.test(compact(stage));
+
+const isGmStage = (stage: string) => isGmApprovalStage(stage);
 
 const isCfoStage = (stage: string) => /^cfo$|chief\s*financial/i.test(compact(stage));
 
@@ -839,15 +842,19 @@ const insertStageBeforeCfo = (stages: string[], stage: string) => {
 };
 
 /**
- * GM approves once. If the requester's line manager is the GM, drop Reporting Manager
- * and keep a single GM stage last before CFO. Never first-and-last.
+ * GM approves once, last before CFO. Include GM when the matrix already has that
+ * stage, the line manager is the GM, or the cost-centre HoD is the GM.
  */
-export const applyGmStageLayout = (stages: string[], gmIsLineManager: boolean) => {
+export const applyGmStageLayout = (
+  stages: string[],
+  gmIsLineManager: boolean,
+  options?: { includeGm?: boolean },
+) => {
   const original = [...(stages || [])].map((stage) => compact(stage)).filter(Boolean);
   if (!original.length) return original;
-  const hadGmStage = original.some(isGmStage);
-  if (!hadGmStage) return original;
-  if (!gmIsLineManager && original.filter(isGmStage).length <= 1) return original;
+  const includeGm = Boolean(options?.includeGm) || original.some(isGmStage);
+  if (!includeGm) return original;
+  if (!gmIsLineManager && !options?.includeGm && original.filter(isGmStage).length <= 1) return original;
   let next = original;
   if (gmIsLineManager) next = next.filter((stage) => !isLineManagerStage(stage));
   return insertStageBeforeCfo(next.filter((stage) => !isGmStage(stage)), 'GM');
@@ -860,12 +867,14 @@ export const applyGmApprovesOnceBeforeCfo = async (input: {
   projectCode?: string | null;
   department?: string | null;
   paymentType?: string | null;
+  costCentre?: string | null;
 }): Promise<string[]> => {
   const original = [...(input.stages || [])].map((stage) => compact(stage)).filter(Boolean);
   if (!original.length) return original;
   const hadGmStage = original.some(isGmStage);
 
   let gmIsLineManager = false;
+  let costCentreHodIsGm = false;
   try {
     const { resolvePaymentStageApprover } = await import('@/lib/finance-intelligence/payment-approval-notify');
     const lineManager = await resolvePaymentStageApprover({
@@ -884,6 +893,7 @@ export const applyGmApprovesOnceBeforeCfo = async (input: {
         supervisorName: input.supervisorName,
         projectCode: input.projectCode,
         department: input.department,
+        costCentre: input.costCentre,
         paymentType: input.paymentType,
         principalOnly: true,
       })
@@ -894,11 +904,22 @@ export const applyGmApprovesOnceBeforeCfo = async (input: {
       isGmEmployee(lineManager.employee)
       || (lineManagerCode && gmCode && lineManagerCode === gmCode),
     );
+
+    const costCentre = compact(input.costCentre);
+    if (costCentre) {
+      const { resolveDepartmentLineManager } = await import('@/lib/department-reporting-manager-sync');
+      const hod = await resolveDepartmentLineManager(costCentre);
+      costCentreHodIsGm = isGmEmployee(hod?.employee);
+      const hodCode = compact(hod?.code).toUpperCase();
+      if (lineManagerCode && hodCode && lineManagerCode === hodCode && costCentreHodIsGm) {
+        gmIsLineManager = true;
+      }
+    }
   } catch (error) {
     console.error('[approval-limits] GM one-approval rule failed', error);
   }
 
-  return applyGmStageLayout(original, gmIsLineManager);
+  return applyGmStageLayout(original, gmIsLineManager, { includeGm: hadGmStage || costCentreHodIsGm });
 };
 
 /** True when the employee is the Managing Director / MD-CEO. */
@@ -1073,6 +1094,7 @@ export const resolveApprovalChain = async (input: {
   projectDepartment?: boolean;
   requesterCode?: string | null;
   supervisorName?: string | null;
+  costCentre?: string | null;
   /** When true (default), seed standard bands if the matrix table is empty. */
   autoSeed?: boolean;
 }): Promise<ApprovalChainResolution | null> => {
@@ -1116,6 +1138,8 @@ export const resolveApprovalChain = async (input: {
     requesterCode: input.requesterCode,
     supervisorName: input.supervisorName,
     projectCode: input.projectCode,
+    department: input.department,
+    costCentre: input.costCentre,
   });
 
   return {

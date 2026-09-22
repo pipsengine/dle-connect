@@ -6,6 +6,7 @@ assert.equal(explicitDepartmentSupervisorCode("MD's Office"), 'P0060');
 assert.equal(explicitDepartmentSupervisorCode('HEALTH AND SAFETY'), 'P0392');
 assert.equal(explicitDepartmentSupervisorCode('HSE'), 'P0392');
 assert.equal(explicitDepartmentSupervisorCode('PROJECT'), 'P0442');
+assert.equal(explicitDepartmentSupervisorCode('OPERATIONS'), 'P0442');
 assert.equal(explicitDepartmentSupervisorCode('QUALITY ASSURANCE CONTROL'), 'L2792');
 assert.equal(explicitDepartmentSupervisorCode('QUALITY CONTROL/ASSURANCE'), 'L2792');
 assert.equal(explicitDepartmentSupervisorCode('ADMINSTRATION'), 'P0467');

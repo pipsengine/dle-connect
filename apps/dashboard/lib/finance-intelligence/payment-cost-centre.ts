@@ -1,4 +1,5 @@
 import { resolveDepartmentLineManager } from '@/lib/department-reporting-manager-sync';
+import { isGmEmployee } from '@/lib/finance-intelligence/approval-matrix-service';
 
 const compact = (value: unknown) => String(value ?? '').trim();
 
@@ -27,6 +28,10 @@ export const applyCostCentreManagerStage = async (
 
   const alreadyPresent = next.some(isCostCentreManagerStage);
   const reportingIndex = next.findIndex((stage) => /reporting\s*manager|line\s*manager/i.test(stage));
+
+  if (isGmEmployee(manager.employee)) {
+    return alreadyPresent ? next.filter((stage) => !isCostCentreManagerStage(stage)) : next;
+  }
 
   try {
     const { resolvePaymentStageApprover } = await import('@/lib/finance-intelligence/payment-approval-notify');

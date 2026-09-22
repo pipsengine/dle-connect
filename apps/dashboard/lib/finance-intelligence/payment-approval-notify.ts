@@ -262,7 +262,21 @@ export const resolvePaymentStageApprover = async (input: {
       matched = matchJobTitle(employees, [/finance\s*manager/i, /financial\s*controller/i]);
     }
   } else if (/^gm$|general manager/.test(stageKey)) {
-    matched = matchJobTitle(employees, [/^gm$/i, /general\s*manager/i]);
+    if (compact(input.costCentre)) {
+      try {
+        const { resolveDepartmentLineManager } = await import('@/lib/department-reporting-manager-sync');
+        const { isGmEmployee } = await import('@/lib/finance-intelligence/approval-matrix-service');
+        const hod = await resolveDepartmentLineManager(input.costCentre);
+        if (hod?.employee && isGmEmployee(hod.employee)) {
+          matched = hod.employee;
+        }
+      } catch {
+        matched = null;
+      }
+    }
+    if (!matched) {
+      matched = matchJobTitle(employees, [/^gm$/i, /general\s*manager/i]);
+    }
   } else if (/cfo|chief financial/.test(stageKey)) {
     matched = matchJobTitle(employees, [/\bcfo\b/i, /chief\s*financial/i]);
   } else if (/md\/?ceo|managing director|chief executive/.test(stageKey)) {
