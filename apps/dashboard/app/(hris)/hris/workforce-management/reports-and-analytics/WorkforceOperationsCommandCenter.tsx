@@ -19,7 +19,7 @@ import {
 } from 'lucide-react';
 import type { WorkforceOperationsAnalyticsPayload, WorkforceOperationsDetailRow, WorkforceOperationsEmployeeSummary } from '@/lib/workforce-operations-analytics-store';
 import { downloadExcelFile } from '@/lib/excel-export';
-import { calendarPayrollPeriod, listCalendarPayrollPeriodOptions } from '@/lib/payroll-periods';
+import { calendarPayrollPeriod, listCalendarPayrollPeriodOptions } from '@/lib/payroll-period-calendar';
 
 const PAGE_SIZE_OPTIONS = [25, 50, 100];
 
