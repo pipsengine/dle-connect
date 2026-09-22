@@ -1003,13 +1003,16 @@ const canonicalEarningCode = (code: string) => {
     EXPOTHALL: 'EXPOTHALL',
     EXPTRANSP: 'EXPTRANSP',
     ITALLOW: 'STIPENDNT',
+    ITALLOWANCE: 'STIPENDNT',
     NYSCALLOW: 'STIPENDNT',
+    NYSCALLOWANCE: 'STIPENDNT',
     STIPEND: 'STIPENDNT',
     BASIC1LUMPSUM: 'LUMPSUMTAX',
     BASICLUMPSUM: 'LUMPSUMTAX',
     LUMSUMAMOUNT: 'LUMPSUMTAX',
     LUMSUM_AMOUNT: 'LUMPSUMTAX',
   };
+  if (/^(STIPEND(NT)?|NYSCALLOW(ANCE)?|ITALLOW(ANCE)?)$/.test(upper)) return 'STIPENDNT';
   return aliases[upper] || upper;
 };
 
@@ -1021,7 +1024,11 @@ const collapseCanonicalEarningLines = (lines: PayrollEarningLine[]) => {
     if (!existing || Number(line.amount || 0) > Number(existing.amount || 0)) {
       byCanonical.set(
         key,
-        key === 'LUMPSUMTAX' ? { ...line, code: 'LUMPSUMTAX', name: line.name || 'LUMPSUM ALLOWANCE' } : line,
+        key === 'STIPENDNT'
+          ? { ...line, code: 'STIPEND_NT', name: line.name || 'NYSC / IT STIPEND', taxable: false }
+          : key === 'LUMPSUMTAX'
+            ? { ...line, code: 'LUMPSUMTAX', name: line.name || 'LUMPSUM ALLOWANCE' }
+            : line,
       );
     }
   }
@@ -1264,7 +1271,9 @@ export const calculatePayrollEarnings = (employee: DleEmployeeDirectoryRow, opti
     const coreLines = [
       { code: 'STIPEND_NT', name: 'NYSC / IT STIPEND', taxable: false, percentOfGross: gross > 0 ? 1 : 0, amount: gross },
     ].filter((line) => line.amount > 0);
-    const monthlyLines = mergeConfiguredPackageSupplements(employee, coreLines, { includeOneOff: true, period: options?.period });
+    const monthlyLines = collapseCanonicalEarningLines(
+      mergeConfiguredPackageSupplements(employee, coreLines, { includeOneOff: true, period: options?.period }),
+    );
     const grossPay = roundMoney(monthlyLines.reduce((sum, line) => sum + line.amount, 0));
     const taxablePay = roundMoney(monthlyLines.filter((line) => line.taxable !== false).reduce((sum, line) => sum + line.amount, 0));
     return {

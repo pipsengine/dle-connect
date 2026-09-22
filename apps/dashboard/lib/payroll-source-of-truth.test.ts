@@ -275,6 +275,19 @@ assert.equal(
   1,
 );
 
+const internSageCode = employee({
+  employeeCode: 'IT0100',
+  employeeId: 'IT0100',
+  employmentType: 'Industrial Training',
+  periodSalary: 150000,
+  sagePayrollEarnings: [
+    { code: 'IT_ALLOWANCE', name: 'IT ALLOWANCE', amount: 150000, runFrequency: 'monthly', sourceAmount: 150000 },
+  ],
+});
+const internSagePay = calculatePayrollEarnings(internSageCode, { useHrisPackageLines: true, period: '2026-09' });
+assert.equal(internSagePay.grossPay, 150000, 'Sage IT_ALLOWANCE must not stack on STIPEND_NT');
+assert.equal(internSagePay.paidEarningLines.filter((line) => /STIPEND|ITALLOW|NYSCALLOW/i.test(line.code)).length, 1);
+
 const nyscDouble = employee({
   employeeCode: 'NYSC0100',
   employeeId: 'NYSC0100',
@@ -286,6 +299,22 @@ const nyscDouble = employee({
 });
 const nyscDoublePay = calculatePayrollEarnings(nyscDouble, { useHrisPackageLines: true });
 assert.equal(nyscDoublePay.grossPay, 80000, 'NYSC stipend must not stack STIPEND_NT on stored NYSCALLOW');
+
+const nyscSageCode = employee({
+  employeeCode: 'NYSC0032',
+  employeeId: 'NYSC0032',
+  employmentType: 'NYSC',
+  periodSalary: 150000,
+  sagePayrollEarnings: [
+    { code: 'NYSC_ALLOWANCE', name: 'NYSC ALLOWANCE', amount: 150000, runFrequency: 'monthly', sourceAmount: 150000 },
+  ],
+});
+const nyscSagePay = calculatePayrollEarnings(nyscSageCode, { useHrisPackageLines: true, period: '2026-09' });
+assert.equal(nyscSagePay.grossPay, 150000, 'Sage NYSC_ALLOWANCE must not stack on STIPEND_NT');
+assert.equal(nyscSagePay.paidEarningLines.length, 1);
+assert.equal(nyscSagePay.paidEarningLines[0]?.code, 'STIPEND_NT');
+assert.equal(nyscSagePay.paidEarningLines[0]?.amount, 150000);
+assert.equal(nyscSagePay.paidEarningLines[0]?.taxable, false);
 
 const lumpsumDouble = employee({
   employeeCode: 'L0100',
