@@ -3737,7 +3737,6 @@ export async function syncAttendanceForTimesheet(
   let assignedSupervisorEmployees: Array<{ employeeCode: string; fullName: string; location?: string }> = [];
   let supervisorScopeResolved = false;
   let supervisorHomeLocation = '';
-  let assignmentExclusive = false;
 
   const [liveResult, scopeResult, activePayrollResult, approvedLeaveResult] = await Promise.allSettled([
     liveAttendancePromise,
@@ -3756,7 +3755,6 @@ export async function syncAttendanceForTimesheet(
     allowedSupervisorKeys = scopeResult.value.keys;
     assignedSupervisorEmployees = scopeResult.value.employees;
     supervisorHomeLocation = scopeResult.value.supervisorLocation || '';
-    assignmentExclusive = Boolean(scopeResult.value.assignmentExclusive);
     if (locationName) {
       assignedSupervisorEmployees = assignedSupervisorEmployees.filter((employee) =>
         timesheetCrewMatchesLocation(employee.location, locationName, supervisorHomeLocation)
@@ -4090,13 +4088,6 @@ export async function syncAttendanceForTimesheet(
     if (matchedClock?.attendance.checkInTime) return withClock(line);
     if (employeeIsOtherTimesheetSupervisor(line, syncHeaderRef, headers) && !line.clockIn) {
       return withClock(line);
-    }
-    if (assignmentExclusive && supervisorScopeResolved) {
-      const assignedKeys = new Set(
-        assignedSupervisorEmployees.flatMap((employee) => attendanceMatchKeys(employee.employeeCode, employee.fullName)),
-      );
-      const onAssignedCrew = attendanceMatchKeys(line.employeeId, line.employeeNo, line.employeeName).some((key) => assignedKeys.has(key));
-      if (!onAssignedCrew && !timesheetLineHasBookedHours(line)) return [];
     }
     return [line];
   });

@@ -44,12 +44,8 @@ const JOB_TITLE_WORK_CENTERS: Array<[RegExp, string]> = [
   [/\broller|rolling|machinist|machining\b/i, 'Machining'],
 ];
 
-/** Assigned crew wins, then HR direct reports who are not on another supervisor's sheet. Exclusive shop rosters stay assignment-only. */
-export const timesheetAssignmentGroupIsExclusive = (group?: string | null) => {
-  const value = clean(group);
-  if (!value) return false;
-  return !/report|department reporting|org chart/i.test(value);
-};
+/** Assignment groups label a crew. They do not lock the timesheet — add/remove via reporting line or assignment. */
+export const timesheetAssignmentGroupIsExclusive = (_group?: string | null) => false;
 
 export const preferAssignedTimesheetRoster = <T>(
   assigned: T[],

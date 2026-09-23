@@ -398,3 +398,48 @@ WHERE employee_code = @employee_code
     throw error;
   }
 }
+
+export async function unassignEmployeesFromSupervisor(input: {
+  supervisorEmployeeCode: string;
+  employeeCodes: string[];
+  performedBy?: string;
+  reason?: string;
+}) {
+  const supervisorEmployeeCode = assignmentSupervisorCode(input.supervisorEmployeeCode);
+  const employeeCodes = Array.from(new Set(input.employeeCodes.map(clean).filter(Boolean)));
+  if (!supervisorEmployeeCode) throw new Error('Supervisor employee code is required.');
+  if (!employeeCodes.length) throw new Error('At least one employee code is required.');
+
+  const pool = await getDleEnterpriseDbPool();
+  if (!pool) throw new Error('DLE Enterprise database is not configured.');
+  const tx = new sql.Transaction(pool);
+  let committed = false;
+  await tx.begin();
+  try {
+    await ensureSupervisorAssignmentTable(new sql.Request(tx));
+    const removed: string[] = [];
+    for (const employeeCode of employeeCodes) {
+      await new sql.Request(tx)
+        .input('employee_code', sql.NVarChar(50), employeeCode)
+        .input('supervisor_employee_code', sql.NVarChar(50), supervisorEmployeeCode)
+        .query(`
+DELETE FROM [hris].[SupervisorEmployeeAssignments]
+WHERE employee_code = @employee_code
+  AND supervisor_employee_code = @supervisor_employee_code
+`);
+      removed.push(employeeCode);
+    }
+    await tx.commit();
+    committed = true;
+    invalidatePayrollEmployeeCache();
+    return {
+      supervisorEmployeeCode,
+      removed,
+      reason: clean(input.reason) || 'Supervisor crew member removed from application.',
+      performedBy: clean(input.performedBy) || 'system',
+    };
+  } catch (error) {
+    if (!committed) await tx.rollback().catch(() => undefined);
+    throw error;
+  }
+}

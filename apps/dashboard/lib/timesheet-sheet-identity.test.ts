@@ -11,9 +11,14 @@ import {
   resolveTimesheetLineWorkCenter,
   selectCanonicalTimesheetHeader,
   summarizeTimesheetHeaderWorkCenter,
+  timesheetAssignmentGroupIsExclusive,
   timesheetHeaderMatchesSupervisorShift,
   workCenterNameFromJobTitle,
 } from './timesheet-sheet-identity.ts';
+
+assert.equal(timesheetAssignmentGroupIsExclusive('GALVANIZING'), false, 'shop assignment lists are not locked');
+assert.equal(timesheetAssignmentGroupIsExclusive('SCAFFOLDERS'), false);
+assert.equal(timesheetAssignmentGroupIsExclusive('Reporting Line'), false);
 
 assert.equal(
   buildTimesheetHeaderId({

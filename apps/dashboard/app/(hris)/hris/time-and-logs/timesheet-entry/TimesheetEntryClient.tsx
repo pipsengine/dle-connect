@@ -1479,6 +1479,11 @@ export default function TimesheetEntryClient({ variant = 'admin' }: { variant?: 
     if (!matchesQuery) return false;
     if (isOffshoreSheet) return true;
     if (!selectedWorkCenter) return true;
+    const assignedToSupervisor = (payload?.supervisorEmployees || []).some((employee) =>
+      String(employee.employeeCode || '').trim().toUpperCase() === String(l.employeeNo || l.employeeId || '').trim().toUpperCase()
+      || String(employee.employeeId || '').trim().toUpperCase() === String(l.employeeNo || l.employeeId || '').trim().toUpperCase(),
+    );
+    if (assignedToSupervisor) return true;
     const workCenter = lineWorkCenterName(l);
     return timesheetWorkCentersMatch(workCenter, selectedWorkCenter)
       || resolveOffshoreProjectCode(workCenter, selectedLocation) === selectedWorkCenter;

@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 
 import type { DleEmployeeDirectoryRow } from '@/lib/dle-enterprise-db';
 import { readPayrollEmployees } from '@/lib/payroll-employee-source';
-import { assignEmployeesToSupervisor, readSupervisorAssignments } from '@/lib/supervisor-assignment-store';
+import { assignEmployeesToSupervisor, readSupervisorAssignments, unassignEmployeesFromSupervisor } from '@/lib/supervisor-assignment-store';
 import { extractSupervisorEmployeeCode, supervisorCodesMatch } from '@/lib/timesheet-agege-blasting';
 import { auditDepartmentReportingManagers, syncDepartmentReportingManagers } from '@/lib/department-reporting-manager-sync';
 
@@ -370,6 +370,46 @@ export async function POST(request: Request, ctx: { params: Promise<{ action: st
     const result = await syncDepartmentReportingManagers({
       dryRun: Boolean(body?.dryRun),
       departments: Array.isArray(body?.departments) ? body.departments.map((item) => String(item || '').trim()).filter(Boolean) : undefined,
+      performedBy: role,
+    });
+    return jsonOk(result);
+  }
+
+  if (seg0 === 'assign-employees') {
+    const body = (await request.json().catch(() => null)) as {
+      supervisorEmployeeCode?: string;
+      employeeCodes?: string[];
+      assignmentGroup?: string;
+      reason?: string;
+    } | null;
+    const supervisorEmployeeCode = String(body?.supervisorEmployeeCode || '').trim();
+    const employeeCodes = Array.isArray(body?.employeeCodes) ? body.employeeCodes.map((code) => String(code || '').trim()).filter(Boolean) : [];
+    if (!supervisorEmployeeCode) return jsonErr(400, 'Supervisor employee code is required');
+    if (!employeeCodes.length) return jsonErr(400, 'At least one employee code is required');
+    const result = await assignEmployeesToSupervisor({
+      supervisorEmployeeCode,
+      employeeCodes,
+      assignmentGroup: String(body?.assignmentGroup || '').trim() || 'Reporting Line',
+      reason: String(body?.reason || '').trim() || `Crew assigned to ${supervisorEmployeeCode}`,
+      performedBy: role,
+    });
+    return jsonOk(result);
+  }
+
+  if (seg0 === 'unassign-employees') {
+    const body = (await request.json().catch(() => null)) as {
+      supervisorEmployeeCode?: string;
+      employeeCodes?: string[];
+      reason?: string;
+    } | null;
+    const supervisorEmployeeCode = String(body?.supervisorEmployeeCode || '').trim();
+    const employeeCodes = Array.isArray(body?.employeeCodes) ? body.employeeCodes.map((code) => String(code || '').trim()).filter(Boolean) : [];
+    if (!supervisorEmployeeCode) return jsonErr(400, 'Supervisor employee code is required');
+    if (!employeeCodes.length) return jsonErr(400, 'At least one employee code is required');
+    const result = await unassignEmployeesFromSupervisor({
+      supervisorEmployeeCode,
+      employeeCodes,
+      reason: String(body?.reason || '').trim() || `Crew removed from ${supervisorEmployeeCode}`,
       performedBy: role,
     });
     return jsonOk(result);
