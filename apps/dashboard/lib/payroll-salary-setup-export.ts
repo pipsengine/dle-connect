@@ -1,3 +1,6 @@
+import { earningComponentFamily, STANDARD_SALARY_BREAKDOWN_COLUMNS } from '@/lib/payroll-earning-component';
+import { isPensionEligibleStaff } from '@/lib/payroll-employee-classification';
+
 export type SalarySetupExportRecord = {
   employeeId: string;
   fullName: string;
@@ -44,17 +47,21 @@ export type SalarySetupExportColumn = {
   getValue: (record: SalarySetupExportRecord) => string | number | boolean | null | undefined;
 };
 
-const earningLineAmount = (record: SalarySetupExportRecord, pattern: RegExp) => {
+const earningLineAmount = (record: SalarySetupExportRecord, pattern: RegExp, family?: string) => {
   const total = (record.earningLines || []).reduce((sum, item) => {
     const code = String(item.code || '');
     const name = String(item.name || '');
-    if (!pattern.test(code) && !pattern.test(name)) return sum;
+    const matches = pattern.test(code) || pattern.test(name) || (family && earningComponentFamily(code, name) === family);
+    if (!matches) return sum;
     return sum + Number(item.amount || 0);
   }, 0);
   return total ? total : null;
 };
 
 const deductionLineAmount = (record: SalarySetupExportRecord, pattern: RegExp) => {
+  if (/PENSION|NHF/i.test(pattern.source) && !isPensionEligibleStaff({ employeeId: record.employeeId, employeeCode: record.employeeId })) {
+    return null;
+  }
   const total = (record.deductionLines || []).reduce((sum, item) => {
     const code = String(item.code || '');
     const label = String(item.label || '');
@@ -73,14 +80,8 @@ const benefitLineAmount = (record: SalarySetupExportRecord, code: string) => {
   return line?.amount ?? null;
 };
 
-const STANDARD_EARNING_COLUMNS: Array<{ id: string; label: string; pattern: RegExp }> = [
-  { id: 'earning-basic', label: 'Basic earning', pattern: /(_BASIC|^BASIC$)|BASIC SALARY|BASIC EARNING|JUNIOR\s*BASIC|SENIOR\s*BASIC/i },
-  { id: 'earning-housing', label: 'Housing', pattern: /HOUSIN|HOUSING/i },
-  { id: 'earning-other', label: 'Other Allowance', pattern: /OTHALL|OTHER ALLOW/i },
-  { id: 'earning-transport', label: 'Transport Allowance', pattern: /TRANSP|TRANSPORT/i },
-  { id: 'earning-furniture', label: 'Furniture Allowance', pattern: /FURN|FURNITURE/i },
-  { id: 'earning-utilities', label: 'Utilities', pattern: /UTILIT|UTILIT/i },
-  { id: 'earning-meal', label: 'Meal Allowance', pattern: /MEAL/i },
+const STANDARD_EARNING_COLUMNS: Array<{ id: string; label: string; pattern: RegExp; family?: string }> = [
+  ...STANDARD_SALARY_BREAKDOWN_COLUMNS,
   { id: 'earning-overtime', label: 'Overtime', pattern: /OVERTIME|\bOVT\b/i },
   { id: 'earning-stockcount', label: 'Stockcount', pattern: /STOCK\s*COUNT|STOCKCOUNT/i },
   { id: 'earning-union', label: 'Union earning', pattern: /UNION.*EARN|EARN.*UNION/i },
@@ -130,10 +131,10 @@ export const buildSalarySetupExportColumns = (records: SalarySetupExportRecord[]
   const matchedEarningCodes = new Set<string>();
   const matchedDeductionCodes = new Set<string>();
 
-  [...STANDARD_EARNING_COLUMNS, ...CONTRACT_EARNING_COLUMNS].forEach((column) => {
+  [...STANDARD_EARNING_COLUMNS, ...CONTRACT_EARNING_COLUMNS].forEach((column: { id: string; label: string; pattern: RegExp; family?: string }) => {
     records.forEach((record) => {
       (record.earningLines || []).forEach((item) => {
-        if (column.pattern.test(String(item.code || '')) || column.pattern.test(String(item.name || ''))) {
+        if (column.pattern.test(String(item.code || '')) || column.pattern.test(String(item.name || '')) || (column.family && earningComponentFamily(item.code, item.name) === column.family)) {
           if (item?.code) matchedEarningCodes.add(String(item.code).toUpperCase());
         }
       });
@@ -223,8 +224,8 @@ export const buildSalarySetupExportColumns = (records: SalarySetupExportRecord[]
     moneyColumn('hourly-rate', 'Hourly Rate', (record) => record.ratePerHour ?? null),
   ];
 
-  [...STANDARD_EARNING_COLUMNS, ...CONTRACT_EARNING_COLUMNS, ...extraEarningColumns].forEach((column) => {
-    columns.push(moneyColumn(column.id, column.label, (record) => earningLineAmount(record, column.pattern)));
+  [...STANDARD_EARNING_COLUMNS, ...CONTRACT_EARNING_COLUMNS, ...extraEarningColumns].forEach((column: { id: string; label: string; pattern: RegExp; family?: string }) => {
+    columns.push(moneyColumn(column.id, column.label, (record) => earningLineAmount(record, column.pattern, column.family)));
   });
 
   benefitColumns.forEach((column) => {

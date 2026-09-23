@@ -36,6 +36,14 @@ const employeeCodeText = (
   employee: Pick<DleEmployeeDirectoryRow, 'employeeId' | 'employeeCode'> & Partial<Pick<DleEmployeeDirectoryRow, 'sourceEmployeeId'>>,
 ) => compact(employee.employeeCode || employee.employeeId || employee.sourceEmployeeId).toUpperCase();
 
+/** Permanent staff codes are P + digits only (P0387). L/C/IT/NYSC/PEX are not pension-eligible. */
+export const isPCodePayrollEmployee = (
+  employee: Pick<DleEmployeeDirectoryRow, 'employeeId' | 'employeeCode'> & Partial<Pick<DleEmployeeDirectoryRow, 'sourceEmployeeId'>> & { employeeCode?: string | null },
+) => /^P\d+$/i.test(employeeCodeText(employee).replace(/\s+/g, ''));
+
+/** Pension and NHF/NSITF/ITF remittance apply only to P-code permanent staff. */
+export const isPensionEligibleStaff = isPCodePayrollEmployee;
+
 export const DEFAULT_IT_NYSC_STIPEND_GRADE = 'IT_NYSC_REM - IT_NYSC';
 
 /** IT / NYSC stipend employees identified by code or employment category text. */

@@ -56,6 +56,30 @@ const dleGmOps = {
   netPay: 150000,
 };
 
+const dlpcSnr = {
+  ...base,
+  employeeId: 'P0387',
+  employeeCode: 'P0387',
+  earningLines: [
+    { code: 'SNR_BASIC', name: 'BASIC SALARY', amount: 400000 },
+    { code: 'SNR_HOUSE', name: 'HOUSING', amount: 112800 },
+    { code: 'SNR_UTILITY', name: 'UTILITIES', amount: 20500 },
+    { code: 'SNR_MEDICAL', name: 'MEDICAL', amount: 30000 },
+    { code: 'SNR_TRANS', name: 'TRANSPORT', amount: 25000 },
+  ],
+};
+
+const dleJnr = {
+  ...dlePerm,
+  employeeId: 'P0103',
+  employeeCode: 'P0103',
+  earningLines: [
+    { code: 'JNR_BASIC', name: 'BASIC SALARY', amount: 200000 },
+    { code: 'JNR_HOUSE', name: 'HOUSING', amount: 13920 },
+    { code: 'JNR_UTILITY', name: 'UTILITIES', amount: 4000 },
+  ],
+};
+
 const dlpcCont = {
   ...base,
   employeeId: 'L0191',
@@ -216,6 +240,28 @@ const dlpcDaySheets = await buildOfficialDayrateScheduleWorksheets([dlpcDay as a
 const dlpcDayLabels = labelsOf(dlpcDaySheets.find((sheet) => sheet.sheetName === 'SUMMARY')?.rows);
 assert(dlpcDayLabels.includes('DLPC'), 'DLPC dayrate Summary keeps DLPC when it has a figure');
 assert(!dlpcDayLabels.includes('DLE'), 'DLPC dayrate Summary drops empty DLE');
+
+const permDlpc = buildOfficialSalariedDetailWorksheets([dlpcSnr as any], {
+  periodLabel: 'September 2026',
+  currencyScope: 'ngn',
+  company: 'DLPC',
+}).find((sheet) => sheet.sheetName === 'PERM.STAFF');
+const utilIdx = (permDlpc?.columns || []).indexOf('UTILITIES (Earning)');
+const houseIdx = (permDlpc?.columns || []).indexOf('HOUSING (Earning)');
+const medicalIdx = (permDlpc?.columns || []).indexOf('MEDICAL (Earning)');
+assert(utilIdx >= 0 && Number(permDlpc?.rows?.[0]?.[utilIdx] || 0) > 0, 'DLPC SNR_UTILITY fills UTILITIES (Earning)');
+assert(houseIdx >= 0 && Number(permDlpc?.rows?.[0]?.[houseIdx] || 0) > 0, 'DLPC SNR_HOUSE fills HOUSING (Earning)');
+assert(medicalIdx >= 0 && Number(permDlpc?.rows?.[0]?.[medicalIdx] || 0) > 0, 'DLPC SNR_MEDICAL fills MEDICAL (Earning)');
+
+const permDle = buildOfficialSalariedDetailWorksheets([dleJnr as any], {
+  periodLabel: 'September 2026',
+  currencyScope: 'ngn',
+  company: 'DLE',
+}).find((sheet) => sheet.sheetName === 'PERM.STAFF');
+const jnrUtilIdx = (permDle?.columns || []).indexOf('JNR UTILITY (Earning)');
+const dleUtilIdx = (permDle?.columns || []).indexOf('UTILITIES (Earning)');
+assert(jnrUtilIdx >= 0 && Number(permDle?.rows?.[0]?.[jnrUtilIdx] || 0) > 0, 'DLE JNR_UTILITY fills JNR UTILITY (Earning)');
+assert(Number(permDle?.rows?.[0]?.[dleUtilIdx] || 0) === 0, 'JNR utility does not also fill UTILITIES');
 
 console.log('payroll-official-excel-summary.test.ts OK');
 };

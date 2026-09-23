@@ -7,6 +7,8 @@ import {
   salarySetupCsvFromRecords,
   type SalarySetupExportRecord,
 } from '@/lib/payroll-salary-setup-export';
+import { earningComponentFamily, STANDARD_SALARY_BREAKDOWN_COLUMNS } from '@/lib/payroll-earning-component';
+import { isPensionEligibleStaff } from '@/lib/payroll-employee-classification';
 import { formatPayrollMoney, currencyCode } from '@/lib/payroll-currency';
 import {
   groupDleUsdRecords,
@@ -115,12 +117,21 @@ type SalaryTableColumn = {
   getText?: (record: PayrollRecord) => string;
 };
 
-const earningLineAmount = (record: PayrollRecord, pattern: RegExp) => {
-  const line = (record.earningLines || []).find((item) => pattern.test(String(item.code || '')) || pattern.test(String(item.name || '')));
-  return line?.amount ?? null;
+const earningLineAmount = (record: PayrollRecord, pattern: RegExp, family?: string) => {
+  const total = (record.earningLines || []).reduce((sum, item) => {
+    const code = String(item.code || '');
+    const name = String(item.name || '');
+    const matches = pattern.test(code) || pattern.test(name) || (family && earningComponentFamily(code, name) === family);
+    if (!matches) return sum;
+    return sum + Number(item.amount || 0);
+  }, 0);
+  return total ? total : null;
 };
 
 const deductionLineAmount = (record: PayrollRecord, pattern: RegExp) => {
+  if (/PENSION|NHF/i.test(pattern.source) && !isPensionEligibleStaff({ employeeId: record.employeeId, employeeCode: record.employeeId })) {
+    return null;
+  }
   const line = (record.deductionLines || []).find((item) => pattern.test(String(item.code || '')) || pattern.test(String(item.label || '')));
   if (line?.amount != null) return line.amount;
   if (/PAYE/i.test(pattern.source)) return record.paye;
@@ -129,14 +140,7 @@ const deductionLineAmount = (record: PayrollRecord, pattern: RegExp) => {
   return null;
 };
 
-const STANDARD_EARNING_COLUMNS: Array<{ id: string; label: string; pattern: RegExp }> = [
-  { id: 'earning-basic', label: 'Basic Salary', pattern: /(_BASIC|^BASIC$)|BASIC SALARY/i },
-  { id: 'earning-housing', label: 'Housing', pattern: /HOUSIN|HOUSING/i },
-  { id: 'earning-other', label: 'Other Allowance', pattern: /OTHALL|OTHER ALLOW/i },
-  { id: 'earning-transport', label: 'Transport Allowance', pattern: /TRANSP|TRANSPORT/i },
-  { id: 'earning-furniture', label: 'Furniture Allowance', pattern: /FURN|FURNITURE/i },
-  { id: 'earning-utilities', label: 'Utilities', pattern: /UTILIT|UTILIT/i },
-];
+const STANDARD_EARNING_COLUMNS = STANDARD_SALARY_BREAKDOWN_COLUMNS;
 
 const CONTRACT_EARNING_COLUMNS: Array<{ id: string; label: string; pattern: RegExp }> = [
   { id: 'earning-weekday', label: 'Weekday Earning', pattern: /^JCWEEKDAY$/i },
@@ -167,10 +171,12 @@ const SALARY_TABLE_GROUPS: Array<{ id: SalaryTableColumn['group']; label: string
 
 const buildSalaryTableColumns = (records: PayrollRecord[]): SalaryTableColumn[] => {
   const matchedCodes = new Set<string>();
-  [...STANDARD_EARNING_COLUMNS, ...CONTRACT_EARNING_COLUMNS].forEach((column) => {
+  [...STANDARD_EARNING_COLUMNS, ...CONTRACT_EARNING_COLUMNS].forEach((column: { pattern: RegExp; family?: string }) => {
     records.forEach((record) => {
-      const line = (record.earningLines || []).find((item) => column.pattern.test(String(item.code || '')) || column.pattern.test(String(item.name || '')));
-      if (line?.code) matchedCodes.add(String(line.code).toUpperCase());
+      (record.earningLines || []).forEach((item) => {
+        const matches = column.pattern.test(String(item.code || '')) || column.pattern.test(String(item.name || '')) || (column.family && earningComponentFamily(item.code, item.name) === column.family);
+        if (matches && item?.code) matchedCodes.add(String(item.code).toUpperCase());
+      });
     });
   });
 
@@ -202,13 +208,13 @@ const buildSalaryTableColumns = (records: PayrollRecord[]): SalaryTableColumn[] 
     { id: 'hours-worked', label: 'Hours Worked', group: 'contract', kind: 'text', getText: (record) => (record.isDailyRate && record.timesheetBookedHours != null ? String(record.timesheetBookedHours) : '—') },
   ];
 
-  [...STANDARD_EARNING_COLUMNS, ...CONTRACT_EARNING_COLUMNS, ...extraEarningColumns].forEach((column) => {
+  [...STANDARD_EARNING_COLUMNS, ...CONTRACT_EARNING_COLUMNS, ...extraEarningColumns].forEach((column: { id: string; label: string; pattern: RegExp; family?: string }) => {
     columns.push({
       id: column.id,
       label: column.label,
       group: 'earnings',
       kind: 'money',
-      getMoney: (record) => earningLineAmount(record, column.pattern),
+      getMoney: (record) => earningLineAmount(record, column.pattern, column.family),
     });
   });
 
@@ -561,6 +567,7 @@ export default function EmployeeSalarySetupClient({ initialNow }: { initialNow: 
       report: 'salary-setup',
       status: 'All',
       pack: 'all',
+      view: 'setup',
       company: companyFilter === 'All Companies' ? 'all' : companyFilter,
     });
     if (payload.period) params.set('period', payload.period);

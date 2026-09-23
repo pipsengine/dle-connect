@@ -4,6 +4,7 @@
  * USD REPORT always stays on DLE. Applied per selected period whenever HR uploads the month's file.
  */
 import { inflateRawSync } from 'node:zlib';
+import { earningComponentFamily } from '@/lib/payroll-earning-component';
 
 export type SalaryScheduleSheetKind = 'perm' | 'cont' | 'usd' | 'summary' | 'md' | 'expatriate' | 'other';
 
@@ -436,6 +437,16 @@ const deductionCodeFromHeader = (header: string) => {
 const cell = (row: Map<string, string>, col: string | undefined) => (col ? compact(row.get(col)) : '');
 const cellNum = (row: Map<string, string>, col: string | undefined) => (col ? num(row.get(col)) : 0);
 
+const STANDING_EARNING_HEADER = /^(BASIC|BASIC SALARY|HOUSING|MEDICAL|OTHER ALLOWANCE|TRANSPORT ALLOWANCE|TRANSPORT|FURNITURE|FURNITURE ALLOWANCE|UTILITIES|UTILITY|SNR UTILITY|JNR UTILITY|MEAL|MEAL ALLOWANCE|LEAVE ALLOWANCE|LUMPSUM ALLOWANCE|LUMPSUM AMOUNT|LUMSUM AMOUNT|SNR NJIC|JNR NJIC)$/i;
+
+export const isScheduleEarningHeader = (name: string) => {
+  if (/\(Deduction\)|\(CompanyContribution\)|\(Provisions\)/i.test(name)) return false;
+  if (/\(Earning\)/i.test(name)) return true;
+  const key = headerKey(name);
+  if (STANDING_EARNING_HEADER.test(key)) return true;
+  return Boolean(earningComponentFamily('', key));
+};
+
 const buildHeaderMap = (headerRow: Map<string, string>) => {
   const byKey = new Map<string, string>();
   const earnings: Array<{ col: string; name: string; code: string }> = [];
@@ -443,13 +454,11 @@ const buildHeaderMap = (headerRow: Map<string, string>) => {
   for (const [col, raw] of [...headerRow.entries()].sort((a, b) => colToIndex(a[0]) - colToIndex(b[0]))) {
     const name = compact(raw);
     if (!name) continue;
-    const upper = name.toUpperCase();
     byKey.set(headerKey(name), col);
-    if (/\(Earning\)/i.test(name)) earnings.push({ col, name, code: earningCodeFromHeader(name) });
+    if (isScheduleEarningHeader(name)) earnings.push({ col, name, code: earningCodeFromHeader(name) });
     if (/\(Deduction\)/i.test(name) && !/Column2/i.test(name)) {
       deductions.push({ col, name, code: deductionCodeFromHeader(name) });
     }
-    // also index common aliases
     if (/^Employee Code$/i.test(name)) byKey.set('EMPLOYEE CODE', col);
   }
   return { byKey, earnings, deductions };
@@ -458,15 +467,35 @@ const buildHeaderMap = (headerRow: Map<string, string>) => {
 const inferSplitPackageColumns = (byKey: Map<string, string>) => {
   const earnings: Array<{ col: string; name: string; code: string }> = [];
   const deductions: Array<{ col: string; name: string; code: string }> = [];
-  const earningKeys = ['BASIC', 'TELEPHONE', 'AREARS LEAVE', 'ARREARS', 'GENERAL INCREASE', 'APPRAISAL INCREASE'];
-  const deductionKeys = ['TAX', 'LOAN', 'OTHER DED', 'OTHER DEDUCTION', 'PAYE', 'PENSION'];
+  const earningKeys = [
+    'BASIC',
+    'BASIC SALARY',
+    'HOUSING',
+    'MEDICAL',
+    'OTHER ALLOWANCE',
+    'TRANSPORT ALLOWANCE',
+    'FURNITURE',
+    'FURNITURE ALLOWANCE',
+    'UTILITIES',
+    'UTILITY',
+    'MEAL ALLOWANCE',
+    'LEAVE ALLOWANCE',
+    'LUMPSUM AMOUNT',
+    'LUMPSUM ALLOWANCE',
+    'TELEPHONE',
+    'AREARS LEAVE',
+    'ARREARS',
+    'GENERAL INCREASE',
+    'APPRAISAL INCREASE',
+  ];
+  const deductionKeys = ['TAX', 'LOAN', 'OTHER DED', 'OTHER DEDUCTION', 'PAYE', 'PENSION', 'NHF'];
   for (const key of earningKeys) {
-    const col = byKey.get(key);
-    if (col) earnings.push({ col, name: key, code: earningCodeFromHeader(key) });
+    const col = byKey.get(headerKey(key));
+    if (col && !earnings.some((item) => item.col === col)) earnings.push({ col, name: key, code: earningCodeFromHeader(key) });
   }
   for (const key of deductionKeys) {
-    const col = byKey.get(key);
-    if (col) deductions.push({ col, name: key, code: deductionCodeFromHeader(key) });
+    const col = byKey.get(headerKey(key));
+    if (col && !deductions.some((item) => item.col === col)) deductions.push({ col, name: key, code: deductionCodeFromHeader(key) });
   }
   return { earnings, deductions };
 };

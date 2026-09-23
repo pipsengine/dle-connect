@@ -17,6 +17,10 @@ import {
 } from '@/lib/salary-schedule-upload-sql';
 import { previousPayrollPeriod } from '@/lib/payroll-periods';
 import { payrollExcelAmountOverlayApplies } from '@/lib/payroll-source-of-truth';
+import { earningComponentFamily } from '@/lib/payroll-earning-component';
+import { calculatePayrollEarnings } from '@/lib/payroll-earnings-engine';
+import type { DleEmployeeDirectoryRow } from '@/lib/dle-enterprise-db';
+import { isPensionEligibleStaff } from '@/lib/payroll-employee-classification';
 
 const roundMoney = (value: number) => Math.round((Number.isFinite(value) ? value : 0) * 100) / 100;
 const compact = (value: unknown) => String(value || '').trim();
@@ -46,23 +50,92 @@ const dayrateScheduleCodes = (period: string) => {
 const salaryRowOnDayrateSchedule = (row: SalaryScheduleRow, dayrateCodes: Set<string>) =>
   salaryScheduleEmployeeKeys(row.employeeCode).some((key) => dayrateCodes.has(key.toUpperCase()));
 
+const overlayEarningLines = (
+  base: PayrollCalculationRecord,
+  excel: SalaryScheduleRow,
+  grossPay: number,
+) => {
+  const excelLines = excel.earnings
+    .filter((line) => Number(line.amount || 0) !== 0)
+    .map((line) => ({
+      code: line.code,
+      name: line.name,
+      amount: roundMoney(line.amount),
+      taxable: true,
+    }));
+  const covered = new Set(
+    excelLines
+      .map((line) => earningComponentFamily(line.code, line.name))
+      .filter((family): family is NonNullable<typeof family> => Boolean(family)),
+  );
+  const keepFromBase = (base.earningLines || []).filter((line) => {
+    if (!(Number(line.amount || 0) > 0)) return false;
+    const family = earningComponentFamily(String(line.code || ''), String(line.name || ''));
+    if (family && covered.has(family)) return false;
+    const duplicateCode = excelLines.some((item) => compact(item.code).toUpperCase() === compact(line.code).toUpperCase());
+    return !duplicateCode;
+  });
+  const merged = [...excelLines, ...keepFromBase];
+  merged.forEach((line) => {
+    const family = earningComponentFamily(String(line.code || ''), String(line.name || ''));
+    if (family) covered.add(family);
+  });
+  if (grossPay > 0) {
+    const computed = calculatePayrollEarnings(
+      {
+        employeeCode: base.employeeCode,
+        employeeId: base.employeeId,
+        salaryGrade: base.salaryGrade,
+        jobGrade: base.salaryGrade,
+        employmentType: base.employmentType,
+        payrollGroup: base.payrollGroup,
+        payCurrency: excelRowCurrency(excel),
+        periodSalary: grossPay,
+      } as DleEmployeeDirectoryRow,
+      { ignoreHrisPackageLines: true, includePeriodAdjustments: false },
+    );
+    for (const line of computed.paidEarningLines || computed.earningLines || []) {
+      if (!(Number(line.amount || 0) > 0)) continue;
+      const family = earningComponentFamily(line.code, line.name);
+      if (!family || covered.has(family)) continue;
+      merged.push({
+        code: line.code,
+        name: line.name,
+        amount: roundMoney(line.amount),
+        taxable: line.taxable !== false,
+      });
+      covered.add(family);
+    }
+  }
+  return merged;
+};
+
 const overlayRecord = (base: PayrollCalculationRecord, excel: SalaryScheduleRow): PayrollCalculationRecord => {
   const paye = roundMoney(excel.paye);
-  const pension = roundMoney(excel.pension);
-  const nhf = roundMoney(excel.nhf);
-  const totalDeductions = roundMoney(excel.deductionTotal || excel.deductions.reduce((sum, line) => sum + line.amount, 0));
+  const pensionEligible = isPensionEligibleStaff({ employeeCode: excel.employeeCode || base.employeeCode, employeeId: base.employeeId || excel.employeeCode });
+  const excelPension = roundMoney(excel.pension);
+  const pension = pensionEligible ? excelPension : 0;
+  const nhf = pensionEligible ? roundMoney(excel.nhf) : 0;
+  const excelDeductionTotal = roundMoney(excel.deductionTotal || excel.deductions.reduce((sum, line) => sum + line.amount, 0));
+  const totalDeductions = roundMoney(pensionEligible ? excelDeductionTotal : Math.max(0, excelDeductionTotal - excelPension - roundMoney(excel.nhf)));
   const grossPay = roundMoney(excel.grossPay);
   const netPay = roundMoney(excel.netPay || (grossPay - totalDeductions));
-  const basic = roundMoney(excel.earnings.find((line) => /BASIC|LUMPSUM/i.test(line.code))?.amount || excel.periodSalary || 0);
-  const earningLines = excel.earnings.map((line) => ({
-    code: line.code,
-    name: line.name,
-    amount: roundMoney(line.amount),
-    taxable: true,
-  }));
+  const earningLines = overlayEarningLines(base, excel, grossPay);
+  const basic = roundMoney(
+    Number(
+      earningLines.find((line) => {
+        const family = earningComponentFamily(String(line.code || ''), String(line.name || ''));
+        return family === 'basic' || family === 'lumpsum';
+      })?.amount
+      || excel.earnings.find((line) => /BASIC|LUMPSUM/i.test(line.code))?.amount
+      || excel.periodSalary
+      || 0,
+    ),
+  );
   const deductionLines = excel.deductions
     .map((line) => ({ code: line.code, label: line.name, amount: roundMoney(line.amount) }))
-    .filter((line) => line.amount > 0);
+    .filter((line) => line.amount > 0)
+    .filter((line) => pensionEligible || !/PENSION|NHF/i.test(`${line.code} ${line.label}`));
   return {
     ...base,
     fullName: excel.employeeName || base.fullName,
@@ -80,14 +153,16 @@ const overlayRecord = (base: PayrollCalculationRecord, excel: SalaryScheduleRow)
     earningProfile: `${base.earningProfile || 'Salary'} (HR Salary Schedule)`,
     paye,
     pensionEmployee: pension,
+    pensionEmployer: pensionEligible ? Number(base.pensionEmployer || 0) : 0,
     statutoryEmployee: nhf,
+    statutoryEmployer: pensionEligible ? Number(base.statutoryEmployer || 0) : 0,
     loanRecovery: 0,
     otherDeductions: roundMoney(Math.max(0, totalDeductions - paye - pension - nhf)),
     totalDeductions,
     deductions: totalDeductions,
     pension,
     netPay,
-    employerCost: roundMoney(grossPay + Number(base.pensionEmployer || 0) + Number(base.statutoryEmployer || 0)),
+    employerCost: roundMoney(grossPay + (pensionEligible ? Number(base.pensionEmployer || 0) + Number(base.statutoryEmployer || 0) : 0)),
     deductionRatio: grossPay > 0 ? roundMoney((totalDeductions / grossPay) * 100) : 0,
     status: 'Ready',
     payrollStatus: 'Ready',

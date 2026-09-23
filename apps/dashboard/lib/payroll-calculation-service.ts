@@ -2,9 +2,8 @@ import type { DleEmployeeDirectoryRow } from '@/lib/dle-enterprise-db';
 import { applyPayrollEmployeeOptions } from '@/lib/payroll-employee-options-store';
 import { invalidatePayrollEmployeeCache, payrollDataSourceInfo, readDirectoryEmployees, readPayrollEmployees } from '@/lib/payroll-employee-source';
 import { mergeTimesheetDayRateEarnings, calculatePayrollEarnings, resolvePayrollEarningProfile } from '@/lib/payroll-earnings-engine';
-import { isNonPermanentPayrollEmployee, payrollActiveEmployees } from '@/lib/payroll-employee-classification';
+import { contractEmployeeCode, isEmployeeExcludedFromPayrollRun, isPensionEligibleStaff, isTimesheetWagePayrollEmployee, payrollActiveEmployees, payrollRunPackShortLabel, type PayrollRunExclusionEmployee } from '@/lib/payroll-employee-classification';
 import { registerPayrollAdjustmentsChangeHandler, adjustmentsFileMtime } from '@/lib/payroll-period-earning-adjustments-store';
-import { contractEmployeeCode, isEmployeeExcludedFromPayrollRun, isTimesheetWagePayrollEmployee, payrollRunPackShortLabel, type PayrollRunExclusionEmployee } from '@/lib/payroll-employee-classification';
 import { enterprisePayrollSourceLabel, isEnterprisePayrollPeriod } from '@/lib/payroll-enterprise-source';
 import { activeTaxVersion, calculatePayrollTax, payrollInputFromEmployee, readPayrollTaxConfig } from '@/lib/payroll-tax-engine';
 import { activePensionVersion, calculatePension, pensionInputFromEmployee, readPayrollPensionConfig } from '@/lib/payroll-pension-engine';
@@ -998,7 +997,7 @@ const computePayrollForPeriod = async (requestedPeriod: string): Promise<Payroll
     const paye = variant.payCurrency === 'USD'
       ? (Number.isFinite(usdPayeOverride) ? roundMoney(usdPayeOverride) : roundMoney(tax.monthlyPaye))
       : (Number.isFinite(ngnPayeOverride) ? roundMoney(ngnPayeOverride) : tax.monthlyPaye);
-    const skipStatutory = variant.payCurrency === 'USD' || dailyRateEmployee;
+    const skipStatutory = variant.payCurrency === 'USD' || dailyRateEmployee || !isPensionEligibleStaff(employee);
     const statutoryPension = skipStatutory ? 0 : roundMoney(pension.employeeContribution);
     const additionalPension = skipStatutory ? 0 : roundMoney(pension.voluntaryContribution);
     const employeePension = roundMoney(statutoryPension + additionalPension);
@@ -1020,18 +1019,17 @@ const computePayrollForPeriod = async (requestedPeriod: string): Promise<Payroll
       : roundMoney(amounts.grossPay + employerPension + employerStatutory);
     const deductionRatio = amounts.grossPay > 0 ? roundMoney((totalDeductions / amounts.grossPay) * 100) : 0;
     const stipendEmployee = amounts.profileId === 'stipend-non-taxable';
-    const nonPermanentEmployee = isNonPermanentPayrollEmployee(employee);
     const rates = dailyRateValues(employee, dailyRateEmployee);
     const timesheet = resolveTimesheetHoursForEmployee(employee, timesheetHours);
     const pensionIssues = (variant.payCurrency === 'USD'
       ? []
-      : (!dailyRateEmployee && !stipendEmployee && !nonPermanentEmployee
+      : (!dailyRateEmployee && !stipendEmployee && isPensionEligibleStaff(employee)
         ? pension.issues
-        : pension.issues.filter((issue) => !/employment type is not eligible/i.test(issue)))
+        : pension.issues.filter((issue) => !/employment type is not eligible|not a permanent \(P\) staff code/i.test(issue)))
     ).filter((issue) => issue !== 'RSA PIN is not on file' && issue !== 'PFA provider is not assigned');
     const statutoryIssues = variant.payCurrency === 'USD'
       ? []
-      : (stipendEmployee || dailyRateEmployee || nonPermanentEmployee)
+      : (stipendEmployee || dailyRateEmployee || !isPensionEligibleStaff(employee))
         ? funds.issues.filter((issue) => !/monthly payroll amount is missing|no statutory fund eligibility/i.test(issue))
         : funds.issues;
 

@@ -2,6 +2,7 @@ import { existsSync } from 'node:fs';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import type { DleEmployeeDirectoryRow } from '@/lib/dle-enterprise-db';
+import { isPensionEligibleStaff } from '@/lib/payroll-employee-classification';
 import { pensionablePayrollInputFromEmployee, resolvePayrollEarningProfile, type PayrollEarningsOptions } from '@/lib/payroll-earnings-engine';
 
 export type PensionStatus = 'Draft' | 'Active' | 'Retired';
@@ -111,9 +112,10 @@ export const calculatePension = (input: PensionInput, version: PensionVersion) =
   const type = compact(input.employee.employmentType || input.employee.staffCategory || input.employee.employeeCategory);
   const typeLower = type.toLowerCase();
   const profileId = resolvePayrollEarningProfile(input.employee);
+  const codeEligible = isPensionEligibleStaff(input.employee);
   const configEligible =
+    codeEligible &&
     !String(profileId).startsWith('contract-') &&
-    version.rules.eligibleEmploymentTypes.some((item) => typeLower.includes(item.toLowerCase())) &&
     !version.rules.excludedEmploymentTypes.some((item) => typeLower.includes(item.toLowerCase()));
   const pensionableEmolument = roundMoney(Math.max(0, Number(input.monthlyBasePay || 0) + Number(input.monthlyAllowances || 0)));
   const eligible = configEligible;
@@ -127,11 +129,12 @@ export const calculatePension = (input: PensionInput, version: PensionVersion) =
   const totalContribution = roundMoney(employeeContribution + employerContribution + voluntaryContribution);
   const combinedRate = pensionableEmolument ? roundMoney((employeeContribution + employerContribution) / pensionableEmolument) : 0;
   const issues: string[] = [];
-  if (!eligible) issues.push('Employment type is not eligible under active pension configuration');
+  if (!codeEligible) issues.push('Employee code is not a permanent (P) staff code');
+  else if (!eligible) issues.push('Employment type is not eligible under active pension configuration');
   if (eligible && pensionableEmolument <= 0) issues.push('Pensionable emolument is missing');
   if (eligible && combinedRate < version.rules.minimumCombinedRate) issues.push('Combined pension rate is below configured minimum');
-  if (!compact(input.rsaPin)) issues.push('RSA PIN is not on file');
-  if (!compact(input.providerId)) issues.push('PFA provider is not assigned');
+  if (eligible && !compact(input.rsaPin)) issues.push('RSA PIN is not on file');
+  if (eligible && !compact(input.providerId)) issues.push('PFA provider is not assigned');
   if (compact(input.employee.status).toLowerCase().match(/terminated|resigned|retired|inactive/)) issues.push('Employee is not payroll active');
   return {
     eligible,

@@ -2,7 +2,7 @@ import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import type { DleEmployeeDirectoryRow } from '@/lib/dle-enterprise-db';
 import { calculatePayrollEarnings, resolvePayrollEarningProfile, type PayrollEarningsOptions } from '@/lib/payroll-earnings-engine';
-import { isDailyRatePayrollEmployee } from '@/lib/payroll-employee-classification';
+import { isDailyRatePayrollEmployee, isPensionEligibleStaff } from '@/lib/payroll-employee-classification';
 import { defaultNhfApplicableForEmployee } from '@/lib/payroll-tax-engine';
 
 export type FundStatus = 'Draft' | 'Active' | 'Retired';
@@ -111,6 +111,7 @@ export const isDayRateStatutoryExempt = (employee: DleEmployeeDirectoryRow, prof
 
 const eligible = (rule: StatutoryFundRule, input: StatutoryFundInput) => {
   if (!rule.enabled) return false;
+  if (!isPensionEligibleStaff(input.employee)) return false;
   const profileId = resolvePayrollEarningProfile(input.employee);
   if (isDayRateStatutoryExempt(input.employee, profileId)) return false;
   if (rule.id === 'nhf' && String(profileId).startsWith('contract-')) return false;

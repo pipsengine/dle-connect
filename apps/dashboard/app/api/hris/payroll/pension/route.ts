@@ -1,6 +1,9 @@
 import { NextResponse } from 'next/server';
 import { payrollDataSourceInfo, readPayrollEmployees } from '@/lib/payroll-employee-source';
 import { activePensionVersion, calculatePension, pensionInputFromEmployee, readPayrollPensionConfig, writePayrollPensionConfig, type PensionConfig } from '@/lib/payroll-pension-engine';
+import { isPensionEligibleStaff } from '@/lib/payroll-employee-classification';
+import { payslipIdentityMap } from '@/lib/payroll-payslip-identity-store';
+import { normalizePayrollMatchKey } from '@/lib/sage-people-payroll-store';
 import { activePayrollPeriod } from '@/lib/payroll-periods';
 import { tableExportResponse } from '@/lib/excel-export';
 
@@ -30,21 +33,30 @@ const periodLabel = (period: string) => {
   return new Date(Date.UTC(year || new Date().getUTCFullYear(), (month || 1) - 1, 1)).toLocaleDateString('en-GB', { month: 'long', year: 'numeric', timeZone: 'UTC' });
 };
 
-const pseudoProvider = (employeeId: string, providers: Array<{ id: string; name: string }>) => {
-  if (!providers.length) return '';
-  const active = providers.filter((provider) => provider.id !== 'unassigned');
-  if (!active.length) return '';
-  const hash = employeeId.split('').reduce((sum, char) => sum + char.charCodeAt(0), 0);
-  return active[hash % active.length]?.id || '';
+const matchProviderId = (employee: any, identity: { pensionProvider?: string } | undefined, providers: Array<{ id: string; name: string }>) => {
+  const blob = `${compact(employee.pensionProvider)} ${compact(identity?.pensionProvider)}`.toLowerCase();
+  if (!blob.trim()) return '';
+  const active = (providers || []).filter((provider) => provider.id !== 'unassigned');
+  const hit = active.find((provider) => {
+    const name = compact(provider.name).toLowerCase();
+    const id = compact(provider.id).toLowerCase();
+    return (name && blob.includes(name)) || (id && blob.includes(id)) || blob.split(/\s+/).some((token) => token && name.includes(token));
+  });
+  return hit?.id || '';
 };
 
-const buildRecord = (employee: any, version: any) => {
-  const providerId = employee.setupAssignedToPayroll ? pseudoProvider(employee.employeeId, version.providers || []) : '';
-  const input = { ...pensionInputFromEmployee(employee), providerId, rsaPin: providerId ? `PEN${String(employee.employeeDbId || employee.employeeId).padStart(8, '0')}` : '' };
+const resolvePensionPin = (employee: any, identity: { pensionPin?: string } | undefined) =>
+  compact(identity?.pensionPin || employee.pensionPin);
+
+const buildRecord = (employee: any, version: any, identity?: { pensionProvider?: string; pensionPin?: string }) => {
+  const providerId = employee.setupAssignedToPayroll ? matchProviderId(employee, identity, version.providers || []) : '';
+  const rsaPin = resolvePensionPin(employee, identity);
+  const input = { ...pensionInputFromEmployee(employee), providerId, rsaPin };
   const pension = calculatePension(input, version);
-  const provider = (version.providers || []).find((item: any) => item.id === providerId) || (version.providers || [])[0] || { name: 'Unassigned PFA', custodian: 'Unassigned PFC' };
+  const provider = (version.providers || []).find((item: any) => item.id === providerId) || { name: '', custodian: '', id: '' };
   return {
     employeeId: employee.employeeId,
+    employeeCode: employee.employeeCode || employee.employeeId,
     fullName: employee.fullName,
     department: employee.department,
     businessUnit: employee.businessUnit,
@@ -55,9 +67,9 @@ const buildRecord = (employee: any, version: any) => {
     payrollGroup: employee.payrollGroup || 'Unassigned',
     salaryGrade: employee.salaryGrade || employee.jobGrade || 'Unassigned',
     providerId,
-    providerName: provider.name,
-    custodian: provider.custodian,
-    rsaPin: input.rsaPin,
+    providerName: provider.name || compact(employee.pensionProvider) || compact(identity?.pensionProvider),
+    custodian: provider.custodian || '',
+    rsaPin,
     remittanceDueDays: version.rules.remittanceDueDays,
     ...pension,
   };
@@ -80,10 +92,15 @@ const maskMoney = (record: any) => ({
 const buildPayload = async (request: Request) => {
   const role = getRole(request);
   const perms = permissions(role);
-  const [employeeSource, config] = await Promise.all([readPayrollEmployees(), readPayrollPensionConfig()]);
+  const [employeeSource, config, identities] = await Promise.all([readPayrollEmployees(), readPayrollPensionConfig(), payslipIdentityMap()]);
   const version = activePensionVersion(config);
   if (!version) throw new Error('No active pension configuration is available.');
-  const records = employeeSource.employees.map((employee) => buildRecord(employee, version));
+  const eligibleEmployees = employeeSource.employees.filter((employee) => isPensionEligibleStaff(employee));
+  const records = eligibleEmployees.map((employee) => {
+    const identity = identities.get(normalizePayrollMatchKey(employee.employeeCode))
+      || identities.get(normalizePayrollMatchKey(employee.employeeId));
+    return buildRecord(employee, version, identity);
+  });
   const totals = records.reduce(
     (sum, record) => ({
       pensionableEmolument: sum.pensionableEmolument + record.pensionableEmolument,
@@ -185,7 +202,7 @@ export async function GET(request: Request) {
       const table = pensionTable(payload.records);
       return tableExportResponse(format, {
         title: `Pension Remittance - ${payload.periodLabel}`,
-        subtitle: `${payload.records.length} employees`,
+        subtitle: `${payload.records.length} permanent (P-code) employees`,
         sheetName: 'Pension',
         columns: table.columns,
         rows: table.rows,

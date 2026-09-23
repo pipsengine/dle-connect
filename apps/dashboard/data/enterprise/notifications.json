@@ -2,6 +2,328 @@
   "schemaVersion": 1,
   "notifications": [
     {
+      "id": "ntf-1790190262826-tl3kkp",
+      "recipientUserId": "C1882",
+      "recipientUsername": "C1882",
+      "recipientEmployeeCode": "C1882",
+      "recipientRoles": [],
+      "kind": "Approval",
+      "module": "Leave Management",
+      "title": "Leave request awaiting your approval",
+      "body": "SAMUEL EMEWU JONAH submitted Sick Leave — SAMUEL EMEWU JONAH (2026-09-23 to 2026-09-24). Review in ESS Approvals within 5 working days.",
+      "severity": "warning",
+      "status": "Unread",
+      "href": "/workforce-portal?tab=leave&leaveSection=Approvals",
+      "createdAt": "2026-09-23T19:04:22.826Z",
+      "actor": "ODUNNIYI SAYO FUAD",
+      "channels": [
+        "In-App",
+        "Email"
+      ],
+      "metadata": {
+        "requestId": "ess-1790184445730-1gyy9d"
+      }
+    },
+    {
+      "id": "ntf-1790190261652-l7089d",
+      "recipientUserId": "C1544",
+      "recipientUsername": "C1544",
+      "recipientEmployeeCode": "C1544",
+      "recipientRoles": [],
+      "kind": "Approval",
+      "module": "Leave Management",
+      "title": "Leave request awaiting your approval",
+      "body": "RABIU GBOLAGADE submitted Sick Leave — RABIU GBOLAGADE (2026-09-23 to 2026-09-23). Review in ESS Approvals within 5 working days.",
+      "severity": "warning",
+      "status": "Unread",
+      "href": "/workforce-portal?tab=leave&leaveSection=Approvals",
+      "createdAt": "2026-09-23T19:04:21.652Z",
+      "actor": "ODUNNIYI SAYO FUAD",
+      "channels": [
+        "In-App",
+        "Email"
+      ],
+      "metadata": {
+        "requestId": "ess-1790157794494-y7m4ex"
+      }
+    },
+    {
+      "id": "ntf-1790190261153-oks28y",
+      "recipientUserId": "C1882",
+      "recipientUsername": "C1882",
+      "recipientEmployeeCode": "C1882",
+      "recipientRoles": [],
+      "kind": "Approval",
+      "module": "Leave Management",
+      "title": "Leave request awaiting your approval",
+      "body": "ADEKUNLE KOLAWOLE submitted Annual Leave — ADEKUNLE KOLAWOLE (2026-09-21 to 2026-09-29). Review in ESS Approvals within 5 working days.",
+      "severity": "warning",
+      "status": "Unread",
+      "href": "/workforce-portal?tab=leave&leaveSection=Approvals",
+      "createdAt": "2026-09-23T19:04:21.153Z",
+      "actor": "ODUNNIYI SAYO FUAD",
+      "channels": [
+        "In-App",
+        "Email"
+      ],
+      "metadata": {
+        "requestId": "ess-1789663296991-xtgawk"
+      }
+    },
+    {
+      "id": "ntf-1790190260580-d427yv",
+      "recipientUserId": "P0072",
+      "recipientUsername": "P0072",
+      "recipientEmployeeCode": "P0072",
+      "recipientRoles": [],
+      "kind": "Approval",
+      "module": "Leave Management",
+      "title": "Leave request awaiting your approval",
+      "body": "Mr. OWOLABI OLASUNKANMI AKEEB submitted Annual Leave — Mr. OWOLABI OLASUNKANMI AKEEB (2026-09-23 to 2026-09-25). Review in ESS Approvals within 5 working days.",
+      "severity": "warning",
+      "status": "Unread",
+      "href": "/workforce-portal?tab=leave&leaveSection=Approvals",
+      "createdAt": "2026-09-23T19:04:20.580Z",
+      "actor": "ODUNNIYI SAYO FUAD",
+      "channels": [
+        "In-App",
+        "Email"
+      ],
+      "metadata": {
+        "requestId": "ess-1790071857740-d73ld7"
+      }
+    },
+    {
+      "id": "ntf-1790190259750-rzs3na",
+      "recipientUserId": "C1720",
+      "recipientUsername": "C1720",
+      "recipientEmployeeCode": "C1720",
+      "recipientRoles": [],
+      "kind": "Approval",
+      "module": "Leave Management",
+      "title": "Leave request awaiting your approval",
+      "body": "OGUNYEMI AYODELE submitted Annual Leave — OGUNYEMI AYODELE (2026-10-09 to 2026-10-19). Review in ESS Approvals within 5 working days.",
+      "severity": "warning",
+      "status": "Unread",
+      "href": "/workforce-portal?tab=leave&leaveSection=Approvals",
+      "createdAt": "2026-09-23T19:04:19.750Z",
+      "actor": "ODUNNIYI SAYO FUAD",
+      "channels": [
+        "In-App",
+        "Email"
+      ],
+      "metadata": {
+        "requestId": "ess-1790172623865-aehjyi"
+      }
+    },
+    {
+      "id": "ntf-1790190259207-ufyt6e",
+      "recipientUserId": "P0072",
+      "recipientUsername": "P0072",
+      "recipientEmployeeCode": "P0072",
+      "recipientRoles": [],
+      "kind": "Approval",
+      "module": "Leave Management",
+      "title": "Leave request awaiting your approval",
+      "body": "AMANOKHAI MOSES submitted Annual Leave — AMANOKHAI MOSES (2026-09-24 to 2026-10-05). Review in ESS Approvals within 5 working days.",
+      "severity": "warning",
+      "status": "Unread",
+      "href": "/workforce-portal?tab=leave&leaveSection=Approvals",
+      "createdAt": "2026-09-23T19:04:19.207Z",
+      "actor": "ODUNNIYI SAYO FUAD",
+      "channels": [
+        "In-App",
+        "Email"
+      ],
+      "metadata": {
+        "requestId": "ess-1790163818424-eqaay1"
+      }
+    },
+    {
+      "id": "ntf-1790190258138-24opw8",
+      "recipientUserId": "C1882",
+      "recipientUsername": "C1882",
+      "recipientEmployeeCode": "C1882",
+      "recipientRoles": [],
+      "kind": "Approval",
+      "module": "Leave Management",
+      "title": "Leave request awaiting your approval",
+      "body": "OGWUCHE ACHEM submitted Annual Leave — OGWUCHE ACHEM (2026-09-22 to 2026-09-25). Review in ESS Approvals within 5 working days.",
+      "severity": "warning",
+      "status": "Unread",
+      "href": "/workforce-portal?tab=leave&leaveSection=Approvals",
+      "createdAt": "2026-09-23T19:04:18.138Z",
+      "actor": "ODUNNIYI SAYO FUAD",
+      "channels": [
+        "In-App",
+        "Email"
+      ],
+      "metadata": {
+        "requestId": "ess-1789993455193-y8sf2b"
+      }
+    },
+    {
+      "id": "ntf-1790190112334-0v49am",
+      "recipientUserId": "C1882",
+      "recipientUsername": "C1882",
+      "recipientEmployeeCode": "C1882",
+      "recipientRoles": [],
+      "kind": "Approval",
+      "module": "Leave Management",
+      "title": "Leave request awaiting your approval",
+      "body": "SAMUEL EMEWU JONAH submitted Sick Leave — SAMUEL EMEWU JONAH (2026-09-23 to 2026-09-24). Review in ESS Approvals within 5 working days.",
+      "severity": "warning",
+      "status": "Unread",
+      "href": "/workforce-portal?tab=leave&leaveSection=Approvals",
+      "createdAt": "2026-09-23T19:01:52.334Z",
+      "actor": "ODUNNIYI SAYO FUAD",
+      "channels": [
+        "In-App",
+        "Email"
+      ],
+      "metadata": {
+        "requestId": "ess-1790184445730-1gyy9d"
+      }
+    },
+    {
+      "id": "ntf-1790190111809-xklg5t",
+      "recipientUserId": "C1544",
+      "recipientUsername": "C1544",
+      "recipientEmployeeCode": "C1544",
+      "recipientRoles": [],
+      "kind": "Approval",
+      "module": "Leave Management",
+      "title": "Leave request awaiting your approval",
+      "body": "RABIU GBOLAGADE submitted Sick Leave — RABIU GBOLAGADE (2026-09-23 to 2026-09-23). Review in ESS Approvals within 5 working days.",
+      "severity": "warning",
+      "status": "Unread",
+      "href": "/workforce-portal?tab=leave&leaveSection=Approvals",
+      "createdAt": "2026-09-23T19:01:51.809Z",
+      "actor": "ODUNNIYI SAYO FUAD",
+      "channels": [
+        "In-App",
+        "Email"
+      ],
+      "metadata": {
+        "requestId": "ess-1790157794494-y7m4ex"
+      }
+    },
+    {
+      "id": "ntf-1790190111251-x5ztxb",
+      "recipientUserId": "C1882",
+      "recipientUsername": "C1882",
+      "recipientEmployeeCode": "C1882",
+      "recipientRoles": [],
+      "kind": "Approval",
+      "module": "Leave Management",
+      "title": "Leave request awaiting your approval",
+      "body": "ADEKUNLE KOLAWOLE submitted Annual Leave — ADEKUNLE KOLAWOLE (2026-09-21 to 2026-09-29). Review in ESS Approvals within 5 working days.",
+      "severity": "warning",
+      "status": "Unread",
+      "href": "/workforce-portal?tab=leave&leaveSection=Approvals",
+      "createdAt": "2026-09-23T19:01:51.251Z",
+      "actor": "ODUNNIYI SAYO FUAD",
+      "channels": [
+        "In-App",
+        "Email"
+      ],
+      "metadata": {
+        "requestId": "ess-1789663296991-xtgawk"
+      }
+    },
+    {
+      "id": "ntf-1790190110584-xc0ey8",
+      "recipientUserId": "P0072",
+      "recipientUsername": "P0072",
+      "recipientEmployeeCode": "P0072",
+      "recipientRoles": [],
+      "kind": "Approval",
+      "module": "Leave Management",
+      "title": "Leave request awaiting your approval",
+      "body": "Mr. OWOLABI OLASUNKANMI AKEEB submitted Annual Leave — Mr. OWOLABI OLASUNKANMI AKEEB (2026-09-23 to 2026-09-25). Review in ESS Approvals within 5 working days.",
+      "severity": "warning",
+      "status": "Unread",
+      "href": "/workforce-portal?tab=leave&leaveSection=Approvals",
+      "createdAt": "2026-09-23T19:01:50.584Z",
+      "actor": "ODUNNIYI SAYO FUAD",
+      "channels": [
+        "In-App",
+        "Email"
+      ],
+      "metadata": {
+        "requestId": "ess-1790071857740-d73ld7"
+      }
+    },
+    {
+      "id": "ntf-1790190110065-kcqxyw",
+      "recipientUserId": "C1720",
+      "recipientUsername": "C1720",
+      "recipientEmployeeCode": "C1720",
+      "recipientRoles": [],
+      "kind": "Approval",
+      "module": "Leave Management",
+      "title": "Leave request awaiting your approval",
+      "body": "OGUNYEMI AYODELE submitted Annual Leave — OGUNYEMI AYODELE (2026-10-09 to 2026-10-19). Review in ESS Approvals within 5 working days.",
+      "severity": "warning",
+      "status": "Unread",
+      "href": "/workforce-portal?tab=leave&leaveSection=Approvals",
+      "createdAt": "2026-09-23T19:01:50.066Z",
+      "actor": "ODUNNIYI SAYO FUAD",
+      "channels": [
+        "In-App",
+        "Email"
+      ],
+      "metadata": {
+        "requestId": "ess-1790172623865-aehjyi"
+      }
+    },
+    {
+      "id": "ntf-1790190109529-894arl",
+      "recipientUserId": "P0072",
+      "recipientUsername": "P0072",
+      "recipientEmployeeCode": "P0072",
+      "recipientRoles": [],
+      "kind": "Approval",
+      "module": "Leave Management",
+      "title": "Leave request awaiting your approval",
+      "body": "AMANOKHAI MOSES submitted Annual Leave — AMANOKHAI MOSES (2026-09-24 to 2026-10-05). Review in ESS Approvals within 5 working days.",
+      "severity": "warning",
+      "status": "Unread",
+      "href": "/workforce-portal?tab=leave&leaveSection=Approvals",
+      "createdAt": "2026-09-23T19:01:49.529Z",
+      "actor": "ODUNNIYI SAYO FUAD",
+      "channels": [
+        "In-App",
+        "Email"
+      ],
+      "metadata": {
+        "requestId": "ess-1790163818424-eqaay1"
+      }
+    },
+    {
+      "id": "ntf-1790190108485-rk3hce",
+      "recipientUserId": "C1882",
+      "recipientUsername": "C1882",
+      "recipientEmployeeCode": "C1882",
+      "recipientRoles": [],
+      "kind": "Approval",
+      "module": "Leave Management",
+      "title": "Leave request awaiting your approval",
+      "body": "OGWUCHE ACHEM submitted Annual Leave — OGWUCHE ACHEM (2026-09-22 to 2026-09-25). Review in ESS Approvals within 5 working days.",
+      "severity": "warning",
+      "status": "Unread",
+      "href": "/workforce-portal?tab=leave&leaveSection=Approvals",
+      "createdAt": "2026-09-23T19:01:48.485Z",
+      "actor": "ODUNNIYI SAYO FUAD",
+      "channels": [
+        "In-App",
+        "Email"
+      ],
+      "metadata": {
+        "requestId": "ess-1789993455193-y8sf2b"
+      }
+    },
+    {
       "id": "ntf-1790148764930-9cqcqu",
       "recipientUserId": "P0464",
       "recipientUsername": "P0464",
@@ -179,7 +501,7 @@
       "body": "HR (bulk submit booked drafts) submitted timesheet hdr-2026-08-20-p0289---mrs-ebele-victoria-onugha-painting-day for period 2026-09. Supervisor review can now start.",
       "severity": "warning",
       "status": "Unread",
-      "href": "/hris/time-and-logs/timesheet-approval",
+      "href": "/workforce-portal?tab=time",
       "createdAt": "2026-09-10T08:02:31.782Z",
       "actor": "Timesheet Workflow",
       "channels": [
@@ -205,7 +527,7 @@
       "body": "HR (bulk submit booked drafts) submitted timesheet hdr-2026-08-19-p0289---mrs-ebele-victoria-onugha-painting-day for period 2026-09. Supervisor review can now start.",
       "severity": "warning",
       "status": "Unread",
-      "href": "/hris/time-and-logs/timesheet-approval",
+      "href": "/workforce-portal?tab=time",
       "createdAt": "2026-09-10T08:00:59.331Z",
       "actor": "Timesheet Workflow",
       "channels": [
@@ -231,7 +553,7 @@
       "body": "HR (bulk submit booked drafts) submitted timesheet hdr-2026-08-17-p0072---mr-owoloja-akande-welding-day for period 2026-09. Supervisor review can now start.",
       "severity": "warning",
       "status": "Unread",
-      "href": "/hris/time-and-logs/timesheet-approval",
+      "href": "/workforce-portal?tab=time",
       "createdAt": "2026-09-10T07:58:13.616Z",
       "actor": "Timesheet Workflow",
       "channels": [
@@ -257,7 +579,7 @@
       "body": "HR (bulk submit booked drafts) submitted timesheet hdr-2026-08-17-mr-sunday-okewu-[p0436]-blasting-day for period 2026-09. Supervisor review can now start.",
       "severity": "warning",
       "status": "Unread",
-      "href": "/hris/time-and-logs/timesheet-approval",
+      "href": "/workforce-portal?tab=time",
       "createdAt": "2026-09-10T07:58:09.212Z",
       "actor": "Timesheet Workflow",
       "channels": [
@@ -287,7 +609,7 @@
       "body": "HR (bulk submit booked drafts) submitted timesheet hdr-2026-08-17-0000_---mr-bakare-blasting for period 2026-09. Supervisor review can now start.",
       "severity": "warning",
       "status": "Unread",
-      "href": "/hris/time-and-logs/timesheet-approval",
+      "href": "/workforce-portal?tab=time",
       "createdAt": "2026-09-10T07:58:06.878Z",
       "actor": "Timesheet Workflow",
       "channels": [
@@ -312,7 +634,7 @@
       "body": "HR (bulk submit booked drafts) submitted timesheet hdr-2026-08-18-p0289---mrs-ebele-victoria-onugha-painting-day for period 2026-09. Supervisor review can now start.",
       "severity": "warning",
       "status": "Unread",
-      "href": "/hris/time-and-logs/timesheet-approval",
+      "href": "/workforce-portal?tab=time",
       "createdAt": "2026-09-10T07:58:03.460Z",
       "actor": "Timesheet Workflow",
       "channels": [
@@ -338,7 +660,7 @@
       "body": "HR (bulk submit booked drafts) submitted timesheet hdr-2026-08-19-p0072---mr-owoloja-akande-welding-day for period 2026-09. Supervisor review can now start.",
       "severity": "warning",
       "status": "Unread",
-      "href": "/hris/time-and-logs/timesheet-approval",
+      "href": "/workforce-portal?tab=time",
       "createdAt": "2026-09-10T07:57:58.858Z",
       "actor": "Timesheet Workflow",
       "channels": [
@@ -368,7 +690,7 @@
       "body": "HR (bulk submit booked drafts) submitted timesheet hdr-2026-08-19-0000_---mr-bakare-blasting-day for period 2026-09. Supervisor review can now start.",
       "severity": "warning",
       "status": "Unread",
-      "href": "/hris/time-and-logs/timesheet-approval",
+      "href": "/workforce-portal?tab=time",
       "createdAt": "2026-09-10T07:57:55.511Z",
       "actor": "Timesheet Workflow",
       "channels": [
@@ -393,7 +715,7 @@
       "body": "HR (bulk submit booked drafts) submitted timesheet hdr-2026-08-21-c1001---jimoh-gbadamosi-blasting-day for period 2026-09. Supervisor review can now start.",
       "severity": "warning",
       "status": "Unread",
-      "href": "/hris/time-and-logs/timesheet-approval",
+      "href": "/workforce-portal?tab=time",
       "createdAt": "2026-09-10T07:57:53.608Z",
       "actor": "Timesheet Workflow",
       "channels": [
@@ -419,7 +741,7 @@
       "body": "HR (bulk submit booked drafts) submitted timesheet hdr-2026-08-24-p0072---mr-owoloja-akande-welding-day for period 2026-09. Supervisor review can now start.",
       "severity": "warning",
       "status": "Unread",
-      "href": "/hris/time-and-logs/timesheet-approval",
+      "href": "/workforce-portal?tab=time",
       "createdAt": "2026-09-10T07:57:51.050Z",
       "actor": "Timesheet Workflow",
       "channels": [
@@ -445,7 +767,7 @@
       "body": "HR (bulk submit booked drafts) submitted timesheet hdr-2026-08-24-c1001---jimoh-gbadamosi-blasting-day for period 2026-09. Supervisor review can now start.",
       "severity": "warning",
       "status": "Unread",
-      "href": "/hris/time-and-logs/timesheet-approval",
+      "href": "/workforce-portal?tab=time",
       "createdAt": "2026-09-10T07:57:47.598Z",
       "actor": "Timesheet Workflow",
       "channels": [
@@ -475,7 +797,7 @@
       "body": "HR (bulk submit booked drafts) submitted timesheet hdr-2026-08-24-0000_---mr-bakare-blasting-day for period 2026-09. Supervisor review can now start.",
       "severity": "warning",
       "status": "Unread",
-      "href": "/hris/time-and-logs/timesheet-approval",
+      "href": "/workforce-portal?tab=time",
       "createdAt": "2026-09-10T07:57:45.015Z",
       "actor": "Timesheet Workflow",
       "channels": [
@@ -500,7 +822,7 @@
       "body": "HR (bulk submit booked drafts) submitted timesheet hdr-2026-08-25-c1882---momoh-mohammed-fitting-day for period 2026-09. Supervisor review can now start.",
       "severity": "warning",
       "status": "Unread",
-      "href": "/hris/time-and-logs/timesheet-approval",
+      "href": "/workforce-portal?tab=time",
       "createdAt": "2026-09-10T07:57:43.079Z",
       "actor": "Timesheet Workflow",
       "channels": [
@@ -526,7 +848,7 @@
       "body": "HR (bulk submit booked drafts) submitted timesheet hdr-2026-08-27-c1001---jimoh-gbadamosi-blasting-day for period 2026-09. Supervisor review can now start.",
       "severity": "warning",
       "status": "Unread",
-      "href": "/hris/time-and-logs/timesheet-approval",
+      "href": "/workforce-portal?tab=time",
       "createdAt": "2026-09-10T07:57:39.734Z",
       "actor": "Timesheet Workflow",
       "channels": [
@@ -552,7 +874,7 @@
       "body": "HR (bulk submit booked drafts) submitted timesheet hdr-2026-08-29-p0072---mr-owoloja-akande-welding-day for period 2026-09. Supervisor review can now start.",
       "severity": "warning",
       "status": "Unread",
-      "href": "/hris/time-and-logs/timesheet-approval",
+      "href": "/workforce-portal?tab=time",
       "createdAt": "2026-09-10T07:57:37.206Z",
       "actor": "Timesheet Workflow",
       "channels": [
@@ -578,7 +900,7 @@
       "body": "HR (bulk submit booked drafts) submitted timesheet hdr-2026-09-01-c1882---momoh-mohammed-fitting-day for period 2026-09. Supervisor review can now start.",
       "severity": "warning",
       "status": "Unread",
-      "href": "/hris/time-and-logs/timesheet-approval",
+      "href": "/workforce-portal?tab=time",
       "createdAt": "2026-09-10T07:57:33.446Z",
       "actor": "Timesheet Workflow",
       "channels": [
@@ -604,7 +926,7 @@
       "body": "HR (bulk submit booked drafts) submitted timesheet hdr-2026-09-01-c1001---jimoh-gbadamosi-blasting-day for period 2026-09. Supervisor review can now start.",
       "severity": "warning",
       "status": "Unread",
-      "href": "/hris/time-and-logs/timesheet-approval",
+      "href": "/workforce-portal?tab=time",
       "createdAt": "2026-09-10T07:57:29.962Z",
       "actor": "Timesheet Workflow",
       "channels": [
@@ -630,7 +952,7 @@
       "body": "HR (bulk submit booked drafts) submitted timesheet hdr-2026-09-02-c1882---momoh-mohammed-fitting-day for period 2026-09. Supervisor review can now start.",
       "severity": "warning",
       "status": "Unread",
-      "href": "/hris/time-and-logs/timesheet-approval",
+      "href": "/workforce-portal?tab=time",
       "createdAt": "2026-09-10T07:57:27.454Z",
       "actor": "Timesheet Workflow",
       "channels": [
@@ -656,7 +978,7 @@
       "body": "HR (bulk submit booked drafts) submitted timesheet hdr-2026-09-03-c1882---momoh-mohammed-fitting-day for period 2026-09. Supervisor review can now start.",
       "severity": "warning",
       "status": "Unread",
-      "href": "/hris/time-and-logs/timesheet-approval",
+      "href": "/workforce-portal?tab=time",
       "createdAt": "2026-09-10T07:57:24.033Z",
       "actor": "Timesheet Workflow",
       "channels": [
@@ -686,7 +1008,7 @@
       "body": "HR (bulk submit booked drafts) submitted timesheet hdr-2026-09-03-0000_---mr-bakare-blasting-day for period 2026-09. Supervisor review can now start.",
       "severity": "warning",
       "status": "Unread",
-      "href": "/hris/time-and-logs/timesheet-approval",
+      "href": "/workforce-portal?tab=time",
       "createdAt": "2026-09-10T07:57:20.066Z",
       "actor": "Timesheet Workflow",
       "channels": [
@@ -711,7 +1033,7 @@
       "body": "HR (bulk submit booked drafts) submitted timesheet hdr-2026-09-04-c1882---momoh-mohammed-fitting-day for period 2026-09. Supervisor review can now start.",
       "severity": "warning",
       "status": "Unread",
-      "href": "/hris/time-and-logs/timesheet-approval",
+      "href": "/workforce-portal?tab=time",
       "createdAt": "2026-09-10T07:57:18.173Z",
       "actor": "Timesheet Workflow",
       "channels": [
@@ -737,7 +1059,7 @@
       "body": "HR (bulk submit booked drafts) submitted timesheet hdr-2026-09-04-c1229---shittu-olawale-welding-day for period 2026-09. Supervisor review can now start.",
       "severity": "warning",
       "status": "Unread",
-      "href": "/hris/time-and-logs/timesheet-approval",
+      "href": "/workforce-portal?tab=time",
       "createdAt": "2026-09-10T07:57:14.753Z",
       "actor": "Timesheet Workflow",
       "channels": [
@@ -767,7 +1089,7 @@
       "body": "HR (bulk submit booked drafts) submitted timesheet hdr-2026-09-04-0000_---mr-bakare-blasting-day for period 2026-09. Supervisor review can now start.",
       "severity": "warning",
       "status": "Unread",
-      "href": "/hris/time-and-logs/timesheet-approval",
+      "href": "/workforce-portal?tab=time",
       "createdAt": "2026-09-10T07:57:11.253Z",
       "actor": "Timesheet Workflow",
       "channels": [
@@ -792,7 +1114,7 @@
       "body": "HR (bulk submit booked drafts) submitted timesheet hdr-2026-09-05-p0436---mr-sunday-okewu-maintenance-day for period 2026-09. Supervisor review can now start.",
       "severity": "warning",
       "status": "Unread",
-      "href": "/hris/time-and-logs/timesheet-approval",
+      "href": "/workforce-portal?tab=time",
       "createdAt": "2026-09-10T07:57:09.013Z",
       "actor": "Timesheet Workflow",
       "channels": [
@@ -818,7 +1140,7 @@
       "body": "HR (bulk submit booked drafts) submitted timesheet hdr-2026-09-07-p0289---mrs-ebele-victoria-onugha-painting-day for period 2026-09. Supervisor review can now start.",
       "severity": "warning",
       "status": "Unread",
-      "href": "/hris/time-and-logs/timesheet-approval",
+      "href": "/workforce-portal?tab=time",
       "createdAt": "2026-09-10T07:57:05.930Z",
       "actor": "Timesheet Workflow",
       "channels": [
@@ -844,7 +1166,7 @@
       "body": "HR (bulk submit booked drafts) submitted timesheet hdr-2026-09-07-p0277---mr-adebobola-moruf-akinsanya-blasting-day for period 2026-09. Supervisor review can now start.",
       "severity": "warning",
       "status": "Unread",
-      "href": "/hris/time-and-logs/timesheet-approval",
+      "href": "/workforce-portal?tab=time",
       "createdAt": "2026-09-10T07:57:03.911Z",
       "actor": "Timesheet Workflow",
       "channels": [
@@ -870,7 +1192,7 @@
       "body": "HR (bulk submit booked drafts) submitted timesheet hdr-2026-09-07-mr-sunday-okewu-[p0436]-blasting-day for period 2026-09. Supervisor review can now start.",
       "severity": "warning",
       "status": "Unread",
-      "href": "/hris/time-and-logs/timesheet-approval",
+      "href": "/workforce-portal?tab=time",
       "createdAt": "2026-09-10T07:56:53.297Z",
       "actor": "Timesheet Workflow",
       "channels": [
@@ -896,7 +1218,7 @@
       "body": "HR (bulk submit booked drafts) submitted timesheet hdr-2026-09-07-c1882---momoh-mohammed-fitting-day for period 2026-09. Supervisor review can now start.",
       "severity": "warning",
       "status": "Unread",
-      "href": "/hris/time-and-logs/timesheet-approval",
+      "href": "/workforce-portal?tab=time",
       "createdAt": "2026-09-10T07:56:51.316Z",
       "actor": "Timesheet Workflow",
       "channels": [
@@ -922,7 +1244,7 @@
       "body": "HR (bulk submit booked drafts) submitted timesheet hdr-2026-09-07-c1229---shittu-olawale-welding-day for period 2026-09. Supervisor review can now start.",
       "severity": "warning",
       "status": "Unread",
-      "href": "/hris/time-and-logs/timesheet-approval",
+      "href": "/workforce-portal?tab=time",
       "createdAt": "2026-09-10T07:56:47.911Z",
       "actor": "Timesheet Workflow",
       "channels": [
@@ -952,7 +1274,7 @@
       "body": "HR (bulk submit booked drafts) submitted timesheet hdr-2026-09-07-0000_---mr-bakare-blasting-day for period 2026-09. Supervisor review can now start.",
       "severity": "warning",
       "status": "Unread",
-      "href": "/hris/time-and-logs/timesheet-approval",
+      "href": "/workforce-portal?tab=time",
       "createdAt": "2026-09-10T07:56:43.089Z",
       "actor": "Timesheet Workflow",
       "channels": [
@@ -977,7 +1299,7 @@
       "body": "HR (bulk submit booked drafts) submitted timesheet hdr-2026-09-08-p0442---mrs-temitope-abiodun-odulate-blasting-day for period 2026-09. Supervisor review can now start.",
       "severity": "warning",
       "status": "Unread",
-      "href": "/hris/time-and-logs/timesheet-approval",
+      "href": "/workforce-portal?tab=time",
       "createdAt": "2026-09-10T07:56:40.016Z",
       "actor": "Timesheet Workflow",
       "channels": [
@@ -1003,7 +1325,7 @@
       "body": "HR (bulk submit booked drafts) submitted timesheet hdr-2026-09-08-p0277---mr-adebobola-moruf-akinsanya-galvanizing-day for period 2026-09. Supervisor review can now start.",
       "severity": "warning",
       "status": "Unread",
-      "href": "/hris/time-and-logs/timesheet-approval",
+      "href": "/workforce-portal?tab=time",
       "createdAt": "2026-09-10T07:56:38.098Z",
       "actor": "Timesheet Workflow",
       "channels": [
@@ -1029,7 +1351,7 @@
       "body": "HR (bulk submit booked drafts) submitted timesheet hdr-2026-09-08-p0072---mr-owoloja-akande-welding-day for period 2026-09. Supervisor review can now start.",
       "severity": "warning",
       "status": "Unread",
-      "href": "/hris/time-and-logs/timesheet-approval",
+      "href": "/workforce-portal?tab=time",
       "createdAt": "2026-09-10T07:56:28.355Z",
       "actor": "Timesheet Workflow",
       "channels": [
@@ -1055,7 +1377,7 @@
       "body": "HR (bulk submit booked drafts) submitted timesheet hdr-2026-09-08-c2225---abel-daniel-blasting-day for period 2026-09. Supervisor review can now start.",
       "severity": "warning",
       "status": "Unread",
-      "href": "/hris/time-and-logs/timesheet-approval",
+      "href": "/workforce-portal?tab=time",
       "createdAt": "2026-09-10T07:56:25.102Z",
       "actor": "Timesheet Workflow",
       "channels": [
@@ -1081,7 +1403,7 @@
       "body": "HR (bulk submit booked drafts) submitted timesheet hdr-2026-09-08-c1882---momoh-mohammed-fitting-day for period 2026-09. Supervisor review can now start.",
       "severity": "warning",
       "status": "Unread",
-      "href": "/hris/time-and-logs/timesheet-approval",
+      "href": "/workforce-portal?tab=time",
       "createdAt": "2026-09-10T07:56:22.410Z",
       "actor": "Timesheet Workflow",
       "channels": [
@@ -1107,7 +1429,7 @@
       "body": "HR (bulk submit booked drafts) submitted timesheet hdr-2026-09-08-c1720---adanou-raymond-fitting-day for period 2026-09. Supervisor review can now start.",
       "severity": "warning",
       "status": "Unread",
-      "href": "/hris/time-and-logs/timesheet-approval",
+      "href": "/workforce-portal?tab=time",
       "createdAt": "2026-09-10T07:56:18.994Z",
       "actor": "Timesheet Workflow",
       "channels": [
@@ -1133,7 +1455,7 @@
       "body": "HR (bulk submit booked drafts) submitted timesheet hdr-2026-09-08-c1229---shittu-olawale-welding-day for period 2026-09. Supervisor review can now start.",
       "severity": "warning",
       "status": "Unread",
-      "href": "/hris/time-and-logs/timesheet-approval",
+      "href": "/workforce-portal?tab=time",
       "createdAt": "2026-09-10T07:56:15.908Z",
       "actor": "Timesheet Workflow",
       "channels": [
@@ -1159,7 +1481,7 @@
       "body": "HR (bulk submit booked drafts) submitted timesheet hdr-2026-09-08-c1001---jimoh-gbadamosi-blasting-day for period 2026-09. Supervisor review can now start.",
       "severity": "warning",
       "status": "Unread",
-      "href": "/hris/time-and-logs/timesheet-approval",
+      "href": "/workforce-portal?tab=time",
       "createdAt": "2026-09-10T07:56:12.446Z",
       "actor": "Timesheet Workflow",
       "channels": [
@@ -1189,7 +1511,7 @@
       "body": "HR (bulk submit booked drafts) submitted timesheet hdr-2026-09-08-0000_---mr-bakare-blasting-day for period 2026-09. Supervisor review can now start.",
       "severity": "warning",
       "status": "Unread",
-      "href": "/hris/time-and-logs/timesheet-approval",
+      "href": "/workforce-portal?tab=time",
       "createdAt": "2026-09-10T07:56:09.939Z",
       "actor": "Timesheet Workflow",
       "channels": [
@@ -1214,7 +1536,7 @@
       "body": "HR (bulk submit booked drafts) submitted timesheet hdr-2026-09-09-p0442---mrs-temitope-abiodun-odulate-blasting-day for period 2026-09. Supervisor review can now start.",
       "severity": "warning",
       "status": "Unread",
-      "href": "/hris/time-and-logs/timesheet-approval",
+      "href": "/workforce-portal?tab=time",
       "createdAt": "2026-09-10T07:56:07.191Z",
       "actor": "Timesheet Workflow",
       "channels": [
@@ -1240,7 +1562,7 @@
       "body": "HR (bulk submit booked drafts) submitted timesheet hdr-2026-09-09-p0436---mr-sunday-okewu-maintenance-day for period 2026-09. Supervisor review can now start.",
       "severity": "warning",
       "status": "Unread",
-      "href": "/hris/time-and-logs/timesheet-approval",
+      "href": "/workforce-portal?tab=time",
       "createdAt": "2026-09-10T07:56:03.999Z",
       "actor": "Timesheet Workflow",
       "channels": [
@@ -1266,7 +1588,7 @@
       "body": "HR (bulk submit booked drafts) submitted timesheet hdr-2026-09-09-p0072---mr-owoloja-akande-welding-day for period 2026-09. Supervisor review can now start.",
       "severity": "warning",
       "status": "Unread",
-      "href": "/hris/time-and-logs/timesheet-approval",
+      "href": "/workforce-portal?tab=time",
       "createdAt": "2026-09-10T07:56:02.019Z",
       "actor": "Timesheet Workflow",
       "channels": [
@@ -1292,7 +1614,7 @@
       "body": "HR (bulk submit booked drafts) submitted timesheet hdr-2026-09-09-p0013---mr-samuel-karonwi-blasting-day for period 2026-09. Supervisor review can now start.",
       "severity": "warning",
       "status": "Unread",
-      "href": "/hris/time-and-logs/timesheet-approval",
+      "href": "/workforce-portal?tab=time",
       "createdAt": "2026-09-10T07:55:57.817Z",
       "actor": "Timesheet Workflow",
       "channels": [
@@ -1318,7 +1640,7 @@
       "body": "HR (bulk submit booked drafts) submitted timesheet hdr-2026-09-09-c2225---abel-daniel-blasting-day for period 2026-09. Supervisor review can now start.",
       "severity": "warning",
       "status": "Unread",
-      "href": "/hris/time-and-logs/timesheet-approval",
+      "href": "/workforce-portal?tab=time",
       "createdAt": "2026-09-10T07:55:55.934Z",
       "actor": "Timesheet Workflow",
       "channels": [
@@ -1344,7 +1666,7 @@
       "body": "HR (bulk submit booked drafts) submitted timesheet hdr-2026-09-09-c1882---momoh-mohammed-fitting-day for period 2026-09. Supervisor review can now start.",
       "severity": "warning",
       "status": "Unread",
-      "href": "/hris/time-and-logs/timesheet-approval",
+      "href": "/workforce-portal?tab=time",
       "createdAt": "2026-09-10T07:55:53.290Z",
       "actor": "Timesheet Workflow",
       "channels": [
@@ -1370,7 +1692,7 @@
       "body": "HR (bulk submit booked drafts) submitted timesheet hdr-2026-09-09-c1229---shittu-olawale-welding-day for period 2026-09. Supervisor review can now start.",
       "severity": "warning",
       "status": "Unread",
-      "href": "/hris/time-and-logs/timesheet-approval",
+      "href": "/workforce-portal?tab=time",
       "createdAt": "2026-09-10T07:55:49.884Z",
       "actor": "Timesheet Workflow",
       "channels": [
@@ -1400,7 +1722,7 @@
       "body": "HR (bulk submit booked drafts) submitted timesheet hdr-2026-09-09-0000_---mr-bakare-blasting-day for period 2026-09. Supervisor review can now start.",
       "severity": "warning",
       "status": "Unread",
-      "href": "/hris/time-and-logs/timesheet-approval",
+      "href": "/workforce-portal?tab=time",
       "createdAt": "2026-09-10T07:55:46.399Z",
       "actor": "Timesheet Workflow",
       "channels": [
@@ -1425,7 +1747,7 @@
       "body": "HR (bulk submit booked drafts) submitted timesheet hdr-2026-09-10-p0442---mrs-temitope-abiodun-odulate-blasting-day for period 2026-09. Supervisor review can now start.",
       "severity": "warning",
       "status": "Unread",
-      "href": "/hris/time-and-logs/timesheet-approval",
+      "href": "/workforce-portal?tab=time",
       "createdAt": "2026-09-10T07:55:42.659Z",
       "actor": "Timesheet Workflow",
       "channels": [

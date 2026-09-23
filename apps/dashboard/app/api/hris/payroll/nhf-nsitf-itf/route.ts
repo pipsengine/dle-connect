@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { payrollDataSourceInfo, readPayrollEmployees } from '@/lib/payroll-employee-source';
 import { activeStatutoryFundsVersion, calculateStatutoryFunds, readStatutoryFundsConfig, statutoryFundInputFromEmployee, writeStatutoryFundsConfig, type StatutoryFundsConfig } from '@/lib/payroll-statutory-funds-engine';
+import { isPensionEligibleStaff } from '@/lib/payroll-employee-classification';
 import { activePayrollPeriod } from '@/lib/payroll-periods';
 import { tableExportResponse } from '@/lib/excel-export';
 
@@ -69,7 +70,7 @@ const buildPayload = async (request: Request) => {
   const role = getRole(request);
   const perms = permissions(role);
   const [employeeSource, config] = await Promise.all([readPayrollEmployees(), readStatutoryFundsConfig()]);
-  const employeeRows = employeeSource.employees;
+  const employeeRows = employeeSource.employees.filter((employee) => isPensionEligibleStaff(employee));
   const version = activeStatutoryFundsVersion(config);
   if (!version) throw new Error('No active NHF/NSITF/ITF configuration is available.');
   const records = employeeRows.map((employee) => buildRecord(employee, version, employeeRows.length));
@@ -201,7 +202,7 @@ export async function GET(request: Request) {
       const table = fundTable(payload.records, searchParams.get('fund') || '');
       return tableExportResponse(format, {
         title: `${table.titlePrefix} - ${payload.periodLabel}`,
-        subtitle: `${payload.records.length} employees`,
+        subtitle: `${payload.records.length} permanent (P-code) employees`,
         sheetName: table.sheetName,
         columns: table.columns,
         rows: table.rows,

@@ -4929,13 +4929,15 @@ export default function PayrollManagementClient({
     status = 'All',
     pack: 'salaried' | 'daily-rate' | 'all' = viewPack,
     currency: 'ngn' | 'usd' | 'all' = format === 'xls' ? 'ngn' : 'all',
+    company: string = viewCompany,
   ) => {
     const params = new URLSearchParams({ format, report, status });
     const period = viewPeriod || payload?.period;
     if (period) params.set('period', period);
     params.set('pack', pack);
-    params.set('company', viewCompany);
+    params.set('company', company);
     params.set('currency', currency);
+    if (report === 'salary-setup') params.set('view', 'setup');
     return `/api/hris/payroll-management?${params.toString()}`;
   };
 
@@ -4990,6 +4992,10 @@ export default function PayrollManagementClient({
 
   const exportBothPacksExcel = (report = 'payroll-register') => {
     if (!ensureCanExport()) return;
+    if (report === 'salary-setup') {
+      window.location.href = reportExportUrl('xls', 'salary-setup', 'All', 'all', 'all', 'all');
+      return;
+    }
     const wagesPack = viewPack === 'daily-rate';
     const resolvedReport = wagesPack && (report === 'payroll-register' || report === 'bank-schedule')
       ? 'dayrate-schedule'

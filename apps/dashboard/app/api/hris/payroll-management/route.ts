@@ -26,6 +26,7 @@ import {
 } from '@/lib/dayrate-schedule-template-export';
 import { readAppliedDayrateScheduleOverride } from '@/lib/dayrate-schedule-override-read';
 import { isDleUsdPayrollEmployee } from '@/lib/payroll-bank-schedule-packs';
+import { isPensionEligibleStaff } from '@/lib/payroll-employee-classification';
 import { readPayrollEmployees } from '@/lib/payroll-employee-source';
 import { readPayrollSnapshotsByPeriods } from '@/lib/payroll-run-store';
 import { normalizePayrollCompany, resolvePayrollCompany } from '@/lib/payroll-schedule-scope';
@@ -233,10 +234,20 @@ const reportExport = (records: any[], report: string) => {
     return { columns: ['Employee ID', 'Name', 'Department', 'Taxable Pay', 'PAYE', 'Payroll Status', 'Exceptions'], rows: records.map((r) => [r.employeeId, r.fullName, r.department, r.taxablePay ?? '', r.paye ?? 0, r.payrollStatus, (r.exceptions || []).join('; ')]) };
   }
   if (report === 'pension-report') {
-    return { columns: ['Employee ID', 'Name', 'Department', 'Gross Pay', 'Pension EE', 'Pension ER Estimate', 'Payroll Status'], rows: records.map((r) => [r.employeeId, r.fullName, r.department, r.grossPay ?? 0, r.pension ?? 0, roundMoney(Number(r.pension || 0) * 1.25), r.payrollStatus]) };
+    const pensionRows = records.filter((r) => isPensionEligibleStaff({ employeeId: r.employeeId, employeeCode: r.employeeCode || r.employeeId }));
+    return {
+      columns: ['Employee ID', 'Name', 'Department', 'Gross Pay', 'Pension EE', 'Pension ER Estimate', 'Payroll Status'],
+      rows: pensionRows.map((r) => [r.employeeId, r.fullName, r.department, r.grossPay ?? 0, r.pension ?? 0, roundMoney(Number(r.pension || 0) * 1.25), r.payrollStatus]),
+    };
   }
   if (report === 'deduction-report' || report === 'compliance-report') {
-    return { columns: ['Employee ID', 'Name', 'Department', 'PAYE', 'Pension', 'Other / NHF / Union', 'Total Deductions', 'Payroll Status'], rows: records.map((r) => [r.employeeId, r.fullName, r.department, r.paye ?? 0, r.pension ?? 0, r.otherDeductions ?? 0, r.deductions ?? 0, r.payrollStatus]) };
+    return {
+      columns: ['Employee ID', 'Name', 'Department', 'PAYE', 'Pension', 'Other / NHF / Union', 'Total Deductions', 'Payroll Status'],
+      rows: records.map((r) => {
+        const pensionEligible = isPensionEligibleStaff({ employeeId: r.employeeId, employeeCode: r.employeeCode || r.employeeId });
+        return [r.employeeId, r.fullName, r.department, r.paye ?? 0, pensionEligible ? (r.pension ?? 0) : '', pensionEligible ? (r.otherDeductions ?? 0) : (r.otherDeductions ?? 0), r.deductions ?? 0, r.payrollStatus];
+      }),
+    };
   }
   if (report === 'bank-payment-report' || report === 'bank-schedule') {
     return { columns: ['Employee Code', 'Employee Name', 'Bank', 'Account No', 'Sort Code', 'NET Salary', 'Location'], rows: records.map((r) => [r.employeeId, r.fullName, r.bankName || '', r.accountNo || '', r.sortCode || r.branchCode || r.bankCode || '', r.netPay ?? 0, r.location || '']) };
@@ -474,6 +485,44 @@ export async function GET(request: Request) {
     }
     if (url.searchParams.get('format') === 'xls' || url.searchParams.get('format') === 'excel') {
       if (!payload.permissions.canExport) return jsonErr(403, 'Permission denied');
+      if (report === 'salary-setup') {
+        const livePeriod = String(payload.period || '').trim() || (await getActivePayrollPeriod().catch(() => ''));
+        const exportCompanyCode = normalizePayrollCompany(requestedCompany);
+        const [salariedLive, dayrateLive] = await Promise.all([
+          livePeriod ? calculatePayrollForPeriod(livePeriod, { pack: 'salaried', company: exportCompanyCode }).catch(() => null) : null,
+          livePeriod ? calculatePayrollForPeriod(livePeriod, { pack: 'daily-rate', company: exportCompanyCode }).catch(() => null) : null,
+        ]);
+        const statusFilter = url.searchParams.get('status');
+        const salariedRecords = filterExportRecords(salariedLive?.records || payload.records, statusFilter, 'salaried', 'all', requestedCompany)
+          .filter((record) => !record.isDailyRate);
+        const dayrateRecords = filterExportRecords(dayrateLive?.records || [], statusFilter, 'daily-rate', 'all', requestedCompany)
+          .filter((record) => record.isDailyRate);
+        const salariedReport = buildSalarySetupExportReport(salariedRecords);
+        const dayrateReport = buildSalarySetupExportReport(dayrateRecords);
+        const worksheets = [
+          {
+            title: `${reportTitle(report)} - ${payload.periodLabel}`,
+            subtitle: `Salaries · ${salariedRecords.length} records`,
+            sheetName: 'Salaries',
+            columns: salariedReport.columns,
+            rows: salariedReport.rows,
+          },
+          {
+            title: `${reportTitle(report)} - ${payload.periodLabel}`,
+            subtitle: `Wages · ${dayrateRecords.length} records`,
+            sheetName: 'Wages',
+            columns: dayrateReport.columns,
+            rows: dayrateReport.rows,
+          },
+        ];
+        return new Response(buildExcelWorkbookXml({ worksheets }), {
+          headers: {
+            'content-type': excelMimeType,
+            'content-disposition': `attachment; filename="salary-setup-${payload.period}.xls"`,
+            'cache-control': 'no-store',
+          },
+        });
+      }
       const packPayloads = requestedPack === 'all'
         ? [
             payload,
