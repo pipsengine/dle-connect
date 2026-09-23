@@ -24,6 +24,7 @@ import { findDayrateScheduleOverrideRow, readAppliedDayrateScheduleOverride } fr
 import { explicitPayrollDayRate, isPayrollProfileTimesheetSourcePeriod, payrollExcelAmountOverlayApplies } from '@/lib/payroll-source-of-truth';
 import { normalizeBankSortCode, withNormalizedBankCodes } from '@/lib/payroll-bank-constants';
 import { isDleUsdPayrollEmployee } from '@/lib/payroll-bank-schedule-packs';
+import { applyLockedPayrollPackage, applyLockedPayrollPackageToRecords } from '@/lib/locked-payroll-package';
 import { resolvePayCurrency } from '@/lib/payroll-currency';
 import { payrollPeriodLabel } from '@/lib/payroll-period-store';
 import { findPayrollScheduleScope, resolvePayrollCompany, type PayrollCompany } from '@/lib/payroll-schedule-scope';
@@ -59,6 +60,8 @@ export type PayrollCalculationRecord = {
     employerCost: number;
     shareLabel: string;
   } | null;
+  /** Fixed naira equivalent of the dollar gross. Display only — not a second payment. */
+  lockedNgnGross?: number | null;
   paymentRun: string;
   basePay: number;
   allowances: number;
@@ -879,7 +882,9 @@ const computePayrollForPeriod = async (requestedPeriod: string): Promise<Payroll
     return { ...base, ignoreHrisPackageLines: true as const };
   };
 
-  const payrollEmployees = employeeSource.employees.filter((employee) => !isEmployeeExcludedFromPayrollRun(employee as PayrollRunExclusionEmployee));
+  const payrollEmployees = employeeSource.employees
+    .filter((employee) => !isEmployeeExcludedFromPayrollRun(employee as PayrollRunExclusionEmployee))
+    .map((employee) => applyLockedPayrollPackage(employee, requestedPeriod));
 
   type PayrollRunVariant = {
     runKey: string;
@@ -1160,9 +1165,12 @@ const computePayrollForPeriod = async (requestedPeriod: string): Promise<Payroll
     });
   });
 
-  const records = await applyApprovedFinalSettlementsToRecords(
-    applyDayrateScheduleOverrideToRecords(
-      applySalaryScheduleOverrideToRecords(builtRecords, requestedPeriod),
+  const records = applyLockedPayrollPackageToRecords(
+    await applyApprovedFinalSettlementsToRecords(
+      applyDayrateScheduleOverrideToRecords(
+        applySalaryScheduleOverrideToRecords(builtRecords, requestedPeriod),
+        requestedPeriod,
+      ),
       requestedPeriod,
     ),
     requestedPeriod,

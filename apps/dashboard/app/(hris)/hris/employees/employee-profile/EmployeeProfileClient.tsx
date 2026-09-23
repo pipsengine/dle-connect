@@ -13,6 +13,7 @@ import {
 } from '@/lib/payroll-profile-setup';
 import { formatPayrollMoney, resolvePayCurrency } from '@/lib/payroll-currency';
 import { formatPayrollRunFxCaption, payrollAmountForDisplay, payrollLinesForDisplay } from '@/lib/payroll-fx-display';
+import { LOCKED_PAYROLL_NAIRA_CAPTION, lockedNgnForUsdAmount, payrollLinesForLockedNgn } from '@/lib/locked-payroll-package';
 import { splitDraftEarningLinesByScope, type FlexiblePayrollLineDraft } from '@/lib/payroll-package-lines';
 import { getNigeriaLgas, getNigeriaStates } from '@/lib/nigeria-locations';
 import { humanizeHttpErrorBody } from '@/lib/http-client-error';
@@ -1786,20 +1787,28 @@ export default function EmployeeProfileClient({
     salaryGrade: profileData?.payrollSummary?.salaryGrade,
   });
   const payrollFx = profileData?.payrollSummary?.payrollFx ?? null;
+  const lockedPayrollPackage = profileData?.payrollSummary?.lockedPayrollPackage ?? null;
   const nairaEquivalentActive = payrollPackageCurrency === 'USD'
     && payrollDisplayCurrency === 'NGN'
-    && Number(payrollFx?.rate) > 0;
+    && (Boolean(lockedPayrollPackage) || Number(payrollFx?.rate) > 0);
   const payrollCurrency = nairaEquivalentActive ? 'NGN' : payrollPackageCurrency;
   const payrollMoneyDigits = nairaEquivalentActive || payrollCurrency === 'USD'
     ? { minimumFractionDigits: 2, maximumFractionDigits: 2 }
     : undefined;
   const payrollMoney = (n: number | null | undefined) => {
     if (typeof n !== 'number') return '-';
+    if (nairaEquivalentActive && lockedPayrollPackage) {
+      const lockedNgn = lockedNgnForUsdAmount(lockedPayrollPackage, n);
+      if (lockedNgn != null) return formatPayrollMoney(lockedNgn, 'NGN', payrollMoneyDigits);
+    }
     const amount = payrollAmountForDisplay(n, payrollPackageCurrency, payrollCurrency, payrollFx?.rate);
     return formatPayrollMoney(amount ?? n, payrollCurrency, payrollMoneyDigits);
   };
-  const shownPayrollLines = (lines?: FlexiblePayrollLineDraft[]) =>
-    payrollLinesForDisplay(lines || [], payrollPackageCurrency, payrollCurrency, payrollFx?.rate);
+  const shownPayrollLines = (lines?: FlexiblePayrollLineDraft[]) => (
+    nairaEquivalentActive && lockedPayrollPackage
+      ? payrollLinesForLockedNgn(lines || [], lockedPayrollPackage, payrollFx?.rate)
+      : payrollLinesForDisplay(lines || [], payrollPackageCurrency, payrollCurrency, payrollFx?.rate)
+  );
 
   if (loading && (profile.status !== 'ready' || !profileData)) {
     return (
@@ -3055,7 +3064,7 @@ export default function EmployeeProfileClient({
                                   className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-sm font-extrabold text-slate-900"
                                 >
                                   <option value="USD">USD — dollar package</option>
-                                  <option value="NGN">NGN — naira equivalent</option>
+                                  <option value="NGN">{lockedPayrollPackage ? 'NGN — December 2025 package' : 'NGN — naira equivalent'}</option>
                                 </select>
                                 <div className="mt-1 text-[11px] font-semibold text-slate-500">Saved pay currency stays USD.</div>
                               </div>
@@ -3078,7 +3087,11 @@ export default function EmployeeProfileClient({
                               }
                             />
                           </div>
-                          {nairaEquivalentActive && payrollFx ? (
+                          {nairaEquivalentActive && lockedPayrollPackage ? (
+                            <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-xs font-semibold text-emerald-950">
+                              {LOCKED_PAYROLL_NAIRA_CAPTION}
+                            </div>
+                          ) : nairaEquivalentActive && payrollFx ? (
                             <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-xs font-semibold text-emerald-950">
                               {formatPayrollRunFxCaption(payrollFx)}
                             </div>
@@ -3276,6 +3289,7 @@ export default function EmployeeProfileClient({
                             displayCurrency={payrollDisplayCurrency}
                             onDisplayCurrencyChange={setPayrollDisplayCurrency}
                             payrollFx={payrollFx}
+                            lockedPayrollPackage={lockedPayrollPackage}
                           />
                         )
                       ) : null}

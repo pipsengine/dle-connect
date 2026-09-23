@@ -52,10 +52,8 @@ import {
 import { filterPayrollRecordsByCurrencySlice, ngnPayrollKpiRecords } from '@/lib/payroll-bank-schedule-packs';
 import {
   buildPayrollSalariesSummary,
-  payrollSalariesSummaryLockDate,
 } from '@/lib/payroll-salaries-summary';
-import { getPrevailingFxRate } from '@/lib/finance-intelligence/approval-matrix-service';
-import { readAppliedSalaryScheduleOverride } from '@/lib/salary-schedule-upload-sql';
+import { resolvePayrollRunUsdNgnRate } from '@/lib/payroll-run-fx';
 import {
   buildPayrollMonthOverMonth,
   totalsHaveFigures,
@@ -674,40 +672,24 @@ export const buildProcessingPayload = async (
     perms.canViewMoney,
   );
 
-  const lockDate = payrollSalariesSummaryLockDate(period);
-  const scheduleFx = readAppliedSalaryScheduleOverride(period)?.parsed?.lockedUsdNgnRate || null;
-  const marketFx = await getPrevailingFxRate('USD', lockDate).catch(() => ({
-    fromCurrency: 'USD',
-    toCurrency: 'NGN',
-    rate: scheduleFx?.rate || 1620,
-    rateDate: scheduleFx?.rateDate || lockDate.toISOString().slice(0, 10),
-    source: 'Fallback',
-  }));
-  const fx = scheduleFx?.rate
-    ? {
-        rate: scheduleFx.rate,
-        rateDate: scheduleFx.rateDate || lockDate.toISOString().slice(0, 10),
-        source: `Salary schedule (${scheduleFx.source})`,
-      }
-    : {
-        rate: Number(marketFx.rate || 0) || 1620,
-        rateDate: marketFx.rateDate || lockDate.toISOString().slice(0, 10),
-        source: marketFx.source || 'finance.FxRates',
-      };
+  const payrollFx = await resolvePayrollRunUsdNgnRate(period).catch(() => null);
+  const fx = {
+    rate: Number(payrollFx?.rate || 0) || 1620,
+    rateDate: payrollFx?.rateDate || new Date().toISOString().slice(0, 10),
+    source: payrollFx?.source || 'Fallback',
+  };
 
   let priorTotalsNgn: PayrollMomTotals | null = null;
   let priorSchedules: ReturnType<typeof buildPayrollSalariesSummary>['schedules'] | null = null;
   let priorTotalEarningsNgn: number | null = null;
   const priorPeriod = previousPayrollPeriod(period);
   if (priorPeriod) {
-    const priorLockDate = payrollSalariesSummaryLockDate(priorPeriod);
-    const priorFx = await getPrevailingFxRate('USD', priorLockDate).catch(() => ({
-      fromCurrency: 'USD',
-      toCurrency: 'NGN',
-      rate: Number(fx.rate || 0) || 1620,
-      rateDate: priorLockDate.toISOString().slice(0, 10),
-      source: fx.source || 'Fallback',
-    }));
+    const priorResolved = await resolvePayrollRunUsdNgnRate(priorPeriod).catch(() => null);
+    const priorFx = {
+      rate: Number(priorResolved?.rate || fx.rate || 0) || 1620,
+      rateDate: priorResolved?.rateDate || fx.rateDate,
+      source: priorResolved?.source || fx.source || 'Fallback',
+    };
     const priorCalc = await calculatePayrollForPeriod(priorPeriod).catch(() => null);
     if (priorCalc) {
       const priorPacks = PAYROLL_SCHEDULE_SCOPES.map((item) => {
@@ -734,7 +716,7 @@ export const buildProcessingPayload = async (
         packs: priorPacks,
         lockedFx: {
           rate: Number(priorFx.rate || 0) || Number(fx.rate || 0) || 1620,
-          rateDate: priorFx.rateDate || priorLockDate.toISOString().slice(0, 10),
+          rateDate: priorFx.rateDate,
           source: priorFx.source || 'finance.FxRates',
         },
       });
@@ -757,7 +739,7 @@ export const buildProcessingPayload = async (
     packs: packPayloads,
     lockedFx: {
       rate: Number(fx.rate || 0) || 1620,
-      rateDate: fx.rateDate || lockDate.toISOString().slice(0, 10),
+      rateDate: fx.rateDate,
       source: fx.source || 'finance.FxRates',
     },
     priorTotalsNgn,

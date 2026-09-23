@@ -18,6 +18,13 @@ import type { DleEmployeeDirectoryRow } from '@/lib/dle-enterprise-db';
 import { isDailyRatePayrollEmployee, isPeriodVariableDayRateEarningLine } from '@/lib/payroll-employee-classification';
 import type { PayrollSetupDraft } from '@/app/(hris)/hris/employees/add-new-employee/PayrollSetupStep';
 import { normalizePayrollDraftBeforeSave, lumpsumBaseAmountFromDraftLines } from '@/lib/payroll-draft-normalize';
+import {
+  applyLockedPayrollPackage,
+  lockedAllowancesUsd,
+  lockedBasicLine,
+  lockedPayrollPackageFor,
+  type LockedPayrollPackage,
+} from '@/lib/locked-payroll-package';
 
 export type ProfilePayrollSummary = {
   payrollStatus: 'Verified' | 'Pending Validation' | 'Masked';
@@ -58,6 +65,8 @@ export type ProfilePayrollSummary = {
   annualRentRelief?: number | null;
   /** USD→NGN rate for the active payroll run. Present on dollar packages so Naira view can convert earnings. */
   payrollFx?: PayrollRunFx | null;
+  /** Fixed dollar and naira package, used instead of a fresh Central Bank conversion. */
+  lockedPayrollPackage?: LockedPayrollPackage | null;
 };
 
 export { buildStoredPayrollLinesFromDrafts };
@@ -153,12 +162,14 @@ export const enrichPayrollSummaryFromRow = (
   payrollPeriod?: string | null,
 ): ProfilePayrollSummary => {
   const period = clientSafePayrollPeriod(payrollPeriod);
-  const earningLines = hrisEarningLinesFromEmployeeRow(row, period);
+  const lockedPayrollPackage = lockedPayrollPackageFor(row, period);
+  const sourceRow = lockedPayrollPackage ? applyLockedPayrollPackage(row, period) : row;
+  const earningLines = hrisEarningLinesFromEmployeeRow(sourceRow, period);
   const leftoverPeriodEarningLines = leftoverStoredPeriodOnlyLines(
-    row.sagePayrollEarnings as StoredPayrollPackageLine[],
+    sourceRow.sagePayrollEarnings as StoredPayrollPackageLine[],
     period,
   );
-  const legacyEarningLines = legacyEarningLinesFromEmployeeRow(row);
+  const legacyEarningLines = legacyEarningLinesFromEmployeeRow(sourceRow);
   const deductionLines = deductionLinesFromEmployeeRow(row);
   const storedEarnings = buildStoredPayrollLinesFromDrafts(earningLines, true);
   const monthlyFromLines = sumMonthlyPackageGross(storedEarnings);
@@ -177,7 +188,14 @@ export const enrichPayrollSummaryFromRow = (
         : (row.periodSalary ?? row.basicSalary ?? summary.monthlyPackageGross ?? summary.basicSalary ?? null));
   const basicSalary = dailyRate
     ? null
-    : (isLumpsum && monthlyPackageGross != null ? monthlyPackageGross : summary.basicSalary);
+    : lockedPayrollPackage
+      ? lockedBasicLine(lockedPayrollPackage).usd
+      : (isLumpsum && monthlyPackageGross != null ? monthlyPackageGross : summary.basicSalary);
+  const allowances = dailyRate
+    ? null
+    : lockedPayrollPackage
+      ? lockedAllowancesUsd(lockedPayrollPackage)
+      : summary.allowances;
   return {
     ...summary,
     earningLines,
@@ -187,7 +205,7 @@ export const enrichPayrollSummaryFromRow = (
     activePayrollPeriod: period,
     legacyEarningLines: legacyEarningLines.length ? legacyEarningLines : undefined,
     basicSalary,
-    allowances: dailyRate ? null : summary.allowances,
+    allowances,
     payCurrency: payrollDisplayCurrencyFromRow(row),
     deductionLines,
     accountNumber: row.accountNo || summary.accountNumber || null,
@@ -199,7 +217,8 @@ export const enrichPayrollSummaryFromRow = (
     ratePerHour: row.ratePerHour ?? summary.ratePerHour ?? null,
     hoursPerDay: row.hoursPerDay ?? summary.hoursPerDay ?? null,
     setupAssignedToPayroll: row.setupAssignedToPayroll ?? summary.setupAssignedToPayroll ?? true,
-    monthlyPackageGross: monthlyPackageGross ?? null,
+    monthlyPackageGross: lockedPayrollPackage ? lockedPayrollPackage.grossUsd : (monthlyPackageGross ?? null),
+    lockedPayrollPackage,
   };
 };
 

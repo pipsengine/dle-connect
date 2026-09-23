@@ -28,6 +28,7 @@ import {
   type PayrollScheduleScopeId,
 } from '@/lib/payroll-schedule-scope';
 import { currencyCode, formatPayrollMoney, resolvePayCurrency } from '@/lib/payroll-currency';
+import { convertPayrollMoney } from '@/lib/payroll-fx-display';
 import type { PayrollMonthOverMonth, PayrollMomMetricKey } from '@/lib/payroll-month-over-month';
 import { payrollMomMetric } from '@/lib/payroll-month-over-month';
 import styles from '@/styles/process-payroll.module.css';
@@ -109,6 +110,7 @@ type PayrollRecord = {
     employerCost: number;
     shareLabel: string;
   } | null;
+  lockedNgnGross?: number | null;
 };
 
 type Payload = {
@@ -165,6 +167,9 @@ type Payload = {
     averageDeductionRatio: number | null;
   };
   monthOverMonth?: PayrollMonthOverMonth | null;
+  salariesSummary?: {
+    lockedFx?: { rate: number; rateDate: string; source: string; display?: string };
+  } | null;
   records: PayrollRecord[];
   artifacts?: Array<{ type: string; label: string; fileName: string; generatedAt: string; generatedBy: string }>;
 };
@@ -219,23 +224,49 @@ const DualMoney = ({
   allowed,
   currency,
   shareLabel,
+  fxRate = 0,
+  fxSource = '',
+  equivalentNgn = null,
+  equivalentLabel = '',
 }: {
   amount: number | null | undefined;
   companion?: number | null;
   allowed: boolean;
   currency: string;
   shareLabel?: string;
-}) => (
-  <>
-    <div>{money(amount, allowed, currency)}</div>
-    {companion != null && companion > 0 ? (
-      <div className={styles.companionNgn}>
-        {money(companion, allowed, 'NGN')}
-        {shareLabel ? ` · ${shareLabel}` : ''}
-      </div>
-    ) : null}
-  </>
-);
+  fxRate?: number;
+  fxSource?: string;
+  equivalentNgn?: number | null;
+  equivalentLabel?: string;
+}) => {
+  const hasCompanion = companion != null && companion > 0;
+  const cbnRate = /CBN|NFEM/i.test(fxSource) ? fxRate : 0;
+  const fixedNgn = !hasCompanion && equivalentNgn != null && equivalentNgn > 0 ? equivalentNgn : null;
+  const fxNgn = fixedNgn == null && !hasCompanion && currency === 'USD' && cbnRate > 0 && amount != null
+    ? convertPayrollMoney(amount, 'USD', 'NGN', cbnRate)
+    : null;
+  return (
+    <>
+      <div>{money(amount, allowed, currency)}</div>
+      {hasCompanion ? (
+        <div className={styles.companionNgn}>
+          {money(companion, allowed, 'NGN')}
+          {shareLabel ? ` · ${shareLabel}` : ''}
+        </div>
+      ) : fixedNgn != null ? (
+        <div className={styles.companionNgn}>
+          {money(fixedNgn, allowed, 'NGN')}
+          {equivalentLabel ? ` · ${equivalentLabel}` : ''}
+        </div>
+      ) : fxNgn != null && fxNgn > 0 ? (
+        <div className={styles.companionNgn}>
+          {money(fxNgn, allowed, 'NGN')}
+          {' · CBN highest'}
+        </div>
+      ) : null}
+    </>
+  );
+};
 
 const number = (value: number | null | undefined) => numberFmt.format(Number(value || 0));
 
@@ -616,6 +647,9 @@ export default function ProcessPayrollWorkspace({
     rows.sort((a, b) => Number(b.grossPay || 0) - Number(a.grossPay || 0));
     return rows;
   }, [payload?.records, salaryQuery, activeTab, deptFilter, categoryFilter, statusFilter]);
+
+  const cbnRate = Number(payload?.salariesSummary?.lockedFx?.rate || 0);
+  const cbnSource = payload?.salariesSummary?.lockedFx?.source || '';
 
   const registerSections = useMemo(() => {
     if (pack !== 'salaried') return [];
@@ -1082,6 +1116,11 @@ export default function ProcessPayrollWorkspace({
                 ))}
               </div>
             ) : null}
+            {/CBN|NFEM/i.test(cbnSource) && employeeRows.some((record) => recordCurrency(record) === 'USD') ? (
+              <p className={styles.muted} style={{ margin: '0 0 8px' }}>
+                Naira amounts under dollar pay use the CBN highest NFEM rate{payload?.salariesSummary?.lockedFx?.display ? ` (${payload.salariesSummary.lockedFx.display})` : ''}.
+              </p>
+            ) : null}
             <div className="dle-scroll-x overflow-x-auto">
               <table className={styles.dataTable}>
                 <thead>
@@ -1133,10 +1172,10 @@ export default function ProcessPayrollWorkspace({
                             <td>{record.employeeId}</td>
                             <td>{record.department || '—'}</td>
                             <td>{item.sectionLabel}</td>
-                            <td className={styles.money}><DualMoney amount={record.grossPay} companion={record.companionNgnPay?.grossPay} allowed={canViewMoney} currency={cc} shareLabel={record.companionNgnPay?.shareLabel} /></td>
-                            <td className={styles.deduct}><DualMoney amount={record.totalDeductions} companion={record.companionNgnPay?.totalDeductions} allowed={canViewMoney} currency={cc} /></td>
-                            <td className={styles.net}><DualMoney amount={record.netPay} companion={record.companionNgnPay?.netPay} allowed={canViewMoney} currency={cc} /></td>
-                            <td className={styles.employer}><DualMoney amount={record.employerCost} companion={record.companionNgnPay?.employerCost} allowed={canViewMoney} currency={cc} /></td>
+                            <td className={styles.money}><DualMoney amount={record.grossPay} companion={record.companionNgnPay?.grossPay} allowed={canViewMoney} currency={cc} fxRate={cbnRate} fxSource={cbnSource} shareLabel={record.companionNgnPay?.shareLabel} equivalentNgn={record.lockedNgnGross} equivalentLabel={record.lockedNgnGross ? 'December 2025' : ''} /></td>
+                            <td className={styles.deduct}><DualMoney amount={record.totalDeductions} companion={record.companionNgnPay?.totalDeductions} allowed={canViewMoney} currency={cc} fxRate={cbnRate} fxSource={cbnSource} /></td>
+                            <td className={styles.net}><DualMoney amount={record.netPay} companion={record.companionNgnPay?.netPay} allowed={canViewMoney} currency={cc} fxRate={cbnRate} fxSource={cbnSource} /></td>
+                            <td className={styles.employer}><DualMoney amount={record.employerCost} companion={record.companionNgnPay?.employerCost} allowed={canViewMoney} currency={cc} fxRate={cbnRate} fxSource={cbnSource} /></td>
                             <td><span className={statusBadgeClass(record.status)}>{record.status}</span></td>
                             <td>
                               <button
@@ -1169,10 +1208,10 @@ export default function ProcessPayrollWorkspace({
                         <td>{record.employeeId}</td>
                         <td>{record.department || '—'}</td>
                         <td>{record.employmentType || record.payrollGroup || '—'}</td>
-                        <td className={styles.money}><DualMoney amount={record.grossPay} companion={record.companionNgnPay?.grossPay} allowed={canViewMoney} currency={cc} shareLabel={record.companionNgnPay?.shareLabel} /></td>
-                        <td className={styles.deduct}><DualMoney amount={record.totalDeductions} companion={record.companionNgnPay?.totalDeductions} allowed={canViewMoney} currency={cc} /></td>
-                        <td className={styles.net}><DualMoney amount={record.netPay} companion={record.companionNgnPay?.netPay} allowed={canViewMoney} currency={cc} /></td>
-                        <td className={styles.employer}><DualMoney amount={record.employerCost} companion={record.companionNgnPay?.employerCost} allowed={canViewMoney} currency={cc} /></td>
+                        <td className={styles.money}><DualMoney amount={record.grossPay} companion={record.companionNgnPay?.grossPay} allowed={canViewMoney} currency={cc} fxRate={cbnRate} fxSource={cbnSource} shareLabel={record.companionNgnPay?.shareLabel} equivalentNgn={record.lockedNgnGross} equivalentLabel={record.lockedNgnGross ? 'December 2025' : ''} /></td>
+                        <td className={styles.deduct}><DualMoney amount={record.totalDeductions} companion={record.companionNgnPay?.totalDeductions} allowed={canViewMoney} currency={cc} fxRate={cbnRate} fxSource={cbnSource} /></td>
+                        <td className={styles.net}><DualMoney amount={record.netPay} companion={record.companionNgnPay?.netPay} allowed={canViewMoney} currency={cc} fxRate={cbnRate} fxSource={cbnSource} /></td>
+                        <td className={styles.employer}><DualMoney amount={record.employerCost} companion={record.companionNgnPay?.employerCost} allowed={canViewMoney} currency={cc} fxRate={cbnRate} fxSource={cbnSource} /></td>
                         <td><span className={statusBadgeClass(record.status)}>{record.status}</span></td>
                         <td>
                           <button

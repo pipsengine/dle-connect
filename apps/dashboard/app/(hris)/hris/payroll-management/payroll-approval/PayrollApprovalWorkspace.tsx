@@ -29,6 +29,7 @@ import {
 } from 'lucide-react';
 import type { PayrollApprovalStageId } from '@/lib/payroll-approval-workflow';
 import { currencyCode, formatPayrollMoney, resolvePayCurrency } from '@/lib/payroll-currency';
+import { convertPayrollMoney } from '@/lib/payroll-fx-display';
 import {
   groupDleUsdRecords,
   groupPayrollRegisterSections,
@@ -134,6 +135,7 @@ type PayrollRecord = {
     employerCost: number;
     shareLabel: string;
   } | null;
+  lockedNgnGross?: number | null;
 };
 
 type StageState = {
@@ -251,23 +253,49 @@ const DualMoney = ({
   allowed,
   currency,
   shareLabel,
+  fxRate = 0,
+  fxSource = '',
+  equivalentNgn = null,
+  equivalentLabel = '',
 }: {
   amount: number | null | undefined;
   companion?: number | null;
   allowed: boolean;
   currency: string;
   shareLabel?: string;
-}) => (
-  <>
-    <div>{money(amount, allowed, currency)}</div>
-    {companion != null && companion > 0 ? (
-      <div style={{ color: '#0f172a', fontSize: 11, fontWeight: 800, marginTop: 3 }}>
-        {money(companion, allowed, 'NGN')}
-        {shareLabel ? ` · ${shareLabel}` : ''}
-      </div>
-    ) : null}
-  </>
-);
+  fxRate?: number;
+  fxSource?: string;
+  equivalentNgn?: number | null;
+  equivalentLabel?: string;
+}) => {
+  const hasCompanion = companion != null && companion > 0;
+  const cbnRate = /CBN|NFEM/i.test(fxSource) ? fxRate : 0;
+  const fixedNgn = !hasCompanion && equivalentNgn != null && equivalentNgn > 0 ? equivalentNgn : null;
+  const fxNgn = fixedNgn == null && !hasCompanion && currency === 'USD' && cbnRate > 0 && amount != null
+    ? convertPayrollMoney(amount, 'USD', 'NGN', cbnRate)
+    : null;
+  return (
+    <>
+      <div>{money(amount, allowed, currency)}</div>
+      {hasCompanion ? (
+        <div style={{ color: '#0f172a', fontSize: 11, fontWeight: 800, marginTop: 3 }}>
+          {money(companion, allowed, 'NGN')}
+          {shareLabel ? ` · ${shareLabel}` : ''}
+        </div>
+      ) : fixedNgn != null ? (
+        <div style={{ color: '#0f172a', fontSize: 11, fontWeight: 800, marginTop: 3 }}>
+          {money(fixedNgn, allowed, 'NGN')}
+          {equivalentLabel ? ` · ${equivalentLabel}` : ''}
+        </div>
+      ) : fxNgn != null && fxNgn > 0 ? (
+        <div style={{ color: '#0f172a', fontSize: 11, fontWeight: 800, marginTop: 3 }}>
+          {money(fxNgn, allowed, 'NGN')}
+          {' · CBN highest'}
+        </div>
+      ) : null}
+    </>
+  );
+};
 
 const sumRecordPay = (
   records:
@@ -600,6 +628,9 @@ export default function PayrollApprovalWorkspace({
     rows.sort((a, b) => Number(b.grossPay || 0) - Number(a.grossPay || 0));
     return rows;
   }, [payload?.records, salaryQuery, activeTab]);
+
+  const cbnRate = Number(payload?.salariesSummary?.lockedFx?.rate || 0);
+  const cbnSource = payload?.salariesSummary?.lockedFx?.source || '';
 
   const companionNgnGross = employeeRows.reduce((sum, record) => sum + Number(record.companionNgnPay?.grossPay || 0), 0);
   const companionNgnNet = employeeRows.reduce((sum, record) => sum + Number(record.companionNgnPay?.netPay || 0), 0);
@@ -1248,10 +1279,10 @@ export default function PayrollApprovalWorkspace({
                                 {item.sectionLabel} · {recordCurrency(record)}
                               </div>
                             </td>
-                            <td><DualMoney amount={record.grossPay} companion={record.companionNgnPay?.grossPay} allowed={canViewMoney} currency={recordCurrency(record)} shareLabel={record.companionNgnPay?.shareLabel} /></td>
-                            <td><DualMoney amount={record.totalDeductions} companion={record.companionNgnPay?.totalDeductions} allowed={canViewMoney} currency={recordCurrency(record)} /></td>
-                            <td><DualMoney amount={record.netPay} companion={record.companionNgnPay?.netPay} allowed={canViewMoney} currency={recordCurrency(record)} /></td>
-                            <td><DualMoney amount={record.employerCost} companion={record.companionNgnPay?.employerCost} allowed={canViewMoney} currency={recordCurrency(record)} /></td>
+                            <td><DualMoney amount={record.grossPay} companion={record.companionNgnPay?.grossPay} allowed={canViewMoney} currency={recordCurrency(record)} fxRate={cbnRate} fxSource={cbnSource} shareLabel={record.companionNgnPay?.shareLabel} equivalentNgn={record.lockedNgnGross} equivalentLabel={record.lockedNgnGross ? 'December 2025' : ''} /></td>
+                            <td><DualMoney amount={record.totalDeductions} companion={record.companionNgnPay?.totalDeductions} allowed={canViewMoney} currency={recordCurrency(record)} fxRate={cbnRate} fxSource={cbnSource} /></td>
+                            <td><DualMoney amount={record.netPay} companion={record.companionNgnPay?.netPay} allowed={canViewMoney} currency={recordCurrency(record)} fxRate={cbnRate} fxSource={cbnSource} /></td>
+                            <td><DualMoney amount={record.employerCost} companion={record.companionNgnPay?.employerCost} allowed={canViewMoney} currency={recordCurrency(record)} fxRate={cbnRate} fxSource={cbnSource} /></td>
                             <td>
                               <span className={styles.ready}>{record.status}</span>
                             </td>
@@ -1275,10 +1306,10 @@ export default function PayrollApprovalWorkspace({
                           {record.payrollGroup || '—'} · {recordCurrency(record)}
                         </div>
                       </td>
-                      <td><DualMoney amount={record.grossPay} companion={record.companionNgnPay?.grossPay} allowed={canViewMoney} currency={recordCurrency(record)} shareLabel={record.companionNgnPay?.shareLabel} /></td>
-                      <td><DualMoney amount={record.totalDeductions} companion={record.companionNgnPay?.totalDeductions} allowed={canViewMoney} currency={recordCurrency(record)} /></td>
-                      <td><DualMoney amount={record.netPay} companion={record.companionNgnPay?.netPay} allowed={canViewMoney} currency={recordCurrency(record)} /></td>
-                      <td><DualMoney amount={record.employerCost} companion={record.companionNgnPay?.employerCost} allowed={canViewMoney} currency={recordCurrency(record)} /></td>
+                      <td><DualMoney amount={record.grossPay} companion={record.companionNgnPay?.grossPay} allowed={canViewMoney} currency={recordCurrency(record)} fxRate={cbnRate} fxSource={cbnSource} shareLabel={record.companionNgnPay?.shareLabel} equivalentNgn={record.lockedNgnGross} equivalentLabel={record.lockedNgnGross ? 'December 2025' : ''} /></td>
+                      <td><DualMoney amount={record.totalDeductions} companion={record.companionNgnPay?.totalDeductions} allowed={canViewMoney} currency={recordCurrency(record)} fxRate={cbnRate} fxSource={cbnSource} /></td>
+                      <td><DualMoney amount={record.netPay} companion={record.companionNgnPay?.netPay} allowed={canViewMoney} currency={recordCurrency(record)} fxRate={cbnRate} fxSource={cbnSource} /></td>
+                      <td><DualMoney amount={record.employerCost} companion={record.companionNgnPay?.employerCost} allowed={canViewMoney} currency={recordCurrency(record)} fxRate={cbnRate} fxSource={cbnSource} /></td>
                       <td>
                         <span className={styles.ready}>{record.status}</span>
                       </td>

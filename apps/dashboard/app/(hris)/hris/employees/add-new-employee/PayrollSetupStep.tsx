@@ -7,6 +7,7 @@ import {
   sumMonthlyPackageGross,
   draftPayrollLineToStored,
   newDraftPayrollLineId,
+  roundMoney,
   splitDraftEarningLinesByScope,
   stampPeriodOnlyDraftLine,
   type FlexiblePayrollLineDraft,
@@ -20,6 +21,12 @@ import {
   payrollLinesFromDisplay,
   type PayrollRunFx,
 } from '@/lib/payroll-fx-display';
+import {
+  LOCKED_PAYROLL_NAIRA_CAPTION,
+  payrollLinesForLockedNgn,
+  payrollLinesFromLockedNgn,
+  type LockedPayrollPackage,
+} from '@/lib/locked-payroll-package';
 import {
   contractMonthsInclusive,
   isLumpsumBaseDraftLine,
@@ -147,6 +154,8 @@ function PackageMoneyField({
   hint,
   converting,
   rate,
+  displayText,
+  onDisplayToNative,
 }: {
   label: string;
   nativeValue: string;
@@ -154,8 +163,10 @@ function PackageMoneyField({
   hint?: string;
   converting: boolean;
   rate: number;
+  displayText?: string;
+  onDisplayToNative?: (shown: string) => string;
 }) {
-  const shown = converting ? convertAmountText(nativeValue, 'USD', 'NGN', rate) : nativeValue;
+  const shown = displayText ?? (converting ? convertAmountText(nativeValue, 'USD', 'NGN', rate) : nativeValue);
   const [text, setText] = useState(shown);
   const [focused, setFocused] = useState(false);
   useEffect(() => {
@@ -166,6 +177,7 @@ function PackageMoneyField({
       <div className="text-[11px] font-extrabold text-slate-600">{label}</div>
       <input
         type="number"
+        readOnly={Boolean(displayText)}
         value={focused ? text : shown}
         onFocus={() => {
           setText(shown);
@@ -173,7 +185,13 @@ function PackageMoneyField({
         }}
         onChange={(e) => {
           setText(e.target.value);
-          onNativeChange(converting ? convertAmountText(e.target.value, 'NGN', 'USD', rate) : e.target.value);
+          onNativeChange(
+            onDisplayToNative
+              ? onDisplayToNative(e.target.value)
+              : converting
+                ? convertAmountText(e.target.value, 'NGN', 'USD', rate)
+                : e.target.value,
+          );
         }}
         onBlur={() => setFocused(false)}
         className="mt-2 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm font-semibold text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-200"
@@ -295,6 +313,7 @@ export default function PayrollSetupStep({
   displayCurrency = 'USD',
   onDisplayCurrencyChange,
   payrollFx = null,
+  lockedPayrollPackage = null,
 }: {
   payroll: PayrollSetupDraft;
   onChange: (next: PayrollSetupDraft) => void;
@@ -311,12 +330,13 @@ export default function PayrollSetupStep({
   displayCurrency?: 'USD' | 'NGN';
   onDisplayCurrencyChange?: (next: 'USD' | 'NGN') => void;
   payrollFx?: PayrollRunFx | null;
+  lockedPayrollPackage?: LockedPayrollPackage | null;
 }) {
   const savedPackageCurrency = packageCurrency
     ? resolvePayrollDraftCurrency({ ...payroll, payCurrency: packageCurrency })
     : '';
   const fxRate = Number(payrollFx?.rate || 0);
-  const nairaView = savedPackageCurrency === 'USD' && displayCurrency === 'NGN' && fxRate > 0;
+  const nairaView = savedPackageCurrency === 'USD' && displayCurrency === 'NGN' && (Boolean(lockedPayrollPackage) || fxRate > 0);
   const currency = nairaView ? 'NGN' : resolvePayrollDraftCurrency(payroll);
   const patch = (partial: Partial<PayrollSetupDraft>) => onChange({ ...payroll, ...partial });
   const formatMoney = (value: number) => formatPayrollMoney(
@@ -325,10 +345,16 @@ export default function PayrollSetupStep({
     nairaView || currency.toUpperCase() === 'USD' ? { minimumFractionDigits: 2, maximumFractionDigits: 2 } : undefined,
   );
   const currencySymbol = currency.toUpperCase() === 'USD' ? '$' : '₦';
-  const asShown = (lines: FlexiblePayrollLineDraft[]) =>
-    nairaView ? payrollLinesForDisplay(lines, 'USD', 'NGN', fxRate) : lines;
-  const asNative = (lines: FlexiblePayrollLineDraft[]) =>
-    nairaView ? payrollLinesFromDisplay(lines, 'USD', 'NGN', fxRate) : lines;
+  const asShown = (lines: FlexiblePayrollLineDraft[]) => {
+    if (!nairaView) return lines;
+    if (lockedPayrollPackage) return payrollLinesForLockedNgn(lines, lockedPayrollPackage, fxRate);
+    return payrollLinesForDisplay(lines, 'USD', 'NGN', fxRate);
+  };
+  const asNative = (lines: FlexiblePayrollLineDraft[]) => {
+    if (!nairaView) return lines;
+    if (lockedPayrollPackage) return payrollLinesFromLockedNgn(lines, lockedPayrollPackage, fxRate);
+    return payrollLinesFromDisplay(lines, 'USD', 'NGN', fxRate);
+  };
 
   const storedEarnings = payroll.earningLines
     .map((line) => draftPayrollLineToStored(line, true))
@@ -337,7 +363,9 @@ export default function PayrollSetupStep({
   const monthlyFromPeriodSalary = Number(payroll.periodSalary || 0);
   const displayMonthlyGross = monthlyGross > 0 ? monthlyGross : monthlyFromPeriodSalary;
   const shownMonthlyGross = nairaView
-    ? convertPayrollMoney(displayMonthlyGross, 'USD', 'NGN', fxRate)
+    ? (lockedPayrollPackage && Math.abs(displayMonthlyGross - lockedPayrollPackage.grossUsd) < 0.02
+      ? lockedPayrollPackage.grossNgn
+      : convertPayrollMoney(displayMonthlyGross, 'USD', 'NGN', fxRate))
     : displayMonthlyGross;
   const isDailyRate = timesheetWages || employmentType === 'Daily Rate';
   const isLumpsum = employmentType === 'Lumpsum';
@@ -424,7 +452,9 @@ export default function PayrollSetupStep({
           options={['NGN', 'USD']}
           placeholder="Select currency"
           hint={savedPackageCurrency === 'USD'
-            ? 'NGN shows the naira equivalent using the latest CBN highest NFEM rate for that day. The saved currency stays USD.'
+            ? (lockedPayrollPackage
+              ? LOCKED_PAYROLL_NAIRA_CAPTION
+              : 'NGN shows the naira equivalent using the latest CBN highest NFEM rate for that day. The saved currency stays USD.')
             : undefined}
         />
         <SelectField label="Payroll Group" value={payroll.payrollGroup} onChange={(v) => patch({ payrollGroup: v })} options={options.payrollGroups} placeholder="e.g. DLE / Daily Rate" />
@@ -436,6 +466,13 @@ export default function PayrollSetupStep({
             onNativeChange={syncPeriodSalary}
             converting={nairaView}
             rate={fxRate}
+            displayText={lockedPayrollPackage && nairaView ? String(lockedPayrollPackage.grossNgn) : undefined}
+            onDisplayToNative={lockedPayrollPackage && nairaView ? (shown) => {
+              const amount = Number(shown);
+              if (!Number.isFinite(amount)) return payroll.periodSalary;
+              if (Math.abs(amount - lockedPayrollPackage.grossNgn) < 0.05) return String(lockedPayrollPackage.grossUsd);
+              return String(roundMoney(amount * lockedPayrollPackage.grossUsd / lockedPayrollPackage.grossNgn));
+            } : undefined}
             hint={isLumpsum ? 'Base lumpsum package only — overtime belongs in this-period lines below' : 'Total monthly pay before this-period supplements'}
           />
         ) : null}
@@ -486,7 +523,11 @@ export default function PayrollSetupStep({
         </div>
       ) : null}
 
-      {nairaView && payrollFx ? (
+      {nairaView && lockedPayrollPackage ? (
+        <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-xs font-semibold text-emerald-950">
+          {LOCKED_PAYROLL_NAIRA_CAPTION}
+        </div>
+      ) : nairaView && payrollFx ? (
         <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-xs font-semibold text-emerald-950">
           {formatPayrollRunFxCaption(payrollFx)}
         </div>
