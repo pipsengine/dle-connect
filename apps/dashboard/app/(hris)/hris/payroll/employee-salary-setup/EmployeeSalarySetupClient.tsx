@@ -13,6 +13,7 @@ import {
   isDleUsdPayrollEmployee,
   isDleUsdPayrollGroupFilter,
 } from '@/lib/payroll-bank-schedule-packs';
+import { resolvePayrollCompany, type PayrollCompany } from '@/lib/payroll-schedule-scope';
 import {
   AccordionSection,
   DonutChart,
@@ -318,6 +319,7 @@ export default function EmployeeSalarySetupClient({ initialNow }: { initialNow: 
   const [workspaceTab, setWorkspaceTab] = useState<WorkspaceTab>('salaries');
   const [query, setQuery] = useState('');
   const [status, setStatus] = useState('All Status');
+  const [companyFilter, setCompanyFilter] = useState<'All Companies' | PayrollCompany>('All Companies');
   const [group, setGroup] = useState('All Groups');
   const [grade, setGrade] = useState('All Grades');
   const [department, setDepartment] = useState('All Departments');
@@ -353,7 +355,8 @@ export default function EmployeeSalarySetupClient({ initialNow }: { initialNow: 
   const load = async () => {
     setLoading(true);
     setError('');
-    const requestPayroll = () => fetch('/api/hris/payroll-management', {
+    // company=all returns DLE + DLPC; the default API company is DLE-only.
+    const requestPayroll = () => fetch('/api/hris/payroll-management?company=all', {
       headers: { 'x-hris-role': role },
       cache: 'no-store',
       credentials: 'same-origin',
@@ -400,11 +403,13 @@ export default function EmployeeSalarySetupClient({ initialNow }: { initialNow: 
   const salaryGrades = useMemo(() => ['All Grades', ...Array.from(new Set(records.map((r) => r.salaryGrade).filter(Boolean))).sort()], [records]);
   const departments = useMemo(() => ['All Departments', ...Array.from(new Set(records.map((r) => r.department).filter(Boolean))).sort()], [records]);
   const employmentTypes = useMemo(() => ['All Types', ...Array.from(new Set(records.map((r) => r.employmentType).filter(Boolean))).sort()], [records]);
+  const companyOptions = ['All Companies', 'DLE', 'DLPC'];
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
     const dleUsdGroup = isDleUsdPayrollGroupFilter(group);
     return records.filter((record) => {
+      if (companyFilter !== 'All Companies' && resolvePayrollCompany(record) !== companyFilter) return false;
       if (status !== 'All Status' && record.payrollStatus !== status.replace(' Status', '')) return false;
       if (dleUsdGroup) {
         if (!isDleUsdPayrollEmployee(record)) return false;
@@ -419,7 +424,7 @@ export default function EmployeeSalarySetupClient({ initialNow }: { initialNow: 
         String(value || '').toLowerCase().includes(q),
       );
     });
-  }, [department, employmentType, grade, group, query, records, status]);
+  }, [companyFilter, department, employmentType, grade, group, query, records, status]);
 
   const dleUsdSections = useMemo(
     () => (isDleUsdPayrollGroupFilter(group) ? groupDleUsdRecords(filtered, { includeEmpty: true }) : []),
@@ -427,7 +432,7 @@ export default function EmployeeSalarySetupClient({ initialNow }: { initialNow: 
   );
   const showDleUsdSections = isDleUsdPayrollGroupFilter(group);
 
-  useEffect(() => setPage(1), [query, status, group, grade, department, employmentType]);
+  useEffect(() => setPage(1), [query, status, companyFilter, group, grade, department, employmentType]);
 
   const pageCount = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
   const pageRows = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
@@ -531,6 +536,7 @@ export default function EmployeeSalarySetupClient({ initialNow }: { initialNow: 
   const clearFilters = () => {
     setQuery('');
     setStatus('All Status');
+    setCompanyFilter('All Companies');
     setGroup('All Groups');
     setGrade('All Grades');
     setDepartment('All Departments');
@@ -555,6 +561,7 @@ export default function EmployeeSalarySetupClient({ initialNow }: { initialNow: 
       report: 'salary-setup',
       status: 'All',
       pack: 'all',
+      company: companyFilter === 'All Companies' ? 'all' : companyFilter,
     });
     if (payload.period) params.set('period', payload.period);
     window.location.href = `/api/hris/payroll-management?${params.toString()}`;
@@ -591,7 +598,15 @@ export default function EmployeeSalarySetupClient({ initialNow }: { initialNow: 
     }
   };
 
-  const primaryGroup = records[0]?.payrollGroup || 'DLE';
+  const companiesPresent = useMemo(() => {
+    const present = new Set(records.map((record) => resolvePayrollCompany(record)));
+    return (['DLE', 'DLPC'] as PayrollCompany[]).filter((item) => present.has(item));
+  }, [records]);
+  const primaryGroup = companyFilter !== 'All Companies'
+    ? companyFilter
+    : companiesPresent.length > 1
+      ? 'DLE + DLPC'
+      : companiesPresent[0] || records[0]?.payrollGroup || 'DLE';
   const primaryRun = records[0]?.paymentRun || 'Main';
   const primaryCurrency = records[0]?.payCurrency || 'NGN';
 
@@ -612,7 +627,7 @@ export default function EmployeeSalarySetupClient({ initialNow }: { initialNow: 
               </div>
             </div>
             <div className="mt-4 flex flex-wrap gap-2">
-              <MetadataPill label="Payroll Group" value={primaryGroup} />
+              <MetadataPill label="Company" value={primaryGroup} />
               <MetadataPill label="Payment Run" value={primaryRun} />
               <MetadataPill label="Currency" value={primaryCurrency} />
               <MetadataPill label="Loaded Date" value={new Date(lastLoaded).toLocaleDateString('en-GB')} />
@@ -706,6 +721,12 @@ export default function EmployeeSalarySetupClient({ initialNow }: { initialNow: 
                     <>
                       <FilterSelect label="Department" value={department} onChange={setDepartment} options={departments} />
                       <FilterSelect label="Grade" value={grade} onChange={setGrade} options={salaryGrades} />
+                      <FilterSelect
+                        label="Company"
+                        value={companyFilter}
+                        onChange={(value) => setCompanyFilter(value as 'All Companies' | PayrollCompany)}
+                        options={companyOptions}
+                      />
                       <FilterSelect label="Payroll Group" value={group} onChange={setGroup} options={payrollGroups} />
                       <FilterSelect label="Employment Type" value={employmentType} onChange={setEmploymentType} options={employmentTypes} />
                       <FilterSelect label="Status" value={status} onChange={setStatus} options={['All Status', 'Ready', 'Review', 'Blocked']} />
@@ -817,7 +838,7 @@ export default function EmployeeSalarySetupClient({ initialNow }: { initialNow: 
                                             <EmployeeAvatar fullName={record.fullName} employeeCode={record.employeeId} tryPhoto size="sm" />
                                             <div className="min-w-0">
                                               <p className="truncate text-sm font-semibold text-[#0F172A]">{record.fullName}</p>
-                                              <p className="text-xs text-[#64748B]">{record.employeeId} · {record.payrollGroup} · {rowCurrency}</p>
+                                              <p className="text-xs text-[#64748B]">{record.employeeId} · {resolvePayrollCompany(record)} · {record.payrollGroup} · {rowCurrency}</p>
                                             </div>
                                             {record.exceptionCount > 0 ? (
                                               <span title="Validation issue">
@@ -904,7 +925,7 @@ export default function EmployeeSalarySetupClient({ initialNow }: { initialNow: 
                                           <EmployeeAvatar fullName={record.fullName} employeeCode={record.employeeId} tryPhoto size="sm" />
                                           <div className="min-w-0">
                                             <p className="truncate text-sm font-semibold text-[#0F172A]">{record.fullName}</p>
-                                            <p className="text-xs text-[#64748B]">{record.employeeId} · {record.payrollGroup} · {rowCurrency}</p>
+                                            <p className="text-xs text-[#64748B]">{record.employeeId} · {resolvePayrollCompany(record)} · {record.payrollGroup} · {rowCurrency}</p>
                                           </div>
                                           {record.exceptionCount > 0 ? (
                                             <span title="Validation issue">
@@ -966,7 +987,7 @@ export default function EmployeeSalarySetupClient({ initialNow }: { initialNow: 
                         ) : (
                           <tr>
                             <td colSpan={salaryTableColumnCount} className="px-4 py-10 text-center text-sm font-medium text-[#64748B]">
-                              No employees match the current filters.
+                              No employees match the current filters{companyFilter !== 'All Companies' ? ` for ${companyFilter}` : ''}.
                             </td>
                           </tr>
                         )}

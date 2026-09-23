@@ -863,8 +863,13 @@ export const buildManagementPayload = async (
   const period = requestedPeriod || (await getActivePayrollPeriod());
   const periodState = await listPayrollPeriods();
   const pack = normalizePayrollRunPack(requestedPack) || 'salaried';
-  const company = normalizePayrollCompany(requestedCompany) || 'DLE';
-  const scope = findPayrollScheduleScope(pack, company);
+  // Pay Setup may request company=all so DLE + DLPC salary rows load together.
+  const allCompanies = String(requestedCompany || '').trim().toLowerCase() === 'all';
+  const company: PayrollCompany | null = allCompanies
+    ? null
+    : (normalizePayrollCompany(requestedCompany) || 'DLE');
+  const scopeCompany: PayrollCompany = company || 'DLE';
+  const scope = findPayrollScheduleScope(pack, scopeCompany);
   const [runs, periodPackRuns, auditTrail] = await Promise.all([
     listPayrollRuns(),
     listPayrollRunsForPeriod(period),
@@ -878,13 +883,24 @@ export const buildManagementPayload = async (
   if (!packRunsSource.length || missingScope) {
     packRunsSource = await ensurePayrollRunsForPeriod(period, payrollPeriodLabel(period), 'System');
   }
-  const selectedRun = packRunsSource.find((item) => runMatchesScope(item, pack, company))
-    || (await getPayrollRunForPeriod(period, pack, company))
-    || null;
-  const { calculation, dataMode, payrollComputed } = await resolvePeriodCalculation(period, selectedRun, periodRecord, pack, company);
-  const { packTotals, scheduleTotals, periodTotals } = await buildPackTotals(period, packRunsSource, periodRecord, {
+  // company=all must not bind to a single DLE/DLPC run snapshot (that would drop the other site).
+  const selectedRun = allCompanies
+    ? null
+    : (
+      packRunsSource.find((item) => runMatchesScope(item, pack, scopeCompany))
+      || (await getPayrollRunForPeriod(period, pack, scopeCompany))
+      || null
+    );
+  const { calculation, dataMode, payrollComputed } = await resolvePeriodCalculation(
+    period,
+    selectedRun,
+    periodRecord,
     pack,
     company,
+  );
+  const { packTotals, scheduleTotals, periodTotals } = await buildPackTotals(period, packRunsSource, periodRecord, {
+    pack,
+    company: scopeCompany,
     calculation,
     payrollComputed,
   });
@@ -916,7 +932,7 @@ export const buildManagementPayload = async (
     period,
     payrollPeriodLabel(period),
     pack,
-    company,
+    scopeCompany,
     totalsFromSummaryAndRecords(period, calculation.summary, calculation.records, payrollComputed),
     ngnPayrollKpiRecords(calculation.records) as PayrollCalculationRecord[],
     perms.canViewMoney,
@@ -930,11 +946,15 @@ export const buildManagementPayload = async (
     permissions: perms,
     access: { financeOnlyAccess, salaryReviewAccess },
     period,
-    periodLabel: payrollRunPeriodLabelForPack(payrollPeriodLabel(period), pack, company),
+    periodLabel: allCompanies
+      ? `${payrollPeriodLabel(period)} · All companies`
+      : payrollRunPeriodLabelForPack(payrollPeriodLabel(period), pack, scopeCompany),
     pack,
-    company,
-    packLabel: scope.label,
-    scheduleId: scope.id,
+    company: allCompanies ? null : scopeCompany,
+    packLabel: allCompanies
+      ? (pack === 'daily-rate' ? 'All Day-rate' : 'All Salaries (DLE + DLPC)')
+      : scope.label,
+    scheduleId: allCompanies ? null : scope.id,
     dataMode,
     payrollComputed,
     monthOverMonth,
@@ -955,7 +975,7 @@ export const buildManagementPayload = async (
       : null,
     periods: periodState.periods.map((item) => {
       const itemPackRuns = runs.filter((row) => row.period === item.period);
-      const periodRun = itemPackRuns.find((row) => runMatchesScope(row, pack, company))
+      const periodRun = itemPackRuns.find((row) => runMatchesScope(row, pack, scopeCompany))
         || itemPackRuns.find((row) => resolvePayrollRunPack(row) === pack)
         || itemPackRuns[0];
       return {
