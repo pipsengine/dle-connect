@@ -1,3 +1,4 @@
+import { gzipSync } from 'node:zlib';
 import { NextRequest, NextResponse } from 'next/server';
 import { permissionsForRequest } from '@/lib/auth/request-permissions';
 import { AUTH_COOKIE, verifySessionToken } from '@/lib/auth/session';
@@ -31,7 +32,28 @@ export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
 export const maxDuration = 120;
 
-const ok = <T,>(data: T) => NextResponse.json({ status: 'success', data });
+const ok = <T,>(data: T, request?: NextRequest) => {
+  const json = JSON.stringify({ status: 'success', data });
+  // IIS httpPlatform buffers an uncompressed response and fails it (HTML 502) once it
+  // passes 4 MB. This payload is ~8 MB raw and ~0.5 MB gzipped.
+  const acceptsGzip = /\bgzip\b/i.test(request?.headers.get('accept-encoding') || '');
+  if (acceptsGzip && Buffer.byteLength(json) > 1_000_000) {
+    return new NextResponse(new Uint8Array(gzipSync(json)), {
+      headers: {
+        'content-type': 'application/json; charset=utf-8',
+        'content-encoding': 'gzip',
+        vary: 'Accept-Encoding',
+        'cache-control': 'no-store',
+      },
+    });
+  }
+  return new NextResponse(json, {
+    headers: {
+      'content-type': 'application/json; charset=utf-8',
+      'cache-control': 'no-store',
+    },
+  });
+};
 const err = (status: number, error: string) => NextResponse.json({ status: 'error', error }, { status });
 
 const humanizeOvertimeError = (error: unknown) => {
@@ -156,7 +178,7 @@ export async function GET(request: NextRequest) {
       }
       const employeeCodes = employeeCodesParam.split(',').map((item) => item.trim()).filter(Boolean);
       const attendance = await readOvertimeEmployeeAttendance(attendanceDate, employeeCodes);
-      return ok({ workDate: attendanceDate, attendance });
+      return ok({ workDate: attendanceDate, attendance }, request);
     }
     const identity = await overtimeActorFromRequest(request, livePermissions);
     const [authorizationRequests, payload, holidayDates] = await Promise.all([
@@ -193,7 +215,7 @@ export async function GET(request: NextRequest) {
         },
       });
     }
-    return ok(data);
+    return ok(data, request);
   } catch (error) {
     return err(500, humanizeOvertimeError(error));
   }

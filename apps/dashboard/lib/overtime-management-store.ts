@@ -645,7 +645,7 @@ const upsertOneCandidate = async (pool: sql.ConnectionPool, record: OvertimeReco
   }
 };
 
-const upsertCandidates = async (records: OvertimeRecord[]) => {
+const upsertCandidates = async (records: OvertimeRecord[], pauseForPageReads = false) => {
   const pool = await ensureDb();
   const unique = new Map<string, OvertimeRecord>();
   for (const record of records) {
@@ -654,15 +654,15 @@ const upsertCandidates = async (records: OvertimeRecord[]) => {
     unique.set(id, { ...record, id });
   }
   const list = Array.from(unique.values());
-  // Stay under the SQL pool size so Overtime Management page reads can still connect.
-  const chunkSize = 2;
-  for (let index = 0; index < list.length; index += chunkSize) {
-    const chunk = list.slice(index, index + chunkSize);
-    await Promise.all(chunk.map((record) => upsertOneCandidate(pool, record)));
+  for (const record of list) {
+    if (pauseForPageReads && overtimeReadsInFlight > 0) return;
+    await upsertOneCandidate(pool, record);
+    if (pauseForPageReads) await new Promise((resolve) => setTimeout(resolve, 20));
   }
 };
 
 let timesheetCandidateSync: { at: number; pending?: Promise<void> } = { at: 0 };
+let overtimeReadsInFlight = 0;
 const TIMESHEET_CANDIDATE_SYNC_MS = 5 * 60 * 1000;
 
 const scheduleTimesheetCandidateSync = () => {
@@ -670,18 +670,23 @@ const scheduleTimesheetCandidateSync = () => {
   if (timesheetCandidateSync.pending) return;
   if (now - timesheetCandidateSync.at < TIMESHEET_CANDIDATE_SYNC_MS) return;
   const pending = (async () => {
-    // Let the page query finish and release connections before the sync starts.
-    await new Promise((resolve) => setTimeout(resolve, 4000));
+    let completed = false;
     try {
+      // Stay off the page-load path. A busy sync was turning the next refresh into an IIS HTML 502.
+      await new Promise((resolve) => setTimeout(resolve, 15000));
+      if (overtimeReadsInFlight > 0) return;
       const { records } = await buildCandidateRecords();
-      await upsertCandidates(records);
+      if (overtimeReadsInFlight > 0) return;
+      await upsertCandidates(records, true);
+      completed = true;
     } catch (error) {
       console.warn(
         '[OvertimeManagement] Background timesheet candidate sync skipped:',
         error instanceof Error ? error.message : error,
       );
+      completed = true;
     } finally {
-      timesheetCandidateSync = { at: Date.now() };
+      timesheetCandidateSync = { at: completed ? Date.now() : 0 };
     }
   })();
   timesheetCandidateSync = { at: now, pending };
@@ -1011,12 +1016,21 @@ const loadOvertimeManagementPayload = async (roleInput?: string | null) => {
 };
 
 const inflightPayloadReads = new Map<string, ReturnType<typeof loadOvertimeManagementPayload>>();
+const payloadCache = new Map<string, { at: number; payload: Awaited<ReturnType<typeof loadOvertimeManagementPayload>> }>();
+const PAYLOAD_CACHE_MS = 20_000;
 
 export const readOvertimeManagementPayload = (roleInput?: string | null) => {
   const role = normalizeOvertimeRole(roleInput);
+  const cached = payloadCache.get(role);
+  if (cached && Date.now() - cached.at < PAYLOAD_CACHE_MS) return Promise.resolve(cached.payload);
   const existing = inflightPayloadReads.get(role);
   if (existing) return existing;
-  const pending = loadOvertimeManagementPayload(role).finally(() => {
+  overtimeReadsInFlight += 1;
+  const pending = loadOvertimeManagementPayload(role).then((payload) => {
+    payloadCache.set(role, { at: Date.now(), payload });
+    return payload;
+  }).finally(() => {
+    overtimeReadsInFlight = Math.max(0, overtimeReadsInFlight - 1);
     if (inflightPayloadReads.get(role) === pending) inflightPayloadReads.delete(role);
   });
   inflightPayloadReads.set(role, pending);
@@ -1024,6 +1038,7 @@ export const readOvertimeManagementPayload = (roleInput?: string | null) => {
 };
 
 export const createOvertimeRequest = async (input: OvertimeCreateRequest, roleInput?: string | null, actorInput?: string | null) => {
+  payloadCache.clear();
   const role = normalizeOvertimeRole(roleInput);
   const perms = permissionsFor(role);
   if (!perms.canSubmit) throw new Error(`${role} cannot create overtime requests.`);
@@ -1105,6 +1120,7 @@ export const createOvertimeRequest = async (input: OvertimeCreateRequest, roleIn
 };
 
 export const applyOvertimeAction = async (id: string, action: OvertimeAction, roleInput?: string | null, actorInput?: string | null, comment?: string | null) => {
+  payloadCache.clear();
   const role = normalizeOvertimeRole(roleInput);
   const records = await readOvertimeManagementPayload(roleInput).then((payload) => payload.records);
   const record = records.find((item) => item.id === id);

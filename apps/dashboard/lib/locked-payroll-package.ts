@@ -134,10 +134,35 @@ export const lockedNgnForUsdAmount = (pack: LockedPayrollPackage, usd: number) =
   return null;
 };
 
+const lockedNgnEarningLines = (pack: LockedPayrollPackage) => {
+  const byKind = {
+    basic: { code: 'BASIC', name: 'BASIC SALARY' },
+    transport: { code: 'SNMTRANSPTAX', name: 'TRANSPORT' },
+    housing: { code: 'SNMHOUSINGTAX', name: 'HOUSING' },
+    other: { code: 'SNMOTHALLTAX', name: 'OTHER ALLOWANCE' },
+  } as const;
+  return (Object.keys(byKind) as Array<keyof typeof byKind>).flatMap((kind) => {
+    const line = pack.lines.find((item) => lineKind(item.code, item.name) === kind);
+    if (!line) return [];
+    const shape = byKind[kind];
+    return [{
+      code: shape.code,
+      name: shape.name,
+      amount: line.ngn,
+      taxableAmount: line.ngn,
+      sourceAmount: line.ngn,
+      runFrequency: 'monthly' as const,
+      includeInMonthlyPayroll: true,
+    }];
+  });
+};
+
 export const applyLockedPayrollPackage = <T extends DleEmployeeDirectoryRow>(employee: T, period?: string | null): T => {
   const pack = lockedPayrollPackageFor(employee, period);
   if (!pack) return employee;
   const basic = lockedBasicLine(pack);
+  const hasNairaLeg = Boolean(employee.hasDualCurrencyPayroll) || (employee.sageLocalPayrollEarnings || []).length > 0;
+  const nairaLines = lockedNgnEarningLines(pack);
   return {
     ...employee,
     payCurrency: employee.payCurrency || 'USD',
@@ -152,6 +177,15 @@ export const applyLockedPayrollPackage = <T extends DleEmployeeDirectoryRow>(emp
       runFrequency: 'monthly' as const,
       includeInMonthlyPayroll: true,
     })) as T['sagePayrollEarnings'],
+    ...(hasNairaLeg
+      ? {
+          hasDualCurrencyPayroll: true,
+          localPayCurrency: 'NGN',
+          localPayrollGroup: employee.localPayrollGroup || 'DLE',
+          localPeriodSalary: pack.grossNgn,
+          sageLocalPayrollEarnings: nairaLines as T['sageLocalPayrollEarnings'],
+        }
+      : {}),
   };
 };
 

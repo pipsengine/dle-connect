@@ -46,6 +46,18 @@ assert.equal(applied.sagePayrollEarnings?.length, 4);
 assert.equal(applied.sagePayrollEarnings?.reduce((sum, line) => sum + Number(line.amount), 0), 4631.3);
 assert.equal(odulate.sagePayrollEarnings?.[0]?.amount, 36.56);
 
+const dual = applyLockedPayrollPackage({
+  ...odulate,
+  hasDualCurrencyPayroll: true,
+  sageLocalPayrollEarnings: [{ code: 'BASIC', name: 'BASIC SALARY', amount: 1251873.99 }],
+} as DleEmployeeDirectoryRow, '2026-09');
+assert.equal(dual.localPeriodSalary, 6171216.9);
+assert.equal(dual.sageLocalPayrollEarnings?.some((line) => line.code === 'PENSION_REFUND'), false);
+assert.equal(
+  Math.round((dual.sageLocalPayrollEarnings || []).reduce((sum, line) => sum + Number(line.amount), 0) * 10) / 10,
+  6171216.9,
+);
+
 const shown = payrollLinesForLockedNgn(
   [{ id: '1', code: 'EXP_SMGT_BASIC', name: 'Basic', amount: '926.3', taxable: true, frequency: 'monthly' }],
   pack!,

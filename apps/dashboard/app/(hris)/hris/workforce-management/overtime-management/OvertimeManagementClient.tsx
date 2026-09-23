@@ -458,6 +458,7 @@ export default function OvertimeManagementClient({ initialNow }: { initialNow: s
 
   const loadRequestRef = useRef(0);
   const loadAbortRef = useRef<AbortController | null>(null);
+  const payloadRef = useRef<Payload | null>(null);
 
   const load = useCallback(async () => {
     loadAbortRef.current?.abort();
@@ -467,22 +468,49 @@ export default function OvertimeManagementClient({ initialNow }: { initialNow: s
     const controller = new AbortController();
     loadAbortRef.current = controller;
     const timer = window.setTimeout(() => controller.abort(), 50000);
+    const gatewayMessage = (event: unknown) => {
+      const aborted = event instanceof DOMException && event.name === 'AbortError';
+      return aborted
+        ? humanizeOvertimeClientError('timed out', 408)
+        : event instanceof Error ? event.message : 'Unable to load overtime management.';
+    };
     try {
-      const res = await fetch('/api/hris/workforce-management/overtime-management', {
-        headers: { 'x-hris-role': role },
-        cache: 'no-store',
-        signal: controller.signal,
-      });
-      const data = await readOvertimeApi<Payload>(res);
-      if (requestId !== loadRequestRef.current) return;
-      setPayload(data);
-      setSelectedId((current) => current || data.records[0]?.id || '');
+      let lastFailure: unknown = null;
+      for (let attempt = 0; attempt < 2; attempt += 1) {
+        if (requestId !== loadRequestRef.current) return;
+        try {
+          const res = await fetch('/api/hris/workforce-management/overtime-management', {
+            headers: { 'x-hris-role': role },
+            cache: 'no-store',
+            signal: controller.signal,
+          });
+          const data = await readOvertimeApi<Payload>(res);
+          if (requestId !== loadRequestRef.current) return;
+          payloadRef.current = data;
+          setPayload(data);
+          setSelectedId((current) => current || data.records[0]?.id || '');
+          setError('');
+          return;
+        } catch (event) {
+          if (requestId !== loadRequestRef.current) return;
+          const aborted = event instanceof DOMException && event.name === 'AbortError';
+          if (aborted) throw event;
+          lastFailure = event;
+          if (attempt === 0) {
+            await new Promise((resolve) => window.setTimeout(resolve, 1200));
+          }
+        }
+      }
+      throw lastFailure instanceof Error ? lastFailure : new Error('Unable to load overtime management.');
     } catch (event) {
       if (requestId !== loadRequestRef.current) return;
-      const aborted = event instanceof DOMException && event.name === 'AbortError';
-      setError(aborted
-        ? humanizeOvertimeClientError('timed out', 408)
-        : event instanceof Error ? event.message : 'Unable to load overtime management.');
+      const message = gatewayMessage(event);
+      if (payloadRef.current) {
+        setError('');
+        setToast('Refresh did not finish. The overtime list already on screen is unchanged.');
+        return;
+      }
+      setError(message);
     } finally {
       window.clearTimeout(timer);
       if (requestId === loadRequestRef.current) setLoading(false);
