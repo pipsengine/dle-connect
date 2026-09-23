@@ -406,6 +406,50 @@ export const keepUnscheduledStandingPackageLines = (
     next.push(storedFromExistingPackageLine(line, amount));
     codes.add(key);
   }
+  return withPreservedThisPeriodPackageLines(next, existing);
+};
+
+const thisPeriodPackageLineKey = (line: {
+  code?: string;
+  name?: string;
+  frequency?: PayrollLineFrequency;
+  runFrequency?: PayrollLineFrequency;
+  includeInMonthlyPayroll?: boolean;
+  payrollPeriod?: string | null;
+}) => {
+  const period = normalizePackagePayrollPeriod(line.payrollPeriod);
+  if (!period || !isPeriodOnlyPackageEarningLine(line)) return '';
+  return `${compactPayrollCode(line.code)}|${period}`;
+};
+
+/** Every stamped this-period capture stays, for every employee. A schedule write cannot change the amount or drop the line. */
+export const withPreservedThisPeriodPackageLines = (
+  incoming: StoredPayrollPackageLine[],
+  existing: SagePayrollLineItem[] | null | undefined,
+): StoredPayrollPackageLine[] => {
+  const preserved = new Map<string, StoredPayrollPackageLine>();
+  for (const line of existing || []) {
+    const key = thisPeriodPackageLineKey(line);
+    if (!key || preserved.has(key)) continue;
+    const amount = roundMoney(Number(line.sourceAmount ?? line.amount ?? 0));
+    if (!(amount > 0)) continue;
+    preserved.set(key, storedFromExistingPackageLine(line, amount));
+  }
+  const next: StoredPayrollPackageLine[] = [];
+  const seen = new Set<string>();
+  for (const line of incoming) {
+    const key = thisPeriodPackageLineKey(line);
+    if (key && preserved.has(key)) {
+      if (!seen.has(key)) next.push(preserved.get(key)!);
+      seen.add(key);
+      continue;
+    }
+    if (isPeriodOnlyPackageEarningLine(line) && !normalizePackagePayrollPeriod(line.payrollPeriod)) continue;
+    next.push(line);
+  }
+  for (const [key, line] of preserved) {
+    if (!seen.has(key)) next.push(line);
+  }
   return next;
 };
 

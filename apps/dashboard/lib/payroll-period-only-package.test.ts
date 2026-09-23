@@ -172,4 +172,20 @@ assert.equal(augustMealLosesToCapturedTcm.find((line) => line.code === 'OVERTIME
 assert.equal(augustMealLosesToCapturedTcm.find((line) => line.code === 'OVERTIME')?.runFrequency, 'one-off', 'this-period capture must stay one-off');
 assert.equal(augustMealLosesToCapturedTcm.find((line) => line.code === 'OVERTIME')?.includeInMonthlyPayroll, false);
 
+const scheduleWithoutThisPeriod = keepUnscheduledStandingPackageLines(
+  [
+    { code: 'LUMPSUMTAX', name: 'LUMPSUM', amount: 200000, runFrequency: 'monthly', sourceAmount: 200000 },
+    { code: 'OVT', name: 'OVERTIME PAY', amount: 999, runFrequency: 'monthly', sourceAmount: 999 },
+  ],
+  [
+    { code: 'OVT', name: 'OVERTIME PAY', amount: 10000, runFrequency: 'one-off', sourceAmount: 10000, includeInMonthlyPayroll: false, payrollPeriod: '2026-09' },
+    { code: 'NIGHTALL', name: 'Night Allowance', amount: 4000, runFrequency: 'one-off', sourceAmount: 4000, includeInMonthlyPayroll: false, payrollPeriod: '2026-09' },
+    { code: 'ARREARS', name: 'Arrears', amount: 2500, runFrequency: 'one-off', sourceAmount: 2500, includeInMonthlyPayroll: false },
+  ],
+);
+assert.equal(scheduleWithoutThisPeriod.find((line) => line.code === 'OVT' && line.payrollPeriod === '2026-09')?.amount, 10000, 'captured this-period overtime must keep its amount');
+assert.equal(scheduleWithoutThisPeriod.some((line) => line.code === 'OVT' && line.amount === 999), false, 'a schedule amount must not replace a this-period capture');
+assert.equal(scheduleWithoutThisPeriod.find((line) => line.code === 'NIGHTALL')?.amount, 4000);
+assert.equal(scheduleWithoutThisPeriod.some((line) => line.code === 'ARREARS'), false, 'an unstamped leftover must not be kept');
+
 console.log('payroll-period-only-package tests passed');

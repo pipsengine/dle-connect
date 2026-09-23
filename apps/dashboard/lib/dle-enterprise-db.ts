@@ -9,7 +9,7 @@ import {
 import { resolvePayCurrency } from '@/lib/payroll-currency';
 import { withNormalizedBankCodes } from '@/lib/payroll-bank-constants';
 import { resolveNigeriaPersonalLocation } from '@/lib/nigeria-locations';
-import { composePersonDisplayName, resolvePersonNameParts } from '@/lib/person-display-name';
+import { withPreservedThisPeriodPackageLines } from '@/lib/payroll-package-lines';
 
 const DEFAULT_IT_NYSC_STIPEND_GRADE = 'IT_NYSC_REM - IT_NYSC';
 
@@ -2645,6 +2645,23 @@ export const updateEmployeeDailyRatePayInDb = async (input: {
   return true;
 };
 
+const earningLinesJsonKeepingThisPeriodCaptures = async (
+  db: sql.ConnectionPool,
+  employeeDbId: number,
+  column: 'sage_earning_lines_json' | 'sage_local_earning_lines_json',
+  incoming: string | null | undefined,
+) => {
+  if (incoming == null || incoming === '') return incoming ?? null;
+  const incomingLines = parseSagePayrollLineItems(incoming);
+  const current = await db.request()
+    .input('employee_id', sql.BigInt, employeeDbId)
+    .query(column === 'sage_local_earning_lines_json'
+      ? `SELECT sage_local_earning_lines_json AS lines_json FROM [hris].[EmployeePayrollSetup] WHERE employee_id = @employee_id`
+      : `SELECT sage_earning_lines_json AS lines_json FROM [hris].[EmployeePayrollSetup] WHERE employee_id = @employee_id`);
+  const existing = parseSagePayrollLineItems(current.recordset[0]?.lines_json);
+  return JSON.stringify(withPreservedThisPeriodPackageLines(incomingLines, existing));
+};
+
 export const upsertEmployeePayrollPackageFromScheduleInDb = async (input: {
   employeeDbId: number;
   payrollGroup?: string | null;
@@ -2667,6 +2684,18 @@ export const upsertEmployeePayrollPackageFromScheduleInDb = async (input: {
   const p = await pool();
   if (!p) return false;
   const writeLocal = Boolean(input.writeLocalNgnPackage);
+  const sageEarningLinesJson = await earningLinesJsonKeepingThisPeriodCaptures(
+    p,
+    input.employeeDbId,
+    'sage_earning_lines_json',
+    input.sageEarningLinesJson,
+  );
+  const sageLocalEarningLinesJson = await earningLinesJsonKeepingThisPeriodCaptures(
+    p,
+    input.employeeDbId,
+    'sage_local_earning_lines_json',
+    input.sageLocalEarningLinesJson,
+  );
   await p.request()
     .input('employee_id', sql.BigInt, input.employeeDbId)
     .input('payroll_group', sql.NVarChar(100), nullable(input.payrollGroup))
@@ -2677,13 +2706,13 @@ export const upsertEmployeePayrollPackageFromScheduleInDb = async (input: {
     .input('rate_per_day', sql.Decimal(19, 4), numOrNull(input.ratePerDay))
     .input('rate_per_hour', sql.Decimal(19, 4), numOrNull(input.ratePerHour))
     .input('hours_per_day', sql.Decimal(8, 2), numOrNull(input.hoursPerDay))
-    .input('sage_earning_lines_json', sql.NVarChar(sql.MAX), nullable(input.sageEarningLinesJson))
+    .input('sage_earning_lines_json', sql.NVarChar(sql.MAX), nullable(sageEarningLinesJson))
     .input('sage_deduction_lines_json', sql.NVarChar(sql.MAX), nullable(input.sageDeductionLinesJson))
     .input('write_local', sql.Bit, writeLocal ? 1 : 0)
     .input('local_payroll_group', sql.NVarChar(100), nullable(input.localPayrollGroup))
     .input('local_pay_currency', sql.NVarChar(10), nullable(input.localPayCurrency))
     .input('local_period_salary', sql.Decimal(19, 4), numOrNull(input.localPeriodSalary))
-    .input('sage_local_earning_lines_json', sql.NVarChar(sql.MAX), nullable(input.sageLocalEarningLinesJson))
+    .input('sage_local_earning_lines_json', sql.NVarChar(sql.MAX), nullable(sageLocalEarningLinesJson))
     .input('sage_local_deduction_lines_json', sql.NVarChar(sql.MAX), nullable(input.sageLocalDeductionLinesJson))
     .query(`
       MERGE [hris].[EmployeePayrollSetup] AS target
