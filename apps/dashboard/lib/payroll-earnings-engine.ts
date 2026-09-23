@@ -649,27 +649,6 @@ const isMealFamilyEarningCode = (code?: string | null, name?: string | null) => 
   return upper === 'MEAL' || upper === 'TCMMEAL' || upper.includes('MEAL') || label.includes('MEAL');
 };
 
-/** MGTCOLA does not auto-earn meal; these staff still receive a standing taxable meal. */
-export const SPECIAL_STANDING_MEAL_BY_EMPLOYEE: Record<string, { amount: number; code: string; name: string }> = {
-  P0399: { amount: 300000, code: 'MEAL', name: 'MEAL ALLOWANCE' },
-};
-
-export const specialStandingMealLine = (employee: Pick<DleEmployeeDirectoryRow, 'employeeCode' | 'employeeId'>): PayrollEarningLine | null => {
-  const code = compact(employee.employeeCode || employee.employeeId).toUpperCase();
-  const spec = SPECIAL_STANDING_MEAL_BY_EMPLOYEE[code];
-  if (!spec) return null;
-  return {
-    code: spec.code,
-    name: spec.name,
-    taxable: true,
-    percentOfGross: 0,
-    calculation: 'Special standing meal allowance',
-    runFrequency: 'monthly',
-    includeInMonthlyPayroll: true,
-    amount: roundMoney(spec.amount),
-  };
-};
-
 /** Sage TCM meal / explicit meal rows replace the auto ₦500×days meal — never stack both. */
 const stripAutoMealWhenLegacyMealPresent = (
   base: PayrollEarningsResult,
@@ -861,13 +840,7 @@ const mergeConfiguredPackageSupplements = (
   baseLines: PayrollEarningLine[],
   options?: { includeOneOff?: boolean; period?: string },
 ) => {
-  const configured = configuredPackageEarningLines(employee, options);
-  const hasPackageMeal = configured.some((line) => isMealFamilyEarningCode(line.code, line.name));
-  const specialMeal = hasPackageMeal ? null : specialStandingMealLine(employee);
-  const packageLines = [
-    ...configured,
-    ...(specialMeal ? [specialMeal] : []),
-  ];
+  const packageLines = configuredPackageEarningLines(employee, options);
   if (!packageLines.length) return baseLines;
   const packageByCanonical = new Map<string, PayrollEarningLine>();
   for (const line of packageLines) {
@@ -884,7 +857,6 @@ const mergeConfiguredPackageSupplements = (
   });
   const hasMeal = merged.some((line) => isMealFamilyEarningCode(line.code, line.name));
   const extras = [...packageByCanonical.values()].filter((line) => {
-    if (specialMeal && canonicalEarningCode(line.code) === canonicalEarningCode(specialMeal.code)) return true;
     if (isDayRateTimesheetMealLine(line) && hasMeal) return false;
     return true;
   });

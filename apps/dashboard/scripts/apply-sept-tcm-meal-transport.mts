@@ -1,6 +1,8 @@
 /**
  * Apply September TCM meal / transport from the site-days workbook onto HRIS packages.
- * Days × ₦1,500. L2772 has meal only (no transport days). Sheet "L5611 COMMUNITY" is HRIS L2611.
+ * Days × ₦1,500.
+ * Transport days "-" means no transport: L1940 (meal ₦39,000) and L2763 (meal ₦31,500).
+ * Sheet community row (L12611 / L5611, Unoh Evelyn) is HRIS L2611.
  *
  * Dry-run: npx tsx --tsconfig apps/dashboard/tsconfig.json apps/dashboard/scripts/apply-sept-tcm-meal-transport.mts
  * Apply:   npx tsx --tsconfig apps/dashboard/tsconfig.json apps/dashboard/scripts/apply-sept-tcm-meal-transport.mts --apply
@@ -19,13 +21,13 @@ type TcmRow = { code: string; aliases?: string[]; days: number; transportDays: n
 
 const ROWS: TcmRow[] = [
   { code: 'L1939', days: 21, transportDays: 21 },
-  { code: 'L1940', days: 26, transportDays: 26 },
+  { code: 'L1940', days: 26, transportDays: 0 },
   { code: 'L2237', days: 21, transportDays: 21 },
-  { code: 'L2611', aliases: ['L5611'], days: 21, transportDays: 21 },
+  { code: 'L2611', aliases: ['L5611', 'L12611'], days: 21, transportDays: 21 },
   { code: 'L2719', days: 21, transportDays: 21 },
   { code: 'P0315', aliases: ['0315', 'L0315'], days: 21, transportDays: 21 },
-  { code: 'L2763', days: 21, transportDays: 21 },
-  { code: 'L2772', days: 21, transportDays: 0 },
+  { code: 'L2763', days: 21, transportDays: 0 },
+  { code: 'L2772', days: 21, transportDays: 21 },
   { code: 'L2774', days: 21, transportDays: 21 },
   { code: 'L2773', days: 21, transportDays: 21 },
 ];

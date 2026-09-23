@@ -452,7 +452,24 @@ const mgtColaMealSupplementPay = calculatePayrollEarnings(mgtColaMealSupplement,
 assert.equal(mgtColaMealSupplementPay.paidEarningLines.find((line) => line.code === 'MEAL')?.amount, 22000, 'MGTCOLA formula package must still accept captured meal');
 assert.ok(mgtColaMealSupplementPay.grossPay > 518255);
 
-const p0399SpecialMeal = employee({
+const p0399PackageMeal = employee({
+  employeeCode: 'P0399',
+  employeeId: 'P0399',
+  employmentType: 'Permanent',
+  salaryGrade: 'MGTCOLA',
+  periodSalary: 532897.17,
+  sagePayrollEarnings: [
+    { code: 'BASIC', name: 'BASIC SALARY', amount: 213158.87, runFrequency: 'monthly', sourceAmount: 213158.87, includeInMonthlyPayroll: true },
+    { code: 'HOUSING', name: 'HOUSING', amount: 85263.55, runFrequency: 'monthly', sourceAmount: 85263.55, includeInMonthlyPayroll: true },
+    { code: 'SITE_ALLOW', name: 'SITE ALLOWANCE', amount: 300000, runFrequency: 'monthly', sourceAmount: 300000, includeInMonthlyPayroll: true },
+    { code: 'MEAL', name: 'Meal Allowance', amount: 150000, runFrequency: 'monthly', sourceAmount: 150000, includeInMonthlyPayroll: true },
+  ],
+});
+const p0399PackageMealPay = calculatePayrollEarnings(p0399PackageMeal, { useHrisPackageLines: true });
+assert.equal(p0399PackageMealPay.paidEarningLines.find((line) => line.code === 'MEAL')?.amount, 150000, 'P0399 package meal allowance must hit payroll');
+assert.equal(p0399PackageMealPay.paidEarningLines.filter((line) => /MEAL/i.test(line.code)).length, 1);
+
+const p0399WithoutMeal = employee({
   employeeCode: 'P0399',
   employeeId: 'P0399',
   employmentType: 'Permanent',
@@ -464,9 +481,8 @@ const p0399SpecialMeal = employee({
     { code: 'SITE_ALLOW', name: 'SITE ALLOWANCE', amount: 300000, runFrequency: 'monthly', sourceAmount: 300000, includeInMonthlyPayroll: true },
   ],
 });
-const p0399SpecialMealPay = calculatePayrollEarnings(p0399SpecialMeal, { useHrisPackageLines: true });
-assert.equal(p0399SpecialMealPay.paidEarningLines.find((line) => line.code === 'MEAL')?.amount, 300000, 'P0399 special standing meal must hit payroll');
-assert.equal(p0399SpecialMealPay.paidEarningLines.filter((line) => /MEAL/i.test(line.code)).length, 1);
+const p0399WithoutMealPay = calculatePayrollEarnings(p0399WithoutMeal, { useHrisPackageLines: true });
+assert.equal(p0399WithoutMealPay.paidEarningLines.some((line) => /MEAL/i.test(line.code)), false, 'P0399 must not receive a meal unless it is on the package');
 
 const mgtColaWithMealSnapshot = [
   { code: 'MGT1COLA_BASIC', name: 'BASIC SALARY', amount: 213158.87 },
