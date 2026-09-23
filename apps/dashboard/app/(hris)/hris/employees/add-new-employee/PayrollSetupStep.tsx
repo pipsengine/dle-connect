@@ -317,7 +317,6 @@ export default function PayrollSetupStep({
     : '';
   const fxRate = Number(payrollFx?.rate || 0);
   const nairaView = savedPackageCurrency === 'USD' && displayCurrency === 'NGN' && fxRate > 0;
-  const nairaSelectedWithoutRate = savedPackageCurrency === 'USD' && displayCurrency === 'NGN' && !(fxRate > 0);
   const currency = nairaView ? 'NGN' : resolvePayrollDraftCurrency(payroll);
   const patch = (partial: Partial<PayrollSetupDraft>) => onChange({ ...payroll, ...partial });
   const formatMoney = (value: number) => formatPayrollMoney(
@@ -425,7 +424,7 @@ export default function PayrollSetupStep({
           options={['NGN', 'USD']}
           placeholder="Select currency"
           hint={savedPackageCurrency === 'USD'
-            ? 'NGN shows the naira equivalent of this dollar package for the payroll run. The saved currency stays USD.'
+            ? 'NGN shows the naira equivalent using the latest CBN highest NFEM rate for that day. The saved currency stays USD.'
             : undefined}
         />
         <SelectField label="Payroll Group" value={payroll.payrollGroup} onChange={(v) => patch({ payrollGroup: v })} options={options.payrollGroups} placeholder="e.g. DLE / Daily Rate" />
@@ -490,11 +489,6 @@ export default function PayrollSetupStep({
       {nairaView && payrollFx ? (
         <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-xs font-semibold text-emerald-950">
           {formatPayrollRunFxCaption(payrollFx)}
-        </div>
-      ) : null}
-      {nairaSelectedWithoutRate ? (
-        <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs font-semibold text-amber-950">
-          The CBN rate for this payroll run is not available, so the dollar amounts are still shown. Naira equivalents appear once that rate is on the payroll run.
         </div>
       ) : null}
 

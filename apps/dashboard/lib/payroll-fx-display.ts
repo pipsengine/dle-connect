@@ -103,10 +103,10 @@ export const formatPayrollRunFxCaption = (fx: PayrollRunFx) => {
     style: 'currency',
     currency: 'NGN',
     minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
+    maximumFractionDigits: 4,
   }).format(fx.rate);
   const asAt = fxDateLabel(fx.rateDate);
-  const basis = fx.kind === 'cbn' ? 'CBN rate' : 'USD/NGN rate';
-  const when = asAt ? ` as at ${asAt}` : '';
-  return `Naira equivalent at the ${basis} for the ${periodLabel(fx.period)} payroll run: ${rateText} = $1${when}. Dollar amounts stay saved on the package.`;
+  const when = asAt || periodLabel(fx.period);
+  const basis = fx.kind === 'cbn' ? 'CBN highest NFEM rate' : 'USD/NGN rate';
+  return `Naira equivalent at the ${basis} for ${when}: ${rateText} = $1. Dollar amounts stay saved on the package.`;
 };

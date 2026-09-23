@@ -44,8 +44,7 @@ const caption = formatPayrollRunFxCaption({
   kind: 'cbn',
   period: '2026-09',
 });
-assert.match(caption, /CBN rate/);
-assert.match(caption, /September 2026/);
+assert.match(caption, /CBN highest NFEM rate/);
 assert.match(caption, /20 Aug 2026/);
 assert.match(caption, /Dollar amounts stay saved/);
 

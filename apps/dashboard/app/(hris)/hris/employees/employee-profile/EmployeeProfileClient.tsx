@@ -3032,20 +3032,20 @@ export default function EmployeeProfileClient({
                             <Field label="Salary Grade" value={v(profileData.payrollSummary.salaryGrade)} />
                             {profileData.payrollClassification?.isDailyRate || /daily rate|day rate/i.test(profileData.employmentType || '') ? (
                               <>
-                                <Field label="Daily Rate" value={payrollMoney(profileData.payrollSummary.ratePerDay, payrollCurrency)} masked={!perms.canViewPayroll} />
-                                <Field label="Rate Per Hour" value={payrollMoney(profileData.payrollSummary.ratePerHour, payrollCurrency)} masked={!perms.canViewPayroll} />
+                                <Field label="Daily Rate" value={payrollMoney(profileData.payrollSummary.ratePerDay)} masked={!perms.canViewPayroll} />
+                                <Field label="Rate Per Hour" value={payrollMoney(profileData.payrollSummary.ratePerHour)} masked={!perms.canViewPayroll} />
                                 <Field label="Hours Per Day" value={profileData.payrollSummary.hoursPerDay != null ? String(profileData.payrollSummary.hoursPerDay) : '—'} />
-                                <Field label="Last Payroll Gross" value={payrollMoney(profileData.payrollSummary.payrollRunGrossPay, payrollCurrency)} masked={!perms.canViewPayroll} />
-                                <Field label="Last Payroll Net" value={payrollMoney(profileData.payrollSummary.payrollRunNetPay, payrollCurrency)} masked={!perms.canViewPayroll} />
+                                <Field label="Last Payroll Gross" value={payrollMoney(profileData.payrollSummary.payrollRunGrossPay)} masked={!perms.canViewPayroll} />
+                                <Field label="Last Payroll Net" value={payrollMoney(profileData.payrollSummary.payrollRunNetPay)} masked={!perms.canViewPayroll} />
                               </>
                             ) : (
                               <>
-                                <Field label="Monthly Package Gross" value={payrollMoney(profileData.payrollSummary.monthlyPackageGross ?? profileData.payrollSummary.basicSalary, payrollCurrency)} masked={!perms.canViewPayroll} />
-                                <Field label="Basic Salary" value={payrollMoney(profileData.payrollSummary.basicSalary, payrollCurrency)} masked={!perms.canViewPayroll} />
-                                <Field label="Allowances" value={payrollMoney(profileData.payrollSummary.allowances, payrollCurrency)} masked={!perms.canViewPayroll} />
+                                <Field label="Monthly Package Gross" value={payrollMoney(profileData.payrollSummary.monthlyPackageGross ?? profileData.payrollSummary.basicSalary)} masked={!perms.canViewPayroll} />
+                                <Field label="Basic Salary" value={payrollMoney(profileData.payrollSummary.basicSalary)} masked={!perms.canViewPayroll} />
+                                <Field label="Allowances" value={payrollMoney(profileData.payrollSummary.allowances)} masked={!perms.canViewPayroll} />
                               </>
                             )}
-                            <Field label="Deductions" value={payrollMoney(profileData.payrollSummary.deductions, payrollCurrency)} masked={!perms.canViewPayroll} />
+                            <Field label="Deductions" value={payrollMoney(profileData.payrollSummary.deductions)} masked={!perms.canViewPayroll} />
                             {payrollPackageCurrency === 'USD' && perms.canViewPayroll ? (
                               <div className="rounded-xl border border-slate-200 bg-slate-50/80 p-2.5">
                                 <div className="text-[11px] font-extrabold text-slate-600">Show amounts in</div>
@@ -3081,11 +3081,6 @@ export default function EmployeeProfileClient({
                           {nairaEquivalentActive && payrollFx ? (
                             <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-xs font-semibold text-emerald-950">
                               {formatPayrollRunFxCaption(payrollFx)}
-                            </div>
-                          ) : null}
-                          {payrollPackageCurrency === 'USD' && payrollDisplayCurrency === 'NGN' && !nairaEquivalentActive && perms.canViewPayroll ? (
-                            <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs font-semibold text-amber-950">
-                              The CBN rate for this payroll run is not available, so the dollar amounts are still shown.
                             </div>
                           ) : null}
                           {perms.canViewPayroll && (profileData.payrollClassification?.isDailyRate || /daily rate|day rate/i.test(profileData.employmentType || '')) ? (

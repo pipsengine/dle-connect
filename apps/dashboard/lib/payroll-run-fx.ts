@@ -1,4 +1,5 @@
 import sql from 'mssql';
+import { fetchCbnNfemRates, pickCbnHighestUsdRate, utcDayIso } from '@/lib/cbn-nfem-rate';
 import { ensureFinanceDb } from '@/lib/finance-intelligence/store';
 import { roundMoney } from '@/lib/payroll-package-lines';
 import { resolvePayCurrency } from '@/lib/payroll-currency';
@@ -11,15 +12,39 @@ const compact = (value: unknown) => String(value ?? '').trim();
 const periodCode = (period?: string | null) =>
   compact(period).replace(/\//g, '-').replace(/^per-/i, '').slice(0, 7);
 
+/** Payroll day, but not a future date — CBN has not published those yet. */
+const payrollRateAsOfIso = (period: string, today = new Date()) => {
+  const lockIso = utcDayIso(payrollSalariesSummaryLockDate(period));
+  const todayIso = utcDayIso(today);
+  return lockIso < todayIso ? lockIso : todayIso;
+};
+
 /**
- * USD→NGN rate for the day this payroll period is run.
- * The salary-schedule CBN rate wins. Otherwise the latest stored USD/NGN rate
- * on or before the period lock date (last calendar day of the payroll month).
- * No invented fallback rate — a missing rate stays missing.
+ * USD→NGN rate for the payroll day: the latest Central Bank of Nigeria NFEM
+ * publication on or before that day, always that day's highest rate.
+ * A stored schedule or finance rate is used only when the CBN feed cannot be read.
  */
 export const resolvePayrollRunUsdNgnRate = async (period?: string | null): Promise<PayrollRunFx | null> => {
   const normalized = periodCode(period);
   if (!/^\d{4}-\d{2}$/.test(normalized)) return null;
+  const asOfIso = payrollRateAsOfIso(normalized);
+
+  try {
+    const rows = await fetchCbnNfemRates();
+    const picked = pickCbnHighestUsdRate(rows, asOfIso);
+    if (picked) {
+      return {
+        rate: picked.rate,
+        rateDate: picked.rateDate,
+        source: 'Central Bank of Nigeria NFEM highest rate',
+        kind: 'cbn',
+        period: normalized,
+      };
+    }
+  } catch (error) {
+    console.warn('[payroll-fx] CBN NFEM rate skipped', error);
+  }
+
   const lockDate = payrollSalariesSummaryLockDate(normalized);
   const lockIso = lockDate.toISOString().slice(0, 10);
 
