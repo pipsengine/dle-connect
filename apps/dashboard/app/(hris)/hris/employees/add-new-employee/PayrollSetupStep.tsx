@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { ChevronDown, Search } from 'lucide-react';
 import PayrollLinesEditor, { DEDUCTION_LINE_PRESETS, EARNING_LINE_PRESETS, PERIOD_EARNING_LINE_PRESETS } from '@/components/payroll/PayrollLinesEditor';
 import {
@@ -12,6 +12,14 @@ import {
   type FlexiblePayrollLineDraft,
 } from '@/lib/payroll-package-lines';
 import { formatPayrollMoney } from '@/lib/payroll-currency';
+import {
+  convertAmountText,
+  convertPayrollMoney,
+  formatPayrollRunFxCaption,
+  payrollLinesForDisplay,
+  payrollLinesFromDisplay,
+  type PayrollRunFx,
+} from '@/lib/payroll-fx-display';
 import {
   contractMonthsInclusive,
   isLumpsumBaseDraftLine,
@@ -105,12 +113,14 @@ const SelectField = ({
   onChange,
   options,
   placeholder,
+  hint,
 }: {
   label: string;
   value: string;
   onChange: (next: string) => void;
   options: string[];
   placeholder?: string;
+  hint?: string;
 }) => (
   <div className="rounded-2xl border border-slate-200 bg-white p-3">
     <div className="text-[11px] font-extrabold text-slate-600">{label}</div>
@@ -126,8 +136,52 @@ const SelectField = ({
         </option>
       ))}
     </select>
+    {hint ? <div className="mt-1 text-[11px] font-semibold text-slate-500">{hint}</div> : null}
   </div>
 );
+
+function PackageMoneyField({
+  label,
+  nativeValue,
+  onNativeChange,
+  hint,
+  converting,
+  rate,
+}: {
+  label: string;
+  nativeValue: string;
+  onNativeChange: (next: string) => void;
+  hint?: string;
+  converting: boolean;
+  rate: number;
+}) {
+  const shown = converting ? convertAmountText(nativeValue, 'USD', 'NGN', rate) : nativeValue;
+  const [text, setText] = useState(shown);
+  const [focused, setFocused] = useState(false);
+  useEffect(() => {
+    if (!focused) setText(shown);
+  }, [focused, shown]);
+  return (
+    <div className="rounded-2xl border border-slate-200 bg-white p-3">
+      <div className="text-[11px] font-extrabold text-slate-600">{label}</div>
+      <input
+        type="number"
+        value={focused ? text : shown}
+        onFocus={() => {
+          setText(shown);
+          setFocused(true);
+        }}
+        onChange={(e) => {
+          setText(e.target.value);
+          onNativeChange(converting ? convertAmountText(e.target.value, 'NGN', 'USD', rate) : e.target.value);
+        }}
+        onBlur={() => setFocused(false)}
+        className="mt-2 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm font-semibold text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-200"
+      />
+      {hint ? <div className="mt-1 text-[11px] font-semibold text-slate-500">{hint}</div> : null}
+    </div>
+  );
+}
 
 const SearchableBankField = ({
   value,
@@ -237,6 +291,10 @@ export default function PayrollSetupStep({
   contractEndDate = '',
   timesheetWages = false,
   payrollPeriod = '',
+  packageCurrency,
+  displayCurrency = 'USD',
+  onDisplayCurrencyChange,
+  payrollFx = null,
 }: {
   payroll: PayrollSetupDraft;
   onChange: (next: PayrollSetupDraft) => void;
@@ -248,11 +306,30 @@ export default function PayrollSetupStep({
   contractEndDate?: string;
   timesheetWages?: boolean;
   payrollPeriod?: string;
+  /** Saved package currency. Dollar packages keep this when Naira is only a view. */
+  packageCurrency?: string;
+  displayCurrency?: 'USD' | 'NGN';
+  onDisplayCurrencyChange?: (next: 'USD' | 'NGN') => void;
+  payrollFx?: PayrollRunFx | null;
 }) {
-  const currency = resolvePayrollDraftCurrency(payroll);
+  const savedPackageCurrency = packageCurrency
+    ? resolvePayrollDraftCurrency({ ...payroll, payCurrency: packageCurrency })
+    : '';
+  const fxRate = Number(payrollFx?.rate || 0);
+  const nairaView = savedPackageCurrency === 'USD' && displayCurrency === 'NGN' && fxRate > 0;
+  const nairaSelectedWithoutRate = savedPackageCurrency === 'USD' && displayCurrency === 'NGN' && !(fxRate > 0);
+  const currency = nairaView ? 'NGN' : resolvePayrollDraftCurrency(payroll);
   const patch = (partial: Partial<PayrollSetupDraft>) => onChange({ ...payroll, ...partial });
-  const formatMoney = (value: number) => formatPayrollMoney(value, currency);
+  const formatMoney = (value: number) => formatPayrollMoney(
+    value,
+    currency,
+    nairaView || currency.toUpperCase() === 'USD' ? { minimumFractionDigits: 2, maximumFractionDigits: 2 } : undefined,
+  );
   const currencySymbol = currency.toUpperCase() === 'USD' ? '$' : '₦';
+  const asShown = (lines: FlexiblePayrollLineDraft[]) =>
+    nairaView ? payrollLinesForDisplay(lines, 'USD', 'NGN', fxRate) : lines;
+  const asNative = (lines: FlexiblePayrollLineDraft[]) =>
+    nairaView ? payrollLinesFromDisplay(lines, 'USD', 'NGN', fxRate) : lines;
 
   const storedEarnings = payroll.earningLines
     .map((line) => draftPayrollLineToStored(line, true))
@@ -260,6 +337,9 @@ export default function PayrollSetupStep({
   const monthlyGross = sumMonthlyPackageGross(storedEarnings);
   const monthlyFromPeriodSalary = Number(payroll.periodSalary || 0);
   const displayMonthlyGross = monthlyGross > 0 ? monthlyGross : monthlyFromPeriodSalary;
+  const shownMonthlyGross = nairaView
+    ? convertPayrollMoney(displayMonthlyGross, 'USD', 'NGN', fxRate)
+    : displayMonthlyGross;
   const isDailyRate = timesheetWages || employmentType === 'Daily Rate';
   const isLumpsum = employmentType === 'Lumpsum';
   const showMonthlyPackageField = !isDailyRate;
@@ -321,12 +401,12 @@ export default function PayrollSetupStep({
         </div>
         {!isDailyRate && displayMonthlyGross > 0 ? (
           <div className="mt-3 inline-flex rounded-xl bg-white px-3 py-2 text-xs font-extrabold text-slate-800 border border-blue-200">
-            Estimated monthly package gross: {formatMoney(displayMonthlyGross)}
+            Estimated monthly package gross: {formatMoney(shownMonthlyGross)}
           </div>
         ) : null}
         {isLumpsum && Number(payroll.contractAmount || 0) > 0 && contractStartDate && contractEndDate ? (
           <div className="mt-2 text-[11px] font-semibold text-blue-800">
-            Contract {formatMoney(Number(payroll.contractAmount))} over {contractMonthsInclusive(contractStartDate, contractEndDate)} month(s) ≈ {formatMoney(monthlyLumpsumFromContract(Number(payroll.contractAmount), contractStartDate, contractEndDate))} / month
+            Contract {formatMoney(nairaView ? convertPayrollMoney(Number(payroll.contractAmount), 'USD', 'NGN', fxRate) : Number(payroll.contractAmount))} over {contractMonthsInclusive(contractStartDate, contractEndDate)} month(s) ≈ {formatMoney(nairaView ? convertPayrollMoney(monthlyLumpsumFromContract(Number(payroll.contractAmount), contractStartDate, contractEndDate), 'USD', 'NGN', fxRate) : monthlyLumpsumFromContract(Number(payroll.contractAmount), contractStartDate, contractEndDate))} / month
           </div>
         ) : null}
       </div>
@@ -334,19 +414,29 @@ export default function PayrollSetupStep({
       <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
         <SelectField
           label="Pay Currency"
-          value={payroll.payCurrency || 'NGN'}
-          onChange={(v) => patch({ payCurrency: v })}
+          value={savedPackageCurrency === 'USD' && onDisplayCurrencyChange ? displayCurrency : (payroll.payCurrency || 'NGN')}
+          onChange={(v) => {
+            if (savedPackageCurrency === 'USD' && onDisplayCurrencyChange && (v === 'NGN' || v === 'USD')) {
+              onDisplayCurrencyChange(v);
+              return;
+            }
+            patch({ payCurrency: v });
+          }}
           options={['NGN', 'USD']}
           placeholder="Select currency"
+          hint={savedPackageCurrency === 'USD'
+            ? 'NGN shows the naira equivalent of this dollar package for the payroll run. The saved currency stays USD.'
+            : undefined}
         />
         <SelectField label="Payroll Group" value={payroll.payrollGroup} onChange={(v) => patch({ payrollGroup: v })} options={options.payrollGroups} placeholder="e.g. DLE / Daily Rate" />
         <Field label="Salary Grade (optional label)" value={payroll.salaryGrade} onChange={(v) => patch({ salaryGrade: v })} hint="Descriptive only — not used to auto-split pay" />
         {showMonthlyPackageField ? (
-          <Field
+          <PackageMoneyField
             label={`Monthly Package Gross (${currencySymbol})`}
-            type="number"
-            value={payroll.periodSalary}
-            onChange={syncPeriodSalary}
+            nativeValue={payroll.periodSalary}
+            onNativeChange={syncPeriodSalary}
+            converting={nairaView}
+            rate={fxRate}
             hint={isLumpsum ? 'Base lumpsum package only — overtime belongs in this-period lines below' : 'Total monthly pay before this-period supplements'}
           />
         ) : null}
@@ -363,8 +453,20 @@ export default function PayrollSetupStep({
         <Field label="Tax ID (TIN)" value={payroll.taxId} onChange={(v) => patch({ taxId: v })} />
         <Field label="NHF Number" value={payroll.nhfNumber} onChange={(v) => patch({ nhfNumber: v })} />
         <SelectField label="Benefit Group" value={payroll.benefitGroup} onChange={(v) => patch({ benefitGroup: v })} options={options.benefitGroups} />
-        <Field label={`Additional Voluntary Pension (${currencySymbol} / month)`} type="number" value={payroll.additionalEmployeePensionMonthly} onChange={(v) => patch({ additionalEmployeePensionMonthly: v })} />
-        <Field label={`Annual Rent Relief (${currencySymbol})`} type="number" value={payroll.annualRentRelief} onChange={(v) => patch({ annualRentRelief: v })} />
+        <PackageMoneyField
+          label={`Additional Voluntary Pension (${currencySymbol} / month)`}
+          nativeValue={payroll.additionalEmployeePensionMonthly}
+          onNativeChange={(v) => patch({ additionalEmployeePensionMonthly: v })}
+          converting={nairaView}
+          rate={fxRate}
+        />
+        <PackageMoneyField
+          label={`Annual Rent Relief (${currencySymbol})`}
+          nativeValue={payroll.annualRentRelief}
+          onNativeChange={(v) => patch({ annualRentRelief: v })}
+          converting={nairaView}
+          rate={fxRate}
+        />
       </div>
 
       <label className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm font-semibold text-slate-800">
@@ -379,9 +481,20 @@ export default function PayrollSetupStep({
 
       {isDailyRate ? (
         <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
-          <Field label={`Daily Rate (${currencySymbol} / day)`} type="number" value={payroll.ratePerDay || payroll.dailyRate} onChange={(v) => patch({ ratePerDay: v, dailyRate: v })} hint="Approved timesheets × this rate drive weekday pay on the payroll run" />
-          <Field label={`Rate Per Hour (${currencySymbol})`} type="number" value={payroll.ratePerHour} onChange={(v) => patch({ ratePerHour: v })} />
+          <PackageMoneyField label={`Daily Rate (${currencySymbol} / day)`} nativeValue={payroll.ratePerDay || payroll.dailyRate} onNativeChange={(v) => patch({ ratePerDay: v, dailyRate: v })} converting={nairaView} rate={fxRate} hint="Approved timesheets × this rate drive weekday pay on the payroll run" />
+          <PackageMoneyField label={`Rate Per Hour (${currencySymbol})`} nativeValue={payroll.ratePerHour} onNativeChange={(v) => patch({ ratePerHour: v })} converting={nairaView} rate={fxRate} />
           <Field label="Hours Per Day" type="number" value={payroll.hoursPerDay} onChange={(v) => patch({ hoursPerDay: v })} />
+        </div>
+      ) : null}
+
+      {nairaView && payrollFx ? (
+        <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-xs font-semibold text-emerald-950">
+          {formatPayrollRunFxCaption(payrollFx)}
+        </div>
+      ) : null}
+      {nairaSelectedWithoutRate ? (
+        <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs font-semibold text-amber-950">
+          The CBN rate for this payroll run is not available, so the dollar amounts are still shown. Naira equivalents appear once that rate is on the payroll run.
         </div>
       ) : null}
 
@@ -391,23 +504,25 @@ export default function PayrollSetupStep({
             description={isDailyRate
               ? 'Repeats every payroll until you change it. Use this for a fixed meal, site or transport amount. Weekday days stay on the timesheet.'
               : 'Repeats every payroll until you change it. Examples: Basic, lumpsum, meal, housing, site, weekly transport.'}
-            lines={standing}
+            lines={asShown(standing)}
             presets={EARNING_LINE_PRESETS}
-            onChange={(nextStanding) => replaceEarningScope(nextStanding, thisPeriod)}
+            onChange={(nextStanding) => replaceEarningScope(asNative(nextStanding), thisPeriod)}
             lineKind="earning"
             currency={currency}
             scope="standing"
+            preciseMoney={nairaView}
           />
           <PayrollLinesEditor
             title={`This period only${payrollPeriod ? ` — ${periodLabel}` : ''}`}
             description="Overtime, arrears, stock count, night and other variable pay. These pay only in this month. They will not compute again next month."
-            lines={thisPeriod}
+            lines={asShown(thisPeriod)}
             presets={PERIOD_EARNING_LINE_PRESETS}
-            onChange={(nextPeriod) => replaceEarningScope(standing, nextPeriod)}
+            onChange={(nextPeriod) => replaceEarningScope(standing, asNative(nextPeriod))}
             lineKind="earning"
             currency={currency}
             scope="period"
             payrollPeriod={payrollPeriod}
+            preciseMoney={nairaView}
           />
           {leftover.length ? (
             <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4">
@@ -417,7 +532,7 @@ export default function PayrollSetupStep({
               </div>
               <ul className="mt-3 space-y-1 text-xs font-semibold text-amber-950">
                 {leftover.map((line) => (
-                  <li key={line.id}>{line.name || line.code}: {formatMoney(Number(line.amount || 0))}</li>
+                  <li key={line.id}>{line.name || line.code}: {formatMoney(nairaView ? convertPayrollMoney(Number(line.amount || 0), 'USD', 'NGN', fxRate) : Number(line.amount || 0))}</li>
                 ))}
               </ul>
               <div className="mt-3 flex flex-wrap gap-2">
@@ -443,11 +558,12 @@ export default function PayrollSetupStep({
       <PayrollLinesEditor
         title="Deduction Lines"
         description="Flexible recurring or one-off deductions — loan recovery, cooperative, union dues, etc."
-        lines={payroll.deductionLines}
+        lines={asShown(payroll.deductionLines)}
         presets={DEDUCTION_LINE_PRESETS}
-        onChange={(deductionLines) => patch({ deductionLines })}
+        onChange={(deductionLines) => patch({ deductionLines: asNative(deductionLines) })}
         lineKind="deduction"
         currency={currency}
+        preciseMoney={nairaView}
       />
     </div>
   );

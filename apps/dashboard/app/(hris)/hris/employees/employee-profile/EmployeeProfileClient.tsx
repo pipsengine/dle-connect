@@ -11,8 +11,9 @@ import {
   setupDraftToProfileSummary,
   type ProfilePayrollSummary,
 } from '@/lib/payroll-profile-setup';
-import { formatPayrollMoney } from '@/lib/payroll-currency';
-import { splitDraftEarningLinesByScope } from '@/lib/payroll-package-lines';
+import { formatPayrollMoney, resolvePayCurrency } from '@/lib/payroll-currency';
+import { formatPayrollRunFxCaption, payrollAmountForDisplay, payrollLinesForDisplay } from '@/lib/payroll-fx-display';
+import { splitDraftEarningLinesByScope, type FlexiblePayrollLineDraft } from '@/lib/payroll-package-lines';
 import { getNigeriaLgas, getNigeriaStates } from '@/lib/nigeria-locations';
 import { humanizeHttpErrorBody } from '@/lib/http-client-error';
 import { hrisEmployeeProfileHref, hrisEmployeeResourceUrl } from '@/lib/hris-employee-route';
@@ -1399,6 +1400,7 @@ export default function EmployeeProfileClient({
   const [contactsDraft, setContactsDraft] = useState<ContactDetails | null>(null);
   const [payrollEdit, setPayrollEdit] = useState(false);
   const [payrollDraft, setPayrollDraft] = useState<PayrollSummary | null>(null);
+  const [payrollDisplayCurrency, setPayrollDisplayCurrency] = useState<'USD' | 'NGN'>('USD');
   const [payrollFormOptions, setPayrollFormOptions] = useState<ProfileFormOptions | null>(null);
   const [payrollFormOptionsLoading, setPayrollFormOptionsLoading] = useState(false);
   const [medicalEdit, setMedicalEdit] = useState(false);
@@ -1491,6 +1493,10 @@ export default function EmployeeProfileClient({
       clearTimeout(t);
     };
   }, [authReady, employeeId, perms.canViewProfile, role, viewerEmployeeId]);
+
+  useEffect(() => {
+    setPayrollDisplayCurrency('USD');
+  }, [employeeId]);
 
   useEffect(() => {
     if (tabs.length === 0) return;
@@ -1774,9 +1780,26 @@ export default function EmployeeProfileClient({
   const overviewData = overview.data;
   const insightsData = insights.data;
   const auditData = audit.data;
-  const payrollCurrency = profileData?.payrollSummary?.payCurrency || 'NGN';
-  const payrollMoney = (n: number | null | undefined, currency = payrollCurrency) =>
-    typeof n === 'number' ? formatPayrollMoney(n, currency) : '-';
+  const payrollPackageCurrency = resolvePayCurrency({
+    payCurrency: profileData?.payrollSummary?.payCurrency,
+    payrollGroup: profileData?.payrollSummary?.payrollGroup,
+    salaryGrade: profileData?.payrollSummary?.salaryGrade,
+  });
+  const payrollFx = profileData?.payrollSummary?.payrollFx ?? null;
+  const nairaEquivalentActive = payrollPackageCurrency === 'USD'
+    && payrollDisplayCurrency === 'NGN'
+    && Number(payrollFx?.rate) > 0;
+  const payrollCurrency = nairaEquivalentActive ? 'NGN' : payrollPackageCurrency;
+  const payrollMoneyDigits = nairaEquivalentActive || payrollCurrency === 'USD'
+    ? { minimumFractionDigits: 2, maximumFractionDigits: 2 }
+    : undefined;
+  const payrollMoney = (n: number | null | undefined) => {
+    if (typeof n !== 'number') return '-';
+    const amount = payrollAmountForDisplay(n, payrollPackageCurrency, payrollCurrency, payrollFx?.rate);
+    return formatPayrollMoney(amount ?? n, payrollCurrency, payrollMoneyDigits);
+  };
+  const shownPayrollLines = (lines?: FlexiblePayrollLineDraft[]) =>
+    payrollLinesForDisplay(lines || [], payrollPackageCurrency, payrollCurrency, payrollFx?.rate);
 
   if (loading && (profile.status !== 'ready' || !profileData)) {
     return (
@@ -3023,7 +3046,22 @@ export default function EmployeeProfileClient({
                               </>
                             )}
                             <Field label="Deductions" value={payrollMoney(profileData.payrollSummary.deductions, payrollCurrency)} masked={!perms.canViewPayroll} />
-                            <Field label="Pay Currency" value={payrollCurrency} masked={!perms.canViewPayroll} />
+                            {payrollPackageCurrency === 'USD' && perms.canViewPayroll ? (
+                              <div className="rounded-xl border border-slate-200 bg-slate-50/80 p-2.5">
+                                <div className="text-[11px] font-extrabold text-slate-600">Show amounts in</div>
+                                <select
+                                  value={payrollDisplayCurrency}
+                                  onChange={(e) => setPayrollDisplayCurrency(e.target.value === 'NGN' ? 'NGN' : 'USD')}
+                                  className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-sm font-extrabold text-slate-900"
+                                >
+                                  <option value="USD">USD — dollar package</option>
+                                  <option value="NGN">NGN — naira equivalent</option>
+                                </select>
+                                <div className="mt-1 text-[11px] font-semibold text-slate-500">Saved pay currency stays USD.</div>
+                              </div>
+                            ) : (
+                              <Field label="Pay Currency" value={payrollPackageCurrency} masked={!perms.canViewPayroll} />
+                            )}
                             <Field label="Bank Name" value={v(profileData.payrollSummary.bankName)} masked={!perms.canViewPayroll} />
                             <Field label="Account Number" value={v(profileData.payrollSummary.accountNumberMasked)} />
                             <Field label="Pension Provider" value={v(profileData.payrollSummary.pensionProvider)} masked={!perms.canViewPayroll} />
@@ -3040,6 +3078,16 @@ export default function EmployeeProfileClient({
                               }
                             />
                           </div>
+                          {nairaEquivalentActive && payrollFx ? (
+                            <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-xs font-semibold text-emerald-950">
+                              {formatPayrollRunFxCaption(payrollFx)}
+                            </div>
+                          ) : null}
+                          {payrollPackageCurrency === 'USD' && payrollDisplayCurrency === 'NGN' && !nairaEquivalentActive && perms.canViewPayroll ? (
+                            <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs font-semibold text-amber-950">
+                              The CBN rate for this payroll run is not available, so the dollar amounts are still shown.
+                            </div>
+                          ) : null}
                           {perms.canViewPayroll && (profileData.payrollClassification?.isDailyRate || /daily rate|day rate/i.test(profileData.employmentType || '')) ? (
                             <div className="space-y-4">
                               {(() => {
@@ -3051,23 +3099,25 @@ export default function EmployeeProfileClient({
                                     <PayrollLinesEditor
                                       title="Standing monthly package"
                                       description="Fixed meal, site, transport and other amounts that repeat until changed. Weekday days still come from timesheets."
-                                      lines={scoped.standing}
+                                      lines={shownPayrollLines(scoped.standing)}
                                       presets={EARNING_LINE_PRESETS}
                                       onChange={() => undefined}
                                       lineKind="earning"
                                       readOnly
                                       currency={payrollCurrency}
+                                      preciseMoney={nairaEquivalentActive}
                                       scope="standing"
                                     />
                                     <PayrollLinesEditor
                                       title={`This period only${period ? ` — ${period}` : ''}`}
                                       description="Overtime, arrears, night and other variable pay captured for this month. These update payroll for this period only."
-                                      lines={scoped.thisPeriod}
+                                      lines={shownPayrollLines(scoped.thisPeriod)}
                                       presets={PERIOD_EARNING_LINE_PRESETS}
                                       onChange={() => undefined}
                                       lineKind="earning"
                                       readOnly
                                       currency={payrollCurrency}
+                                      preciseMoney={nairaEquivalentActive}
                                       scope="period"
                                       payrollPeriod={period}
                                     />
@@ -3075,12 +3125,13 @@ export default function EmployeeProfileClient({
                                       <PayrollLinesEditor
                                         title="Stopped leftover variable earnings"
                                         description="Left on the package from a previous month. These are not paid until assigned to the current payroll period."
-                                        lines={scoped.leftover}
+                                        lines={shownPayrollLines(scoped.leftover)}
                                         presets={PERIOD_EARNING_LINE_PRESETS}
                                         onChange={() => undefined}
                                         lineKind="earning"
                                         readOnly
                                         currency={payrollCurrency}
+                                      preciseMoney={nairaEquivalentActive}
                                         scope="period"
                                       />
                                     ) : null}
@@ -3091,12 +3142,13 @@ export default function EmployeeProfileClient({
                                 <PayrollLinesEditor
                                   title="Last payroll run — earning lines"
                                   description={`Amounts paid in ${profileData.payrollSummary.payrollRunPeriodLabel || 'the last payroll run'}. Weekday pay comes from timesheets. Variable amounts saved on earning lines are included in the run.`}
-                                  lines={profileData.payrollSummary.payrollRunEarningLines}
+                                  lines={shownPayrollLines(profileData.payrollSummary.payrollRunEarningLines)}
                                   presets={EARNING_LINE_PRESETS}
                                   onChange={() => undefined}
                                   lineKind="earning"
                                   readOnly
                                   currency={payrollCurrency}
+                                      preciseMoney={nairaEquivalentActive}
                                 />
                               ) : (
                                 <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4 text-sm font-semibold text-slate-700">
@@ -3107,24 +3159,26 @@ export default function EmployeeProfileClient({
                                 <PayrollLinesEditor
                                   title="Last payroll run — deduction lines"
                                   description={`Deductions from ${profileData.payrollSummary.payrollRunPeriodLabel || 'the last payroll run'}.`}
-                                  lines={profileData.payrollSummary.payrollRunDeductionLines}
+                                  lines={shownPayrollLines(profileData.payrollSummary.payrollRunDeductionLines)}
                                   presets={DEDUCTION_LINE_PRESETS}
                                   onChange={() => undefined}
                                   lineKind="deduction"
                                   readOnly
                                   currency={payrollCurrency}
+                                      preciseMoney={nairaEquivalentActive}
                                 />
                               ) : null}
                               {profileData.payrollSummary.deductionLines?.length ? (
                                 <PayrollLinesEditor
                                   title="Standing deduction lines"
                                   description="Recurring deductions on this employee (loan, cooperative, union). These stay until removed."
-                                  lines={profileData.payrollSummary.deductionLines}
+                                  lines={shownPayrollLines(profileData.payrollSummary.deductionLines)}
                                   presets={DEDUCTION_LINE_PRESETS}
                                   onChange={() => undefined}
                                   lineKind="deduction"
                                   readOnly
                                   currency={payrollCurrency}
+                                      preciseMoney={nairaEquivalentActive}
                                 />
                               ) : null}
                             </div>
@@ -3138,23 +3192,25 @@ export default function EmployeeProfileClient({
                                     <PayrollLinesEditor
                                       title="Standing monthly package"
                                       description="Repeats every payroll until changed. These lines drive the regular monthly calculation."
-                                      lines={scoped.standing}
+                                      lines={shownPayrollLines(scoped.standing)}
                                       presets={EARNING_LINE_PRESETS}
                                       onChange={() => undefined}
                                       lineKind="earning"
                                       readOnly
                                       currency={payrollCurrency}
+                                      preciseMoney={nairaEquivalentActive}
                                       scope="standing"
                                     />
                                     <PayrollLinesEditor
                                       title={`This period only${period ? ` — ${period}` : ''}`}
                                       description="Overtime, arrears and other variable pay captured for this month only. They will not roll into next month."
-                                      lines={scoped.thisPeriod}
+                                      lines={shownPayrollLines(scoped.thisPeriod)}
                                       presets={PERIOD_EARNING_LINE_PRESETS}
                                       onChange={() => undefined}
                                       lineKind="earning"
                                       readOnly
                                       currency={payrollCurrency}
+                                      preciseMoney={nairaEquivalentActive}
                                       scope="period"
                                       payrollPeriod={period}
                                     />
@@ -3162,12 +3218,13 @@ export default function EmployeeProfileClient({
                                       <PayrollLinesEditor
                                         title="Stopped leftover variable earnings"
                                         description="Left on the package from a previous month. These are not paid until assigned to the current payroll period."
-                                        lines={scoped.leftover}
+                                        lines={shownPayrollLines(scoped.leftover)}
                                         presets={PERIOD_EARNING_LINE_PRESETS}
                                         onChange={() => undefined}
                                         lineKind="earning"
                                         readOnly
                                         currency={payrollCurrency}
+                                      preciseMoney={nairaEquivalentActive}
                                         scope="period"
                                       />
                                     ) : null}
@@ -3178,23 +3235,25 @@ export default function EmployeeProfileClient({
                                 <PayrollLinesEditor
                                   title="Legacy Imported Lines (not used for payroll)"
                                   description="Historical Sage payslip snapshot — kept for reference only."
-                                  lines={profileData.payrollSummary.legacyEarningLines}
+                                  lines={shownPayrollLines(profileData.payrollSummary.legacyEarningLines)}
                                   presets={EARNING_LINE_PRESETS}
                                   onChange={() => undefined}
                                   lineKind="earning"
                                   readOnly
                                   currency={payrollCurrency}
+                                      preciseMoney={nairaEquivalentActive}
                                 />
                               ) : null}
                               <PayrollLinesEditor
                                 title="Deduction Lines"
                                 description="Configured deductions for this employee."
-                                lines={profileData.payrollSummary.deductionLines || []}
+                                lines={shownPayrollLines(profileData.payrollSummary.deductionLines)}
                                 presets={DEDUCTION_LINE_PRESETS}
                                 onChange={() => undefined}
                                 lineKind="deduction"
                                 readOnly
                                 currency={payrollCurrency}
+                                      preciseMoney={nairaEquivalentActive}
                               />
                             </div>
                           ) : null}
@@ -3218,6 +3277,10 @@ export default function EmployeeProfileClient({
                             timesheetWages={Boolean(profileData.payrollClassification?.isDailyRate)}
                             assignLabel="Employee assigned to payroll run"
                             payrollPeriod={profileData.payrollSummary.activePayrollPeriod || ''}
+                            packageCurrency={payrollPackageCurrency}
+                            displayCurrency={payrollDisplayCurrency}
+                            onDisplayCurrencyChange={setPayrollDisplayCurrency}
+                            payrollFx={payrollFx}
                           />
                         )
                       ) : null}

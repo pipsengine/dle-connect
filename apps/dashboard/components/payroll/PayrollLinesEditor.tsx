@@ -1,5 +1,6 @@
 'use client';
 
+import { useEffect, useState } from 'react';
 import { Plus, Trash2 } from 'lucide-react';
 import {
   DEDUCTION_LINE_PRESETS,
@@ -20,6 +21,31 @@ const frequencyLabel = (frequency: PayrollLineFrequency) => {
   return 'Monthly';
 };
 
+function LineAmountInput({ value, onCommit }: { value: string; onCommit: (next: string) => void }) {
+  const [text, setText] = useState(value);
+  const [focused, setFocused] = useState(false);
+  useEffect(() => {
+    if (!focused) setText(value);
+  }, [focused, value]);
+  return (
+    <input
+      type="number"
+      min="0"
+      value={focused ? text : value}
+      onFocus={() => {
+        setText(value);
+        setFocused(true);
+      }}
+      onChange={(e) => {
+        setText(e.target.value);
+        onCommit(e.target.value);
+      }}
+      onBlur={() => setFocused(false)}
+      className="w-full rounded-lg border border-slate-200 px-2 py-1.5 text-xs font-semibold"
+    />
+  );
+}
+
 export default function PayrollLinesEditor({
   title,
   description,
@@ -31,6 +57,7 @@ export default function PayrollLinesEditor({
   currency = 'NGN',
   scope = 'standing',
   payrollPeriod,
+  preciseMoney = false,
 }: {
   title: string;
   description: string;
@@ -42,8 +69,13 @@ export default function PayrollLinesEditor({
   currency?: string;
   scope?: 'standing' | 'period';
   payrollPeriod?: string;
+  preciseMoney?: boolean;
 }) {
-  const formatMoney = (value: number) => formatPayrollMoney(value, currency);
+  const moneyDigits = preciseMoney || String(currency).toUpperCase() === 'USD'
+    ? { minimumFractionDigits: 2, maximumFractionDigits: 2 }
+    : undefined;
+  const formatMoney = (value: number) => formatPayrollMoney(value, currency, moneyDigits);
+  const amountSymbol = String(currency).toUpperCase() === 'USD' ? '$' : '₦';
   const updateLine = (id: string, patch: Partial<FlexiblePayrollLineDraft>) => {
     onChange(lines.map((line) => {
       if (line.id !== id) return line;
@@ -123,7 +155,7 @@ export default function PayrollLinesEditor({
               <tr>
                 <th className="px-3 py-2 text-[11px] font-extrabold text-slate-600">Name</th>
                 <th className="px-3 py-2 text-[11px] font-extrabold text-slate-600">Code</th>
-                <th className="px-3 py-2 text-[11px] font-extrabold text-slate-600">Amount (₦)</th>
+                <th className="px-3 py-2 text-[11px] font-extrabold text-slate-600">Amount ({amountSymbol})</th>
                 <th className="px-3 py-2 text-[11px] font-extrabold text-slate-600">Frequency</th>
                 {lineKind === 'earning' ? <th className="px-3 py-2 text-[11px] font-extrabold text-slate-600">Taxable</th> : null}
                 <th className="px-3 py-2 text-[11px] font-extrabold text-slate-600">Monthly eq.</th>
@@ -157,13 +189,10 @@ export default function PayrollLinesEditor({
                       )}
                     </td>
                     <td className="px-3 py-2 text-xs font-semibold text-slate-800">
-                      {readOnly ? amount.toLocaleString() : (
-                        <input
-                          type="number"
-                          min="0"
+                      {readOnly ? amount.toLocaleString(undefined, moneyDigits) : (
+                        <LineAmountInput
                           value={line.amount}
-                          onChange={(e) => updateLine(line.id, { amount: e.target.value })}
-                          className="w-full rounded-lg border border-slate-200 px-2 py-1.5 text-xs font-semibold"
+                          onCommit={(next) => updateLine(line.id, { amount: next })}
                         />
                       )}
                     </td>

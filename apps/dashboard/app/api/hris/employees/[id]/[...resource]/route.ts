@@ -29,6 +29,7 @@ import { resolveHrisEmployeeRoute } from '@/lib/hris-employee-route';
 import { AUTH_COOKIE, verifySessionToken } from '@/lib/auth/session';
 import { composePersonDisplayName } from '@/lib/person-display-name';
 import { resolveActivePayrollPeriod } from '@/lib/payroll-period-store';
+import { payrollFxForEmployeePackage } from '@/lib/payroll-run-fx';
 import {
   resolveEmployeeProfileAccess,
   type EmployeeProfilePermissions,
@@ -2732,6 +2733,26 @@ const ensureRecordFromDb = async (employeeId: string) => {
   return record;
 };
 
+const attachPayrollRunFx = async (rec: EmployeeRecord) => {
+  try {
+    const period = await resolveActivePayrollPeriod().catch(() => rec.payrollSummary.activePayrollPeriod || '');
+    const payrollFx = await payrollFxForEmployeePackage({
+      payCurrency: rec.payrollSummary.payCurrency,
+      payrollGroup: rec.payrollSummary.payrollGroup,
+      salaryGrade: rec.payrollSummary.salaryGrade,
+      period,
+    });
+    rec.payrollSummary = {
+      ...rec.payrollSummary,
+      activePayrollPeriod: period || rec.payrollSummary.activePayrollPeriod,
+      payrollFx,
+    };
+  } catch (error) {
+    console.warn('[payroll-fx] profile rate skipped', error);
+  }
+  return rec;
+};
+
 const attachLatestPayrollRunToRecord = async (rec: EmployeeRecord) => {
   const code = rec.profile.employeeId;
   const dailyRate = Boolean(rec.payrollClassification?.isDailyRate)
@@ -2950,6 +2971,7 @@ export async function GET(request: Request, ctx: { params: Promise<{ id: string;
 
   if (root === 'profile' || root === 'payroll-summary') {
     await attachLatestPayrollRunToRecord(rec);
+    if (perms.canViewPayroll) await attachPayrollRunFx(rec);
   }
 
   if (root === 'profile') return jsonOk(sanitizePayloadForRole(rec, perms));
@@ -5645,6 +5667,7 @@ async function patchEmployeeRecord(request: Request, ctx: { params: Promise<{ id
     invalidatePayrollEmployeeOptionsCache();
     invalidatePayrollCalculationCache();
     if (dailyRateSave) await attachLatestPayrollRunToRecord(rec);
+    if (perms.canViewPayroll) await attachPayrollRunFx(rec);
     return jsonOk(sanitizePayrollForRole(rec.payrollSummary, perms));
   }
 

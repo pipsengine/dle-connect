@@ -13,6 +13,7 @@ import {
 } from '@/lib/payroll-package-lines';
 import { isHrisConfiguredPayrollLine } from '@/lib/sage-payroll-line-parser';
 import { resolvePayCurrency } from '@/lib/payroll-currency';
+import type { PayrollRunFx } from '@/lib/payroll-fx-display';
 import type { DleEmployeeDirectoryRow } from '@/lib/dle-enterprise-db';
 import { isDailyRatePayrollEmployee, isPeriodVariableDayRateEarningLine } from '@/lib/payroll-employee-classification';
 import type { PayrollSetupDraft } from '@/app/(hris)/hris/employees/add-new-employee/PayrollSetupStep';
@@ -55,6 +56,8 @@ export type ProfilePayrollSummary = {
   monthlyPackageGross?: number | null;
   additionalEmployeePensionMonthly?: number | null;
   annualRentRelief?: number | null;
+  /** USD→NGN rate for the active payroll run. Present on dollar packages so Naira view can convert earnings. */
+  payrollFx?: PayrollRunFx | null;
 };
 
 export { buildStoredPayrollLinesFromDrafts };
