@@ -9,6 +9,7 @@ import {
 import { resolvePayCurrency } from '@/lib/payroll-currency';
 import { withNormalizedBankCodes } from '@/lib/payroll-bank-constants';
 import { resolveNigeriaPersonalLocation } from '@/lib/nigeria-locations';
+import { composePersonDisplayName, resolvePersonNameParts } from '@/lib/person-display-name';
 import { withPreservedThisPeriodPackageLines } from '@/lib/payroll-package-lines';
 
 const DEFAULT_IT_NYSC_STIPEND_GRADE = 'IT_NYSC_REM - IT_NYSC';
