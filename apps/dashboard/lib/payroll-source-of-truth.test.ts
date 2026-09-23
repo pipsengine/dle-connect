@@ -249,6 +249,49 @@ assert.equal(
   false,
 );
 
+const dayRateWithSavedVariableLines = employee({
+  employeeCode: 'C0100',
+  employeeId: 'C0100',
+  employmentType: 'Daily Rate',
+  ratePerDay: 10000,
+  hoursPerDay: 8,
+  sagePayrollEarnings: [
+    { code: 'JCWEEKDAY', name: 'WEEKDAY EARNING', amount: 198000, runFrequency: 'monthly', sourceAmount: 198000, includeInMonthlyPayroll: true },
+    { code: 'MEAL', name: 'Meal Allowance', amount: 150000, runFrequency: 'monthly', sourceAmount: 150000, includeInMonthlyPayroll: true },
+    { code: 'OVERTIME', name: 'OVERTIME', amount: 12000, runFrequency: 'one-off', sourceAmount: 12000, includeInMonthlyPayroll: false, payrollPeriod: '2026-09' },
+    { code: 'NIGHTALL', name: 'NIGHT ALLOWANCE', amount: 4000, runFrequency: 'one-off', sourceAmount: 4000, includeInMonthlyPayroll: false, payrollPeriod: '2026-09' },
+    { code: 'SATURDAY_OVT', name: 'SATURDAY OVERTIME', amount: 50000 },
+  ],
+});
+const septemberUsesSavedVariableLines = mergeTimesheetDayRateEarnings(dayRateWithSavedVariableLines, {
+  ratePerDay: 10000,
+  daysWorked: 10,
+  period: '2026-09',
+});
+assert.equal(septemberUsesSavedVariableLines.paidEarningLines.find((line) => line.code === 'JCWEEKDAY')?.amount, 45000, 'saved weekday line must not replace timesheet days');
+assert.equal(septemberUsesSavedVariableLines.paidEarningLines.find((line) => line.code === 'JCWEEKDAY_NT')?.amount, 55000, 'saved weekday line must not replace the non-taxable weekday split');
+assert.equal(septemberUsesSavedVariableLines.paidEarningLines.find((line) => line.code === 'MEAL')?.amount, 150000, 'saved meal earning line replaces the automatic daily meal');
+assert.equal(septemberUsesSavedVariableLines.paidEarningLines.find((line) => line.code === 'OVERTIME')?.amount, 12000, 'this-period overtime earning line must hit daily-rate payroll');
+assert.equal(septemberUsesSavedVariableLines.paidEarningLines.find((line) => line.code === 'NIGHTALL')?.amount, 4000, 'this-period night allowance earning line must hit daily-rate payroll');
+assert.equal(septemberUsesSavedVariableLines.paidEarningLines.some((line) => line.code === 'SATURDAY_OVT'), false, 'unstamped Sage overtime must not pay');
+assert.equal(septemberUsesSavedVariableLines.grossPay, 266000);
+
+const permanentVariable = employee({
+  employeeCode: 'P0100',
+  employeeId: 'P0100',
+  employmentType: 'Permanent',
+  salaryGrade: 'MGTCOLA',
+  periodSalary: 518255,
+  sagePayrollEarnings: [
+    { code: 'MGT1COLA_BASIC', name: 'BASIC SALARY', amount: 213158.87, runFrequency: 'monthly', sourceAmount: 213158.87, includeInMonthlyPayroll: true },
+    { code: 'OVERTIME', name: 'OVERTIME', amount: 18000, runFrequency: 'one-off', sourceAmount: 18000, includeInMonthlyPayroll: false, payrollPeriod: '2026-09' },
+  ],
+});
+const permanentVariablePay = calculatePayrollEarnings(permanentVariable, { useHrisPackageLines: true, period: '2026-09' });
+assert.equal(permanentVariablePay.paidEarningLines.find((line) => line.code === 'OVERTIME')?.amount, 18000, 'permanent this-period overtime earning line must hit payroll');
+const permanentVariableNext = calculatePayrollEarnings(permanentVariable, { useHrisPackageLines: true, period: '2026-10' });
+assert.equal(permanentVariableNext.paidEarningLines.some((line) => line.code === 'OVERTIME'), false, 'permanent overtime earning line must not roll into the next period');
+
 const hours = new Map<string, { daysWorked: number; bookedHours: number }>([
   ['C0100', { daysWorked: 10, bookedHours: 80 }],
 ]);

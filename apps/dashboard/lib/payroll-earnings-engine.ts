@@ -23,6 +23,7 @@ import {
   resolvePreferredHrisDataFile,
 } from '@/lib/hris-data-paths';
 import { hasFullHrisPackageSetup, hasLegacyStructuralPackageLines, packageLinePaysInPeriod, payrollLineMonthlyAmount, type StoredPayrollPackageLine } from '@/lib/payroll-package-lines';
+import { isHrisConfiguredPayrollLine } from '@/lib/sage-payroll-line-parser';
 
 export type PayrollEarningProfileId =
   | 'junior-permanent'
@@ -803,7 +804,12 @@ const configuredPackageEarningLines = (
   const includeOneOff = options?.includeOneOff !== false;
   const lines: PayrollEarningLine[] = [];
   for (const line of employee.sagePayrollEarnings || []) {
-    if (isDailyRatePayrollEmployee(employee) && isPeriodVariableDayRateEarningLine(line)) continue;
+    if (isDailyRatePayrollEmployee(employee)) {
+      const code = compact(line.code).toUpperCase();
+      // Weekday days × rate stay on the timesheet. Saved earning lines update the variable amounts.
+      if (TIMESHEET_DRIVEN_EARNING_CODES.has(code)) continue;
+      if (isPeriodVariableDayRateEarningLine(line) && !isHrisConfiguredPayrollLine(line)) continue;
+    }
     if (isStoredLeaveAllowancePackageLine(line)) continue;
     if (!packageLinePaysInPeriod(line, options?.period)) continue;
     const stored = line as StoredPayrollPackageLine;

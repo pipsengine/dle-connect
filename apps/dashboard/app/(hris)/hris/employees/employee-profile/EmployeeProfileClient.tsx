@@ -3042,10 +3042,55 @@ export default function EmployeeProfileClient({
                           </div>
                           {perms.canViewPayroll && (profileData.payrollClassification?.isDailyRate || /daily rate|day rate/i.test(profileData.employmentType || '')) ? (
                             <div className="space-y-4">
+                              {(() => {
+                                const period = profileData.payrollSummary.activePayrollPeriod || '';
+                                const scoped = splitDraftEarningLinesByScope(profileData.payrollSummary.earningLines || [], period);
+                                if (!scoped.standing.length && !scoped.thisPeriod.length && !scoped.leftover.length) return null;
+                                return (
+                                  <>
+                                    <PayrollLinesEditor
+                                      title="Standing monthly package"
+                                      description="Fixed meal, site, transport and other amounts that repeat until changed. Weekday days still come from timesheets."
+                                      lines={scoped.standing}
+                                      presets={EARNING_LINE_PRESETS}
+                                      onChange={() => undefined}
+                                      lineKind="earning"
+                                      readOnly
+                                      currency={payrollCurrency}
+                                      scope="standing"
+                                    />
+                                    <PayrollLinesEditor
+                                      title={`This period only${period ? ` — ${period}` : ''}`}
+                                      description="Overtime, arrears, night and other variable pay captured for this month. These update payroll for this period only."
+                                      lines={scoped.thisPeriod}
+                                      presets={PERIOD_EARNING_LINE_PRESETS}
+                                      onChange={() => undefined}
+                                      lineKind="earning"
+                                      readOnly
+                                      currency={payrollCurrency}
+                                      scope="period"
+                                      payrollPeriod={period}
+                                    />
+                                    {scoped.leftover.length ? (
+                                      <PayrollLinesEditor
+                                        title="Stopped leftover variable earnings"
+                                        description="Left on the package from a previous month. These are not paid until assigned to the current payroll period."
+                                        lines={scoped.leftover}
+                                        presets={PERIOD_EARNING_LINE_PRESETS}
+                                        onChange={() => undefined}
+                                        lineKind="earning"
+                                        readOnly
+                                        currency={payrollCurrency}
+                                        scope="period"
+                                      />
+                                    ) : null}
+                                  </>
+                                );
+                              })()}
                               {profileData.payrollSummary.payrollRunEarningLines?.length ? (
                                 <PayrollLinesEditor
                                   title="Last payroll run — earning lines"
-                                  description={`Amounts paid in ${profileData.payrollSummary.payrollRunPeriodLabel || 'the last payroll run'}. These change every month from timesheets — they are not a standing package.`}
+                                  description={`Amounts paid in ${profileData.payrollSummary.payrollRunPeriodLabel || 'the last payroll run'}. Weekday pay comes from timesheets. Variable amounts saved on earning lines are included in the run.`}
                                   lines={profileData.payrollSummary.payrollRunEarningLines}
                                   presets={EARNING_LINE_PRESETS}
                                   onChange={() => undefined}
@@ -3055,7 +3100,7 @@ export default function EmployeeProfileClient({
                                 />
                               ) : (
                                 <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4 text-sm font-semibold text-slate-700">
-                                  Weekday pay, overtime, meal and refunds appear here after payroll is run. They are calculated from approved timesheets × daily rate, not stored as a monthly package.
+                                  Weekday pay appears here after payroll is run, from approved timesheets × daily rate. Save meal, overtime and other variable amounts on earning lines to include them in the run.
                                 </div>
                               )}
                               {profileData.payrollSummary.payrollRunDeductionLines?.length ? (

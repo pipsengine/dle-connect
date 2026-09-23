@@ -316,7 +316,7 @@ export default function PayrollSetupStep({
         <div className="text-sm font-extrabold text-blue-900">{isDailyRate ? 'Daily-rate payroll' : 'Flexible payroll package'}</div>
         <div className="mt-1 text-xs font-semibold text-blue-800">
           {isDailyRate
-            ? 'Weekday pay, overtime, meal and refunds come from the payroll run (timesheets × daily rate). Do not store last month’s amounts here.'
+            ? 'Weekday pay still comes from approved timesheets × daily rate. Meal, overtime, night, site and other amounts you save on earning lines update this payroll for the period you assign.'
             : 'Standing lines repeat every month. Overtime, arrears and other this-period items pay only in the month you capture them — they do not roll forward.'}
         </div>
         {!isDailyRate && displayMonthlyGross > 0 ? (
@@ -385,11 +385,12 @@ export default function PayrollSetupStep({
         </div>
       ) : null}
 
-      {isDailyRate ? null : (
-        <>
+      <>
           <PayrollLinesEditor
             title="Standing monthly package"
-            description="Repeats every payroll until you change it. Examples: Basic, lumpsum, meal, housing, site, weekly transport."
+            description={isDailyRate
+              ? 'Repeats every payroll until you change it. Use this for a fixed meal, site or transport amount. Weekday days stay on the timesheet.'
+              : 'Repeats every payroll until you change it. Examples: Basic, lumpsum, meal, housing, site, weekly transport.'}
             lines={standing}
             presets={EARNING_LINE_PRESETS}
             onChange={(nextStanding) => replaceEarningScope(nextStanding, thisPeriod)}
@@ -437,8 +438,7 @@ export default function PayrollSetupStep({
               </div>
             </div>
           ) : null}
-        </>
-      )}
+      </>
 
       <PayrollLinesEditor
         title="Deduction Lines"

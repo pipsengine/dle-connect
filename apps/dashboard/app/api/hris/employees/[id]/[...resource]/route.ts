@@ -10,7 +10,7 @@ import type { DleEmployeeDirectoryRow } from '@/lib/dle-enterprise-db';
 import { readDirectoryEmployees, invalidatePayrollEmployeeCache } from '@/lib/payroll-employee-source';
 import { invalidateHrisEmployeeCaches } from '@/lib/hris-employee-cache';
 import { ensureEmployeeLeaveFromHris } from '@/lib/hris-leave-read';
-import { contractPayrollClassification, isDailyRatePayrollEmployee, isPeriodVariableDayRateEarningLine, type ContractPayrollClassification } from '@/lib/payroll-employee-classification';
+import { contractPayrollClassification, isDailyRatePayrollEmployee, type ContractPayrollClassification } from '@/lib/payroll-employee-classification';
 import { readEmployeeProfileExtensions, writeEmployeeProfileExtensions } from '@/lib/employee-profile-extensions-store';
 import {
   applyLatestPayrollRunToSummary,
@@ -5575,7 +5575,7 @@ async function patchEmployeeRecord(request: Request, ctx: { params: Promise<{ id
       ((earningLinesProvided || editorEarnings.length)
         ? mergePayrollEarningLinesForSave(directoryRow?.sagePayrollEarnings, editorEarnings)
         : editorEarnings
-      ).filter((line) => !dailyRateSave || !isPeriodVariableDayRateEarningLine(line)),
+      ),
       activePeriod,
     );
     const storedDeductions = buildStoredPayrollLinesFromDrafts(next.deductionLines || [], false);
@@ -5599,7 +5599,6 @@ async function patchEmployeeRecord(request: Request, ctx: { params: Promise<{ id
       next.monthlyPackageGross = preservedPackageGross;
     }
     if (dailyRateSave) {
-      next.earningLines = (next.earningLines || []).filter((line) => !isPeriodVariableDayRateEarningLine(line));
       next.legacyEarningLines = undefined;
     }
     next.earningLines = next.earningLines || [];

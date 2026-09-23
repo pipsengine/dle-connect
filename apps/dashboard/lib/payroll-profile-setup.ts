@@ -73,9 +73,10 @@ export const hrisEarningLinesFromEmployeeRow = (
   payrollPeriod?: string | null,
 ): FlexiblePayrollLineDraft[] => {
   const period = clientSafePayrollPeriod(payrollPeriod);
-  const standing = isDailyRatePayrollEmployee(row)
-    ? effectiveHrisPayrollLines(row.sagePayrollEarnings).filter((line) => !isPeriodVariableDayRateEarningLine(line))
-    : effectiveHrisPayrollLines(row.sagePayrollEarnings);
+  const sourceLines = isDailyRatePayrollEmployee(row)
+    ? (row.sagePayrollEarnings || []).filter((line) => isHrisConfiguredPayrollLine(line) || !isPeriodVariableDayRateEarningLine(line))
+    : row.sagePayrollEarnings;
+  const standing = effectiveHrisPayrollLines(sourceLines);
   const leftover = leftoverStoredPeriodOnlyLines(row.sagePayrollEarnings as StoredPayrollPackageLine[], period);
   return storedLinesToDraft([...standing, ...leftover]);
 };
