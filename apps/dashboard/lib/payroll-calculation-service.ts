@@ -1,6 +1,6 @@
 import type { DleEmployeeDirectoryRow } from '@/lib/dle-enterprise-db';
 import { applyPayrollEmployeeOptions } from '@/lib/payroll-employee-options-store';
-import { payrollDataSourceInfo, readDirectoryEmployees, readPayrollEmployees } from '@/lib/payroll-employee-source';
+import { invalidatePayrollEmployeeCache, payrollDataSourceInfo, readDirectoryEmployees, readPayrollEmployees } from '@/lib/payroll-employee-source';
 import { mergeTimesheetDayRateEarnings, calculatePayrollEarnings, resolvePayrollEarningProfile } from '@/lib/payroll-earnings-engine';
 import { isNonPermanentPayrollEmployee, payrollActiveEmployees } from '@/lib/payroll-employee-classification';
 import { registerPayrollAdjustmentsChangeHandler, adjustmentsFileMtime } from '@/lib/payroll-period-earning-adjustments-store';
@@ -21,7 +21,7 @@ import { normalizePayrollMatchKey } from '@/lib/sage-people-payroll-store';
 import { buildTimesheetHoursMapForPayrollPeriod } from '@/lib/timesheet-entry-store';
 import { dayrateBookedHours } from '@/lib/dayrate-schedule-xlsx';
 import { findDayrateScheduleOverrideRow, readAppliedDayrateScheduleOverride } from '@/lib/dayrate-schedule-override-read';
-import { explicitPayrollDayRate, payrollExcelAmountOverlayApplies } from '@/lib/payroll-source-of-truth';
+import { explicitPayrollDayRate, isPayrollProfileTimesheetSourcePeriod, payrollExcelAmountOverlayApplies } from '@/lib/payroll-source-of-truth';
 import { normalizeBankSortCode, withNormalizedBankCodes } from '@/lib/payroll-bank-constants';
 import { isDleUsdPayrollEmployee } from '@/lib/payroll-bank-schedule-packs';
 import { resolvePayCurrency } from '@/lib/payroll-currency';
@@ -812,7 +812,9 @@ export const calculatePayrollForPeriod = async (
     payrollCalculationCache.set(requestedPeriod, { key: cacheKey, expiresAt: 0, inFlight });
     full = await inFlight;
   }
-  void persistAppliedPayrollSchedulesToHris(requestedPeriod);
+  if (payrollExcelAmountOverlayApplies(requestedPeriod)) {
+    void persistAppliedPayrollSchedulesToHris(requestedPeriod);
+  }
   if (options?.pack) return filterPayrollCalculationByPack(full, options.pack, options.company);
   return full;
 };
@@ -828,6 +830,9 @@ export const invalidatePayrollCalculationCache = (period?: string) => {
 registerPayrollAdjustmentsChangeHandler((period) => invalidatePayrollCalculationCache(period));
 
 const computePayrollForPeriod = async (requestedPeriod: string): Promise<PayrollCalculationResult> => {
+  if (isPayrollProfileTimesheetSourcePeriod(requestedPeriod)) {
+    invalidatePayrollEmployeeCache();
+  }
   const toleranceMode = payrollToleranceActive(requestedPeriod);
   const enterpriseSourceActive = isEnterprisePayrollPeriod(requestedPeriod);
   // The applied dayrate upload decides the month's wages, so it is loaded from SQL
