@@ -234,6 +234,7 @@ const buildSalaryTableColumns = (records: PayrollRecord[]): SalaryTableColumn[] 
 type PayrollPayload = {
   generatedAt: string;
   source: string;
+  dataSource?: { warning?: string | null };
   period?: string;
   periodLabel: string;
   toleranceMode?: boolean;
@@ -327,15 +328,51 @@ export default function EmployeeSalarySetupClient({ initialNow }: { initialNow: 
   const [savingNhf, setSavingNhf] = useState(false);
   const [showFilters, setShowFilters] = useState(true);
 
+  const readPayrollPayload = async (res: Response) => {
+    const text = await res.text();
+    const trimmed = text.trimStart();
+    if (trimmed.startsWith('<')) {
+      throw new Error(
+        res.status === 401
+          ? 'Your sign-in expired. Sign in again, then open Pay Setup.'
+          : `Payroll data did not load (HTTP ${res.status}). The server returned an error page instead of payroll data.`,
+      );
+    }
+    let json: ApiResponse<PayrollPayload>;
+    try {
+      json = JSON.parse(text) as ApiResponse<PayrollPayload>;
+    } catch {
+      throw new Error(`Payroll data did not load (HTTP ${res.status}).`);
+    }
+    if (!res.ok || json.status !== 'success' || !json.data) {
+      throw new Error(json.error || `Employee salary setup request failed (${res.status})`);
+    }
+    return json.data;
+  };
+
   const load = async () => {
     setLoading(true);
     setError('');
+    const requestPayroll = () => fetch('/api/hris/payroll-management', {
+      headers: { 'x-hris-role': role },
+      cache: 'no-store',
+      credentials: 'same-origin',
+    });
     try {
-      const res = await fetch('/api/hris/payroll-management', { headers: { 'x-hris-role': role }, cache: 'no-store' });
-      const json = (await res.json()) as ApiResponse<PayrollPayload>;
-      if (!res.ok || json.status !== 'success' || !json.data) throw new Error(json.error || `Employee salary setup request failed (${res.status})`);
-      const data = json.data;
+      let res = await requestPayroll();
+      let data: PayrollPayload;
+      try {
+        data = await readPayrollPayload(res);
+      } catch (firstError) {
+        const retryable = res.status === 500 || res.status === 502 || res.status === 504
+          || (firstError instanceof Error && firstError.message.includes('error page'));
+        if (!retryable) throw firstError;
+        res = await requestPayroll();
+        data = await readPayrollPayload(res);
+      }
       setPayload(data);
+      const warning = data.dataSource?.warning;
+      if (warning && !(data.summary?.totalEmployees > 0)) setError(warning);
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Unable to load employee salary setup');
     } finally {
@@ -539,7 +576,11 @@ export default function EmployeeSalarySetupClient({ initialNow }: { initialNow: 
           comment: nhfApplicable ? 'Enabled NHF from employee salary setup' : 'Disabled NHF from employee salary setup',
         }),
       });
-      const json = (await res.json()) as ApiResponse<unknown>;
+      const raw = await res.text();
+      if (raw.trimStart().startsWith('<')) {
+        throw new Error(`Unable to save NHF option (HTTP ${res.status}). The server returned an error page.`);
+      }
+      const json = JSON.parse(raw) as ApiResponse<unknown>;
       if (!res.ok || json.status !== 'success') throw new Error(json.error || 'Unable to save NHF option');
       setToast(nhfApplicable ? 'NHF enabled for selected employee.' : 'NHF disabled for selected employee.');
       await load();
