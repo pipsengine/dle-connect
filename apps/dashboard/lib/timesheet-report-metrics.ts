@@ -2,8 +2,11 @@
  * Timesheet report figures used by the Excel export.
  * Booked hours are already net of the unpaid break — do not subtract it again.
  */
-import { isDayRateTimesheetEmployeeCode, weekdayOvertimeHoursFromLine } from '@/lib/timesheet-entry-shared';
-import { clockTimeToMinutes } from '@/lib/timesheet-entry-shared';
+import {
+  clockTimeToMinutes,
+  isDayRateTimesheetEmployeeCode,
+  weekdayOvertimeHoursFromLine,
+} from '@/lib/timesheet-entry-shared';
 
 /** Flat 5% WHT / PAYE for C-code daily-rate contract labour. Permanent staff are not taxed here. */
 export const TIMESHEET_CONTRACT_WHT_RATE = 0.05;
@@ -170,7 +173,7 @@ export const timesheetExportControlTotals = (rows: TimesheetExportMeasureRow[]):
     totalHours: sumHours(rows, (row) => row.totalHours),
     labourCostNgn: sumMoney(rows, (row) => row.labourCostNgn),
     whtNgn: sumMoney(rows, (row) => row.whtNgn),
-    netNgn: sumMoney(rows, (row) => row.netNgn),
+    netNgn: sumMoney(rows, (row) => (row.netNgn == null ? Number(row.labourCostNgn || 0) - Number(row.whtNgn || 0) : row.netNgn)),
   };
 };
 

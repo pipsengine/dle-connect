@@ -1,7 +1,8 @@
 import { calculateContractDayRateEarnings } from '@/lib/payroll-earnings-engine';
 import { NIGHT_INCONVENIENCE_ALLOWANCE_AMOUNT } from '@/lib/timesheet-entry-shared';
 import { resolveTimesheetShift, timesheetDayRulesForDate } from '@/lib/timesheet-entry-shared';
-import { canonicalTimesheetEmployeeKey, normalizePaidWorkHours } from '@/lib/timesheet-entry-store';
+import { canonicalTimesheetEmployeeKey } from '@/lib/timesheet-entry-store';
+import { bookedTimesheetHours } from '@/lib/timesheet-report-metrics';
 import {
   type PayrollAttendanceSheetRow,
 } from '@/lib/timesheet-payroll-attendance-sheet-shared';
@@ -153,12 +154,17 @@ export const buildPayrollAttendanceSheet = (input: {
     const dayRules = timesheetDayRulesForDate(date, holidays);
     const night = resolveTimesheetShift(row.shiftLabel).kind === 'Night';
     const paidLeave = isPaidLeaveRow(row);
+    // Prefer line-level usedHours / attendance when present. Do not re-deduct the unpaid break from booked hours.
+    const attendanceHours = bookedTimesheetHours(Number(row.attendanceHours || 0));
+    const usedHours = bookedTimesheetHours(Number(row.usedHours || 0));
+    const productiveHours = usedHours > 0
+      ? usedHours
+      : bookedTimesheetHours(Number(row.productiveHours || 0));
     const workedHours = Math.max(
-      normalizePaidWorkHours(Number(row.attendanceHours || 0)),
-      normalizePaidWorkHours(Number(row.totalHours || 0)),
-      normalizePaidWorkHours(Number(row.usedHours || row.productiveHours || 0)),
+      attendanceHours,
+      bookedTimesheetHours(Number(row.totalHours || 0)),
+      productiveHours,
     );
-    const productiveHours = normalizePaidWorkHours(Number(row.usedHours || row.productiveHours || 0));
     const payable = row.dayWorked === 1
       || paidLeave
       || workedHours > 0

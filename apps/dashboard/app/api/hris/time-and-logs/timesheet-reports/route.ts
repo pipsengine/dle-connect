@@ -6,7 +6,6 @@ import {
   canonicalTimesheetEmployeeKey,
   isPayrollPayableWorkDay,
   isTimesheetPayrollReadyStatus,
-  normalizePaidWorkHours,
   normalizeTimesheetStatus,
   readProjects,
   readTimesheetData,
@@ -20,6 +19,12 @@ import { buildPayrollAttendanceSheet } from '@/lib/timesheet-payroll-attendance-
 import { buildCCodeProjectFinanceCosts, type ProjectFinanceCostResult } from '@/lib/project-finance-cost-service';
 import { normalizePayrollMatchKey } from '@/lib/sage-people-payroll-store';
 import { getPayrollPublicHolidayDates } from '@/lib/nigeria-public-holidays';
+import {
+  bookedTimesheetHours,
+  lineOvertimeHours,
+  prorateBookedHours,
+  resolveTimesheetLabourRateNgn,
+} from '@/lib/timesheet-report-metrics';
 
 export const maxDuration = 120;
 
@@ -306,25 +311,45 @@ export async function GET(request: Request) {
       const approvalComments = history.map((event) => event.comment).filter(Boolean).join(' | ');
 
       for (const line of linesByHeaderId.get(header.id) || []) {
-        const employee = employeeByCode.get(lower(line.employeeNo)) || employeeByCode.get(lower(line.employeeId));
+        const employeeKey = canonicalTimesheetEmployeeKey(line);
+        const employee = employeesByKey.get(employeeKey)
+          || employeesByKey.get(normalizePayrollMatchKey(line.employeeNo))
+          || employeesByKey.get(normalizePayrollMatchKey(line.employeeId))
+          || employeeByCode.get(lower(line.employeeNo))
+          || employeeByCode.get(lower(line.employeeId));
         const allocations = line.projectAllocations.filter((item) => Number(item.hours || 0) > 0);
-        const safeAllocations = allocations.length ? allocations : [{ projectId: 'none', projectCode: 'No Project', projectName: 'No Project', hours: normalizePaidWorkHours(line.usedHours), remarks: null }];
-        const lineProductive = normalizePaidWorkHours(line.usedHours);
-        const lineTotal = normalizePaidWorkHours(line.totalHours);
-        const lineOvertime = Math.max(0, lineProductive - 8);
-        const hourlyRate = Number((employee as any)?.ratePerHour || 0);
-        const dailyRate = Number((employee as any)?.dailyRate || 0);
-        const labourRate = hourlyRate > 0 ? hourlyRate : dailyRate > 0 ? round(dailyRate / 8, 2) : 2500;
+        // Booked hours are already net of unpaid break — do not re-apply normalizePaidWorkHours.
+        const lineProductive = bookedTimesheetHours(line.usedHours);
+        const lineIdle = bookedTimesheetHours(line.idleHours);
+        const lineAttendance = bookedTimesheetHours(line.attendanceDuration);
+        const safeAllocations = allocations.length
+          ? allocations
+          : [{ projectId: 'none', projectCode: 'No Project', projectName: 'No Project', hours: lineProductive, remarks: null }];
+        const allocationWeights = safeAllocations.map((item) => Number(item.hours || 0));
+        const allocationHoursList = prorateBookedHours(
+          allocations.length ? allocationWeights.reduce((sum, hours) => sum + Math.max(0, hours), 0) : lineProductive,
+          allocationWeights.length ? allocationWeights : [lineProductive || 1],
+        );
+        const idleShares = prorateBookedHours(lineIdle, allocationHoursList.map((hours) => hours || 1));
+        const lineOvertime = lineOvertimeHours({
+          usedHours: lineProductive,
+          offshoreAllowanceHours: line.offshoreAllowanceHours,
+          timesheetDate: header.timesheetDate,
+        });
+        const overtimeShares = prorateBookedHours(lineOvertime, allocationHoursList.map((hours) => hours || 1));
+        const labourRate = resolveTimesheetLabourRateNgn(employee);
         const idleReasons = (line.idleAllocations || [])
           .filter((item) => Number(item.hours || 0) > 0)
-          .map((item) => `${clean(item.reasonName || item.reasonId || 'Idle')}: ${round(Number(item.hours || 0))}h`)
+          .map((item) => `${clean(item.reasonName || item.reasonId || 'Idle')}: ${bookedTimesheetHours(Number(item.hours || 0))}h`)
           .join(' | ');
 
-        for (const allocation of safeAllocations) {
+        safeAllocations.forEach((allocation, allocationIndex) => {
           const project = projectByCode.get(lower(allocation.projectCode));
           const projectApproval = projectApprovals.find((item) => lower(item.projectCode) === lower(allocation.projectCode));
-          const allocationHours = normalizePaidWorkHours(Number(allocation.hours || 0));
-          const labourCost = round(allocationHours * labourRate, 0);
+          const allocationHours = allocationHoursList[allocationIndex] ?? bookedTimesheetHours(Number(allocation.hours || 0));
+          const idleShare = idleShares[allocationIndex] ?? 0;
+          const overtimeShare = overtimeShares[allocationIndex] ?? 0;
+          const labourCost = labourRate > 0 ? round(allocationHours * labourRate, 0) : 0;
           const exception = exceptionFor(header, line, lineProductive, lineOvertime, allocation.projectCode);
           const currentStage = clean(header.currentApprovalStage) || (payrollIsReady ? 'Payroll Ready' : normalizedStatus);
           const dayWorked = isPayrollPayableWorkDay(line, header.timesheetDate) ? 1 : 0;
@@ -365,16 +390,16 @@ export async function GET(request: Request) {
             jobTitle: clean((employee as any)?.jobTitle || 'Unassigned'),
             clockIn: line.clockIn,
             clockOut: line.clockOut,
-            attendanceHours: normalizePaidWorkHours(line.attendanceDuration),
+            attendanceHours: lineAttendance,
             dayWorked,
             daysWorked: 0,
             usedHours: lineProductive,
-            idleHours: round(line.idleHours),
+            idleHours: lineIdle,
             productiveHours: allocationHours,
-            nonProductiveHours: round(line.idleHours / safeAllocations.length),
-            overtimeHours: round(lineOvertime * (allocationHours / Math.max(lineProductive, 1))),
-            totalHours: round(allocationHours + line.idleHours / safeAllocations.length),
-            variance: round(line.variance),
+            nonProductiveHours: idleShare,
+            overtimeHours: overtimeShare,
+            totalHours: bookedTimesheetHours(allocationHours + idleShare),
+            variance: bookedTimesheetHours(line.variance),
             validationStatus: line.validationStatus,
             validationMessage: line.validationMessage,
             lineRemarks: clean(line.remarks),
@@ -403,7 +428,7 @@ export async function GET(request: Request) {
             lastSyncAt: header.lastSyncAt,
             auditTrail: `Generated report row for ${header.id}/${line.id} at ${new Date().toISOString()}`,
           });
-        }
+        });
       }
     }
 

@@ -40,6 +40,14 @@ import {
   payrollAttendanceSheetToExcelRows,
   type PayrollAttendanceSheetRow,
 } from '@/lib/timesheet-payroll-attendance-sheet-shared';
+import {
+  buildTimesheetExportLineTotals,
+  contractLabourNetNgn,
+  contractLabourWhtNgn,
+  formatTimesheetClockForExport,
+  isContractDayRateEmployee,
+  timesheetExportControlTotals,
+} from '@/lib/timesheet-report-metrics';
 
 type ReportType =
   | 'summary'
@@ -454,10 +462,11 @@ const formatHours = (value: number) => `${numberFmt.format(Number(value || 0))}h
 const formatNumber = (value: number) => intFmt.format(Number(value || 0));
 const formatStatus = (status: string) => status.replace(/_/g, ' ');
 
-/** Same 5% WHT rule used for C-code / daily-rate contract labour (gross × 5%, net = gross − WHT). */
-const CONTRACT_LABOUR_WHT_RATE = 0.05;
-const contractLabourWht = (labourCost: number) => Math.round(Number(labourCost || 0) * CONTRACT_LABOUR_WHT_RATE);
-const contractLabourNet = (labourCost: number) => Math.round(Number(labourCost || 0) - contractLabourWht(labourCost));
+/** Same 5% WHT rule used for C-code / daily-rate contract labour only (permanent rows stay blank). */
+const contractLabourWht = (labourCost: number, employeeNo?: string, employeeId?: string) =>
+  contractLabourWhtNgn(labourCost, isContractDayRateEmployee(employeeNo, employeeId));
+const contractLabourNet = (labourCost: number, employeeNo?: string, employeeId?: string) =>
+  contractLabourNetNgn(labourCost, isContractDayRateEmployee(employeeNo, employeeId));
 const isGroupedRow = (row: GroupedRow | DetailRow): row is GroupedRow => 'label' in row;
 const clampPct = (value: number) => Math.max(0, Math.min(100, Number.isFinite(value) ? value : 0));
 const pctText = (value: number) => `${formatNumber(clampPct(value))}%`;
@@ -866,8 +875,17 @@ export default function TimesheetReportsClient() {
         if ((key === 'labourCostNgn' || key === 'labourRateNgn' || key === '_whtNgn' || key === '_netNgn') && !canViewCosts) {
           return 'Restricted';
         }
-        if (key === '_whtNgn') return contractLabourWht(Number(row.labourCostNgn || 0));
-        if (key === '_netNgn') return contractLabourNet(Number(row.labourCostNgn || 0));
+        if (key === '_whtNgn') {
+          const wht = contractLabourWht(Number(row.labourCostNgn || 0), row.employeeNo, row.employeeId);
+          return wht > 0 ? wht : '';
+        }
+        if (key === '_netNgn') {
+          const net = contractLabourNet(Number(row.labourCostNgn || 0), row.employeeNo, row.employeeId);
+          return net == null ? '' : net;
+        }
+        if (key === 'clockIn' || key === 'clockOut') {
+          return formatTimesheetClockForExport(row[key] as string | null | undefined);
+        }
         return row[key as keyof DetailRow] as string | number | null | undefined;
       };
 
@@ -875,6 +893,34 @@ export default function TimesheetReportsClient() {
         setExportNotice('No timesheet capture rows matched the selected filters/period.');
         return;
       }
+
+      const measureRows = rows.map((row) => ({
+        lineId: row.lineId,
+        employeeNo: row.employeeNo,
+        employeeId: row.employeeId,
+        employeeName: row.employeeName,
+        department: row.department,
+        timesheetDate: row.timesheetDate,
+        periodName: row.periodName,
+        dayWorked: row.dayWorked,
+        daysWorked: row.daysWorked,
+        attendanceHours: row.attendanceHours,
+        usedHours: row.usedHours,
+        idleHours: row.idleHours,
+        productiveHours: row.productiveHours,
+        nonProductiveHours: row.nonProductiveHours,
+        overtimeHours: row.overtimeHours,
+        totalHours: row.totalHours,
+        allocationHours: row.allocationHours,
+        variance: row.variance,
+        labourCostNgn: canViewCosts ? Number(row.labourCostNgn || 0) : 0,
+        whtNgn: canViewCosts ? contractLabourWht(Number(row.labourCostNgn || 0), row.employeeNo, row.employeeId) : 0,
+        netNgn: canViewCosts ? contractLabourNet(Number(row.labourCostNgn || 0), row.employeeNo, row.employeeId) : null,
+        projectCode: row.projectCode,
+        normalizedStatus: row.normalizedStatus,
+      }));
+      const controlTotals = timesheetExportControlTotals(measureRows);
+      const lineTotals = buildTimesheetExportLineTotals(measureRows);
 
       const projectFinance = exportPayload.projectFinanceCost;
       const projectSummary = (projectFinance?.projects || []).map((row, index) => {
@@ -899,10 +945,77 @@ export default function TimesheetReportsClient() {
           worksheets: [
             {
               title: 'Timesheet Capture Export',
-              subtitle: `${from} to ${to} · ${rows.length.toLocaleString()} capture lines · ${columns.length} columns`,
+              subtitle: `${from} to ${to} · ${rows.length.toLocaleString()} allocation lines · ${controlTotals.lines.toLocaleString()} timesheet lines · ${columns.length} columns`,
               sheetName: 'Timesheet Capture',
               columns: columns.map((column) => column.label),
               rows: rows.map((row) => columns.map((column) => cellValue(row, column.key))),
+            },
+            {
+              title: 'Line Totals (one row per employee-day)',
+              subtitle: `${from} to ${to} · ${lineTotals.length.toLocaleString()} timesheet lines · hours counted once per line`,
+              sheetName: 'Line Totals',
+              columns: [
+                'Date',
+                'Period',
+                'Employee No',
+                'Employee Name',
+                'Department',
+                'Day Worked',
+                'Days Worked',
+                'Attendance Hours',
+                'Used Hours',
+                'Idle Hours',
+                'Overtime Hours',
+                'Allocation Hours',
+                'Total Hours',
+                'Projects',
+                'Labour Cost',
+                'WHT',
+                'NET',
+                'Status',
+              ],
+              rows: lineTotals.map((row) => [
+                row.timesheetDate,
+                row.periodName,
+                row.employeeNo,
+                row.employeeName,
+                row.department,
+                row.dayWorked,
+                row.daysWorked,
+                row.attendanceHours,
+                row.usedHours,
+                row.idleHours,
+                row.overtimeHours,
+                row.allocationHours,
+                row.totalHours,
+                row.projectCodes,
+                canViewCosts ? row.labourCostNgn : 'Restricted',
+                canViewCosts ? (row.whtNgn == null || row.whtNgn === 0 ? '' : row.whtNgn) : 'Restricted',
+                canViewCosts ? (row.netNgn == null ? '' : row.netNgn) : 'Restricted',
+                row.status,
+              ]),
+            },
+            {
+              title: 'Export Control Totals',
+              subtitle: `${from} to ${to} · attendance/used/idle counted once per timesheet line · project hours summed per allocation`,
+              sheetName: 'Control Totals',
+              columns: ['Metric', 'Value', 'Basis'],
+              rows: [
+                ['Timesheet lines', controlTotals.lines, 'Unique line IDs'],
+                ['Allocation rows', controlTotals.allocations, 'Project allocation lines in capture sheet'],
+                ['Employees', controlTotals.employees, 'Unique employee numbers'],
+                ['Payable employee-days', controlTotals.payableEmployeeDays, 'Unique employee + payable date'],
+                ['Attendance hours', controlTotals.attendanceHours, 'Once per timesheet line'],
+                ['Used hours', controlTotals.usedHours, 'Once per timesheet line'],
+                ['Idle hours', controlTotals.idleHours, 'Once per timesheet line'],
+                ['Allocation / productive hours', controlTotals.allocationHours, 'Sum of project allocations'],
+                ['Non-productive hours', controlTotals.nonProductiveHours, 'Idle split across allocations'],
+                ['Overtime hours', controlTotals.overtimeHours, 'Weekday OT split across allocations'],
+                ['Total hours', controlTotals.totalHours, 'Allocation + idle shares'],
+                ['Labour cost (NGN)', canViewCosts ? controlTotals.labourCostNgn : 'Restricted', 'Hours × employee rate (no default rate)'],
+                ['WHT (NGN)', canViewCosts ? controlTotals.whtNgn : 'Restricted', '5% on C-code labour cost only'],
+                ['NET (NGN)', canViewCosts ? controlTotals.netNgn : 'Restricted', 'C-code labour cost − WHT'],
+              ],
             },
             {
               title: 'Top Projects By Labour Hours (Daily-rate payroll)',
@@ -940,7 +1053,7 @@ export default function TimesheetReportsClient() {
             },
           ],
         });
-        setExportNotice(`Exported ${rows.length.toLocaleString()} lines · ${columns.length} columns + C-code Top Projects (payroll WHT/NET) to Excel.`);
+        setExportNotice(`Exported ${rows.length.toLocaleString()} allocation lines · ${controlTotals.lines.toLocaleString()} timesheet lines · control totals included.`);
         setShowColumnPicker(false);
         return;
       }
