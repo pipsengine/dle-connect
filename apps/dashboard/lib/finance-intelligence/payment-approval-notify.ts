@@ -9,7 +9,9 @@ import {
   resolveEmployeeMailbox,
 } from '@/lib/mail-service';
 import { resolveLineManagerForEmployee, resolveLineManagerOrThrow } from '@/lib/leave-workflow-service';
+import { paymentEmployeeCodesMatch } from '@/lib/finance-intelligence/payment-access';
 import { resolvePaymentDepartmentHat } from '@/lib/finance-intelligence/payment-department-hats';
+import { directoryPersonNamesMatch } from '@/lib/finance-intelligence/payment-person-match';
 import { readDirectoryEmployees } from '@/lib/payroll-employee-source';
 import { resolveWorkflowLinkOrigin } from '@/lib/public-app-url';
 import { readProjects } from '@/lib/timesheet-entry-store';
@@ -83,7 +85,7 @@ const matchJobTitle = (employees: DleEmployeeDirectoryRow[], patterns: RegExp[])
 };
 
 /** Match directory employee to the Project Manager text stored on the project master. */
-const findEmployeeByProjectManagerText = (
+export const findEmployeeByProjectManagerText = (
   employees: DleEmployeeDirectoryRow[],
   value: string,
 ): DleEmployeeDirectoryRow | null => {
@@ -103,6 +105,12 @@ const findEmployeeByProjectManagerText = (
   });
   if (exact) return exact;
 
+  const byTokens = pool.find((employee) =>
+    directoryPersonNamesMatch(employee.fullName, value)
+    || directoryPersonNamesMatch(`${employee.firstName} ${employee.lastName}`, value)
+    || directoryPersonNamesMatch(`${employee.lastName} ${employee.firstName}`, value));
+  if (byTokens) return byTokens;
+
   return pool.find((employee) => {
     const fields = [
       employeeCodeOf(employee),
@@ -113,6 +121,38 @@ const findEmployeeByProjectManagerText = (
     ].map((field) => compact(field).toLowerCase()).filter(Boolean);
     return fields.some((field) => field === target || field.includes(target) || target.includes(field));
   }) || null;
+};
+
+const findApproverFromAuthUsers = async (
+  employees: DleEmployeeDirectoryRow[],
+  value: string,
+): Promise<{ code: string; name: string; employee: DleEmployeeDirectoryRow | null } | null> => {
+  const target = compact(value);
+  if (!target) return null;
+  try {
+    const { readUsers } = await import('@/lib/auth/auth-store');
+    const users = await readUsers().catch(() => [] as Awaited<ReturnType<typeof readUsers>>);
+    const user = (users || []).find((row) => {
+      if (row.deleted || (row.status && !/active|password reset/i.test(String(row.status)))) return false;
+      const name = compact(row.fullName);
+      return directoryPersonNamesMatch(name, target) || name.toLowerCase() === target.toLowerCase();
+    });
+    if (!user) return null;
+    const code = compact(user.employeeCode || user.employeeId || user.username).toUpperCase();
+    if (!code) return null;
+    const employee = employees.find((row) => {
+      if (/inactive|terminated|resigned|retired|deceased|suspend/i.test(compact(row.status))) return false;
+      return employeeCodeOf(row).toUpperCase() === code
+        || compact(row.employeeId).toUpperCase() === code;
+    }) || null;
+    return {
+      code: employee ? employeeCodeOf(employee) : code,
+      name: compact(employee?.fullName) || compact(user.fullName) || target,
+      employee,
+    };
+  } catch {
+    return null;
+  }
 };
 
 const roleFallbacksForStage = (stage: string): string[] => {
@@ -197,6 +237,20 @@ export const resolvePaymentStageApprover = async (input: {
       assignedPm = compact(project?.projectManager);
       if (assignedPm && !/^unassigned$/i.test(assignedPm)) {
         matched = findEmployeeByProjectManagerText(employees, assignedPm);
+        // Directory names are often surname-first ("Mr. PHILLIPS AYODEJI") while
+        // TimesheetProjects stores given-name-first ("Mr AYODEJI PHILLIPS").
+        if (!matched) {
+          const authHit = await findApproverFromAuthUsers(employees, assignedPm);
+          if (authHit?.employee) matched = authHit.employee;
+          else if (authHit?.code) {
+            return {
+              code: authHit.code,
+              name: authHit.name || assignedPm,
+              employee: null,
+              roles,
+            };
+          }
+        }
         // Do not fall back to an unrelated directory PM when the project already has an assignee.
         if (!matched) {
           return {
@@ -447,15 +501,22 @@ export const notifyPaymentApprovalRequired = async (input: {
 
   const directoryEmployees = (await readDirectoryEmployees().catch(() => ({ employees: [] as DleEmployeeDirectoryRow[] }))).employees || [];
   const employee = approver.employee
-    || directoryEmployees.find((row) => employeeCodeOf(row).toUpperCase() === compact(approver.code).toUpperCase())
+    || directoryEmployees.find((row) => paymentEmployeeCodesMatch(employeeCodeOf(row), approver.code))
+    || directoryEmployees.find((row) =>
+      directoryPersonNamesMatch(row.fullName, approver.name)
+      || directoryPersonNamesMatch(`${row.firstName} ${row.lastName}`, approver.name)
+      || directoryPersonNamesMatch(`${row.lastName} ${row.firstName}`, approver.name))
     || null;
   // Resolve mailbox even when directory row is thin — fall back to auth user email by employee code.
   let mailbox = employee ? await resolveEmployeeMailbox(employee) : '';
-  if (!mailbox && approver.code) {
+  if (!mailbox && (approver.code || employee)) {
     mailbox = await resolveEmployeeMailbox({
-      employeeCode: approver.code,
-      employeeId: approver.code,
-      fullName: approver.name,
+      employeeCode: approver.code || employeeCodeOf(employee as DleEmployeeDirectoryRow),
+      employeeId: approver.code || employee?.employeeId,
+      fullName: approver.name || employee?.fullName,
+      officialEmail: employee?.officialEmail,
+      email: employee?.email,
+      personalEmail: employee?.personalEmail,
     } as DleEmployeeDirectoryRow);
   }
   if (mailbox) {

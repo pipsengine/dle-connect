@@ -37,4 +37,23 @@ const stranger = { actorCode: 'P0001', roles: ['Employee'], department: 'IT' };
 assert.equal(canAccessPaymentRequest(stranger, request), false);
 assert.equal(canAccessPaymentRequest(stranger, request, { directReportCodes: ['P0002'] }), false);
 
+const phillips = { actorCode: 'P0464', roles: ['Project Manager'], department: 'PROJECT' };
+assert.equal(
+  canAccessPaymentRequest(phillips, { requesterCode: 'NYSC0025', currentApproverCode: 'P0464', beneficiaryCode: 'NYSC0025' }),
+  true,
+);
+assert.equal(
+  canAccessPaymentRequest(phillips, { requesterCode: 'NYSC0025', currentApproverCode: '0464', beneficiaryCode: 'NYSC0025' }),
+  true,
+);
+assert.equal(
+  canActOnPaymentApproval(phillips, {
+    requesterCode: 'NYSC0025',
+    currentApproverCode: 'P0464',
+    currentStage: 'Project Manager',
+    status: 'Pending Approval',
+  }),
+  true,
+);
+
 console.log('payment-team-access.test.ts: ok');

@@ -1,5 +1,6 @@
 import sql from 'mssql';
 import { getDleEnterpriseDbPool } from '@/lib/dle-enterprise-db';
+import { paymentApproverCodeVariants } from '@/lib/finance-intelligence/payment-access';
 import { ensureFinanceSchemaSql } from '@/lib/finance-sql-schema';
 
 let schemaReady = false;
@@ -100,14 +101,15 @@ export const buildFinanceBadges = async (input?: {
 
   const pendingStatuses = `N'Pending Approval', N'Submitted', N'Finance Review'`;
   const actorCode = String(input?.actorCode || '').trim();
-  const inboxWhere = actorCode
+  const actorCodes = paymentApproverCodeVariants(actorCode);
+  const inboxWhere = actorCodes.length
     ? `[Status] IN (${pendingStatuses}) AND (
-        [CurrentApproverCode] = @actorCode
+        [CurrentApproverCode] IN (${actorCodes.map((_, index) => `@actorCode${index}`).join(', ')})
         ${input?.includeMdCeoStage ? `OR [CurrentApproverCode] = N'P0413' OR LOWER(ISNULL([CurrentStage], N'')) LIKE N'%md%' OR LOWER(ISNULL([CurrentStage], N'')) LIKE N'%managing director%'` : ''}
       )`
     : `[Status] IN (${pendingStatuses})`;
   const requestForInbox = pool.request();
-  if (actorCode) requestForInbox.input('actorCode', sql.NVarChar(60), actorCode);
+  actorCodes.forEach((code, index) => requestForInbox.input(`actorCode${index}`, sql.NVarChar(60), code));
 
   const [
     paymentApprovals,
@@ -233,8 +235,10 @@ export const listFinanceApprovalRequests = async (input?: { status?: string; min
       where += ' AND [Status] = @status';
     }
     if (input?.mineFor) {
-      request.input('approver', sql.NVarChar(60), input.mineFor);
-      where += ' AND [CurrentApproverCode] = @approver';
+      const approverCodes = paymentApproverCodeVariants(input.mineFor);
+      if (!approverCodes.length) return [];
+      approverCodes.forEach((code, index) => request.input(`approver${index}`, sql.NVarChar(60), code));
+      where += ` AND [CurrentApproverCode] IN (${approverCodes.map((_, index) => `@approver${index}`).join(', ')})`;
     }
     // Live payment workflow table (legacy finance.ApprovalRequests is unused).
     const result = await request.query(`

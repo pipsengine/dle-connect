@@ -88,32 +88,67 @@ export const canAccessPaymentRequest = (
   options?: { priorActorCodes?: Array<string | null | undefined>; directReportCodes?: string[] },
 ) => {
   if (canViewAllPaymentRequests(actor)) return true;
-  const code = String(actor.actorCode || '').trim().toLowerCase();
-  if (!code) return false;
+  if (!String(actor.actorCode || '').trim()) return false;
   if (
-    String(request.requesterCode || '').trim().toLowerCase() === code
-    || String(request.currentApproverCode || '').trim().toLowerCase() === code
-    || String(request.beneficiaryCode || '').trim().toLowerCase() === code
+    paymentEmployeeCodesMatch(actor.actorCode, request.requesterCode)
+    || paymentEmployeeCodesMatch(actor.actorCode, request.currentApproverCode)
+    || paymentEmployeeCodesMatch(actor.actorCode, request.beneficiaryCode)
   ) {
     return true;
   }
-  const reports = new Set(
-    (options?.directReportCodes || []).map((item) => String(item || '').trim().toLowerCase()).filter(Boolean),
-  );
-  if (reports.size) {
-    if (reports.has(String(request.requesterCode || '').trim().toLowerCase())) return true;
-    if (reports.has(String(request.beneficiaryCode || '').trim().toLowerCase())) return true;
+  const reports = options?.directReportCodes || [];
+  if (reports.some((item) => paymentEmployeeCodesMatch(item, request.requesterCode)
+    || paymentEmployeeCodesMatch(item, request.beneficiaryCode))) {
+    return true;
   }
   // After final approval, currentApprover is cleared — still allow anyone who already acted.
   return (options?.priorActorCodes || []).some((actorCode) =>
-    String(actorCode || '').trim().toLowerCase() === code);
+    paymentEmployeeCodesMatch(actor.actorCode, actorCode));
 };
 
-const codesMatch = (left?: string | null, right?: string | null) => {
-  const a = String(left || '').trim().toLowerCase();
-  const b = String(right || '').trim().toLowerCase();
+/** P0464, 0464, and p-0464 should identify the same permanent staff member. */
+export const paymentApproverCodeVariants = (value?: string | null) => {
+  const raw = String(value || '').trim();
+  if (!raw) return [];
+  const upper = raw.toUpperCase();
+  const alnum = upper.replace(/[^A-Z0-9]/g, '');
+  const variants = new Set<string>([raw, upper, alnum]);
+  const permanent = alnum.match(/^P(\d+)$/);
+  if (permanent) {
+    const digits = permanent[1];
+    const stripped = digits.replace(/^0+/, '') || digits;
+    variants.add(digits);
+    variants.add(stripped);
+    variants.add(`P${digits}`);
+    variants.add(`P${stripped}`);
+    variants.add(`P${stripped.padStart(4, '0')}`);
+  } else if (/^\d+$/.test(alnum)) {
+    const stripped = alnum.replace(/^0+/, '') || alnum;
+    variants.add(stripped);
+    variants.add(`P${alnum}`);
+    variants.add(`P${stripped}`);
+    variants.add(`P${stripped.padStart(4, '0')}`);
+  }
+  return [...variants].filter(Boolean);
+};
+
+const normalizePaymentActorCode = (value?: string | null) => {
+  const compact = String(value || '').trim().toUpperCase().replace(/[^A-Z0-9]/g, '');
+  if (!compact) return '';
+  const permanentStaff = compact.match(/^P0*(\d+)$/);
+  if (permanentStaff) {
+    return permanentStaff[1].replace(/^0+/, '') || permanentStaff[1];
+  }
+  return compact.replace(/^0+/, '') || compact;
+};
+
+export const paymentEmployeeCodesMatch = (left?: string | null, right?: string | null) => {
+  const a = normalizePaymentActorCode(left);
+  const b = normalizePaymentActorCode(right);
   return Boolean(a && b && a === b);
 };
+
+const codesMatch = paymentEmployeeCodesMatch;
 
 /**
  * True when this actor is the person who should action the current approval stage.

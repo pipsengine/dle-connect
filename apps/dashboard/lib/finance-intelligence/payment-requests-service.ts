@@ -19,6 +19,10 @@ import {
 } from '@/lib/finance-intelligence/payment-attachment-storage';
 import { resolveWorkflowLinkOrigin } from '@/lib/public-app-url';
 import {
+  paymentApproverCodeVariants,
+  paymentEmployeeCodesMatch,
+} from '@/lib/finance-intelligence/payment-access';
+import {
   canonicalPaymentHatDepartment,
   paymentHatEmployeeCodesMatch,
   paymentUsesProcurementHat,
@@ -616,25 +620,30 @@ const listRows = async (input?: {
       ? [...new Set(input.teamEmployeeCodes.map(compact).filter(Boolean))].slice(0, 80)
       : null;
     if (awaitingApprover) {
-      request.input('approver', sql.NVarChar(60), awaitingApprover);
+      const approverCodes = paymentApproverCodeVariants(awaitingApprover);
+      approverCodes.forEach((code, index) => request.input(`approver${index}`, sql.NVarChar(60), code));
+      const approverIn = approverCodes.map((_, index) => `@approver${index}`).join(', ');
       where += ` AND [Status] IN (N'Pending Approval', N'Submitted', N'Finance Review') AND (
-  [CurrentApproverCode] = @approver
+  [CurrentApproverCode] IN (${approverIn})
   ${input?.includeMdCeoStage ? `OR [CurrentApproverCode] = N'P0413' OR LOWER(ISNULL([CurrentStage], N'')) LIKE N'%md%' OR LOWER(ISNULL([CurrentStage], N'')) LIKE N'%managing director%'` : ''}
 )`;
     } else if (mineFor) {
-      request.input('requester', sql.NVarChar(60), mineFor);
-      where += ' AND [RequesterCode] = @requester';
+      const mineCodes = paymentApproverCodeVariants(mineFor);
+      mineCodes.forEach((code, index) => request.input(`requester${index}`, sql.NVarChar(60), code));
+      where += ` AND [RequesterCode] IN (${mineCodes.map((_, index) => `@requester${index}`).join(', ')})`;
     } else if (teamCodes) {
       if (!teamCodes.length) return [];
       const placeholders = teamCodes.map((_, index) => `@team${index}`);
       teamCodes.forEach((code, index) => request.input(`team${index}`, sql.NVarChar(60), code));
       where += ` AND ([RequesterCode] IN (${placeholders.join(', ')}) OR [BeneficiaryCode] IN (${placeholders.join(', ')}))`;
     } else if (scopedActor) {
-      request.input('scopedActor', sql.NVarChar(60), scopedActor);
+      const scopedCodes = paymentApproverCodeVariants(scopedActor);
+      scopedCodes.forEach((code, index) => request.input(`scopedActor${index}`, sql.NVarChar(60), code));
+      const scopedIn = scopedCodes.map((_, index) => `@scopedActor${index}`).join(', ');
       where += ` AND (
-  [RequesterCode] = @scopedActor
-  OR [CurrentApproverCode] = @scopedActor
-  OR [BeneficiaryCode] = @scopedActor
+  [RequesterCode] IN (${scopedIn})
+  OR [CurrentApproverCode] IN (${scopedIn})
+  OR [BeneficiaryCode] IN (${scopedIn})
 )`;
     } else if (input?.requireActorScope) {
       // Fail closed: missing actor identity must never return the full payment queue.
@@ -922,6 +931,96 @@ WHERE [RequestId] = @RequestId
     }
   }
   return approver;
+};
+
+/**
+ * Persist the current-stage employee code when only a display name was stored.
+ * Inbox matching is by CurrentApproverCode, so a name-only assignee is invisible
+ * to the approver (and mail cannot resolve their mailbox).
+ */
+export const repairPendingMissingApproverCodes = async (options?: {
+  requestId?: string;
+  notify?: boolean;
+}) => {
+  const pool = await ensureFinanceDb().catch(() => null);
+  if (!pool) return { repaired: [] as Array<{ requestId: string; requestNumber: string; code: string; name: string }> };
+  let rows: Array<{
+    RequestId?: string;
+    RequestNumber?: string;
+    CurrentStage?: string;
+    CurrentApproverCode?: string | null;
+    CurrentApproverName?: string | null;
+    RequesterCode?: string | null;
+    ProjectCode?: string | null;
+    Department?: string | null;
+    CostCentre?: string | null;
+    PaymentType?: string | null;
+    SupervisorName?: string | null;
+  }> = [];
+  try {
+    const result = await pool.request()
+      .input('RequestId', sql.NVarChar(60), compact(options?.requestId) || null)
+      .query(`
+SELECT RequestId, RequestNumber, CurrentStage, CurrentApproverCode, CurrentApproverName,
+       RequesterCode, ProjectCode, Department, CostCentre, PaymentType, SupervisorName
+FROM [finance].[PaymentRequests]
+WHERE [Status] IN (N'Pending Approval', N'Submitted', N'Finance Review')
+  AND (CurrentApproverCode IS NULL OR LTRIM(RTRIM(CurrentApproverCode)) = N'')
+  AND (@RequestId IS NULL OR RequestId = @RequestId)
+`);
+    rows = result.recordset || [];
+  } catch (error) {
+    console.error('[payment-requests] repairPendingMissingApproverCodes list failed', error);
+    return { repaired: [] as Array<{ requestId: string; requestNumber: string; code: string; name: string }> };
+  }
+
+  const repaired: Array<{ requestId: string; requestNumber: string; code: string; name: string }> = [];
+  const shouldNotify = options?.notify !== false;
+  for (const row of rows) {
+    const requestId = compact(row.RequestId);
+    const stage = compact(row.CurrentStage);
+    if (!requestId || !stage) continue;
+    try {
+      const approver = await assignCurrentApprover({
+        requestId,
+        stage,
+        requesterCode: compact(row.RequesterCode),
+        projectCode: compact(row.ProjectCode),
+        department: compact(row.Department),
+        costCentre: compact(row.CostCentre),
+        supervisorName: compact(row.SupervisorName),
+        paymentType: compact(row.PaymentType),
+      });
+      if (!compact(approver.code)) continue;
+      repaired.push({
+        requestId,
+        requestNumber: compact(row.RequestNumber),
+        code: compact(approver.code),
+        name: compact(approver.name),
+      });
+      await logAction({
+        requestId,
+        actionType: 'repair-approver',
+        stage,
+        actorName: 'System',
+        actorCode: 'system',
+        comment: `Assigned ${approver.name || approver.code} (${approver.code}) as ${stage} after the request was stored with a name but no employee code.`,
+      });
+      if (shouldNotify) {
+        const fresh = await getPaymentRequestById(requestId);
+        if (fresh) {
+          await notifyPaymentApprovalRequired({
+            request: fresh,
+            stage,
+            actorName: 'System',
+          });
+        }
+      }
+    } catch (error) {
+      console.error('[payment-requests] repairPendingMissingApproverCodes failed', requestId, error);
+    }
+  }
+  return { repaired };
 };
 
 export const repairPendingCostCentreManagerAssignments = async (requestNumber?: string) => {
@@ -2086,6 +2185,11 @@ export const buildPaymentRequestsWorkspace = async (input?: {
   restrictToActor?: boolean;
 }): Promise<PaymentRequestsWorkspace> => {
   await migrateLegacyExpensePayments();
+  try {
+    await repairPendingMissingApproverCodes({ notify: false });
+  } catch (error) {
+    console.error('[payment-requests] missing approver-code repair failed', error);
+  }
   const mineFor = compact(input?.mineFor);
   const scopedToActorCode = compact(input?.scopedToActorCode);
   const awaitingApproverCode = compact(input?.awaitingApproverCode);
@@ -2307,7 +2411,7 @@ export const buildEmployeePaymentDashboard = async (employeeCode: string): Promi
   const mine = mineWorkspace.rows;
   const awaitingMyApproval = scopedWorkspace.rows.filter((row) =>
     code
-    && String(row.currentApproverCode || '').trim().toLowerCase() === code.toLowerCase()
+    && paymentEmployeeCodesMatch(code, row.currentApproverCode)
     && /pending|submitted|finance review/i.test(row.status));
   const outstandingAdvances = (eligibility?.outstanding || []).map((item) =>
     mine.find((row) => row.requestId === item.requestId)
