@@ -160,16 +160,20 @@ export async function GET(request: NextRequest) {
     }
     const identity = await overtimeActorFromRequest(request, livePermissions);
     const [authorizationRequests, payload, holidayDates] = await Promise.all([
-      listOvertimeAuthorizationRequests().catch((error) => {
-        console.warn('[OvertimeManagement] Authorization requests skipped:', error instanceof Error ? error.message : error);
-        return [];
-      }),
+      withTimeout(
+        listOvertimeAuthorizationRequests().catch((error) => {
+          console.warn('[OvertimeManagement] Authorization requests skipped:', error instanceof Error ? error.message : error);
+          return [];
+        }),
+        35000,
+        () => [],
+      ),
       withTimeout(
         readOvertimeManagementPayload(role).catch((error) => {
           console.warn('[OvertimeManagement] Payload load degraded:', error instanceof Error ? error.message : error);
           return emptyOvertimeManagementPayload(role, humanizeOvertimeError(error));
         }),
-        20000,
+        35000,
         () => emptyOvertimeManagementPayload(role, 'Overtime records are still loading. The authorization list is available — refresh in a moment for timesheet overtime.'),
       ),
       getPayrollPublicHolidayDates().catch(() => [] as string[]),

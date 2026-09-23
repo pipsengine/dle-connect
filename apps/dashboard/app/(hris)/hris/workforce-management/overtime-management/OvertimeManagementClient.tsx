@@ -456,11 +456,17 @@ export default function OvertimeManagementClient({ initialNow }: { initialNow: s
 
   const [roleReady, setRoleReady] = useState(false);
 
+  const loadRequestRef = useRef(0);
+  const loadAbortRef = useRef<AbortController | null>(null);
+
   const load = useCallback(async () => {
+    loadAbortRef.current?.abort();
+    const requestId = ++loadRequestRef.current;
     setLoading(true);
     setError('');
     const controller = new AbortController();
-    const timer = window.setTimeout(() => controller.abort(), 25000);
+    loadAbortRef.current = controller;
+    const timer = window.setTimeout(() => controller.abort(), 50000);
     try {
       const res = await fetch('/api/hris/workforce-management/overtime-management', {
         headers: { 'x-hris-role': role },
@@ -468,16 +474,18 @@ export default function OvertimeManagementClient({ initialNow }: { initialNow: s
         signal: controller.signal,
       });
       const data = await readOvertimeApi<Payload>(res);
+      if (requestId !== loadRequestRef.current) return;
       setPayload(data);
       setSelectedId((current) => current || data.records[0]?.id || '');
     } catch (event) {
+      if (requestId !== loadRequestRef.current) return;
       const aborted = event instanceof DOMException && event.name === 'AbortError';
       setError(aborted
         ? humanizeOvertimeClientError('timed out', 408)
         : event instanceof Error ? event.message : 'Unable to load overtime management.');
     } finally {
       window.clearTimeout(timer);
-      setLoading(false);
+      if (requestId === loadRequestRef.current) setLoading(false);
     }
   }, [role]);
 

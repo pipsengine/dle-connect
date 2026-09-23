@@ -654,7 +654,8 @@ const upsertCandidates = async (records: OvertimeRecord[]) => {
     unique.set(id, { ...record, id });
   }
   const list = Array.from(unique.values());
-  const chunkSize = 20;
+  // Stay under the SQL pool size so Overtime Management page reads can still connect.
+  const chunkSize = 2;
   for (let index = 0; index < list.length; index += chunkSize) {
     const chunk = list.slice(index, index + chunkSize);
     await Promise.all(chunk.map((record) => upsertOneCandidate(pool, record)));
@@ -669,6 +670,8 @@ const scheduleTimesheetCandidateSync = () => {
   if (timesheetCandidateSync.pending) return;
   if (now - timesheetCandidateSync.at < TIMESHEET_CANDIDATE_SYNC_MS) return;
   const pending = (async () => {
+    // Let the page query finish and release connections before the sync starts.
+    await new Promise((resolve) => setTimeout(resolve, 4000));
     try {
       const { records } = await buildCandidateRecords();
       await upsertCandidates(records);
@@ -689,14 +692,14 @@ const readRecords = async (): Promise<OvertimeRecord[]> => {
   const [recordsResult, auditResult] = await Promise.all([
     pool.request().query<DbOvertimeRow>(`
 SELECT *
-FROM [hris].[OvertimeManagementRecords]
+FROM [hris].[OvertimeManagementRecords] WITH (NOLOCK)
 WHERE [WorkDate] >= DATEADD(day, -62, CAST(SYSUTCDATETIME() AS date))
 ORDER BY [WorkDate] DESC, [EmployeeName]
 `),
     pool.request().query<DbAuditRow>(`
 SELECT a.*
-FROM [hris].[OvertimeManagementAudit] a
-INNER JOIN [hris].[OvertimeManagementRecords] r ON r.[Id] = a.[OvertimeId]
+FROM [hris].[OvertimeManagementAudit] a WITH (NOLOCK)
+INNER JOIN [hris].[OvertimeManagementRecords] r WITH (NOLOCK) ON r.[Id] = a.[OvertimeId]
 WHERE r.[WorkDate] >= DATEADD(day, -62, CAST(SYSUTCDATETIME() AS date))
 ORDER BY a.[CreatedAt] DESC
 `),
@@ -832,9 +835,8 @@ export const emptyOvertimeManagementPayload = (roleInput?: string | null, warnin
   };
 };
 
-export const readOvertimeManagementPayload = async (roleInput?: string | null) => {
+const loadOvertimeManagementPayload = async (roleInput?: string | null) => {
   const role = normalizeOvertimeRole(roleInput);
-  scheduleTimesheetCandidateSync();
   const [
     employeeSource,
     projects,
@@ -987,7 +989,7 @@ export const readOvertimeManagementPayload = async (roleInput?: string | null) =
     grossPay: round2(records.reduce((sum, item) => sum + item.grossPay, 0)),
     pendingApprovals: records.filter((item) => ['Submitted', 'Supervisor Approved', 'HR Approved'].includes(item.status)).length,
   };
-  return {
+  const payload = {
     generatedAt: new Date().toISOString(),
     source: `${employeeSource.source}; HRIS Timesheet Overtime`,
     dataSource: payrollDataSourceInfo(employeeSource),
@@ -1004,6 +1006,21 @@ export const readOvertimeManagementPayload = async (roleInput?: string | null) =
     records,
     holidayDates: await getPayrollPublicHolidayDates().catch(() => [] as string[]),
   };
+  scheduleTimesheetCandidateSync();
+  return payload;
+};
+
+const inflightPayloadReads = new Map<string, ReturnType<typeof loadOvertimeManagementPayload>>();
+
+export const readOvertimeManagementPayload = (roleInput?: string | null) => {
+  const role = normalizeOvertimeRole(roleInput);
+  const existing = inflightPayloadReads.get(role);
+  if (existing) return existing;
+  const pending = loadOvertimeManagementPayload(role).finally(() => {
+    if (inflightPayloadReads.get(role) === pending) inflightPayloadReads.delete(role);
+  });
+  inflightPayloadReads.set(role, pending);
+  return pending;
 };
 
 export const createOvertimeRequest = async (input: OvertimeCreateRequest, roleInput?: string | null, actorInput?: string | null) => {

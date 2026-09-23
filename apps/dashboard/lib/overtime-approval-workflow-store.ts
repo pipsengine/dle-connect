@@ -484,8 +484,8 @@ const notifySupervisorApproved = async (request: OvertimeAuthorizationRequest, b
 export const listOvertimeAuthorizationRequests = async () => {
   const pool = await ensureDb();
   const [result, employeesResult] = await Promise.all([
-    pool.request().query<DbAuthorizationRow>('SELECT * FROM [hris].[OvertimeAuthorizationRequests] ORDER BY [WorkDate] DESC, [CreatedAt] DESC'),
-    pool.request().query<DbAuthorizationEmployeeRow>('SELECT * FROM [hris].[OvertimeAuthorizationEmployees] ORDER BY [EmployeeName]'),
+    pool.request().query<DbAuthorizationRow>('SELECT * FROM [hris].[OvertimeAuthorizationRequests] WITH (NOLOCK) ORDER BY [WorkDate] DESC, [CreatedAt] DESC'),
+    pool.request().query<DbAuthorizationEmployeeRow>('SELECT * FROM [hris].[OvertimeAuthorizationEmployees] WITH (NOLOCK) ORDER BY [EmployeeName]'),
   ]);
   const employeesByRequest = new Map<string, OvertimeAuthorizationEmployeeLine[]>();
   for (const row of employeesResult.recordset) {
