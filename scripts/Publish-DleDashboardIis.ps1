@@ -49,21 +49,29 @@ function Stop-NodeProcessesUsingPath {
   $target = Get-NormalizedDirectoryPath -TargetDirectory $TargetDirectory
   $stopped = New-Object "System.Collections.Generic.List[string]"
 
+  # Reverse-proxy Node often starts as: node.exe .\apps\dashboard\server.js
+  # (WorkingDirectory = site root) so the full site path is NOT in CommandLine.
   Get-CimInstance Win32_Process -Filter "Name = 'node.exe'" -ErrorAction SilentlyContinue | ForEach-Object {
     $commandLine = [string]$_.CommandLine
     if (-not $commandLine) {
       return
     }
 
-    $normalizedCommand = $commandLine.ToLowerInvariant()
-    if ($normalizedCommand.Contains($target)) {
-      $processId = $_.ProcessId
-      try {
-        Stop-Process -Id $processId -Force -ErrorAction Stop
-        $stopped.Add("node.exe (PID $processId)")
-      } catch {
-        Write-Warning "Could not stop node.exe PID ${processId}: $($_.Exception.Message)"
-      }
+    $normalizedCommand = $commandLine.ToLowerInvariant().Replace('/', '\')
+    $matchesSitePath = $normalizedCommand.Contains($target)
+    $matchesDashboardServer =
+      ($normalizedCommand -match 'apps\\dashboard\\server\.js') -or
+      ($normalizedCommand -match 'start-dledashboard\.ps1')
+    if (-not ($matchesSitePath -or $matchesDashboardServer)) {
+      return
+    }
+
+    $processId = $_.ProcessId
+    try {
+      Stop-Process -Id $processId -Force -ErrorAction Stop
+      $stopped.Add("node.exe (PID $processId)")
+    } catch {
+      Write-Warning "Could not stop node.exe PID ${processId}: $($_.Exception.Message)"
     }
   }
 
@@ -241,7 +249,8 @@ function Stop-PublishTargetLocks {
   if ($stopped.Count -gt 0) {
     Write-Host ("Stopped publish locks: {0}" -f ($stopped -join ", "))
     $script:PublishStoppedIis = $true
-    Start-Sleep -Seconds 2
+    # Give Windows time to release file handles on F: (node + w3wp).
+    Start-Sleep -Seconds 5
   }
 }
 
@@ -833,7 +842,13 @@ try {
   $WebConfigSource = if ($HostingMode -eq "HttpPlatform") {
     Join-Path $RepoRoot "deployment\iis\web.httpplatform.config"
   } else {
-    Join-Path $RepoRoot "deployment\iis\web.config"
+    # ReverseProxy: IIS ARR -> local Node (default 3020). Do not ship HttpPlatform handlers.
+    $reverseProxyConfig = Join-Path $RepoRoot "deployment\iis\web.reverseproxy.config"
+    if (Test-Path -LiteralPath $reverseProxyConfig) {
+      $reverseProxyConfig
+    } else {
+      Join-Path $RepoRoot "deployment\iis\web.config"
+    }
   }
   Copy-Item -LiteralPath $WebConfigSource -Destination (Join-Path $ResolvedOutputPath "web.config") -Force
   # HttpPlatform injects web.config env vars first; dotenv will not override them.
@@ -853,10 +868,18 @@ try {
       'name="DLE_HRIS_DATA_DIR"\s+value="[^"]*"',
       ('name="DLE_HRIS_DATA_DIR" value="{0}"' -f $RepoHrisData)
     )
-    Set-Content -LiteralPath $PublishedWebConfig -Value $WebConfigText -NoNewline
+    # UTF-8 without BOM — a BOM from Set-Content breaks IIS XML parsing (502).
+    $utf8NoBom = New-Object System.Text.UTF8Encoding $false
+    [System.IO.File]::WriteAllText($PublishedWebConfig, $WebConfigText, $utf8NoBom)
     Write-Host "Pinned web.config DLE_FINANCE_DATA_DIR => $RepoFinanceData"
     Write-Host "Pinned web.config DLE_HRIS_DATA_DIR => $RepoHrisData"
   }
+
+  # HttpPlatformHandler refuses to start Node if the stdout log directory is missing.
+  $PublishedLogs = Join-Path $ResolvedOutputPath "logs"
+  New-Item -ItemType Directory -Force -Path $PublishedLogs | Out-Null
+  Write-Host "Ensured HttpPlatform logs folder: $PublishedLogs"
+
   Copy-Item -LiteralPath (Join-Path $RepoRoot "deployment\iis\Start-DleDashboard.ps1") -Destination (Join-Path $ResolvedOutputPath "Start-DleDashboard.ps1") -Force
   Copy-IisEnvironmentFile -DestinationRoot $ResolvedOutputPath
 
@@ -876,9 +899,29 @@ try {
     } else {
       Write-Host "Recycle the IIS site/application pool if the dashboard still returns HTTP 503."
     }
-  } elseif ($HostingMode -eq "ReverseProxy") {
-    Write-Host "Run Start-DleDashboard.ps1 as a Windows service, then point IIS at this folder."
-  } else {
+  }
+
+  if ($HostingMode -eq "ReverseProxy") {
+    Write-Host "Hosting mode: ReverseProxy (IIS ARR -> http://127.0.0.1:3020)."
+    Write-Host "Starting Node on port 3020..."
+    $startScript = Join-Path $ResolvedOutputPath "Start-DleDashboard.ps1"
+    if (Test-Path -LiteralPath $startScript) {
+      $logsDir = Join-Path $ResolvedOutputPath "logs"
+      New-Item -ItemType Directory -Force -Path $logsDir | Out-Null
+      Start-Process -FilePath "powershell.exe" `
+        -ArgumentList @("-NoProfile", "-ExecutionPolicy", "Bypass", "-File", $startScript, "-Port", "3020") `
+        -WorkingDirectory $ResolvedOutputPath `
+        -WindowStyle Hidden
+      Start-Sleep -Seconds 6
+      try {
+        $probe = Invoke-WebRequest -Uri "http://127.0.0.1:3020/login" -UseBasicParsing -TimeoutSec 20
+        Write-Host "Node health check OK: HTTP $($probe.StatusCode)"
+      } catch {
+        Write-Warning "Node health check failed after publish: $($_.Exception.Message)"
+        Write-Host "Start manually: cd `"$ResolvedOutputPath`"; .\Start-DleDashboard.ps1 -Port 3020"
+      }
+    }
+  } elseif (-not $script:PublishStoppedIis) {
     Write-Host "If needed, recycle the IIS application pool for the site pointing at this folder."
   }
 }

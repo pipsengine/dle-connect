@@ -55,16 +55,36 @@ Make sure the IIS application pool identity has read/write access to:
 
 ## Reverse proxy mode
 
-Create an IIS site that points to `deployment\iis\site`. The included `web.config` proxies all traffic to:
-
-```text
-http://127.0.0.1:3010
-```
-
-Run the Next.js server from the published folder as a Windows service:
+Use this mode when HttpPlatformHandler cannot start Node (empty `logs\dle-dashboard*.log` and HTTP 502).
 
 ```powershell
-.\Start-DleDashboard.ps1
+npm run publish:iis:proxy
+```
+
+Or:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\Publish-DleDashboardIis.ps1 -HostingMode ReverseProxy
+```
+
+Create an IIS site that points to `deployment\iis\site`. The included reverse-proxy `web.config` proxies all traffic to:
+
+```text
+http://127.0.0.1:3020
+```
+
+Enable ARR proxy once (elevated):
+
+```powershell
+Import-Module WebAdministration
+Set-WebConfigurationProperty -pspath 'MACHINE/WEBROOT/APPHOST' -filter "system.webServer/proxy" -name "enabled" -value "True"
+```
+
+Publish will attempt to start Node on port 3020. To start manually:
+
+```powershell
+cd deployment\iis\site
+.\Start-DleDashboard.ps1 -Port 3020
 ```
 
 For production, register that command with your service runner of choice, such as NSSM, PM2 for Windows, or Task Scheduler. The service must stay running for IIS to serve the application.

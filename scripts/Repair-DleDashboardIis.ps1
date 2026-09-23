@@ -1,6 +1,7 @@
 param(
   [string]$SitePath = "",
   [int]$Port = 3020,
+  [int]$PublicHttpsPort = 1432,
   [switch]$RecycleOnly
 )
 
@@ -74,6 +75,16 @@ function Show-LogTail {
   Get-Content -LiteralPath $latest.FullName -Tail 40 | ForEach-Object { Write-Host $_ }
 }
 
+function Grant-ModifyAcl {
+  param([Parameter(Mandatory = $true)][string]$Path, [Parameter(Mandatory = $true)][string]$Identity)
+  if (-not (Test-Path -LiteralPath $Path)) { return }
+  try {
+    icacls $Path /grant "${Identity}:(OI)(CI)M" /T /C /Q | Out-Null
+  } catch {
+    Write-Warning "Could not grant ACL to ${Identity} on ${Path}: $($_.Exception.Message)"
+  }
+}
+
 $repoRoot = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot ".."))
 if (-not $SitePath) {
   $candidates = @(
@@ -91,10 +102,12 @@ if (-not $SitePath -or -not (Test-Path -LiteralPath $SitePath)) {
 $siteRoot = [System.IO.Path]::GetFullPath($SitePath)
 $serverPath = Join-Path $siteRoot "apps\dashboard\server.js"
 $logDirectory = Join-Path $siteRoot "logs"
+$webConfigPath = Join-Path $siteRoot "web.config"
 
 Write-Host "DLE Dashboard IIS repair"
 Write-Host "Site path: $siteRoot"
-Write-Host "Expected port: $Port"
+Write-Host "Expected manual/reverse-proxy port: $Port"
+Write-Host "Public HTTPS port: $PublicHttpsPort"
 Write-Host ""
 
 if (-not (Test-Path -LiteralPath $serverPath)) {
@@ -106,6 +119,18 @@ if (-not (Test-Path -LiteralPath $nodePath)) {
   throw "Node.js not found at $nodePath. Install Node.js LTS on this server."
 }
 
+# HttpPlatformHandler cannot launch Node if stdoutLogFile's directory is missing.
+New-Item -ItemType Directory -Force -Path $logDirectory | Out-Null
+Write-Host "Ensured logs folder: $logDirectory"
+
+if (Test-Path -LiteralPath $webConfigPath) {
+  $webText = Get-Content -LiteralPath $webConfigPath -Raw
+  $utf8NoBom = New-Object System.Text.UTF8Encoding $false
+  [System.IO.File]::WriteAllText($webConfigPath, $webText, $utf8NoBom)
+  Write-Host "Normalized web.config encoding (UTF-8 no BOM)"
+}
+
+$matchedPoolName = $null
 if (-not (Get-Module -ListAvailable -Name WebAdministration)) {
   Write-Warning "WebAdministration module unavailable. Install IIS management tools or recycle the app pool manually."
 } else {
@@ -114,7 +139,12 @@ if (-not (Get-Module -ListAvailable -Name WebAdministration)) {
     $matchedSites = @()
     $target = Get-NormalizedPath -TargetDirectory $siteRoot
     foreach ($site in Get-ChildItem IIS:\Sites) {
-      $bindingMatch = @($site.bindings.Collection | Where-Object { $_.bindingInformation -like "*:${Port}:*" })
+      $bindingMatch = @(
+        $site.bindings.Collection | Where-Object {
+          $_.bindingInformation -like "*:${Port}:*" -or
+          $_.bindingInformation -like "*:${PublicHttpsPort}:*"
+        }
+      )
       $pathMatch = $false
       $physicalPath = [string]$site.physicalPath
       if (-not [string]::IsNullOrWhiteSpace($physicalPath)) {
@@ -132,14 +162,18 @@ if (-not (Get-Module -ListAvailable -Name WebAdministration)) {
     }
 
     if ($matchedSites.Count -eq 0) {
-      Write-Warning "No IIS site matched path $siteRoot or port $Port."
+      Write-Warning "No IIS site matched path $siteRoot or ports $Port/$PublicHttpsPort."
     } else {
       foreach ($site in $matchedSites) {
         $poolName = [string]$site.applicationPool
+        $matchedPoolName = $poolName
         $physicalPath = if ([string]::IsNullOrWhiteSpace($site.physicalPath)) { "(not set)" } else { $site.physicalPath }
         Write-Host "Repairing IIS site '$($site.Name)' / app pool '$poolName' (path: $physicalPath)..."
         try {
           if ($poolName) {
+            Grant-ModifyAcl -Path $logDirectory -Identity "IIS AppPool\$poolName"
+            Grant-ModifyAcl -Path (Join-Path $siteRoot ".env") -Identity "IIS AppPool\$poolName"
+            Grant-ModifyAcl -Path (Join-Path $siteRoot "data") -Identity "IIS AppPool\$poolName"
             Start-Or-Recycle-WebAppPool -PoolName $poolName
           }
           Start-Or-Recycle-Website -SiteName $site.Name
@@ -147,22 +181,38 @@ if (-not (Get-Module -ListAvailable -Name WebAdministration)) {
           Write-Warning "Could not repair IIS site '$($site.Name)': $($_.Exception.Message)"
         }
       }
-      Start-Sleep -Seconds 5
+      Start-Sleep -Seconds 8
     }
   }
 }
 
 if (-not $RecycleOnly) {
-  Write-Host "Probing http://127.0.0.1:$Port/ ..."
-  try {
-    $response = Invoke-WebRequest -Uri "http://127.0.0.1:$Port/" -UseBasicParsing -TimeoutSec 45
-    Write-Host "Health check OK: HTTP $($response.StatusCode)"
-  } catch {
-    Write-Warning "Health check failed: $($_.Exception.Message)"
+  # HttpPlatform uses %HTTP_PLATFORM_PORT% (dynamic). Prefer the public IIS binding.
+  $probes = @(
+    "https://127.0.0.1:$PublicHttpsPort/login",
+    "http://127.0.0.1:$PublicHttpsPort/login",
+    "http://127.0.0.1:$Port/login"
+  )
+  $ok = $false
+  foreach ($uri in $probes) {
+    Write-Host "Probing $uri ..."
+    try {
+      [System.Net.ServicePointManager]::ServerCertificateValidationCallback = { $true }
+      $response = Invoke-WebRequest -Uri $uri -UseBasicParsing -TimeoutSec 45
+      Write-Host "Health check OK: HTTP $($response.StatusCode) ($uri)"
+      $ok = $true
+      break
+    } catch {
+      Write-Warning "Health check failed: $($_.Exception.Message)"
+    }
+  }
+
+  if (-not $ok) {
     Write-Host ""
-    Write-Host "Manual startup test (Ctrl+C after you see 'Ready' or an error):"
+    Write-Host "Manual startup test (Ctrl+C after you see Ready or an error):"
     Write-Host "  cd `"$siteRoot`""
     Write-Host "  .\Start-DleDashboard.ps1 -Port $Port"
+    Write-Host "Or run: powershell -ExecutionPolicy Bypass -File scripts\Fix-DleConnect502.ps1"
     Show-LogTail -LogDirectory $logDirectory
   }
 } else {
@@ -170,8 +220,11 @@ if (-not $RecycleOnly) {
 }
 
 Write-Host ""
-Write-Host "If HTTP 503 persists:"
+Write-Host "If HTTP 502/503 persists:"
 Write-Host "  1. Confirm HttpPlatformHandler is installed in IIS."
 Write-Host "  2. Confirm deployment\iis\site\web.config uses HttpPlatform mode."
 Write-Host "  3. Grant the app pool identity read/write on site\.env, site\data, and site\logs."
 Write-Host "  4. Re-run: npm run publish:iis"
+if ($matchedPoolName) {
+  Write-Host "  5. App pool in use: $matchedPoolName"
+}

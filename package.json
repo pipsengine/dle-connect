@@ -12,6 +12,7 @@
     "build": "call \"%npm_package_json%\\..\\scripts\\Run-FromRepo.cmd\" node node_modules/next/dist/bin/next build apps/dashboard",
     "start": "call \"%npm_package_json%\\..\\scripts\\Run-FromRepo.cmd\" node node_modules/next/dist/bin/next start apps/dashboard -p 3010",
     "publish:iis": "call \"%npm_package_json%\\..\\scripts\\Run-FromRepo.cmd\" powershell -NoProfile -ExecutionPolicy Bypass -File scripts/Publish-DleDashboardIis.ps1",
+    "publish:iis:proxy": "call \"%npm_package_json%\\..\\scripts\\Run-FromRepo.cmd\" powershell -NoProfile -ExecutionPolicy Bypass -File scripts/Publish-DleDashboardIis.ps1 -HostingMode ReverseProxy",
     "repair:iis": "call \"%npm_package_json%\\..\\scripts\\Run-FromRepo.cmd\" powershell -NoProfile -ExecutionPolicy Bypass -File scripts/Repair-DleDashboardIis.ps1",
     "deploy:server": "call \"%npm_package_json%\\..\\scripts\\Run-FromRepo.cmd\" powershell -NoProfile -ExecutionPolicy Bypass -File scripts/Deploy-ServerDashboard.ps1 -SkipInstall",
     "deploy:server:dev": "call \"%npm_package_json%\\..\\scripts\\Run-FromRepo.cmd\" powershell -NoProfile -ExecutionPolicy Bypass -File scripts/Deploy-ServerDashboard.ps1 -DevOnly",
