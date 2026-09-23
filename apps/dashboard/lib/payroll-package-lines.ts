@@ -344,30 +344,66 @@ const collapseStandingPackageLines = (lines: StoredPayrollPackageLine[]) => {
   return meal ? [...next, meal] : next;
 };
 
+const storedFromExistingPackageLine = (line: SagePayrollLineItem, amount: number): StoredPayrollPackageLine => {
+  const periodOnly = isPeriodOnlyPackageEarningLine(line);
+  const payrollPeriod = normalizePackagePayrollPeriod(line.payrollPeriod);
+  return {
+    code: String(line.code || '').trim(),
+    name: String(line.name || line.code || '').trim(),
+    amount: roundMoney(Number(line.amount || amount)),
+    sourceAmount: amount,
+    runFrequency: periodOnly ? 'one-off' : (line.runFrequency || 'monthly'),
+    includeInMonthlyPayroll: periodOnly ? false : (line.includeInMonthlyPayroll ?? true),
+    taxableAmount: line.taxableAmount,
+    ytdTotal: line.ytdTotal,
+    ...(payrollPeriod ? { payrollPeriod } : {}),
+  };
+};
+
+/** Captured TCM meal/transport must beat an August Excel meal of the same family. */
+const isCapturedTcmPackageLine = (line: SagePayrollLineItem) => {
+  const key = standingPackageCodeKey(line.code);
+  return (key === 'TCMMEAL' || key === 'TCMTRANS') && isHrisConfiguredPayrollLine(line);
+};
+
 /** Keep HRIS TCM / standing supplements when an Excel salary schedule is written back to the package. */
 export const keepUnscheduledStandingPackageLines = (
   scheduleLines: StoredPayrollPackageLine[],
   existing: SagePayrollLineItem[] | null | undefined,
 ): StoredPayrollPackageLine[] => {
-  const next = [...scheduleLines];
-  const codes = new Set(next.map((line) => standingPackageCodeKey(line.code)).filter(Boolean));
+  const capturedTcm = new Map<string, SagePayrollLineItem>();
   for (const line of existing || []) {
+    if (!isCapturedTcmPackageLine(line)) continue;
+    const key = standingPackageCodeKey(line.code);
+    if (key) capturedTcm.set(key, line);
+  }
+  const next: StoredPayrollPackageLine[] = [];
+  const codes = new Set<string>();
+  for (const line of scheduleLines) {
+    const key = standingPackageCodeKey(line.code);
+    const captured = key ? capturedTcm.get(key) : undefined;
+    if (captured) {
+      const amount = roundMoney(Number(captured.sourceAmount ?? captured.amount ?? 0));
+      if (amount > 0) next.push(storedFromExistingPackageLine(captured, amount));
+    } else {
+      next.push(line);
+    }
+    if (key) codes.add(key);
+  }
+  for (const line of existing || []) {
+    const stampedPeriod = normalizePackagePayrollPeriod(line.payrollPeriod);
+    if (isPeriodOnlyPackageEarningLine(line)) {
+      if (!stampedPeriod) continue;
+      const amount = roundMoney(Number(line.sourceAmount ?? line.amount ?? 0));
+      if (!(amount > 0)) continue;
+      next.push(storedFromExistingPackageLine(line, amount));
+      continue;
+    }
     const key = standingPackageCodeKey(line.code);
     if (!key || codes.has(key)) continue;
-    if (isPeriodOnlyPackageEarningLine(line)) continue;
     const amount = roundMoney(Number(line.sourceAmount ?? line.amount ?? 0));
     if (!(amount > 0)) continue;
-    next.push({
-      code: String(line.code || '').trim(),
-      name: String(line.name || line.code || '').trim(),
-      amount: roundMoney(Number(line.amount || amount)),
-      sourceAmount: amount,
-      runFrequency: line.runFrequency || 'monthly',
-      includeInMonthlyPayroll: line.includeInMonthlyPayroll ?? true,
-      taxableAmount: line.taxableAmount,
-      ytdTotal: line.ytdTotal,
-      payrollPeriod: line.payrollPeriod,
-    });
+    next.push(storedFromExistingPackageLine(line, amount));
     codes.add(key);
   }
   return next;

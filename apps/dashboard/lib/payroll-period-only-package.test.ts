@@ -153,4 +153,23 @@ const preservedTcm = keepUnscheduledStandingPackageLines(
 assert.equal(preservedTcm.some((line) => line.code === 'TCMMEAL' && line.amount === 31500), true, 'salary schedule persist must keep TCM meal');
 assert.equal(preservedTcm.some((line) => /TCM/i.test(line.code) && /TRANS|TRNSPT/i.test(line.code) && line.amount === 31500), true, 'salary schedule persist must keep TCM transport');
 
+const augustMealLosesToCapturedTcm = keepUnscheduledStandingPackageLines(
+  [
+    { code: 'LUMPSUMTAX', name: 'LUMPSUM', amount: 436876.13, runFrequency: 'monthly', sourceAmount: 436876.13 },
+    { code: 'MEAL', name: 'MEAL ALLOWANCE', amount: 33000, runFrequency: 'monthly', sourceAmount: 33000 },
+    { code: 'TCMTRANS', name: 'TCM TRANSPORT', amount: 33000, runFrequency: 'monthly', sourceAmount: 33000 },
+  ],
+  [
+    { code: 'TCMMEAL', name: 'MEAL', amount: 31500, runFrequency: 'monthly', sourceAmount: 31500, includeInMonthlyPayroll: true },
+    { code: 'TCM_TRNSPT', name: 'TCM TRANSPORT', amount: 31500, runFrequency: 'monthly', sourceAmount: 31500, includeInMonthlyPayroll: true },
+    { code: 'OVERTIME', name: 'OVERTIME', amount: 12000, runFrequency: 'one-off', sourceAmount: 12000, includeInMonthlyPayroll: false, payrollPeriod: '2026-09' },
+  ],
+);
+assert.equal(augustMealLosesToCapturedTcm.some((line) => line.code === 'MEAL' && line.amount === 33000), false, 'August meal must not replace captured TCM meal');
+assert.equal(augustMealLosesToCapturedTcm.some((line) => line.code === 'TCMMEAL' && line.amount === 31500), true);
+assert.equal(augustMealLosesToCapturedTcm.some((line) => line.code === 'TCM_TRNSPT' && line.amount === 31500), true);
+assert.equal(augustMealLosesToCapturedTcm.find((line) => line.code === 'OVERTIME')?.payrollPeriod, '2026-09', 'this-period capture must survive schedule persist');
+assert.equal(augustMealLosesToCapturedTcm.find((line) => line.code === 'OVERTIME')?.runFrequency, 'one-off', 'this-period capture must stay one-off');
+assert.equal(augustMealLosesToCapturedTcm.find((line) => line.code === 'OVERTIME')?.includeInMonthlyPayroll, false);
+
 console.log('payroll-period-only-package tests passed');

@@ -1,8 +1,8 @@
 /**
  * From September 2026, live payroll amounts come from employee profiles
  * (Permanent / Lumpsum / NYSC / IT) or approved timesheets (day-rate).
- * Excel salary / day-rate schedules may still update the employee profile,
- * but they must not overlay live compute for periods on or after this cutover.
+ * Excel salary / day-rate schedules must not overlay that compute, and a
+ * payroll re-run must not write those workbooks back onto earning lines.
  */
 export const PAYROLL_PROFILE_TIMESHEET_SOURCE_FROM = '2026-09';
 

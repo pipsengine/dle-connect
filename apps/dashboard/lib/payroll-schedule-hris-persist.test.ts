@@ -1,4 +1,4 @@
-import { salaryRowToHrisPackageLines } from './payroll-schedule-hris-persist';
+import { excelScheduleMayOverwriteHris, persistAppliedPayrollSchedulesToHris, salaryRowToHrisPackageLines } from './payroll-schedule-hris-persist';
 import type { SalaryScheduleRow } from './salary-schedule-xlsx';
 
 const assert = (condition: unknown, message: string) => {
@@ -38,6 +38,7 @@ const row = (overrides: Partial<SalaryScheduleRow>): SalaryScheduleRow => ({
   ...overrides,
 });
 
+const main = async () => {
 const pkg = salaryRowToHrisPackageLines(row({}));
 assert(pkg.earnings.some((line) => line.code === 'BASIC' && line.runFrequency === 'monthly'), 'Basic is a recurring HRIS package line');
 assert(!pkg.earnings.some((line) => line.code === 'ARREARS'), 'Arrears must not persist onto the standing HRIS package');
@@ -46,4 +47,18 @@ assert(pkg.deductions.some((line) => line.code === 'UNION' && line.amount === 20
 assert(pkg.periodSalary === 500000, 'Period salary is saved from the workbook');
 assert(pkg.basicSalary === 400000, 'Basic salary is saved from the BASIC line');
 
+assert(excelScheduleMayOverwriteHris('2026-09', '2026-09') === false, 'September re-run must not write Excel onto earning lines');
+assert(excelScheduleMayOverwriteHris('2026-09', '2026-08') === false, 'August workbook must not be applied during a September re-run');
+assert(excelScheduleMayOverwriteHris('2026-08', '2026-09') === false, 'A September workbook must not be written as the August package');
+assert(excelScheduleMayOverwriteHris('2026-08', '2026-08') === true, 'August payroll may still persist its own workbook');
+
+const septemberPersist = await persistAppliedPayrollSchedulesToHris('2026-09');
+assert(septemberPersist.saved === 0 && septemberPersist.skipped === 0, 'September re-run must not save Excel packages');
+
 console.log('payroll-schedule-hris-persist tests passed');
+};
+
+main().catch((error) => {
+  console.error(error);
+  process.exit(1);
+});

@@ -80,17 +80,35 @@ const indexEmployees = (employees: DleEmployeeDirectoryRow[]) => {
 
 const persistMemos = new Map<string, Promise<{ saved: number; skipped: number }>>();
 
+const schedulePeriodCode = (period?: string | null) =>
+  compact(period).replace(/\//g, '-').replace(/^per-/i, '').slice(0, 7);
+
+/**
+ * Excel may refresh HRIS packages only for a pre-September period, and only
+ * from that same period's workbook. A September re-run must not copy August.
+ */
+export const excelScheduleMayOverwriteHris = (requestedPeriod?: string | null, schedulePeriod?: string | null) => {
+  const requested = schedulePeriodCode(requestedPeriod);
+  if (!requested || !payrollExcelAmountOverlayApplies(requested)) return false;
+  const schedule = schedulePeriodCode(schedulePeriod);
+  if (!schedule || schedule !== requested || !payrollExcelAmountOverlayApplies(schedule)) return false;
+  return true;
+};
+
 const persistNow = async (period: string) => {
+  if (!payrollExcelAmountOverlayApplies(period)) return { saved: 0, skipped: 0 };
   const salary = readAppliedSalaryScheduleOverride(period);
   const dayrate = readAppliedDayrateScheduleOverride(period);
-  if (!salary?.parsed?.rows?.length && !dayrate?.rows?.length) return { saved: 0, skipped: 0 };
+  const salaryRows = excelScheduleMayOverwriteHris(period, salary?.period) ? (salary?.parsed?.rows || []) : [];
+  const dayrateRows = excelScheduleMayOverwriteHris(period, dayrate?.period) ? (dayrate?.rows || []) : [];
+  if (!salaryRows.length && !dayrateRows.length) return { saved: 0, skipped: 0 };
 
   const source = await readPayrollEmployees();
   const employees = indexEmployees(source.employees);
   let saved = 0;
   let skipped = 0;
 
-  for (const row of salary?.parsed?.rows || []) {
+  for (const row of salaryRows) {
     if (row.kind !== 'usd' && !normalizePayrollCompany(row.company)) {
       skipped += 1;
       continue;
@@ -128,7 +146,7 @@ const persistNow = async (period: string) => {
     }
   }
 
-  for (const row of dayrate?.rows || []) {
+  for (const row of dayrateRows) {
     const match = salaryScheduleEmployeeKeys(row.employeeCode).map((key) => employees.get(key)).find(Boolean)
       || employees.get(compact(row.employeeCode).toUpperCase());
     if (!match?.employeeDbId) {
