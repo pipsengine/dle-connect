@@ -9,10 +9,8 @@ import {
   renameEmployeeCodeInDb,
   saveEmployeeDraftToDb,
 } from '@/lib/dle-enterprise-db';
-import { readPayrollEmployees } from '@/lib/payroll-employee-source';
-import { readTimesheetWorkCenters } from '@/lib/timesheet-entry-store';
 import { readActiveSagePayrollEmployees } from '@/lib/sage-people-payroll-store';
-import { listNigeriaBanks, nigeriaBankNames } from '@/lib/nigeria-banks-store';
+import { loadEmployeeFormOptions } from '@/lib/employee-form-options';
 import { composePersonDisplayName } from '@/lib/person-display-name';
 
 type Role =
@@ -94,30 +92,6 @@ type DuplicateResult = {
   status: 'ok' | 'potential-duplicate';
   matches: { employeeId?: string; draftId?: string; reason: string }[];
   confidence: number;
-};
-
-type FormOptions = {
-  departments: string[];
-  divisions: string[];
-  businessUnits: string[];
-  locations: string[];
-  workCenters: string[];
-  jobTitles: string[];
-  jobGrades: string[];
-  costCenters: string[];
-  projectSites: string[];
-  payrollGroups: string[];
-  salaryGrades: string[];
-  banks: string[];
-  bankCatalog?: Array<{ name: string; bankCode: string; sortCode: string; aliases?: string[] }>;
-  pensionProviders: string[];
-  benefitGroups: string[];
-  workModes: string[];
-  shiftPatterns: string[];
-  staffCategories: string[];
-  employeeCategories: string[];
-  roleProfiles: string[];
-  employees?: Array<{ employeeId: string; fullName: string; department?: string; jobTitle?: string; location?: string; manager?: string }>;
 };
 
 const employeeTypePrefix = (employeeType: unknown) => {
@@ -380,150 +354,6 @@ const templateChecklist = (): ChecklistItem[] => [
   { id: 'chk-14', title: 'Leave entitlement initialized', status: 'Pending', responsibleOfficer: 'HR Officer', dueDate: '', notes: '' },
 ];
 
-const fallbackOptionsPayload = (): FormOptions => ({
-  departments: [
-    'Civil Engineering',
-    'Mechanical Engineering',
-    'Electrical & Instrumentation',
-    'Project Controls',
-    'HSE',
-    'Quality Assurance',
-    'Procurement',
-    'Finance',
-    'Human Capital',
-    'IT & Support',
-    'Legal & Compliance',
-    'Executive Office',
-  ],
-  divisions: ['Engineering', 'Operations', 'Corporate Services', 'Projects', 'Commercial'],
-  businessUnits: ['DLE Projects', 'DLE Fabrication', 'DLE Marine', 'DLE Corporate', 'DLE Energy'],
-  locations: ['Lagos HQ', 'Port Harcourt Office', 'Warri Yard', 'Abuja Office', 'Onne Site', 'Kaduna Site', 'Offshore Platform'],
-  workCenters: [],
-  jobTitles: [
-    'Senior Civil Engineer',
-    'Mechanical Supervisor',
-    'E&I Technician',
-    'Project Manager',
-    'Planning Engineer',
-    'Quantity Surveyor',
-    'HSE Officer',
-    'QA/QC Engineer',
-    'HR Officer',
-    'Payroll Specialist',
-    'IT Support Engineer',
-    'Legal Counsel',
-    'Executive Assistant',
-  ],
-  jobGrades: ['G7', 'G8', 'G9', 'G10', 'G11', 'G12'],
-  costCenters: ['CC-ENG-001', 'CC-OPS-004', 'CC-HR-002', 'CC-FIN-003', 'CC-IT-005'],
-  projectSites: ['Lekki Project', 'NLNG Train 7', 'Bonny Island', 'Onshore Pipeline', 'Bridgeworks', 'Fabrication Bay', 'N/A'],
-  payrollGroups: ['Monthly', 'Bi-Weekly', 'Project-Based'],
-  salaryGrades: ['SG-07', 'SG-08', 'SG-09', 'SG-10', 'SG-11'],
-  banks: [
-    'GUARANTY TRUST BANK PLC',
-    'ACCESS BANK NIGERIA PLC',
-    'ZENITH BANK PLC',
-    'FIRST BANK OF NIGERIA PLC',
-    'UBA PLC.',
-  ],
-  pensionProviders: ['ARM Pensions', 'Stanbic IBTC', 'Leadway Pensure', 'PENCOM'],
-  benefitGroups: ['Standard', 'Executive', 'Project', 'Contractor'],
-  workModes: ['Onsite', 'Hybrid', 'Remote'],
-  shiftPatterns: ['Day', 'Night', 'Rotational'],
-  staffCategories: ['Senior Staff', 'Junior Staff', 'Contractor'],
-  employeeCategories: ['Operations', 'Corporate Services', 'Projects', 'Commercial'],
-  roleProfiles: ['HR Generalist', 'Project Delivery', 'Finance Ops', 'HSE Compliance', 'IT Support'],
-});
-
-const uniqueSorted = (values: unknown[]) =>
-  Array.from(new Set(values.map((value) => (typeof value === 'string' ? value.trim() : '')).filter(Boolean))).sort((a, b) => a.localeCompare(b));
-
-const mergeUnique = (primary: string[], fallback: string[]) => uniqueSorted([...primary, ...fallback]);
-
-const optionsPayload = async (includeEmployees = false): Promise<FormOptions> => {
-  const fallback = fallbackOptionsPayload();
-  const nigeriaBanks = await listNigeriaBanks().catch(() => []);
-  const bankNames = nigeriaBanks.length
-    ? nigeriaBanks.map((bank) => bank.name)
-    : await nigeriaBankNames().catch(() => fallback.banks);
-  try {
-    const employeeSource = await readPayrollEmployees();
-    const employees = employeeSource.employees;
-    const catalogWorkCenters = await readTimesheetWorkCenters().catch(() => []);
-    if (!employees.length) {
-      return {
-        ...fallback,
-        workCenters: uniqueSorted(catalogWorkCenters.map((item) => item.name)),
-        banks: bankNames.length ? bankNames : fallback.banks,
-        bankCatalog: nigeriaBanks.map((bank) => ({
-          name: bank.name,
-          bankCode: bank.bankCode,
-          sortCode: bank.sortCode,
-          aliases: bank.aliases,
-        })),
-      };
-    }
-    const fromDb = {
-      departments: uniqueSorted(employees.map((employee: any) => employee.department)),
-      divisions: uniqueSorted(employees.map((employee: any) => employee.division)),
-      businessUnits: uniqueSorted(employees.map((employee: any) => employee.businessUnit)),
-      locations: uniqueSorted(employees.flatMap((employee: any) => [employee.location, employee.workLocation, employee.officeLocation])),
-      workCenters: uniqueSorted([
-        ...catalogWorkCenters.map((item) => item.name),
-        ...employees.map((employee: any) => employee.workCenter),
-      ]),
-      jobTitles: uniqueSorted(employees.flatMap((employee: any) => [employee.jobTitle, employee.designation])),
-      jobGrades: uniqueSorted(employees.map((employee: any) => employee.jobGrade)),
-      costCenters: uniqueSorted(employees.map((employee: any) => employee.costCenter)),
-      projectSites: uniqueSorted(employees.map((employee: any) => employee.projectSite)),
-      staffCategories: uniqueSorted(employees.map((employee: any) => employee.staffCategory)),
-      employeeCategories: uniqueSorted(employees.map((employee: any) => employee.employeeCategory)),
-    };
-    return {
-      ...fallback,
-      banks: bankNames.length ? bankNames : fallback.banks,
-      bankCatalog: nigeriaBanks.map((bank) => ({
-        name: bank.name,
-        bankCode: bank.bankCode,
-        sortCode: bank.sortCode,
-        aliases: bank.aliases,
-      })),
-      departments: mergeUnique(fromDb.departments, fallback.departments),
-      divisions: mergeUnique(fromDb.divisions, fallback.divisions),
-      businessUnits: mergeUnique(fromDb.businessUnits, fallback.businessUnits),
-      locations: mergeUnique(fromDb.locations, fallback.locations),
-      workCenters: mergeUnique(fromDb.workCenters, fallback.workCenters),
-      jobTitles: mergeUnique(fromDb.jobTitles, fallback.jobTitles),
-      jobGrades: mergeUnique(fromDb.jobGrades, fallback.jobGrades),
-      costCenters: mergeUnique(fromDb.costCenters, fallback.costCenters),
-      projectSites: mergeUnique(fromDb.projectSites, fallback.projectSites),
-      staffCategories: mergeUnique(fromDb.staffCategories, fallback.staffCategories),
-      employeeCategories: mergeUnique(fromDb.employeeCategories, fallback.employeeCategories),
-      employees: includeEmployees
-        ? employees.map((employee: any) => ({
-            employeeId: String(employee.employeeId || employee.employeeCode || '').trim(),
-            fullName: String(employee.fullName || '').trim(),
-            department: String(employee.department || '').trim(),
-            jobTitle: String(employee.jobTitle || employee.designation || '').trim(),
-            location: String(employee.location || employee.workLocation || '').trim(),
-            manager: String(employee.managerName || employee.manager || '').trim(),
-          })).filter((employee) => employee.employeeId && employee.fullName)
-        : undefined,
-    };
-  } catch {
-    return {
-      ...fallback,
-      banks: bankNames.length ? bankNames : fallback.banks,
-      bankCatalog: nigeriaBanks.map((bank) => ({
-        name: bank.name,
-        bankCode: bank.bankCode,
-        sortCode: bank.sortCode,
-        aliases: bank.aliases,
-      })),
-    };
-  }
-};
-
 const validateDoc = (d: any) => {
   const mime = normalize(d.mimeType);
   const size = typeof d.sizeBytes === 'number' ? d.sizeBytes : 0;
@@ -541,7 +371,7 @@ export async function GET(request: Request, ctx: { params: Promise<{ action: str
 
   if (seg0 === 'form-options') {
     const includeEmployees = new URL(request.url).searchParams.get('includeEmployees') === '1';
-    return jsonOk(await optionsPayload(includeEmployees));
+    return jsonOk(await loadEmployeeFormOptions(includeEmployees));
   }
   if (seg0 === 'onboarding' && action[1] === 'checklist-template') return jsonOk(templateChecklist());
   if (seg0 === 'employee-code' && action[1] === 'next') {
@@ -724,7 +554,7 @@ export async function POST(request: Request, ctx: { params: Promise<{ action: st
 
   if (seg0 === 'form-options') {
     const includeEmployees = new URL(request.url).searchParams.get('includeEmployees') === '1';
-    return jsonOk(await optionsPayload(includeEmployees));
+    return jsonOk(await loadEmployeeFormOptions(includeEmployees));
   }
 
   if (seg0 === 'import-sage') {

@@ -1562,7 +1562,7 @@ export default function EmployeeProfileClient({
           cache: 'no-store',
           headers: { 'x-hris-role': role },
         });
-        const json = (await res.json()) as { status: string; data?: ProfileFormOptions; error?: string };
+        const json = await parseEmployeeApiJson<ProfileFormOptions>(res);
         if (!res.ok || (json.status !== 'success' && json.status !== 'ok') || !json.data) {
           throw new Error(json.error || 'Unable to load payroll form options');
         }
@@ -1596,7 +1596,7 @@ export default function EmployeeProfileClient({
           cache: 'no-store',
           headers: { 'x-hris-role': role },
         });
-        const json = (await res.json()) as { status: string; data?: ProfileFormOptions; error?: string };
+        const json = await parseEmployeeApiJson<ProfileFormOptions>(res);
         if (!res.ok || (json.status !== 'success' && json.status !== 'ok') || !json.data) {
           throw new Error(json.error || 'Unable to load form options');
         }
