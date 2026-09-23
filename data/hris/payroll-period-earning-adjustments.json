@@ -1,5 +1,35 @@
 [
   {
+    "period": "2026-06",
+    "employeeId": "P0050 - Mr. OWOLABI OLASUNKANMI AKEEB",
+    "employeeCode": "P0050 - Mr. OWOLABI OLASUNKANMI AKEEB",
+    "code": "NIGHT_ALLOW",
+    "name": "NIGHT ALLOWANCE",
+    "amount": 19500,
+    "taxable": false,
+    "source": "Timesheet Night Allowance Posting"
+  },
+  {
+    "period": "2026-06",
+    "employeeId": "P0050 - Mr. OWOLABI OLASUNKANMI AKEEB",
+    "employeeCode": "P0050 - Mr. OWOLABI OLASUNKANMI AKEEB",
+    "code": "PAR_SATOVT",
+    "name": "PUBLIC HOLIDAY OVERTIME",
+    "amount": 35455.76,
+    "taxable": true,
+    "source": "Timesheet OT Posting"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "P0033 - Mr. SHONDE AJISAFE FATAI",
+    "employeeCode": "P0033 - Mr. SHONDE AJISAFE FATAI",
+    "code": "NIGHT_ALLOW",
+    "name": "NIGHT ALLOWANCE",
+    "amount": 3000,
+    "taxable": false,
+    "source": "Timesheet Night Allowance Posting"
+  },
+  {
     "period": "2026-07",
     "employeeId": "P0033 - Mr. SHONDE AJISAFE FATAI",
     "employeeCode": "P0033 - Mr. SHONDE AJISAFE FATAI",
@@ -13,9 +43,329 @@
     "period": "2026-07",
     "employeeId": "P0050 - Mr. OWOLABI OLASUNKANMI AKEEB",
     "employeeCode": "P0050 - Mr. OWOLABI OLASUNKANMI AKEEB",
+    "code": "NIGHT_ALLOW",
+    "name": "NIGHT ALLOWANCE",
+    "amount": 22500,
+    "taxable": false,
+    "source": "Timesheet Night Allowance Posting"
+  },
+  {
+    "period": "2026-07",
+    "employeeId": "P0050 - Mr. OWOLABI OLASUNKANMI AKEEB",
+    "employeeCode": "P0050 - Mr. OWOLABI OLASUNKANMI AKEEB",
     "code": "PAR_SATOVT",
     "name": "PUBLIC HOLIDAY OVERTIME",
     "amount": 35455.76,
+    "taxable": true,
+    "source": "Timesheet OT Posting"
+  },
+  {
+    "period": "2026-08",
+    "employeeId": "P0013 - Mr. KARONWI SAMUEL",
+    "employeeCode": "P0013 - Mr. KARONWI SAMUEL",
+    "code": "NIGHT_ALLOW",
+    "name": "NIGHT ALLOWANCE",
+    "amount": 7500,
+    "taxable": false,
+    "source": "Timesheet Night Allowance Posting"
+  },
+  {
+    "period": "2026-08",
+    "employeeId": "P0013 - Mr. KARONWI SAMUEL",
+    "employeeCode": "P0013 - Mr. KARONWI SAMUEL",
+    "code": "PAR_SATOVT",
+    "name": "SATURDAY OVERTIME",
+    "amount": 33485.18,
+    "taxable": true,
+    "source": "Timesheet OT Posting"
+  },
+  {
+    "period": "2026-08",
+    "employeeId": "P0033 - Mr. SHONDE AJISAFE FATAI",
+    "employeeCode": "P0033 - Mr. SHONDE AJISAFE FATAI",
+    "code": "PAR_SATOVT",
+    "name": "PUBLIC HOLIDAY OVERTIME",
+    "amount": 51815.96,
+    "taxable": true,
+    "source": "Timesheet OT Posting"
+  },
+  {
+    "period": "2026-08",
+    "employeeId": "P0040 - Mr. SOKAN EMMANUEL SEGUN",
+    "employeeCode": "P0040 - Mr. SOKAN EMMANUEL SEGUN",
+    "code": "PER_SUNOVT",
+    "name": "SUNDAY OVERTIME",
+    "amount": 16442.45,
+    "taxable": true,
+    "source": "Timesheet OT Posting"
+  },
+  {
+    "period": "2026-08",
+    "employeeId": "P0045 - Mr. OLOKO OJO KOLAWOLE",
+    "employeeCode": "P0045 - Mr. OLOKO OJO KOLAWOLE",
+    "code": "PAR_SATOVT",
+    "name": "SATURDAY OVERTIME",
+    "amount": 88757.57,
+    "taxable": true,
+    "source": "Timesheet OT Posting"
+  },
+  {
+    "period": "2026-08",
+    "employeeId": "P0050 - Mr. OWOLABI OLASUNKANMI AKEEB",
+    "employeeCode": "P0050 - Mr. OWOLABI OLASUNKANMI AKEEB",
+    "code": "NIGHT_ALLOW",
+    "name": "NIGHT ALLOWANCE",
+    "amount": 27000,
+    "taxable": false,
+    "source": "Timesheet Night Allowance Posting"
+  },
+  {
+    "period": "2026-08",
+    "employeeId": "P0050 - Mr. OWOLABI OLASUNKANMI AKEEB",
+    "employeeCode": "P0050 - Mr. OWOLABI OLASUNKANMI AKEEB",
+    "code": "PAR_SATOVT",
+    "name": "SATURDAY OVERTIME",
+    "amount": 48486.52,
+    "taxable": true,
+    "source": "Timesheet OT Posting"
+  },
+  {
+    "period": "2026-08",
+    "employeeId": "P0072 - Mr. AKANDE OWOLOJA",
+    "employeeCode": "P0072 - Mr. AKANDE OWOLOJA",
+    "code": "PAR_SATOVT",
+    "name": "SATURDAY OVERTIME",
+    "amount": 140560.24,
+    "taxable": true,
+    "source": "Timesheet OT Posting"
+  },
+  {
+    "period": "2026-08",
+    "employeeId": "P0072 - Mr. AKANDE OWOLOJA",
+    "employeeCode": "P0072 - Mr. AKANDE OWOLOJA",
+    "code": "PER_SUNOVT",
+    "name": "SUNDAY OVERTIME",
+    "amount": 47962.76,
+    "taxable": true,
+    "source": "Timesheet OT Posting"
+  },
+  {
+    "period": "2026-08",
+    "employeeId": "P0080 - Mr. OKORIE UDO MBA",
+    "employeeCode": "P0080 - Mr. OKORIE UDO MBA",
+    "code": "PAR_SATOVT",
+    "name": "SATURDAY OVERTIME",
+    "amount": 122451.83,
+    "taxable": true,
+    "source": "Timesheet OT Posting"
+  },
+  {
+    "period": "2026-08",
+    "employeeId": "P0316 - Mr. NDUKWE CHUKWUMA",
+    "employeeCode": "P0316 - Mr. NDUKWE CHUKWUMA",
+    "code": "PAR_SATOVT",
+    "name": "PUBLIC HOLIDAY OVERTIME",
+    "amount": 35083.6,
+    "taxable": true,
+    "source": "Timesheet OT Posting"
+  },
+  {
+    "period": "2026-08",
+    "employeeId": "P0316 - Mr. NDUKWE CHUKWUMA",
+    "employeeCode": "P0316 - Mr. NDUKWE CHUKWUMA",
+    "code": "PER_SUNOVT",
+    "name": "SUNDAY OVERTIME",
+    "amount": 41176.38,
+    "taxable": true,
+    "source": "Timesheet OT Posting"
+  },
+  {
+    "period": "2026-08",
+    "employeeId": "P0318 - Mr. RAHEEM ORIYOMI",
+    "employeeCode": "P0318 - Mr. RAHEEM ORIYOMI",
+    "code": "PAR_SATOVT",
+    "name": "SATURDAY OVERTIME",
+    "amount": 28439.82,
+    "taxable": true,
+    "source": "Timesheet OT Posting"
+  },
+  {
+    "period": "2026-08",
+    "employeeId": "P0320 - Mr. DAWODU ADEDIRAN",
+    "employeeCode": "P0320 - Mr. DAWODU ADEDIRAN",
+    "code": "PAR_SATOVT",
+    "name": "SATURDAY OVERTIME",
+    "amount": 74053.92,
+    "taxable": true,
+    "source": "Timesheet OT Posting"
+  },
+  {
+    "period": "2026-08",
+    "employeeId": "P0436 - Mr. OKEWU SUNDAY",
+    "employeeCode": "P0436 - Mr. OKEWU SUNDAY",
+    "code": "PAR_SATOVT",
+    "name": "SATURDAY OVERTIME",
+    "amount": 187837.21,
+    "taxable": true,
+    "source": "Timesheet OT Posting"
+  },
+  {
+    "period": "2026-08",
+    "employeeId": "P0438 - Mr. EVBUOMWAN ESEWI JAMES",
+    "employeeCode": "P0438 - Mr. EVBUOMWAN ESEWI JAMES",
+    "code": "PER_SUNOVT",
+    "name": "SUNDAY OVERTIME",
+    "amount": 160142.98,
+    "taxable": true,
+    "source": "Timesheet OT Posting"
+  },
+  {
+    "period": "2026-09",
+    "employeeId": "P0013 - Mr. KARONWI SAMUEL",
+    "employeeCode": "P0013 - Mr. KARONWI SAMUEL",
+    "code": "NIGHT_ALLOW",
+    "name": "NIGHT ALLOWANCE",
+    "amount": 9000,
+    "taxable": false,
+    "source": "Timesheet Night Allowance Posting"
+  },
+  {
+    "period": "2026-09",
+    "employeeId": "P0013 - Mr. KARONWI SAMUEL",
+    "employeeCode": "P0013 - Mr. KARONWI SAMUEL",
+    "code": "PAR_SATOVT",
+    "name": "SATURDAY OVERTIME",
+    "amount": 33485.18,
+    "taxable": true,
+    "source": "Timesheet OT Posting"
+  },
+  {
+    "period": "2026-09",
+    "employeeId": "P0040 - Mr. SOKAN EMMANUEL SEGUN",
+    "employeeCode": "P0040 - Mr. SOKAN EMMANUEL SEGUN",
+    "code": "PER_SUNOVT",
+    "name": "SUNDAY OVERTIME",
+    "amount": 16442.45,
+    "taxable": true,
+    "source": "Timesheet OT Posting"
+  },
+  {
+    "period": "2026-09",
+    "employeeId": "P0072 - Mr. AKANDE OWOLOJA",
+    "employeeCode": "P0072 - Mr. AKANDE OWOLOJA",
+    "code": "PAR_SATOVT",
+    "name": "SATURDAY OVERTIME",
+    "amount": 173057.45,
+    "taxable": true,
+    "source": "Timesheet OT Posting"
+  },
+  {
+    "period": "2026-09",
+    "employeeId": "P0072 - Mr. AKANDE OWOLOJA",
+    "employeeCode": "P0072 - Mr. AKANDE OWOLOJA",
+    "code": "PER_SUNOVT",
+    "name": "SUNDAY OVERTIME",
+    "amount": 47962.76,
+    "taxable": true,
+    "source": "Timesheet OT Posting"
+  },
+  {
+    "period": "2026-09",
+    "employeeId": "P0080 - Mr. OKORIE UDO MBA",
+    "employeeCode": "P0080 - Mr. OKORIE UDO MBA",
+    "code": "PAR_SATOVT",
+    "name": "SATURDAY OVERTIME",
+    "amount": 168835.1,
+    "taxable": true,
+    "source": "Timesheet OT Posting"
+  },
+  {
+    "period": "2026-09",
+    "employeeId": "P0080 - Mr. OKORIE UDO MBA",
+    "employeeCode": "P0080 - Mr. OKORIE UDO MBA",
+    "code": "PER_SUNOVT",
+    "name": "SUNDAY OVERTIME",
+    "amount": 70444.59,
+    "taxable": true,
+    "source": "Timesheet OT Posting"
+  },
+  {
+    "period": "2026-09",
+    "employeeId": "P0289 - Mrs. ONUGHA VICTORIA EBELE",
+    "employeeCode": "P0289 - Mrs. ONUGHA VICTORIA EBELE",
+    "code": "PER_SUNOVT",
+    "name": "SUNDAY OVERTIME",
+    "amount": 78136.44,
+    "taxable": true,
+    "source": "Timesheet OT Posting"
+  },
+  {
+    "period": "2026-09",
+    "employeeId": "P0316 - Mr. NDUKWE CHUKWUMA",
+    "employeeCode": "P0316 - Mr. NDUKWE CHUKWUMA",
+    "code": "PAR_SATOVT",
+    "name": "SATURDAY OVERTIME",
+    "amount": 58919.03,
+    "taxable": true,
+    "source": "Timesheet OT Posting"
+  },
+  {
+    "period": "2026-09",
+    "employeeId": "P0316 - Mr. NDUKWE CHUKWUMA",
+    "employeeCode": "P0316 - Mr. NDUKWE CHUKWUMA",
+    "code": "PER_SUNOVT",
+    "name": "SUNDAY OVERTIME",
+    "amount": 70970.67,
+    "taxable": true,
+    "source": "Timesheet OT Posting"
+  },
+  {
+    "period": "2026-09",
+    "employeeId": "P0318 - Mr. RAHEEM ORIYOMI",
+    "employeeCode": "P0318 - Mr. RAHEEM ORIYOMI",
+    "code": "PAR_SATOVT",
+    "name": "SATURDAY OVERTIME",
+    "amount": 28439.82,
+    "taxable": true,
+    "source": "Timesheet OT Posting"
+  },
+  {
+    "period": "2026-09",
+    "employeeId": "P0320 - Mr. DAWODU ADEDIRAN",
+    "employeeCode": "P0320 - Mr. DAWODU ADEDIRAN",
+    "code": "PAR_SATOVT",
+    "name": "SATURDAY OVERTIME",
+    "amount": 74053.92,
+    "taxable": true,
+    "source": "Timesheet OT Posting"
+  },
+  {
+    "period": "2026-09",
+    "employeeId": "P0436 - Mr. OKEWU SUNDAY",
+    "employeeCode": "P0436 - Mr. OKEWU SUNDAY",
+    "code": "PAR_SATOVT",
+    "name": "SATURDAY OVERTIME",
+    "amount": 346776.39,
+    "taxable": true,
+    "source": "Timesheet OT Posting"
+  },
+  {
+    "period": "2026-09",
+    "employeeId": "P0436 - Mr. OKEWU SUNDAY",
+    "employeeCode": "P0436 - Mr. OKEWU SUNDAY",
+    "code": "PER_SUNOVT",
+    "name": "SUNDAY OVERTIME",
+    "amount": 198673.98,
+    "taxable": true,
+    "source": "Timesheet OT Posting"
+  },
+  {
+    "period": "2026-09",
+    "employeeId": "P0438 - Mr. EVBUOMWAN ESEWI JAMES",
+    "employeeCode": "P0438 - Mr. EVBUOMWAN ESEWI JAMES",
+    "code": "PER_SUNOVT",
+    "name": "SUNDAY OVERTIME",
+    "amount": 160142.98,
     "taxable": true,
     "source": "Timesheet OT Posting"
   }
