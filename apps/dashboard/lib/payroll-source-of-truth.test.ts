@@ -465,6 +465,27 @@ assert.equal(lumpsumTcmSitePay.paidEarningLines.find((line) => line.code === 'TC
 assert.equal(lumpsumTcmSitePay.paidEarningLines.find((line) => line.code === 'TCMTRANS')?.amount, 31500, 'Sage TCM_TRNSPT must pay as TCM transport');
 assert.equal(lumpsumTcmSitePay.grossPay, 499876.13);
 
+const duplicatedTcmMeal = employee({
+  employeeCode: 'L1939',
+  employeeId: 'L1939',
+  employmentType: 'Lumpsum',
+  periodSalary: 436876.13,
+  sagePayrollEarnings: [
+    { code: 'BASIC1_LUMPSUM', name: 'LUMSUM AMOUNT', amount: 436876.13, runFrequency: 'monthly', sourceAmount: 436876.13 },
+    { code: 'MEAL', name: 'MEAL', amount: 33000, runFrequency: 'monthly', sourceAmount: 33000 },
+    { code: 'TCMTRANS', name: 'TCM TRANSPORT', amount: 31500, runFrequency: 'monthly', sourceAmount: 31500 },
+    { code: 'TCMMEAL', name: 'MEAL', amount: 31500, runFrequency: 'monthly', sourceAmount: 31500 },
+  ],
+});
+const duplicatedTcmMealPay = calculatePayrollEarnings(duplicatedTcmMeal, { useHrisPackageLines: true, period: '2026-09' });
+assert.equal(
+  duplicatedTcmMealPay.paidEarningLines.filter((line) => /MEAL/i.test(line.code)).length,
+  1,
+  'updated TCMMEAL must replace the leftover MEAL line',
+);
+assert.equal(duplicatedTcmMealPay.paidEarningLines.find((line) => line.code === 'TCMMEAL')?.amount, 31500);
+assert.equal(duplicatedTcmMealPay.grossPay, 499876.13);
+
 const mgtColaMeal = employee({
   employeeCode: 'P0399',
   employeeId: 'P0399',

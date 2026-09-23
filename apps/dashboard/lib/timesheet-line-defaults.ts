@@ -17,10 +17,6 @@ import {
   applyNightPaperClock,
   timesheetLineHasBookedHours,
   isIdleTimeProjectCode,
-  isTimesheetPaidLeaveLine,
-  idleTimeProjectHours,
-  productiveProjectHours,
-  isManualOffshoreLine,
 } from '@/lib/timesheet-entry-shared';
 import { withCanonicalProjectManager } from '@/lib/timesheet-canonical-project-managers';
 
@@ -60,84 +56,21 @@ export const resolveBookableTimesheetProject = (
   return bookable.find((project) => project.code.toUpperCase() === preferred) || null;
 };
 
-const preferredProjectCodeFromLines = (lines: TimesheetLine[]) => {
-  for (const line of lines) {
-    const booked = (line.projectAllocations || []).find((item) => (
-      Number(item.hours || 0) > 0.001 && !isIdleTimeProjectCode(item.projectCode)
-    ));
-    if (booked?.projectCode) return booked.projectCode;
-  }
-  return null;
-};
-
 /**
- * Fill empty clocked rows from a job already booked on this sheet.
- * Clock-in is attendance only — do not auto-book DL0062 or a default project.
+ * Clock-in is attendance only. Save and submit keep hours the supervisor typed.
+ * A job already on this sheet is not copied onto people left blank — including
+ * crew working with a skip-level supervisor such as Shittu.
  */
 export const ensureClockedLinesHaveProjectAllocation = (
   lines: TimesheetLine[],
-  projects: TimesheetBookableProject[],
+  _projects: TimesheetBookableProject[],
   dayContext: TimesheetDayContext,
-  skipAutoBook?: (line: TimesheetLine) => boolean,
-): { lines: TimesheetLine[]; bookedCount: number; projectCode: string | null } => {
-  const project = resolveBookableTimesheetProject(projects, preferredProjectCodeFromLines(lines));
-  if (!project) {
-    return {
-      lines: lines.map((line) => applyTimesheetLineDefaults(line, dayContext, [])),
-      bookedCount: 0,
-      projectCode: null,
-    };
-  }
-
-  const hours = resolveTimesheetHours(dayContext);
-  const shift = resolveTimesheetShift(dayContext.shiftLabel);
-  let bookedCount = 0;
-
-  const nextLines = lines.map((line) => {
-    const working = applyTimesheetLineDefaults(line, dayContext, [project.code]);
-    if (shift.kind !== 'Night' && isTimesheetAbsentLine(working) && !isManualOffshoreLine(working)) {
-      return working;
-    }
-    if (productiveProjectHours(working.projectAllocations) > 0.001) {
-      return working;
-    }
-    if (isTimesheetPaidLeaveLine(working) || idleTimeProjectHours(working.projectAllocations) > 0.001) {
-      return working;
-    }
-    if (!working.clockIn && !isManualOffshoreLine(working) && shift.kind !== 'Night') {
-      return working;
-    }
-    if (skipAutoBook?.(working)) return working;
-
-    bookedCount += 1;
-    const projectAllocations = normalizeProjectAllocations([
-      {
-        projectId: project.id,
-        projectCode: project.code,
-        projectName: project.name,
-        hours: hours.standardProductiveHours,
-        remarks: AUTO_BOOKED_ATTENDANCE_REMARK,
-      },
-      ...normalizeProjectAllocations(working.projectAllocations).filter((item) => isIdleTimeProjectCode(item.projectCode)),
-    ]);
-    const usedHours = sumProjectAllocationHours(projectAllocations);
-    const idleHours = round1((working.idleAllocations || []).reduce((sum, item) => sum + Number(item.hours || 0), 0));
-    const totalHours = round1(usedHours + idleHours);
-    const complete = totalHours === hours.grossHours && usedHours === hours.standardProductiveHours;
-    return {
-      ...working,
-      projectAllocations,
-      usedHours,
-      idleHours,
-      totalHours,
-      variance: round1(totalHours - hours.grossHours),
-      validationStatus: complete ? 'Valid' : 'Incomplete',
-      validationMessage: complete ? null : `Awaiting full ${hours.grossHours}-hour allocation.`,
-    } as TimesheetLine;
-  });
-
-  return { lines: nextLines, bookedCount, projectCode: project.code };
-};
+  _skipAutoBook?: (line: TimesheetLine) => boolean,
+): { lines: TimesheetLine[]; bookedCount: number; projectCode: string | null } => ({
+  lines: lines.map((line) => applyTimesheetLineDefaults(line, dayContext, [])),
+  bookedCount: 0,
+  projectCode: null,
+});
 
 /** Apply break-time defaults on clocked-in lines. Night shift skips the extra 1h break against biometric. */
 export const applyTimesheetLineDefaults = (

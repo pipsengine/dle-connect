@@ -852,7 +852,7 @@ const mergeConfiguredPackageSupplements = (
   for (const line of packageLines) {
     const key = canonicalEarningCode(line.code);
     const existing = packageByCanonical.get(key);
-    if (!existing || Number(line.amount || 0) > Number(existing.amount || 0)) packageByCanonical.set(key, line);
+    if (shouldReplaceCanonicalLine(existing, line)) packageByCanonical.set(key, line);
   }
   const merged = baseLines.map((line) => {
     const key = canonicalEarningCode(line.code);
@@ -1006,10 +1006,34 @@ const canonicalEarningCode = (code: string) => {
     TCMTRANSPORT: 'TCMTRANS',
     TCMTRANSP: 'TCMTRANS',
     TCM_TRANSPORT: 'TCMTRANS',
+    MEAL: 'TCMMEAL',
+    TCMMEAL: 'TCMMEAL',
   };
   if (/^(STIPEND(NT)?|NYSCALLOW(ANCE)?|ITALLOW(ANCE)?)$/.test(upper)) return 'STIPENDNT';
   if (/^TCM(TRNSPT|TRANS|TRANSPORT|TRANSP)$/.test(upper)) return 'TCMTRANS';
+  if (upper === 'MEAL' || upper === 'TCMMEAL') return 'TCMMEAL';
   return aliases[upper] || upper;
+};
+
+/** Plain MEAL and TCMMEAL are one TCM meal. The TCMMEAL update replaces a leftover MEAL row. */
+const plainMealCodeRank = (code: string) => {
+  const upper = compact(code).toUpperCase().replace(/[^A-Z0-9]/g, '');
+  if (upper === 'TCMMEAL') return 2;
+  if (upper === 'MEAL') return 1;
+  return 0;
+};
+
+const shouldReplaceCanonicalLine = (
+  existing: { code: string; amount: number } | undefined,
+  incoming: { code: string; amount: number },
+) => {
+  if (!existing) return true;
+  if (canonicalEarningCode(incoming.code) === 'TCMMEAL') {
+    const incomingRank = plainMealCodeRank(incoming.code);
+    const existingRank = plainMealCodeRank(existing.code);
+    if (incomingRank !== existingRank) return incomingRank > existingRank;
+  }
+  return Number(incoming.amount || 0) > Number(existing.amount || 0);
 };
 
 const collapseCanonicalEarningLines = (lines: PayrollEarningLine[]) => {
@@ -1017,7 +1041,7 @@ const collapseCanonicalEarningLines = (lines: PayrollEarningLine[]) => {
   for (const line of lines) {
     const key = canonicalEarningCode(line.code);
     const existing = byCanonical.get(key);
-    if (!existing || Number(line.amount || 0) > Number(existing.amount || 0)) {
+    if (shouldReplaceCanonicalLine(existing, line)) {
       byCanonical.set(
         key,
         key === 'STIPENDNT'

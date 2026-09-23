@@ -319,7 +319,29 @@ export const leftoverStoredPeriodOnlyLines = <T extends {
 const standingPackageCodeKey = (code?: string | null) => {
   const compact = compactPayrollCode(code);
   if (/^TCM(TRNSPT|TRANS|TRANSPORT|TRANSP)$/.test(compact)) return 'TCMTRANS';
+  if (compact === 'MEAL' || compact === 'TCMMEAL') return 'TCMMEAL';
   return compact;
+};
+
+/** One plain meal line. A TCMMEAL capture replaces a leftover MEAL row instead of stacking. */
+const collapseStandingPackageLines = (lines: StoredPayrollPackageLine[]) => {
+  const next: StoredPayrollPackageLine[] = [];
+  let meal: StoredPayrollPackageLine | null = null;
+  for (const line of lines) {
+    if (standingPackageCodeKey(line.code) !== 'TCMMEAL') {
+      next.push(line);
+      continue;
+    }
+    if (!meal) {
+      meal = line;
+      continue;
+    }
+    const mealCode = compactPayrollCode(meal.code);
+    const lineCode = compactPayrollCode(line.code);
+    if (lineCode === 'TCMMEAL' && mealCode !== 'TCMMEAL') meal = line;
+    else if (lineCode === mealCode && Number(line.amount || 0) > Number(meal.amount || 0)) meal = line;
+  }
+  return meal ? [...next, meal] : next;
 };
 
 /** Keep HRIS TCM / standing supplements when an Excel salary schedule is written back to the package. */
@@ -388,11 +410,11 @@ export const mergePayrollEarningLinesForSave = (
   existing: SagePayrollLineItem[] | null | undefined,
   incoming: StoredPayrollPackageLine[],
 ): StoredPayrollPackageLine[] => {
-  const next = [...incoming];
-  const incomingCodes = new Set(next.map((line) => String(line.code || '').toUpperCase()).filter(Boolean));
+  const next = collapseStandingPackageLines([...incoming]);
+  const incomingCodes = new Set(next.map((line) => standingPackageCodeKey(line.code)).filter(Boolean));
   const editorHasStructural = next.some((line) => isStructuralPayrollPackageCode(line.code));
   for (const line of existing || []) {
-    const code = String(line.code || '').trim().toUpperCase();
+    const code = standingPackageCodeKey(line.code);
     if (!code || incomingCodes.has(code)) continue;
     if (isPeriodOnlyPackageEarningLine(line)) continue;
     if (isHrisConfiguredPayrollLine(line)) {

@@ -52,39 +52,12 @@ const standingLine = (code: string, name: string, amount: number): Line => ({
 });
 
 const patchLines = (lines: Line[], meal: number, transport: number) => {
-  const next = lines.map((line) => ({ ...line }));
-  let mealIdx = next.findIndex((line) => isMealLine(String(line.code || ''), String(line.name || '')));
-  let transportIdx = next.findIndex((line) => isTcmTransportLine(String(line.code || ''), String(line.name || '')));
-
-  if (mealIdx < 0 && meal > 0) {
-    next.push(standingLine('TCMMEAL', 'MEAL', meal));
-    mealIdx = next.length - 1;
-  }
-  if (transportIdx < 0 && transport > 0) {
-    next.push(standingLine('TCM_TRNSPT', 'TCM TRANSPORT', transport));
-    transportIdx = next.length - 1;
-  }
-
-  if (mealIdx >= 0) {
-    if (meal > 0) {
-      next[mealIdx] = { ...next[mealIdx], ...standingLine(String(next[mealIdx].code || 'TCMMEAL'), String(next[mealIdx].name || 'MEAL'), meal) };
-    } else {
-      next.splice(mealIdx, 1);
-      if (transportIdx > mealIdx) transportIdx -= 1;
-    }
-  }
-
-  if (transportIdx >= 0) {
-    if (transport > 0) {
-      next[transportIdx] = {
-        ...next[transportIdx],
-        ...standingLine(String(next[transportIdx].code || 'TCM_TRNSPT'), String(next[transportIdx].name || 'TCM TRANSPORT'), transport),
-      };
-    } else {
-      next.splice(transportIdx, 1);
-    }
-  }
-
+  const next = lines.filter((line) =>
+    !isMealLine(String(line.code || ''), String(line.name || ''))
+    && !isTcmTransportLine(String(line.code || ''), String(line.name || '')),
+  );
+  if (meal > 0) next.push(standingLine('TCMMEAL', 'MEAL', meal));
+  if (transport > 0) next.push(standingLine('TCM_TRNSPT', 'TCM TRANSPORT', transport));
   return next;
 };
 

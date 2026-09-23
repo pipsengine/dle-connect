@@ -57,6 +57,32 @@ const merged = mergePayrollEarningLinesForSave(
 );
 assert.equal(merged.some((line) => line.code === 'OVERTIME'), false, 'save must drop leftover overtime rather than merge it back');
 
+const mealReplaced = mergePayrollEarningLinesForSave(
+  [
+    { code: 'LUMPSUMTAX', name: 'LUMPSUM', amount: 436876.13, runFrequency: 'monthly', sourceAmount: 436876.13 },
+    { code: 'MEAL', name: 'MEAL', amount: 33000 },
+    { code: 'TCMTRANS', name: 'TCM TRANSPORT', amount: 33000 },
+  ],
+  [
+    { code: 'LUMPSUMTAX', name: 'LUMPSUM', amount: 436876.13, runFrequency: 'monthly', sourceAmount: 436876.13 },
+    { code: 'TCMMEAL', name: 'MEAL', amount: 31500, runFrequency: 'monthly', sourceAmount: 31500, includeInMonthlyPayroll: true },
+    { code: 'TCMTRANS', name: 'TCM TRANSPORT', amount: 31500, runFrequency: 'monthly', sourceAmount: 31500, includeInMonthlyPayroll: true },
+  ],
+);
+assert.equal(mealReplaced.filter((line) => /MEAL/i.test(String(line.code))).length, 1, 'saving TCMMEAL must drop the leftover MEAL line');
+assert.equal(mealReplaced.find((line) => line.code === 'TCMMEAL')?.amount, 31500);
+
+const bothMealsSubmitted = mergePayrollEarningLinesForSave(
+  [],
+  [
+    { code: 'MEAL', name: 'MEAL', amount: 33000, runFrequency: 'monthly', sourceAmount: 33000, includeInMonthlyPayroll: true },
+    { code: 'TCMMEAL', name: 'MEAL', amount: 31500, runFrequency: 'monthly', sourceAmount: 31500, includeInMonthlyPayroll: true },
+  ],
+);
+assert.equal(bothMealsSubmitted.filter((line) => /MEAL/i.test(String(line.code))).length, 1);
+assert.equal(bothMealsSubmitted[0]?.code, 'TCMMEAL');
+assert.equal(bothMealsSubmitted[0]?.amount, 31500);
+
 const scoped = splitDraftEarningLinesByScope([
   { id: '1', code: 'LUMPSUMTAX', name: 'LUMPSUM', amount: '260000', taxable: true, frequency: 'monthly' },
   { id: '2', code: 'OVERTIME', name: 'OVERTIME', amount: '3000', taxable: true, frequency: 'one-off', payrollPeriod: '2026-09' },

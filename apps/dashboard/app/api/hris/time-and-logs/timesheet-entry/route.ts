@@ -2262,7 +2262,7 @@ export async function PATCH(request: Request) {
       if (payload.shiftLabel) header.shiftLabel = String(payload.shiftLabel);
       const isNightHeader = resolveTimesheetShift(header.shiftLabel).kind === 'Night';
 
-      // Fill remaining clocked rows from a job already on this sheet. Do not guess a catalog project.
+      // Keep hours the supervisor typed. Do not copy a job onto clocked people left blank.
       const allocationSeed = ensureClockedLinesHaveProjectAllocation(
         updatedLines,
         saveProjects,

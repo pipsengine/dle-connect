@@ -46,20 +46,25 @@ const emptySync = ensureClockedLinesHaveProjectAllocation([baseLine()], projects
 assert.equal(emptySync.bookedCount, 0);
 assert.equal(emptySync.projectCode, null);
 
-const result = ensureClockedLinesHaveProjectAllocation(
+const leftBlank = ensureClockedLinesHaveProjectAllocation(
   [
     baseLine({
       projectAllocations: [{ projectId: 'p1', projectCode: 'DL1985', projectName: 'Legacy Preferred', hours: 8, remarks: null }],
       usedHours: 8,
     }),
-    baseLine({ id: 'line-2', employeeId: 'C1720', employeeNo: 'C1720', employeeName: 'ADANOU' }),
+    baseLine({ id: 'line-2', employeeId: 'C1886', employeeNo: 'C1886', employeeName: 'SHITTU CREW' }),
   ],
   projects,
   dayContext,
 );
-assert.equal(result.bookedCount, 1);
-assert.equal(result.projectCode, 'DL1985');
-assert.equal(result.lines[1]?.projectAllocations[0]?.projectCode, 'DL1985');
+assert.equal(leftBlank.bookedCount, 0);
+assert.equal(leftBlank.projectCode, null);
+assert.equal(leftBlank.lines[0]?.projectAllocations[0]?.projectCode, 'DL1985');
+assert.equal(
+  (leftBlank.lines[1]?.projectAllocations || []).some((item) => Number(item.hours || 0) > 0.001),
+  false,
+  'a clocked person the supervisor did not book stays unbooked when someone else on the sheet has hours',
+);
 
 const alreadyBooked = ensureClockedLinesHaveProjectAllocation(
   [baseLine({

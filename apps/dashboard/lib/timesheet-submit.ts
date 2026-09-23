@@ -349,6 +349,7 @@ export async function submitTimesheetForApproval(input: {
   const dayContext = dayContextFor(header.timesheetDate, holidayDates, header.shiftLabel, header.locationName);
   const isNightHeader = resolveTimesheetShift(header.shiftLabel).kind === 'Night';
 
+  // Keep hours the supervisor typed. Do not copy a job onto clocked people left blank.
   const allocationSeed = ensureClockedLinesHaveProjectAllocation(
     input.lines,
     projects,
