@@ -224,8 +224,9 @@ const resolvePeriodCalculation = async (
   periodRecord: { status: string } | null,
   packOverride?: PayrollRunPack | null,
   companyOverride?: PayrollCompany | null,
+  options?: { preserveStandingAmounts?: boolean; anyRunComputed?: boolean },
 ) => {
-  const payrollComputed = isPayrollComputed(run, periodRecord);
+  const payrollComputed = Boolean(options?.anyRunComputed) || isPayrollComputed(run, periodRecord);
   const pack = packOverride || (run ? resolvePayrollRunPack(run) : undefined);
   const company = companyOverride || (run ? resolvePayrollRunCompany(run) : null);
 
@@ -249,6 +250,11 @@ const resolvePeriodCalculation = async (
   );
 
   if (!payrollComputed) {
+    // Employee Salary Setup requests company=all. That has no single run, so treating it
+    // as "pending" was wiping DLE/DLPC standing packages to ₦0 ("NO" in the drawer).
+    if (options?.preserveStandingAmounts) {
+      return { calculation: liveWithCompanion, dataMode: 'live' as const, payrollComputed: false };
+    }
     return { calculation: stripPendingPayrollAmounts(liveWithCompanion), dataMode: 'pending' as const, payrollComputed: false };
   }
 
@@ -865,6 +871,7 @@ export const buildManagementPayload = async (
   const pack = normalizePayrollRunPack(requestedPack) || 'salaried';
   // Pay Setup may request company=all so DLE + DLPC salary rows load together.
   const allCompanies = String(requestedCompany || '').trim().toLowerCase() === 'all';
+  const setupView = new URL(request.url).searchParams.get('view')?.trim().toLowerCase() === 'setup';
   const company: PayrollCompany | null = allCompanies
     ? null
     : (normalizePayrollCompany(requestedCompany) || 'DLE');
@@ -891,12 +898,18 @@ export const buildManagementPayload = async (
       || (await getPayrollRunForPeriod(period, pack, scopeCompany))
       || null
     );
+  const anyRunComputed = packRunsSource.some((item) => isPayrollComputed(item, periodRecord));
   const { calculation, dataMode, payrollComputed } = await resolvePeriodCalculation(
     period,
     selectedRun,
     periodRecord,
     pack,
     company,
+    {
+      // Pay Setup / company=all must show HRIS salary packages, not the pending-run zeros.
+      preserveStandingAmounts: allCompanies || setupView,
+      anyRunComputed: allCompanies ? anyRunComputed : undefined,
+    },
   );
   const { packTotals, scheduleTotals, periodTotals } = await buildPackTotals(period, packRunsSource, periodRecord, {
     pack,

@@ -3,7 +3,8 @@ import path from 'node:path';
 import { applyDayrateScheduleOverrideToRecords } from './dayrate-schedule-overlay';
 import type { DayrateScheduleRow } from './dayrate-schedule-xlsx';
 import type { PayrollCalculationRecord } from './payroll-calculation-service';
-import { applySalaryScheduleOverrideToRecords, payrollCompanyFromSalaryScheduleRow } from './salary-schedule-overlay';
+import { applySalaryScheduleFallbackForMissingGross, applySalaryScheduleOverrideToRecords, payrollCompanyFromSalaryScheduleRow } from './salary-schedule-overlay';
+import { formatPayrollMoney } from './payroll-currency';
 import {
   parseSalaryScheduleWorkbook,
   salaryScheduleCostSummaryForPeriod,
@@ -305,5 +306,71 @@ const septemberDayrate = applyDayrateScheduleOverrideToRecords(
 );
 assert(septemberDayrate.length === 1 && septemberDayrate[0].grossPay === 15000, 'From 2026-09 day-rate Excel does not overlay timesheet amounts');
 assert(septemberDayrate[0].companyCode === 'DLE', 'From 2026-09 day-rate Excel does not restamp company');
+
+const septemberDlpcZero = applySalaryScheduleFallbackForMissingGross(
+  [
+    blankRecord({
+      employeeCode: 'P0387',
+      employeeId: 'P0387',
+      payrollGroup: 'DLPC',
+      companyCode: 'DLPC',
+      grossPay: 0,
+      netPay: 0,
+      earningLines: [{ code: 'SNR_BASIC', name: 'BASIC SALARY', amount: 0, taxable: true }],
+    }),
+    blankRecord({
+      employeeCode: 'P0100',
+      employeeId: 'P0100',
+      payrollGroup: 'DLE',
+      companyCode: 'DLE',
+      grossPay: 400000,
+      netPay: 320000,
+      earningLines: [{ code: 'SNR_BASIC', name: 'BASIC SALARY', amount: 166400, taxable: true }],
+    }),
+  ],
+  '2026-09',
+  {
+    period: '2026-09',
+    fileName: 'salary.xlsx',
+    title: 'Salary',
+    appliedAt: '2026-09-01',
+    appliedBy: 'test',
+    parsed: {
+      title: 'Salary',
+      rows: [
+        salaryRow({
+          employeeCode: 'P0387',
+          company: 'DLPCG - DLPCG',
+          grossPay: 245000,
+          netPay: 200000,
+          periodSalary: 245000,
+          earnings: [
+            { code: 'BASIC', name: 'BASIC SALARY', amount: 101920 },
+            { code: 'HOUSING', name: 'HOUSING', amount: 27636 },
+          ],
+        }),
+      ],
+      byKind: { perm: [], cont: [], usd: [] },
+      summary: {
+        permCount: 1, contCount: 0, usdCount: 0,
+        permGross: 245000, contGross: 0, usdGross: 0,
+        permNet: 200000, contNet: 0, usdNet: 0,
+      },
+      skipped: [],
+      sheets: [],
+      costSummary: [],
+      pivotTotals: { dleStaffGross: 0, dleContractGross: 0, dlpcStaffGross: 0, dlpcContractGross: 0 },
+    },
+  },
+  null,
+);
+const filledDlpc = septemberDlpcZero.find((row) => row.employeeCode === 'P0387');
+const untouchedDle = septemberDlpcZero.find((row) => row.employeeCode === 'P0100');
+assert(filledDlpc?.grossPay === 245000, 'September DLPC staff with empty HRIS package get schedule amounts');
+assert((filledDlpc?.earningLines || []).some((line) => line.code === 'BASIC' && Number(line.amount) === 101920), 'DLPC earning lines come from the schedule');
+assert(untouchedDle?.grossPay === 400000, 'Staff who already have a profile package are not replaced');
+
+assert(formatPayrollMoney(0, 'NGN') === '₦\u00A00', 'Zero naira is ₦ 0, not the currency glyph jammed against 0');
+assert(formatPayrollMoney(1234, 'NGN').includes('1,234'), 'NGN thousands stay grouped');
 
 console.log('payroll-schedule-company tests passed');

@@ -13,7 +13,7 @@ import { activeLoansVersion, calculateLoanRecovery, loanInputsFromApplications, 
 import { normalizePayrollPeriod, syncLeaveAllowanceEventsForPayroll } from '@/lib/payroll-leave-allowance-store';
 import { ensureDayrateScheduleOverrideLoaded } from '@/lib/dayrate-schedule-upload-sql';
 import { ensureSalaryScheduleOverrideLoaded } from '@/lib/salary-schedule-upload-sql';
-import { applySalaryScheduleCompanionPay, applySalaryScheduleOverrideToRecords, ngnSalaryScheduleKpi } from '@/lib/salary-schedule-overlay';
+import { applySalaryScheduleCompanionPay, applySalaryScheduleFallbackForMissingGross, applySalaryScheduleOverrideToRecords, ngnSalaryScheduleKpi } from '@/lib/salary-schedule-overlay';
 import { persistAppliedPayrollSchedulesToHris } from '@/lib/payroll-schedule-hris-persist';
 import { applyDayrateScheduleOverrideToRecords } from '@/lib/dayrate-schedule-overlay';
 import { applyApprovedFinalSettlementsToRecords } from '@/lib/final-payroll-settlement-overlay';
@@ -1168,7 +1168,10 @@ const computePayrollForPeriod = async (requestedPeriod: string): Promise<Payroll
   const records = applyLockedPayrollPackageToRecords(
     await applyApprovedFinalSettlementsToRecords(
       applyDayrateScheduleOverrideToRecords(
-        applySalaryScheduleOverrideToRecords(builtRecords, requestedPeriod),
+        applySalaryScheduleFallbackForMissingGross(
+          applySalaryScheduleOverrideToRecords(builtRecords, requestedPeriod),
+          requestedPeriod,
+        ),
         requestedPeriod,
       ),
       requestedPeriod,

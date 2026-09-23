@@ -356,7 +356,7 @@ export default function EmployeeSalarySetupClient({ initialNow }: { initialNow: 
     setLoading(true);
     setError('');
     // company=all returns DLE + DLPC; the default API company is DLE-only.
-    const requestPayroll = () => fetch('/api/hris/payroll-management?company=all', {
+    const requestPayroll = () => fetch('/api/hris/payroll-management?company=all&view=setup', {
       headers: { 'x-hris-role': role },
       cache: 'no-store',
       credentials: 'same-origin',

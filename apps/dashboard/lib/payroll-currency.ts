@@ -38,10 +38,11 @@ export const formatPayrollMoney = (
   const code = currencyCode(currency);
   const minimumFractionDigits = options?.minimumFractionDigits ?? (code === 'USD' ? 2 : 0);
   const maximumFractionDigits = options?.maximumFractionDigits ?? (code === 'USD' ? 2 : 0);
-  return new Intl.NumberFormat(code === 'USD' ? 'en-US' : 'en-NG', {
-    style: 'currency',
-    currency: code,
+  // Format the number separately. ICU's NGN currency symbol is ₦, and `₦0` reads as "NO"
+  // in the salary-setup drawer (Windows fonts + zero).
+  const digits = new Intl.NumberFormat(code === 'USD' ? 'en-US' : 'en-NG', {
     minimumFractionDigits,
     maximumFractionDigits,
   }).format(value);
+  return `${code === 'USD' ? '$' : '₦'}\u00A0${digits}`;
 };

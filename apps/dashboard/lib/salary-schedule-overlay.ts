@@ -15,6 +15,7 @@ import {
   readAppliedSalaryScheduleOverride,
   type SalaryScheduleUploadRecord,
 } from '@/lib/salary-schedule-upload-sql';
+import { previousPayrollPeriod } from '@/lib/payroll-periods';
 import { payrollExcelAmountOverlayApplies } from '@/lib/payroll-source-of-truth';
 
 const roundMoney = (value: number) => Math.round((Number.isFinite(value) ? value : 0) * 100) / 100;
@@ -226,6 +227,55 @@ export const applySalaryScheduleOverrideToRecords = (
   });
 
   return [...dailyRate, ...attachCompanionNgnPay([...overlaid, ...missingUsdFromHris], companionExcel)];
+};
+
+const salaryRowHasPackageAmounts = (row: SalaryScheduleRow) =>
+  Number(row.grossPay || 0) > 0
+  || Number(row.periodSalary || 0) > 0
+  || (row.earnings || []).some((line) => Number(line.amount || 0) > 0);
+
+/**
+ * From September 2026 the Excel workbook is not the live payroll authority, but Employee
+ * Salary Setup still needs a package when HRIS period_salary / earning lines are empty
+ * (typical for DLPC staff who only existed on the schedule). Fill those zeros from the
+ * applied workbook for this month, then the previous month.
+ */
+export const applySalaryScheduleFallbackForMissingGross = (
+  records: PayrollCalculationRecord[],
+  period: string,
+  schedule?: SalaryScheduleUploadRecord | null,
+  priorSchedule?: SalaryScheduleUploadRecord | null,
+): PayrollCalculationRecord[] => {
+  if (payrollExcelAmountOverlayApplies(period)) return records;
+  const current = schedule === undefined ? readAppliedSalaryScheduleOverride(period) : schedule;
+  const prior = priorSchedule === undefined
+    ? (previousPayrollPeriod(period) ? readAppliedSalaryScheduleOverride(previousPayrollPeriod(period)) : null)
+    : priorSchedule;
+  const rows = [...(current?.parsed?.rows || []), ...(prior?.parsed?.rows || [])];
+  if (!rows.length) return records;
+
+  const byCurrency = {
+    NGN: new Map<string, SalaryScheduleRow>(),
+    USD: new Map<string, SalaryScheduleRow>(),
+  } as const;
+  for (const row of rows) {
+    if (!salaryRowHasPackageAmounts(row)) continue;
+    if (row.kind !== 'usd' && !normalizePayrollCompany(row.company)) continue;
+    const currency = excelRowCurrency(row);
+    for (const key of salaryScheduleEmployeeKeys(row.employeeCode)) {
+      if (!byCurrency[currency].has(key)) byCurrency[currency].set(key, row);
+    }
+  }
+
+  return records.map((record) => {
+    if (record.isDailyRate) return record;
+    if (Number(record.grossPay || 0) > 0) return record;
+    if ((record.earningLines || []).some((line) => Number(line.amount || 0) > 0)) return record;
+    const currency = resolvePayCurrency(record) === 'USD' ? 'USD' : 'NGN';
+    const excel = recordKeys(record).map((key) => byCurrency[currency].get(key)).find(Boolean);
+    if (!excel) return record;
+    return overlaySalaryRow(record, excel);
+  });
 };
 
 const excelAsEmployee = (row: SalaryScheduleRow) => ({

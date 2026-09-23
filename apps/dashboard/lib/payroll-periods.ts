@@ -16,6 +16,18 @@ export const nextPayrollPeriod = (period: string) => {
   return `${year}-${String(month).padStart(2, '0')}`;
 };
 
+export const previousPayrollPeriod = (period: string) => {
+  const match = /^(\d{4})-(\d{2})$/.exec(String(period || '').trim());
+  if (!match) return '';
+  let year = Number(match[1]);
+  let month = Number(match[2]) - 1;
+  if (month < 1) {
+    month = 12;
+    year -= 1;
+  }
+  return `${year}-${String(month).padStart(2, '0')}`;
+};
+
 /** When the stored active month is already Closed, Process Payroll should move to the next calendar month. */
 export const successorPeriodIfActiveClosed = (
   activePeriod: string,
