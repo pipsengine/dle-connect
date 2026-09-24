@@ -429,16 +429,16 @@ const withCategoryFormulaLines = (profileId: PayrollEarningProfileId, lines: Pay
 
 const CONTRACT_MEAL_RATE = 500;
 
-const contractMealAllowanceLine = (daysWorked: number, mealAmount?: number | null): PayrollEarningLine | null => {
+const contractMealAllowanceLine = (weekdayDays: number, mealAmount?: number | null): PayrollEarningLine | null => {
   const scheduleDriven = mealAmount !== null && mealAmount !== undefined;
-  const amount = roundMoney(scheduleDriven ? Math.max(0, num(mealAmount)) : Math.max(0, daysWorked) * CONTRACT_MEAL_RATE);
+  const amount = roundMoney(scheduleDriven ? Math.max(0, num(mealAmount)) : Math.max(0, weekdayDays) * CONTRACT_MEAL_RATE);
   if (amount <= 0) return null;
   return {
     code: 'MEAL',
     name: 'MEAL ALLOWANCE',
     taxable: true,
     percentOfGross: 0,
-    calculation: scheduleDriven ? 'HR dayrate schedule meal allowance' : 'NGN 500 * number of days worked',
+    calculation: scheduleDriven ? 'HR dayrate schedule meal allowance' : 'NGN 500 * weekday days worked (Mon–Fri)',
     runFrequency: 'formula',
     includeInMonthlyPayroll: true,
     amount,
@@ -690,12 +690,21 @@ const scheduleAllowanceLines = (row: DayrateScheduleRow): PayrollEarningLine[] =
 
 export const mergeTimesheetDayRateEarnings = (
   employee: DleEmployeeDirectoryRow,
-  input: { ratePerDay: number; daysWorked: number; weekdayOvertimeHours?: number; period?: string },
+  input: {
+    ratePerDay: number;
+    daysWorked: number;
+    weekdayOvertimeHours?: number;
+    saturdayHours?: number;
+    sundayHours?: number;
+    publicHolidayHours?: number;
+    period?: string;
+  },
 ): PayrollEarningsResult => {
   const excel = payrollExcelAmountOverlayApplies(input.period) ? findDayrateScheduleOverrideRow(input.period, employee) : null;
   // When HR has applied a dayrate schedule (2026-08 and earlier), the sheet is the
   // authority for the day rate and meal allowance too — not just the hours.
-  // From 2026-09, approved timesheet days × profile ratePerDay are the authority.
+  // From 2026-09, approved weekday days × profile ratePerDay are the authority.
+  // Saturday/Sunday hours pay SATEARN/SUNDAYEARN — they must not inflate weekday meal (₦500 × days).
   const timesheetBase = excel
     ? contractDayRatePayrollResult({
         ratePerDay: num(excel.excelDailyRate) > 0 ? num(excel.excelDailyRate) : input.ratePerDay,
@@ -710,6 +719,9 @@ export const mergeTimesheetDayRateEarnings = (
         ratePerDay: input.ratePerDay,
         daysWorked: input.daysWorked,
         weekdayOvertimeHours: input.weekdayOvertimeHours,
+        saturdayHours: input.saturdayHours,
+        sundayHours: input.sundayHours,
+        publicHolidayHours: input.publicHolidayHours,
       });
   // Permanent authority rule: timesheet JCWEEKDAY (+ auto meal) is the day-rate base.
   // Never stack Sage Dayrate Payment Schedule OT / weekend / meal on top — that inflated July re-runs.

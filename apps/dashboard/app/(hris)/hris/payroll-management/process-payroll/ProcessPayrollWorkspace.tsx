@@ -2,6 +2,7 @@
 
 /* eslint-disable react-hooks/set-state-in-effect, react-hooks/exhaustive-deps */
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
+import { createPortal } from 'react-dom';
 import { useRouter } from 'next/navigation';
 import {
   CalendarDays,
@@ -16,6 +17,7 @@ import {
   TriangleAlert,
   Users,
   WalletCards,
+  X,
 } from 'lucide-react';
 import {
   groupDleUsdRecords,
@@ -88,6 +90,14 @@ type PayrollRun = {
   audit?: Array<{ at: string; actor: string; action: string; from?: string; to?: string; note?: string }>;
 };
 
+type PayrollLine = {
+  code?: string;
+  name?: string;
+  label?: string;
+  amount?: number | null;
+  calculation?: string;
+};
+
 type PayrollRecord = {
   employeeId: string;
   fullName: string;
@@ -97,10 +107,27 @@ type PayrollRecord = {
   payCurrency?: string;
   salaryGrade?: string;
   businessUnit?: string;
+  jobTitle?: string;
+  location?: string;
   grossPay: number | null;
   totalDeductions: number | null;
   netPay: number | null;
   employerCost: number | null;
+  basePay?: number | null;
+  allowances?: number | null;
+  paye?: number | null;
+  pension?: number | null;
+  otherDeductions?: number | null;
+  timesheetDaysWorked?: number | null;
+  timesheetWeekdayDays?: number | null;
+  timesheetSaturdayDays?: number | null;
+  timesheetSundayDays?: number | null;
+  timesheetTotalDaysWorked?: number | null;
+  timesheetBookedHours?: number | null;
+  ratePerDay?: number | null;
+  isDailyRate?: boolean;
+  earningLines?: PayrollLine[];
+  deductionLines?: PayrollLine[];
   status: RecordStatus;
   issues: string[];
   companionNgnPay?: {
@@ -381,6 +408,12 @@ export default function ProcessPayrollWorkspace({
   const [statusFilter, setStatusFilter] = useState('all');
   const [registerSection, setRegisterSection] = useState<string>('all');
   const [page, setPage] = useState(1);
+  const [detailRecord, setDetailRecord] = useState<PayrollRecord | null>(null);
+  const [modalMounted, setModalMounted] = useState(false);
+
+  useEffect(() => {
+    setModalMounted(true);
+  }, []);
 
   const loadSession = async () => {
     try {
@@ -1181,9 +1214,10 @@ export default function ProcessPayrollWorkspace({
                               <button
                                 type="button"
                                 className={styles.viewBtn}
-                                onClick={() => {
-                                  setSalaryQuery(record.employeeId);
-                                  setActiveTab('register');
+                                onClick={(event) => {
+                                  event.preventDefault();
+                                  event.stopPropagation();
+                                  setDetailRecord(record);
                                 }}
                               >
                                 View
@@ -1217,9 +1251,10 @@ export default function ProcessPayrollWorkspace({
                           <button
                             type="button"
                             className={styles.viewBtn}
-                            onClick={() => {
-                              setSalaryQuery(record.employeeId);
-                              setActiveTab('register');
+                            onClick={(event) => {
+                              event.preventDefault();
+                              event.stopPropagation();
+                              setDetailRecord(record);
                             }}
                           >
                             View
@@ -1321,6 +1356,97 @@ export default function ProcessPayrollWorkspace({
           </div>
         ) : null}
       </section>
+
+      {detailRecord && modalMounted ? createPortal((
+        <div
+          className={styles.modalOverlay}
+          role="presentation"
+          onClick={() => setDetailRecord(null)}
+        >
+          <div
+            className={styles.modal}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="payroll-salary-detail-title"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className={styles.modalHeader}>
+              <div>
+                <p className={styles.modalEyebrow}>{payload?.periodLabel || period} · Salary detail</p>
+                <h2 id="payroll-salary-detail-title">{detailRecord.fullName}</h2>
+                <p className={styles.muted}>
+                  {detailRecord.employeeId}
+                  {detailRecord.department ? ` · ${detailRecord.department}` : ''}
+                  {detailRecord.employmentType || detailRecord.payrollGroup ? ` · ${detailRecord.employmentType || detailRecord.payrollGroup}` : ''}
+                </p>
+              </div>
+              <button type="button" className={styles.modalClose} onClick={() => setDetailRecord(null)} aria-label="Close salary detail">
+                <X size={18} />
+              </button>
+            </div>
+            <div className={styles.modalMeta}>
+              {(
+                detailRecord.isDailyRate || /^C\d+/i.test(detailRecord.employeeId)
+                  ? [
+                      ['Total weekdays worked', number(detailRecord.timesheetWeekdayDays ?? detailRecord.timesheetDaysWorked ?? 0)],
+                      ['Saturdays worked', number(detailRecord.timesheetSaturdayDays ?? 0)],
+                      ['Sundays worked', number(detailRecord.timesheetSundayDays ?? 0)],
+                      ['Total days worked', number(detailRecord.timesheetTotalDaysWorked ?? (
+                        Number(detailRecord.timesheetWeekdayDays ?? detailRecord.timesheetDaysWorked ?? 0)
+                        + Number(detailRecord.timesheetSaturdayDays ?? 0)
+                        + Number(detailRecord.timesheetSundayDays ?? 0)
+                      ))],
+                      ['Daily rate', detailRecord.ratePerDay ? money(detailRecord.ratePerDay, canViewMoney, recordCurrency(detailRecord)) : '—'],
+                    ]
+                  : [
+                      ['Days worked', detailRecord.timesheetDaysWorked != null ? number(detailRecord.timesheetDaysWorked) : '—'],
+                    ]
+              ).concat([
+                ['Gross pay', money(detailRecord.grossPay, canViewMoney, recordCurrency(detailRecord))],
+                ['Deductions', money(detailRecord.totalDeductions, canViewMoney, recordCurrency(detailRecord))],
+                ['Net pay', money(detailRecord.netPay, canViewMoney, recordCurrency(detailRecord))],
+                ['Employer cost', money(detailRecord.employerCost, canViewMoney, recordCurrency(detailRecord))],
+              ]).map(([label, value]) => (
+                <div key={label} className={styles.modalMetaCard}>
+                  <span>{label}</span>
+                  <strong>{value}</strong>
+                </div>
+              ))}
+            </div>
+            <div className={styles.modalGrid}>
+              <div>
+                <h3>Earnings</h3>
+                {(detailRecord.earningLines || []).filter((line) => Number(line.amount || 0) !== 0).length ? (
+                  (detailRecord.earningLines || []).filter((line) => Number(line.amount || 0) !== 0).map((line, index) => (
+                    <div key={`${line.code || line.name || 'earn'}-${index}`} className={styles.modalLine}>
+                      <div>
+                        <span>{line.name || line.label || line.code || 'Earning'}</span>
+                        {line.calculation ? <small>{line.calculation}</small> : null}
+                      </div>
+                      <strong>{money(Number(line.amount || 0), canViewMoney, recordCurrency(detailRecord))}</strong>
+                    </div>
+                  ))
+                ) : (
+                  <p className={styles.muted}>No earning lines on this run.</p>
+                )}
+              </div>
+              <div>
+                <h3>Deductions</h3>
+                {(detailRecord.deductionLines || []).filter((line) => Number(line.amount || 0) !== 0).length ? (
+                  (detailRecord.deductionLines || []).filter((line) => Number(line.amount || 0) !== 0).map((line, index) => (
+                    <div key={`${line.code || line.label || 'ded'}-${index}`} className={styles.modalLine}>
+                      <span>{line.label || line.name || line.code || 'Deduction'}</span>
+                      <strong>{money(Number(line.amount || 0), canViewMoney, recordCurrency(detailRecord))}</strong>
+                    </div>
+                  ))
+                ) : (
+                  <p className={styles.muted}>No deduction lines on this run.</p>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      ), document.body) : null}
     </div>
   );
 }

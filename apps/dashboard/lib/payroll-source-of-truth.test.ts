@@ -160,6 +160,33 @@ assert.equal(
   7500,
 );
 
+const timesheet22PlusSaturday = mergeTimesheetDayRateEarnings(dayRate, {
+  ratePerDay: 10000,
+  daysWorked: 22,
+  saturdayHours: 8,
+  period: '2026-09',
+});
+assert.equal(
+  timesheet22PlusSaturday.paidEarningLines.find((line) => line.code === 'MEAL')?.amount,
+  11000,
+  'Meal allowance is ₦500 × weekday days only — a Saturday must not add another ₦500',
+);
+assert.equal(
+  timesheet22PlusSaturday.paidEarningLines.find((line) => line.code === 'SATEARN')?.amount,
+  15000,
+  'Saturday hours pay SATEARN at 1.5x, not a weekday day-rate',
+);
+const timesheet23Lumped = mergeTimesheetDayRateEarnings(dayRate, {
+  ratePerDay: 10000,
+  daysWorked: 23,
+  period: '2026-09',
+});
+assert.equal(
+  timesheet23Lumped.paidEarningLines.find((line) => line.code === 'MEAL')?.amount,
+  11500,
+  'If Saturday is wrongly lumped into weekday days, meal becomes ₦11,500',
+);
+
 const excelRow: DayrateScheduleRow = {
   employeeCode: 'C0100',
   firstName: 'Test',

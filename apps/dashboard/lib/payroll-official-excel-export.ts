@@ -813,8 +813,8 @@ const buildSalariedSheet = (
   const earningLabels = [...baseEarnings, ...extraEarnings];
   const deductionColumns = isPerm ? PERM_DEDUCTION_COLUMNS : CONT_DEDUCTION_COLUMNS;
   const identity = isPerm
-    ? ['Employee Code', 'EmployeeSurname', 'EmployeeFirstName', 'Age', 'Date of Birth', 'Gender', 'Date Joined Group', 'Job Title Long Description']
-    : ['Employee Code', 'Cont Type', 'EmployeeSurname', 'EmployeeFirstName', 'Age', 'Date of Birth', 'Gender', 'Date Joined Group', 'Job Title Long Description'];
+    ? ['Employee Code', 'EmployeeSurname', 'EmployeeFirstName', 'Age', 'Date of Birth', 'Gender', 'Date Joined Group', 'Job Title Long Description', 'Days Worked']
+    : ['Employee Code', 'Cont Type', 'EmployeeSurname', 'EmployeeFirstName', 'Age', 'Date of Birth', 'Gender', 'Date Joined Group', 'Job Title Long Description', 'Days Worked'];
   const columns = [
     ...identity,
     ...earningLabels,
@@ -845,6 +845,7 @@ const buildSalariedSheet = (
           record._gender,
           record._dateJoined,
           record._jobTitle,
+          Number(record.timesheetDaysWorked ?? record.timesheetTotalDaysWorked ?? 0),
         ]
       : [
           officialEmployeeCode(record),
@@ -856,6 +857,7 @@ const buildSalariedSheet = (
           record._gender,
           record._dateJoined,
           record._jobTitle,
+          Number(record.timesheetDaysWorked ?? record.timesheetTotalDaysWorked ?? 0),
         ];
 
     for (const label of earningLabels) values.push(earningValue(record, label));
@@ -1344,10 +1346,11 @@ const DAYRATE_DLE_COLUMNS = [
   'Daily Rate',
   'AGE',
   'Gender',
-  'Total Weekday',
+  'Total Weekdays Worked',
+  'Saturdays Worked',
+  'Sundays Worked',
+  'Total Days Worked',
   'Weekday OVT',
-  'Total Saturday',
-  'Total Sunday',
   'Night Worked',
   'Wkd Earning',
   'Wkd Ovt Amt',
@@ -1374,10 +1377,11 @@ const DAYRATE_DLPC_COLUMNS = [
   'Daily Rate',
   'Age',
   'Gender',
-  'Total Weekday',
+  'Total Weekdays Worked',
+  'Saturdays Worked',
+  'Sundays Worked',
+  'Total Days Worked',
   'Weekday OVT',
-  'Total Saturday',
-  'Total Sunday',
   'Public Holiday',
   'Night Worked',
   'Wkd Earning',
@@ -1415,7 +1419,10 @@ const buildDayrateDetailSheet = (
       || attendance.get(upper(`${record._firstName} ${record._lastName}`));
     const dailyRate = Number(record.ratePerDay || 0)
       || (att && att.weekDaysWorked > 0 ? roundMoney(Number(att.weekDayTotal || 0) / att.weekDaysWorked) : 0);
-    const weekDays = Number(att?.weekDaysWorked ?? record.timesheetDaysWorked ?? 0);
+    const weekDays = Number(record.timesheetWeekdayDays ?? att?.weekDaysWorked ?? record.timesheetDaysWorked ?? 0);
+    const saturdayDays = Number(record.timesheetSaturdayDays ?? att?.saturdayDaysWorked ?? 0);
+    const sundayDays = Number(record.timesheetSundayDays ?? att?.sundayDaysWorked ?? 0);
+    const totalDays = Number(record.timesheetTotalDaysWorked ?? (weekDays + saturdayDays + sundayDays));
     const weekdayOvtHrs = Number(att?.weekdayOvertimeHours ?? 0);
     const satHrs = Number(att?.saturdayHours ?? 0);
     const sunHrs = Number(att?.sundayHours ?? 0);
@@ -1463,9 +1470,10 @@ const buildDayrateDetailSheet = (
         record._age || '',
         record._gender || '',
         weekDays,
+        saturdayDays,
+        sundayDays,
+        totalDays,
         weekdayOvtHrs,
-        satHrs,
-        sunHrs,
         nightDays,
         roundMoney(wkdEarning),
         blankOr(wkdOvtAmt),
@@ -1494,9 +1502,10 @@ const buildDayrateDetailSheet = (
       record._age || '',
       record._gender || '',
       weekDays,
+      saturdayDays,
+      sundayDays,
+      totalDays,
       weekdayOvtHrs,
-      satHrs,
-      sunHrs,
       phHrs,
       nightDays,
       roundMoney(wkdEarning),
@@ -1526,7 +1535,10 @@ const buildDayrateDetailSheet = (
             || attendance.get(upper(`${record._firstName} ${record._lastName}`));
           const dailyRate = Number(record.ratePerDay || 0)
             || (att && att.weekDaysWorked > 0 ? roundMoney(Number(att.weekDayTotal || 0) / att.weekDaysWorked) : 0);
-          const weekDays = Number(att?.weekDaysWorked ?? record.timesheetDaysWorked ?? 0);
+          const weekDays = Number(record.timesheetWeekdayDays ?? att?.weekDaysWorked ?? record.timesheetDaysWorked ?? 0);
+          const saturdayDays = Number(record.timesheetSaturdayDays ?? att?.saturdayDaysWorked ?? 0);
+          const sundayDays = Number(record.timesheetSundayDays ?? att?.sundayDaysWorked ?? 0);
+          const totalDays = Number(record.timesheetTotalDaysWorked ?? (weekDays + saturdayDays + sundayDays));
           const weekdayOvtHrs = Number(att?.weekdayOvertimeHours ?? 0);
           const satHrs = Number(att?.saturdayHours ?? 0);
           const sunHrs = Number(att?.sundayHours ?? 0);
@@ -1560,6 +1572,9 @@ const buildDayrateDetailSheet = (
           return {
             dailyRate: acc.dailyRate + dailyRate,
             weekDays: acc.weekDays + weekDays,
+            saturdayDays: acc.saturdayDays + saturdayDays,
+            sundayDays: acc.sundayDays + sundayDays,
+            totalDays: acc.totalDays + totalDays,
             weekdayOvtHrs: acc.weekdayOvtHrs + weekdayOvtHrs,
             satHrs: acc.satHrs + satHrs,
             sunHrs: acc.sunHrs + sunHrs,
@@ -1581,7 +1596,7 @@ const buildDayrateDetailSheet = (
           };
         },
         {
-          dailyRate: 0, weekDays: 0, weekdayOvtHrs: 0, satHrs: 0, sunHrs: 0, nightDays: 0,
+          dailyRate: 0, weekDays: 0, saturdayDays: 0, sundayDays: 0, totalDays: 0, weekdayOvtHrs: 0, satHrs: 0, sunHrs: 0, nightDays: 0,
           wkdEarning: 0, wkdOvtAmt: 0, satAmt: 0, sunAmt: 0, nightAmt: 0, meal: 0,
           transport: 0, site: 0, tcmMeal: 0, tcmTransport: 0, arrears: 0,
           totalEarnings: 0, wht: 0, netPay: 0,
@@ -1592,9 +1607,10 @@ const buildDayrateDetailSheet = (
         roundMoney(totals.dailyRate),
         empty(6), empty(7),
         roundMoney(totals.weekDays),
+        roundMoney(totals.saturdayDays),
+        roundMoney(totals.sundayDays),
+        roundMoney(totals.totalDays),
         roundMoney(totals.weekdayOvtHrs),
-        roundMoney(totals.satHrs),
-        roundMoney(totals.sunHrs),
         roundMoney(totals.nightDays),
         roundMoney(totals.wkdEarning),
         blankOr(totals.wkdOvtAmt),
@@ -1623,7 +1639,10 @@ const buildDayrateDetailSheet = (
             || attendance.get(upper(`${record._firstName} ${record._lastName}`));
           const dailyRate = Number(record.ratePerDay || 0)
             || (att && att.weekDaysWorked > 0 ? roundMoney(Number(att.weekDayTotal || 0) / att.weekDaysWorked) : 0);
-          const weekDays = Number(att?.weekDaysWorked ?? record.timesheetDaysWorked ?? 0);
+          const weekDays = Number(record.timesheetWeekdayDays ?? att?.weekDaysWorked ?? record.timesheetDaysWorked ?? 0);
+          const saturdayDays = Number(record.timesheetSaturdayDays ?? att?.saturdayDaysWorked ?? 0);
+          const sundayDays = Number(record.timesheetSundayDays ?? att?.sundayDaysWorked ?? 0);
+          const totalDays = Number(record.timesheetTotalDaysWorked ?? (weekDays + saturdayDays + sundayDays));
           const weekdayOvtHrs = Number(att?.weekdayOvertimeHours ?? 0);
           const satHrs = Number(att?.saturdayHours ?? 0);
           const sunHrs = Number(att?.sundayHours ?? 0);
@@ -1657,6 +1676,9 @@ const buildDayrateDetailSheet = (
           return {
             dailyRate: acc.dailyRate + dailyRate,
             weekDays: acc.weekDays + weekDays,
+            saturdayDays: acc.saturdayDays + saturdayDays,
+            sundayDays: acc.sundayDays + sundayDays,
+            totalDays: acc.totalDays + totalDays,
             weekdayOvtHrs: acc.weekdayOvtHrs + weekdayOvtHrs,
             satHrs: acc.satHrs + satHrs,
             sunHrs: acc.sunHrs + sunHrs,
@@ -1676,7 +1698,7 @@ const buildDayrateDetailSheet = (
           };
         },
         {
-          dailyRate: 0, weekDays: 0, weekdayOvtHrs: 0, satHrs: 0, sunHrs: 0, phHrs: 0, nightDays: 0,
+          dailyRate: 0, weekDays: 0, saturdayDays: 0, sundayDays: 0, totalDays: 0, weekdayOvtHrs: 0, satHrs: 0, sunHrs: 0, phHrs: 0, nightDays: 0,
           wkdEarning: 0, wkdOvtAmt: 0, satAmt: 0, sunAmt: 0, phAmt: 0, nightAmt: 0, meal: 0,
           transport: 0, totalEarnings: 0, wht: 0, netPay: 0,
         },
@@ -1686,9 +1708,10 @@ const buildDayrateDetailSheet = (
         roundMoney(totals.dailyRate),
         empty(5), empty(6),
         roundMoney(totals.weekDays),
+        roundMoney(totals.saturdayDays),
+        roundMoney(totals.sundayDays),
+        roundMoney(totals.totalDays),
         roundMoney(totals.weekdayOvtHrs),
-        roundMoney(totals.satHrs),
-        roundMoney(totals.sunHrs),
         roundMoney(totals.phHrs),
         roundMoney(totals.nightDays),
         roundMoney(totals.wkdEarning),
@@ -1780,10 +1803,8 @@ export const buildOfficialDayrateScheduleWorksheets = async (
     .map((record) => enrich(record, dirMap.get(upper(record.employeeCode)) || dirMap.get(upper(record.employeeId))));
   const attendance = period ? await loadDayrateAttendanceByEmpCode(period) : new Map<string, PayrollAttendanceSheetRow>();
 
-  const dleAll = dayrate.filter((record) => record._companyBucket === 'DLE');
-  const dlpcAll = dayrate.filter((record) => record._companyBucket === 'DLPC');
-  const dle = options?.company === 'DLPC' ? [] : dleAll;
-  const dlpc = options?.company === 'DLE' ? [] : dlpcAll;
+  const dle = dayrate.filter((record) => record._companyBucket === 'DLE');
+  const dlpc = dayrate.filter((record) => record._companyBucket === 'DLPC');
 
   const summaryPeriodLabel = /^([A-Z]+)\s+(\d{4})$/i.test(periodLabel.trim())
     ? periodLabel.trim()
@@ -1822,7 +1843,7 @@ export const buildOfficialDayrateScheduleWorksheets = async (
     titlePrefix: 'Dayrate Bank Schedule',
     mode: 'company',
     appendCompanyTotalRow: true,
-    company: options?.company,
+    company: null,
     enforceCompanyBucketsFrom: [
       ...(dle.length ? [{ bucket: 'DLE' as const, records: dle }] : []),
       ...(dlpc.length ? [{ bucket: 'DLPC' as const, records: dlpc }] : []),

@@ -832,6 +832,7 @@ export default function TimesheetReportsClient() {
       const exportUrl = new URL(requestUrl, window.location.origin);
       exportUrl.searchParams.set('exportMode', 'full');
       exportUrl.searchParams.set('format', format === 'payroll-sheet' ? 'excel' : format);
+      exportUrl.searchParams.set('_ts', String(Date.now()));
       const res = await fetch(exportUrl.toString(), { cache: 'no-store' });
       const raw = await res.text();
       let json: { status?: string; data?: ReportsPayload; error?: string };
@@ -944,6 +945,13 @@ export default function TimesheetReportsClient() {
           fileName: `timesheet-capture-${from}-to-${to}.xls`,
           worksheets: [
             {
+              title: 'Days Worked (one row per employee)',
+              subtitle: `${from} to ${to} · ${Number(exportPayload.payrollAttendanceSheetCount || 0).toLocaleString()} employees · unique calendar dates only`,
+              sheetName: 'Days Worked',
+              columns: [...PAYROLL_ATTENDANCE_SHEET_COLUMNS],
+              rows: payrollAttendanceSheetToExcelRows(exportPayload.payrollAttendanceSheet || [], canViewCosts),
+            },
+            {
               title: 'Timesheet Capture Export',
               subtitle: `${from} to ${to} · ${rows.length.toLocaleString()} allocation lines · ${controlTotals.lines.toLocaleString()} timesheet lines · ${columns.length} columns`,
               sheetName: 'Timesheet Capture',
@@ -952,7 +960,7 @@ export default function TimesheetReportsClient() {
             },
             {
               title: 'Line Totals (one row per employee-day)',
-              subtitle: `${from} to ${to} · ${lineTotals.length.toLocaleString()} timesheet lines · hours counted once per line`,
+              subtitle: `${from} to ${to} · ${lineTotals.length.toLocaleString()} timesheet lines · hours counted once per line · Day Worked is 1 or 0 for that date`,
               sheetName: 'Line Totals',
               columns: [
                 'Date',
@@ -961,7 +969,6 @@ export default function TimesheetReportsClient() {
                 'Employee Name',
                 'Department',
                 'Day Worked',
-                'Days Worked',
                 'Attendance Hours',
                 'Used Hours',
                 'Idle Hours',
@@ -981,7 +988,6 @@ export default function TimesheetReportsClient() {
                 row.employeeName,
                 row.department,
                 row.dayWorked,
-                row.daysWorked,
                 row.attendanceHours,
                 row.usedHours,
                 row.idleHours,
@@ -1262,7 +1268,7 @@ export default function TimesheetReportsClient() {
                         <FileSpreadsheet className="mt-0.5 h-4 w-4 shrink-0 text-emerald-700" />
                         <span>
                           <span className="block text-xs font-black text-slate-900">Excel · Top Projects + Capture</span>
-                          <span className="mt-0.5 block text-[11px] font-semibold text-slate-500">Includes C-code Top Projects (Labour Cost, WHT, NET)</span>
+                          <span className="mt-0.5 block text-[11px] font-semibold text-slate-500">Days Worked first · then C-code Top Projects and capture lines</span>
                         </span>
                       </button>
                       <button

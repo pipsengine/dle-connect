@@ -9,6 +9,8 @@ import {
   resolveTimesheetHours,
   timesheetDayKindLabel,
   timesheetDayRulesForDate,
+  utcTimesheetWeekday,
+  weekendHoursFromTimesheetLine,
 } from './timesheet-entry-shared';
 
 const independence = '2026-10-01';
@@ -68,5 +70,12 @@ const workingDatesInLeaveRange = (startDate: string, endDate: string, holidayDat
 const leaveWeek = workingDatesInLeaveRange('2026-09-28', '2026-10-02', holidays);
 assert.deepEqual(leaveWeek, ['2026-09-28', '2026-09-29', '2026-09-30', '2026-10-02']);
 assert.equal(leaveWeek.includes(independence), false);
+
+assert.equal(utcTimesheetWeekday('2026-09-04'), 5, 'Friday');
+assert.equal(utcTimesheetWeekday('2026-09-05'), 6, 'Saturday');
+assert.equal(utcTimesheetWeekday('2026-09-06'), 0, 'Sunday');
+assert.deepEqual(weekendHoursFromTimesheetLine({ usedHours: 8, totalHours: 8 }, '2026-09-04'), { saturdayHours: 0, sundayHours: 0 });
+assert.deepEqual(weekendHoursFromTimesheetLine({ usedHours: 8, totalHours: 8 }, '2026-09-05'), { saturdayHours: 8, sundayHours: 0 });
+assert.deepEqual(weekendHoursFromTimesheetLine({ usedHours: 6, totalHours: 6 }, '2026-09-06'), { saturdayHours: 0, sundayHours: 6 });
 
 console.log('timesheet public-holiday recognition tests passed');

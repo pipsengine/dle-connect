@@ -773,3 +773,138 @@ export async function readEmployeeAttendanceMonthSummary(employeeCodes: string[]
     if (pool) await pool.end().catch(() => undefined);
   }
 }
+
+const payrollPeriodMysqlBounds = (period: string) => {
+  const token = String(period || '').replace(/^per-/, '');
+  const match = token.match(/^(\d{4})-(\d{2})$/);
+  if (!match) return null;
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  if (!year || month < 1 || month > 12) return null;
+  const start = `${year}${String(month).padStart(2, '0')}01`;
+  const nextYear = month === 12 ? year + 1 : year;
+  const nextMonth = month === 12 ? 1 : month + 1;
+  const end = `${nextYear}${String(nextMonth).padStart(2, '0')}01`;
+  return { start, end };
+};
+
+const registerClockedDayKeys = (map: Map<string, number>, code: string, days: number) => {
+  const raw = normalizeBiometricCode(code);
+  if (!raw || days <= 0) return;
+  const aliases = new Set([
+    raw,
+    raw.replace(/^P(?=\d)/, ''),
+    raw.replace(/^(IT|NYSC|L|C)(?=\d)/, ''),
+  ].filter(Boolean));
+  for (const key of aliases) {
+    const current = map.get(key) || 0;
+    if (days > current) map.set(key, days);
+  }
+};
+
+/** Distinct biometric clock-in dates in [from, to] inclusive, keyed by employee unique-code aliases. */
+export async function readBiometricClockedDateSetsInRange(from: string, to: string): Promise<Map<string, Set<string>>> {
+  const start = String(from || '').replace(/-/g, '').slice(0, 8);
+  const endInclusive = String(to || '').replace(/-/g, '').slice(0, 8);
+  const empty = new Map<string, Set<string>>();
+  if (!MYSQL_DATE_RE.test(start) || !MYSQL_DATE_RE.test(endInclusive)) return empty;
+  const endDate = new Date(`${displayDate(endInclusive)}T12:00:00Z`);
+  endDate.setUTCDate(endDate.getUTCDate() + 1);
+  const endExclusive = `${endDate.getUTCFullYear()}${String(endDate.getUTCMonth() + 1).padStart(2, '0')}${String(endDate.getUTCDate()).padStart(2, '0')}`;
+
+  const addDate = (map: Map<string, Set<string>>, code: string, date: string) => {
+    const raw = normalizeBiometricCode(code);
+    if (!raw || !/^\d{4}-\d{2}-\d{2}$/.test(date)) return;
+    const aliases = [raw, raw.replace(/^P(?=\d)/, ''), raw.replace(/^(IT|NYSC|L|C)(?=\d)/, '')].filter(Boolean);
+    for (const key of aliases) {
+      const current = map.get(key) || new Set<string>();
+      current.add(date);
+      map.set(key, current);
+    }
+  };
+
+  let pool: mysql.Pool | null = null;
+  try {
+    pool = getPool();
+    const [rows] = await pool.query<Array<RowDataPacket & { uniqueCode: string | null; punchDate: string }>>(
+      `
+      SELECT
+        u.C_Unique AS uniqueCode,
+        punches.punchDate
+      FROM tuser u
+      INNER JOIN (
+        SELECT L_UID, C_Date AS punchDate
+        FROM tenter
+        WHERE C_Date >= ? AND C_Date < ?
+        GROUP BY L_UID, C_Date
+      ) punches ON punches.L_UID = u.L_ID
+      WHERE u.C_Unique IS NOT NULL AND LTRIM(RTRIM(u.C_Unique)) <> ''
+      `,
+      [start, endExclusive],
+    );
+    const map = new Map<string, Set<string>>();
+    for (const row of rows) {
+      const punch = row.punchDate as string | Date;
+      const mysqlDate = punch instanceof Date
+        ? `${punch.getUTCFullYear()}${String(punch.getUTCMonth() + 1).padStart(2, '0')}${String(punch.getUTCDate()).padStart(2, '0')}`
+        : String(punch || '').replace(/-/g, '').slice(0, 8);
+      const iso = MYSQL_DATE_RE.test(mysqlDate) ? displayDate(mysqlDate) : '';
+      addDate(map, String(row.uniqueCode || ''), iso);
+    }
+    return map;
+  } catch (error) {
+    console.warn('[biometric] clocked date range unavailable', error instanceof Error ? error.message : error);
+    return empty;
+  } finally {
+    if (pool) await pool.end().catch(() => undefined);
+  }
+}
+
+/** Distinct biometric clock-in dates in a payroll month, keyed by employee unique code aliases. */
+export async function readBiometricClockedDaysForPeriod(period: string): Promise<Map<string, number>> {
+  const bounds = payrollPeriodMysqlBounds(period);
+  const empty = new Map<string, number>();
+  if (!bounds) return empty;
+
+  let pool: mysql.Pool | null = null;
+  try {
+    pool = getPool();
+    const [rows] = await pool.query<Array<RowDataPacket & { uniqueCode: string | null; punchDate: string }>>(
+      `
+      SELECT
+        u.C_Unique AS uniqueCode,
+        punches.punchDate
+      FROM tuser u
+      INNER JOIN (
+        SELECT L_UID, C_Date AS punchDate
+        FROM tenter
+        WHERE C_Date >= ? AND C_Date < ?
+        GROUP BY L_UID, C_Date
+      ) punches ON punches.L_UID = u.L_ID
+      WHERE u.C_Unique IS NOT NULL AND LTRIM(RTRIM(u.C_Unique)) <> ''
+      `,
+      [bounds.start, bounds.end],
+    );
+
+    const datesByCode = new Map<string, Set<string>>();
+    for (const row of rows) {
+      const code = normalizeBiometricCode(String(row.uniqueCode || ''));
+      const date = displayDate(String(row.punchDate || ''));
+      if (!code || !/^\d{4}-\d{2}-\d{2}$/.test(date)) continue;
+      const current = datesByCode.get(code) || new Set<string>();
+      current.add(date);
+      datesByCode.set(code, current);
+    }
+
+    const map = new Map<string, number>();
+    for (const [code, dates] of datesByCode) {
+      registerClockedDayKeys(map, code, dates.size);
+    }
+    return map;
+  } catch (error) {
+    console.warn('[Biometric] Clocked-days lookup skipped:', error instanceof Error ? error.message : error);
+    return empty;
+  } finally {
+    if (pool) await pool.end().catch(() => undefined);
+  }
+}

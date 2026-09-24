@@ -39,6 +39,7 @@ import {
   buildTimesheetHeaderId,
   selectTimesheetHeaderForLocation,
   weekdayOvertimeHoursFromLine,
+  weekendHoursFromTimesheetLine,
   type TimesheetLine,
 } from '@/lib/timesheet-entry-shared';
 import { overlayMissingTimesheetClocks, selectCanonicalTimesheetHeader, timesheetAssignmentGroupIsExclusive } from '@/lib/timesheet-sheet-identity';
@@ -867,9 +868,18 @@ const toIso = (value: unknown) => {
 
 const toDateOnly = (value: unknown) => {
   if (!value) return '';
+  if (typeof value === 'string') {
+    const match = /^(\d{4}-\d{2}-\d{2})/.exec(value.trim());
+    if (match) return match[1];
+  }
   const date = value instanceof Date ? value : new Date(String(value));
-  if (!Number.isNaN(date.getTime())) return date.toISOString().slice(0, 10);
-  return String(value).slice(0, 10);
+  if (Number.isNaN(date.getTime())) return String(value).slice(0, 10);
+  // SQL DATE / local midnight must not go through UTC ISO — WAT midnight becomes the previous UTC date.
+  const utcMidnight = date.getUTCHours() === 0 && date.getUTCMinutes() === 0 && date.getUTCSeconds() === 0 && date.getUTCMilliseconds() === 0;
+  const year = utcMidnight ? date.getUTCFullYear() : date.getFullYear();
+  const month = (utcMidnight ? date.getUTCMonth() : date.getMonth()) + 1;
+  const day = utcMidnight ? date.getUTCDate() : date.getDate();
+  return `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
 };
 
 const db = async () => {
@@ -1621,10 +1631,14 @@ async function readTimesheetDataUncached(options?: { softFail?: boolean }) {
   return { headers, lines };
 }
 
-export async function readTimesheetData(options?: { softFail?: boolean }) {
+export async function readTimesheetData(options?: { softFail?: boolean; forceRefresh?: boolean }) {
   const now = Date.now();
-  if (timesheetDataCache?.value && timesheetDataCache.expiresAt > now) return timesheetDataCache.value;
-  if (timesheetDataCache?.pending) return timesheetDataCache.pending;
+  if (options?.forceRefresh) {
+    timesheetDataCache = null;
+  } else {
+    if (timesheetDataCache?.value && timesheetDataCache.expiresAt > now) return timesheetDataCache.value;
+    if (timesheetDataCache?.pending) return timesheetDataCache.pending;
+  }
   const pending = readTimesheetDataUncached(options).then((value) => {
     timesheetDataCache = { value, expiresAt: Date.now() + TIMESHEET_DATA_CACHE_MS };
     return value;
@@ -2452,11 +2466,46 @@ export type EmployeeAttendanceAggregate = {
   employeeId: string;
   employeeName: string;
   daysWorked: number;
+  weekdayDays: number;
+  saturdayDays: number;
+  sundayDays: number;
+  saturdayHours: number;
+  sundayHours: number;
   attendanceHours: number;
   bookedHours: number;
   idleHours: number;
   weekdayOvertimeHours: number;
   skippedDuplicateDays: number;
+};
+
+export type PayrollTimesheetHoursEntry = {
+  daysWorked: number;
+  bookedHours: number;
+  weekdayOvertimeHours?: number;
+  weekdayDays?: number;
+  saturdayDays?: number;
+  sundayDays?: number;
+  saturdayHours?: number;
+  sundayHours?: number;
+  publicHolidayHours?: number;
+  employeeNo?: string;
+  employeeName?: string;
+};
+
+export const lookupPayrollTimesheetHours = (
+  map: Map<string, PayrollTimesheetHoursEntry> | undefined,
+  ...ids: Array<string | null | undefined>
+) => {
+  if (!map?.size) return null;
+  for (const id of ids) {
+    const key = String(id || '').trim();
+    if (!key) continue;
+    const hit = map.get(key)
+      || map.get(key.toUpperCase())
+      || map.get(normalizePayrollMatchKey(key));
+    if (hit) return hit;
+  }
+  return null;
 };
 
 const payrollReadyHeaderStatuses = new Set<TimesheetStatus>(['HR_Acknowledged', 'Locked', 'Approved']);
@@ -2505,6 +2554,7 @@ export const aggregateEmployeeAttendanceForHeaders = (
   const headerById = new Map(headers.filter((header) => headerIds.has(header.id)).map((header) => [header.id, header]));
   const totals = new Map<string, EmployeeAttendanceAggregate>();
   const countedEmployeeDates = new Set<string>();
+  const countedSundayDates = new Set<string>();
 
   for (const line of lines) {
     if (!headerIds.has(line.headerId)) continue;
@@ -2529,6 +2579,11 @@ export const aggregateEmployeeAttendanceForHeaders = (
       employeeId: employeeKey,
       employeeName: line.employeeName,
       daysWorked: 0,
+      weekdayDays: 0,
+      saturdayDays: 0,
+      sundayDays: 0,
+      saturdayHours: 0,
+      sundayHours: 0,
       attendanceHours: 0,
       bookedHours: 0,
       idleHours: 0,
@@ -2537,6 +2592,22 @@ export const aggregateEmployeeAttendanceForHeaders = (
     };
     if (!current.employeeName && line.employeeName) current.employeeName = line.employeeName;
     current.daysWorked += paidDay ? 1 : 0;
+    const utcDay = /^\d{4}-\d{2}-\d{2}$/.test(dateKey) ? new Date(`${dateKey}T12:00:00Z`).getUTCDay() : -1;
+    if (paidDay && utcDay >= 1 && utcDay <= 5) current.weekdayDays += 1;
+    if (paidDay && utcDay === 6) current.saturdayDays += 1;
+    const weekend = weekendHoursFromTimesheetLine(line, dateKey);
+    if (utcDay === 0 && weekend.sundayHours > 0) {
+      const sundayKey = `${employeeKey}::${dateKey}`;
+      if (!countedSundayDates.has(sundayKey)) {
+        countedSundayDates.add(sundayKey);
+        current.sundayDays += 1;
+      }
+    }
+    const saturdayHours = weekend.saturdayHours > 0
+      ? weekend.saturdayHours
+      : paidDay && utcDay === 6 ? 8 : 0;
+    current.saturdayHours = Math.round((current.saturdayHours + saturdayHours) * 10) / 10;
+    current.sundayHours = Math.round((current.sundayHours + weekend.sundayHours) * 10) / 10;
     current.attendanceHours = Math.round((current.attendanceHours + normalizePaidWorkHours(line.attendanceDuration)) * 10) / 10;
     current.bookedHours = Math.round((current.bookedHours + normalizePaidWorkHours(line.totalHours)) * 10) / 10;
     current.idleHours = Math.round((current.idleHours + line.idleHours) * 10) / 10;
@@ -2564,26 +2635,32 @@ export const synthesizeTimesheetHoursForPeriod = async (periodId: string) => {
       employeeName: current.employeeName || line.employeeName,
     });
   }
-  const mapped = new Map<string, { daysWorked: number; bookedHours: number; weekdayOvertimeHours: number; employeeNo?: string; employeeName?: string }>();
+  const mapped = new Map<string, PayrollTimesheetHoursEntry>();
   for (const [employeeKey, aggregate] of totals) {
     const alias = aliasesByEmployee.get(employeeKey);
-    mapped.set(employeeKey, {
+    const data: PayrollTimesheetHoursEntry = {
       daysWorked: aggregate.daysWorked,
+      weekdayDays: aggregate.weekdayDays,
+      saturdayDays: aggregate.saturdayDays,
+      sundayDays: aggregate.sundayDays,
+      saturdayHours: aggregate.saturdayHours,
+      sundayHours: aggregate.sundayHours,
       bookedHours: aggregate.bookedHours,
       weekdayOvertimeHours: aggregate.weekdayOvertimeHours,
       employeeNo: alias?.employeeNo,
       employeeName: alias?.employeeName || aggregate.employeeName,
-    });
+    };
+    registerTimesheetHours(mapped, employeeKey, alias?.employeeNo, alias?.employeeName || aggregate.employeeName, data);
   }
   return mapped;
 };
 
 const registerTimesheetHours = (
-  map: Map<string, { daysWorked: number; bookedHours: number; weekdayOvertimeHours?: number }>,
+  map: Map<string, PayrollTimesheetHoursEntry>,
   employeeId: string,
   employeeNo: string | undefined,
   employeeName: string | undefined,
-  data: { daysWorked: number; bookedHours: number; weekdayOvertimeHours?: number },
+  data: PayrollTimesheetHoursEntry,
 ) => {
   const compact = (value: unknown) => String(value || '').trim();
   const keys = [employeeId, employeeNo, employeeName, normalizePayrollMatchKey(employeeId), normalizePayrollMatchKey(employeeNo), normalizePayrollMatchKey(employeeName)]
@@ -2592,14 +2669,20 @@ const registerTimesheetHours = (
   keys.forEach((key) => map.set(key, data));
 };
 
-const hasTimesheetHours = (map: Map<string, { daysWorked: number; bookedHours: number; weekdayOvertimeHours?: number }>, employeeId: string, employeeNo?: string, employeeName?: string) => {
+const hasTimesheetHours = (map: Map<string, PayrollTimesheetHoursEntry>, employeeId: string, employeeNo?: string, employeeName?: string) => {
   const compact = (value: unknown) => String(value || '').trim();
   const keys = [employeeId, employeeNo, employeeName, normalizePayrollMatchKey(employeeId), normalizePayrollMatchKey(employeeNo), normalizePayrollMatchKey(employeeName)]
     .map((key) => compact(key))
     .filter(Boolean);
   return keys.some((key) => {
     const entry = map.get(key);
-    return Boolean(entry && (entry.daysWorked > 0 || entry.bookedHours > 0));
+    return Boolean(entry && (
+      entry.daysWorked > 0
+      || entry.bookedHours > 0
+      || Number(entry.weekdayDays || 0) > 0
+      || Number(entry.saturdayHours || 0) > 0
+      || Number(entry.sundayHours || 0) > 0
+    ));
   });
 };
 
@@ -2607,8 +2690,8 @@ const hasTimesheetHours = (map: Map<string, { daysWorked: number; bookedHours: n
 const TIMESHEET_HOURS_CACHE_MS = Number(process.env.HRIS_TIMESHEET_HOURS_CACHE_MS || 120000);
 type TimesheetHoursCacheEntry = {
   expiresAt: number;
-  map: Map<string, { daysWorked: number; bookedHours: number; weekdayOvertimeHours?: number }>;
-  inFlight?: Promise<Map<string, { daysWorked: number; bookedHours: number; weekdayOvertimeHours?: number }>>;
+  map: Map<string, PayrollTimesheetHoursEntry>;
+  inFlight?: Promise<Map<string, PayrollTimesheetHoursEntry>>;
 };
 const timesheetHoursCache = new Map<string, TimesheetHoursCacheEntry>();
 
@@ -2638,13 +2721,18 @@ export async function buildTimesheetHoursMapForPayrollPeriod(
     if (cached?.inFlight) return cached.inFlight;
 
     const inFlight = (async () => {
-      const map = new Map<string, { daysWorked: number; bookedHours: number; weekdayOvertimeHours?: number }>();
+      const map = new Map<string, PayrollTimesheetHoursEntry>();
 
     try {
       const synthesized = await synthesizeTimesheetHoursForPeriod(periodId);
       synthesized.forEach((data, employeeId) => {
         registerTimesheetHours(map, employeeId, data.employeeNo, data.employeeName, {
           daysWorked: data.daysWorked,
+          weekdayDays: data.weekdayDays,
+          saturdayDays: data.saturdayDays,
+          sundayDays: data.sundayDays,
+          saturdayHours: data.saturdayHours,
+          sundayHours: data.sundayHours,
           bookedHours: data.bookedHours,
           weekdayOvertimeHours: data.weekdayOvertimeHours,
         });

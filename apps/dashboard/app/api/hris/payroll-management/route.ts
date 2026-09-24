@@ -545,8 +545,15 @@ export async function GET(request: Request) {
         const exportCompanyCode = normalizePayrollCompany(exportCompany);
         const needSalaried = requestedPack !== 'daily-rate' && payload.pack !== 'daily-rate';
         const needDayrate = requestedPack === 'daily-rate' || requestedPack === 'all' || payload.pack === 'daily-rate' || report === 'dayrate-schedule';
+        const dayrateExportReport = report === 'dayrate-schedule'
+          || (report === 'payroll-register' && (requestedPack === 'daily-rate' || payload.pack === 'daily-rate'));
         const salariedRawCalc = livePeriod && needSalaried ? await calculatePayrollForPeriod(livePeriod, { pack: 'salaried', company: exportCompanyCode }).catch(() => null) : null;
-        const dailyRateRawCalc = livePeriod && needDayrate ? await calculatePayrollForPeriod(livePeriod, { pack: 'daily-rate', company: exportCompanyCode }).catch(() => null) : null;
+        const dailyRateRawCalc = livePeriod && needDayrate
+          ? await calculatePayrollForPeriod(livePeriod, {
+              pack: 'daily-rate',
+              company: dayrateExportReport ? null : exportCompanyCode,
+            }).catch(() => null)
+          : null;
         const statusFilter = url.searchParams.get('status');
         const directory = await readPayrollEmployees().catch(() => ({ employees: [] as Awaited<ReturnType<typeof readPayrollEmployees>>['employees'] }));
 
@@ -565,17 +572,14 @@ export async function GET(request: Request) {
 
         const salariedRecords = filterExportRecords(salariedLiveRecords, statusFilter, 'salaried', salariedExportCurrency, exportCompany)
           .filter((record) => !record.isDailyRate);
-        const dayrateExportReport = report === 'dayrate-schedule'
-          || (report === 'payroll-register' && (requestedPack === 'daily-rate' || payload.pack === 'daily-rate'));
         const dayrateRecordsForTemplate = dayrateExportReport
           ? (() => {
             const applied = readAppliedDayrateScheduleOverride(livePeriod);
             const statusFiltered = (statusFilter && statusFilter !== 'All'
               ? dayrateLiveRecords.filter((record) => record.payrollStatus === statusFilter)
-              : dayrateLiveRecords)
-              .filter((record) => !exportCompanyCode || resolvePayrollCompany(record) === exportCompanyCode);
+              : dayrateLiveRecords);
             if (applied?.rows?.length) return statusFiltered;
-            return filterExportRecords(dayrateLiveRecords, statusFilter, 'daily-rate', 'all', exportCompany)
+            return filterExportRecords(dayrateLiveRecords, statusFilter, 'daily-rate', 'all', null)
               .filter((record) => record.isDailyRate || requestedPack === 'daily-rate');
           })()
           : filterExportRecords(dayrateLiveRecords, statusFilter, 'daily-rate', 'all', exportCompany)

@@ -797,9 +797,7 @@ export const buildDayratePaymentScheduleXlsx = async (input: {
   const templatePath = resolveDayratePaymentScheduleTemplatePath();
   if (!templatePath) throw new Error('Dayrate Payment Schedule template was not found.');
   const entries = readZipEntries(readFileSync(templatePath));
-  const { dle: dleAll, dlpc: dlpcAll } = await buildDetailRows(input.records, input.period, input.directoryEmployees || []);
-  const dle = !input.company || input.company === 'DLE' ? dleAll : [];
-  const dlpc = !input.company || input.company === 'DLPC' ? dlpcAll : [];
+  const { dle, dlpc } = await buildDetailRows(input.records, input.period, input.directoryEmployees || []);
   assertRowsFoot('DLE', dle);
   assertRowsFoot('DLPC', dlpc);
   const title = scheduleTitleForSheet(input.period, input.periodLabel);

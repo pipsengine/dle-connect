@@ -17,7 +17,8 @@ import { persistAppliedPayrollSchedulesToHris } from '@/lib/payroll-schedule-hri
 import { applyDayrateScheduleOverrideToRecords } from '@/lib/dayrate-schedule-overlay';
 import { applyApprovedFinalSettlementsToRecords } from '@/lib/final-payroll-settlement-overlay';
 import { normalizePayrollMatchKey } from '@/lib/sage-people-payroll-store';
-import { buildTimesheetHoursMapForPayrollPeriod } from '@/lib/timesheet-entry-store';
+import { buildTimesheetHoursMapForPayrollPeriod, type PayrollTimesheetHoursEntry } from '@/lib/timesheet-entry-store';
+import { readBiometricClockedDaysForPeriod } from '@/lib/biometric-live-attendance-store';
 import { dayrateBookedHours } from '@/lib/dayrate-schedule-xlsx';
 import { findDayrateScheduleOverrideRow, readAppliedDayrateScheduleOverride } from '@/lib/dayrate-schedule-override-read';
 import { explicitPayrollDayRate, isPayrollProfileTimesheetSourcePeriod, payrollExcelAmountOverlayApplies } from '@/lib/payroll-source-of-truth';
@@ -82,6 +83,10 @@ export type PayrollCalculationRecord = {
   employerCost: number;
   deductionRatio: number;
   timesheetDaysWorked: number | null;
+  timesheetWeekdayDays?: number | null;
+  timesheetSaturdayDays?: number | null;
+  timesheetSundayDays?: number | null;
+  timesheetTotalDaysWorked?: number | null;
   timesheetBookedHours: number | null;
   sageActual: null | {
     employeeCode: string;
@@ -286,13 +291,36 @@ const dailyRateValues = (employee: DleEmployeeDirectoryRow, _dailyRateEmployee: 
   return { ratePerDay, ratePerHour, hoursPerDay, workingDays };
 };
 
-const timesheetPeriodId = (period: string) => `per-${period.replace(/^per-/, '')}`;
+const resolveBiometricClockedDays = (
+  employee: Pick<DleEmployeeDirectoryRow, 'employeeId' | 'employeeCode' | 'id' | 'fullName'> & { sourceEmployeeId?: string | null },
+  clockedDays: Map<string, number>,
+) => {
+  const keys = [
+    employee.employeeId,
+    employee.employeeCode,
+    employee.id,
+    employee.sourceEmployeeId,
+  ]
+    .flatMap((key) => {
+      const raw = compact(key);
+      const normalized = normalizePayrollMatchKey(raw);
+      const stripped = raw.replace(/^(P|IT|NYSC|L|C)(?=\d)/i, '');
+      return [raw, normalized, compact(stripped), normalizePayrollMatchKey(stripped)];
+    })
+    .map((key) => compact(key).toUpperCase())
+    .filter(Boolean);
+  for (const key of keys) {
+    const days = clockedDays.get(key);
+    if (days != null && days > 0) return days;
+  }
+  return 0;
+};
 
 export const readApprovedTimesheetHoursForPayrollPeriod = async (period: string) => buildTimesheetHoursMapForPayrollPeriod(period);
 
 const resolveTimesheetHoursForEmployee = (
   employee: Pick<DleEmployeeDirectoryRow, 'employeeId' | 'employeeCode' | 'id' | 'fullName'>,
-  timesheetHours: Map<string, { daysWorked: number; bookedHours: number; weekdayOvertimeHours?: number }>,
+  timesheetHours: Map<string, PayrollTimesheetHoursEntry>,
 ) => {
   const keys = [employee.employeeId, employee.employeeCode, employee.id, employee.fullName, normalizePayrollMatchKey(employee.employeeId), normalizePayrollMatchKey(employee.employeeCode), normalizePayrollMatchKey(employee.fullName)]
     .map((key) => compact(key))
@@ -303,7 +331,7 @@ const resolveTimesheetHoursForEmployee = (
 const applyDailyRateFromTimesheets = (
   employee: DleEmployeeDirectoryRow,
   amounts: ReturnType<typeof calculatePayrollEarnings>,
-  timesheetHours: Map<string, { daysWorked: number; bookedHours: number; weekdayOvertimeHours?: number }>,
+  timesheetHours: Map<string, PayrollTimesheetHoursEntry>,
   period: string,
 ) => {
   const profileId = resolvePayrollEarningProfile(employee);
@@ -332,17 +360,23 @@ const applyDailyRateFromTimesheets = (
       profileName: 'Daily Rate (Not In HR Dayrate Schedule — Excluded)',
     };
   }
-  let daysWorked = 0;
+  let weekdayDays = 0;
   if (excel) {
-    daysWorked = excel.weekdayDays > 0 ? excel.weekdayDays : 0;
+    weekdayDays = excel.weekdayDays > 0 ? excel.weekdayDays : 0;
   } else if (timesheet) {
-    daysWorked = timesheet.daysWorked > 0
-      ? timesheet.daysWorked
-      : (timesheet.bookedHours > 0 ? timesheet.bookedHours / rates.hoursPerDay : 0);
+    weekdayDays = timesheet.weekdayDays != null
+      ? timesheet.weekdayDays
+      : (timesheet.daysWorked > 0
+        ? timesheet.daysWorked
+        : (timesheet.bookedHours > 0 ? timesheet.bookedHours / rates.hoursPerDay : 0));
   }
+  const saturdayHours = excel ? Number(excel.saturdayHours || 0) : Number(timesheet?.saturdayHours || 0);
+  const sundayHours = excel ? Number(excel.sundayHours || 0) : Number(timesheet?.sundayHours || 0);
+  const publicHolidayHours = excel ? Number(excel.publicHolidayHours || 0) : Number(timesheet?.publicHolidayHours || 0);
+  const weekendHours = saturdayHours + sundayHours + publicHolidayHours;
   // Daily-rate staff are timesheet-driven only — no hoursPerPeriod / package fallback.
   // An HR Excel overlay can still pay OT/weekend hours when weekday days are zero (pre-2026-09).
-  if (daysWorked <= 0 && !(excel && dayrateBookedHours(excel) > 0)) {
+  if (weekdayDays <= 0 && weekendHours <= 0 && !(excel && dayrateBookedHours(excel) > 0)) {
     return {
       ...amounts,
       periodPackageGross: 0,
@@ -376,8 +410,11 @@ const applyDailyRateFromTimesheets = (
   }
   const merged = mergeTimesheetDayRateEarnings(employee, {
     ratePerDay,
-    daysWorked,
+    daysWorked: weekdayDays,
     weekdayOvertimeHours: timesheet?.weekdayOvertimeHours,
+    saturdayHours,
+    sundayHours,
+    publicHolidayHours,
     period,
   });
   return {
@@ -845,10 +882,12 @@ const computePayrollForPeriod = async (requestedPeriod: string): Promise<Payroll
     employeeSource,
     { taxConfig, pensionConfig, fundsConfig, loansConfig, loanApplications },
     timesheetHours,
+    biometricClockedDays,
   ] = await Promise.all([
     readEmployeesForPayrollCalculation(requestedPeriod),
     readPayrollConfigBundle(),
     readApprovedTimesheetHoursForPayrollPeriod(requestedPeriod),
+    readBiometricClockedDaysForPeriod(requestedPeriod).catch(() => new Map<string, number>()),
   ]);
 
   const taxVersion = activeTaxVersion(taxConfig);
@@ -1021,6 +1060,15 @@ const computePayrollForPeriod = async (requestedPeriod: string): Promise<Payroll
     const stipendEmployee = amounts.profileId === 'stipend-non-taxable';
     const rates = dailyRateValues(employee, dailyRateEmployee);
     const timesheet = resolveTimesheetHoursForEmployee(employee, timesheetHours);
+    const weekdayDays = dailyRateEmployee
+      ? Number(timesheet?.weekdayDays ?? timesheet?.daysWorked ?? 0)
+      : 0;
+    const saturdayDays = dailyRateEmployee ? Number(timesheet?.saturdayDays || 0) : 0;
+    const sundayDays = dailyRateEmployee ? Number(timesheet?.sundayDays || 0) : 0;
+    const biometricDays = dailyRateEmployee ? 0 : resolveBiometricClockedDays(employee, biometricClockedDays);
+    const totalDaysWorked = dailyRateEmployee
+      ? weekdayDays + saturdayDays + sundayDays
+      : biometricDays;
     const pensionIssues = (variant.payCurrency === 'USD'
       ? []
       : (!dailyRateEmployee && !stipendEmployee && isPensionEligibleStaff(employee)
@@ -1040,7 +1088,10 @@ const computePayrollForPeriod = async (requestedPeriod: string): Promise<Payroll
       ...!compact(variant.payCurrency) ? ['Pay currency is missing'] : [],
       ...!activeStatus(employee.status) ? ['Employee is not payroll active'] : [],
       ...dailyRateEmployee && !timesheet ? ['Approved timesheet hours are not available for daily-rate payroll'] : [],
-      ...dailyRateEmployee && timesheet && Number(timesheet.daysWorked || 0) <= 0 && Number(timesheet.bookedHours || 0) <= 0
+      ...dailyRateEmployee && timesheet && Number(timesheet.weekdayDays ?? timesheet.daysWorked ?? 0) <= 0
+        && Number(timesheet.bookedHours || 0) <= 0
+        && Number(timesheet.saturdayHours || 0) <= 0
+        && Number(timesheet.sundayHours || 0) <= 0
         ? ['Approved timesheet hours are not available for daily-rate payroll']
         : [],
       ...dailyRateEmployee && rates.ratePerDay <= 0 && rates.ratePerHour <= 0 ? ['Daily or hourly rate is missing'] : [],
@@ -1103,7 +1154,11 @@ const computePayrollForPeriod = async (requestedPeriod: string): Promise<Payroll
       netPay,
       employerCost,
       deductionRatio,
-      timesheetDaysWorked: timesheet?.daysWorked ?? null,
+      timesheetDaysWorked: dailyRateEmployee ? weekdayDays : (biometricDays || null),
+      timesheetWeekdayDays: dailyRateEmployee ? weekdayDays : null,
+      timesheetSaturdayDays: dailyRateEmployee ? saturdayDays : null,
+      timesheetSundayDays: dailyRateEmployee ? sundayDays : null,
+      timesheetTotalDaysWorked: totalDaysWorked || null,
       timesheetBookedHours: timesheet?.bookedHours ?? null,
       sageActual: null,
       discrepancies: {

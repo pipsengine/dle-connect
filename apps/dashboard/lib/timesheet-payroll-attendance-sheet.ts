@@ -1,7 +1,7 @@
 import { calculateContractDayRateEarnings } from '@/lib/payroll-earnings-engine';
 import { NIGHT_INCONVENIENCE_ALLOWANCE_AMOUNT } from '@/lib/timesheet-entry-shared';
-import { resolveTimesheetShift, timesheetDayRulesForDate } from '@/lib/timesheet-entry-shared';
-import { canonicalTimesheetEmployeeKey } from '@/lib/timesheet-entry-store';
+import { hasBiometricClockIn, isTimesheetPaidLeaveLine, resolveTimesheetShift, timesheetDayRulesForDate } from '@/lib/timesheet-entry-shared';
+import { canonicalTimesheetEmployeeKey, lookupPayrollTimesheetHours, type PayrollTimesheetHoursEntry } from '@/lib/timesheet-entry-store';
 import { bookedTimesheetHours } from '@/lib/timesheet-report-metrics';
 import {
   type PayrollAttendanceSheetRow,
@@ -32,6 +32,7 @@ type AttendanceSourceRow = {
   totalHours: number;
   dayWorked?: number;
   labourRateNgn?: number;
+  clockIn?: string | null;
 };
 
 type EmployeeLookup = {
@@ -61,10 +62,21 @@ const splitName = (fullName: string, firstName?: string | null, lastName?: strin
 };
 
 const isPaidLeaveRow = (row: AttendanceSourceRow) => {
-  if (clean(row.projectCode).toUpperCase() === 'LEAVE') return true;
-  const remarks = clean(row.lineRemarks).toLowerCase();
-  if (remarks.includes('approved paid leave') || remarks.includes('paid leave')) return true;
-  return clean(row.idleReasons).toLowerCase().includes('leave');
+  if (hasBiometricClockIn(row.clockIn)) return false;
+  return isTimesheetPaidLeaveLine({
+    remarks: row.lineRemarks,
+    projectAllocations: [{ projectCode: row.projectCode, hours: Number(row.productiveHours || row.usedHours || 0) }],
+  });
+};
+
+const codeAliases = (code: string) => {
+  const raw = clean(code).toUpperCase().replace(/_/g, '');
+  if (!raw) return [];
+  return [...new Set([
+    raw,
+    raw.replace(/^P(?=\d)/, ''),
+    raw.replace(/^(IT|NYSC|L|C)(?=\d)/, ''),
+  ].filter(Boolean))];
 };
 
 const isSiteEligibleLocation = (location: string, projectSite?: string) => {
@@ -94,6 +106,8 @@ type EmployeeBucket = {
   nightDates: Set<string>;
   siteDates: Set<string>;
   payableDates: Set<string>;
+  saturdayDates: Set<string>;
+  sundayDates: Set<string>;
   saturdayHours: number;
   sundayHours: number;
   publicHolidayHours: number;
@@ -105,6 +119,7 @@ export const buildPayrollAttendanceSheet = (input: {
   employeesByKey?: Map<string, EmployeeLookup>;
   holidayDates?: string[];
   canViewCosts?: boolean;
+  payrollHoursByKey?: Map<string, PayrollTimesheetHoursEntry>;
 }): PayrollAttendanceSheetRow[] => {
   const holidays = input.holidayDates || [];
   const holidaySet = new Set(holidays);
@@ -138,6 +153,8 @@ export const buildPayrollAttendanceSheet = (input: {
       nightDates: new Set<string>(),
       siteDates: new Set<string>(),
       payableDates: new Set<string>(),
+      saturdayDates: new Set<string>(),
+      sundayDates: new Set<string>(),
       saturdayHours: 0,
       sundayHours: 0,
       publicHolidayHours: 0,
@@ -167,28 +184,36 @@ export const buildPayrollAttendanceSheet = (input: {
     );
     const payable = row.dayWorked === 1
       || paidLeave
-      || workedHours > 0
-      || productiveHours > 0
-      || Boolean(clean(row.lineRemarks));
+      || (dayRules.kind !== 'Sunday' && workedHours > 0);
 
-    // Sunday is never a payable day count, but Sunday hours still roll into Sunday totals.
+    // One calendar date per employee. Extra project lines must not add extra days or hours.
+    if (current.payableDates.has(date) || current.sundayDates.has(date)) {
+      buckets.set(employeeKey, current);
+      continue;
+    }
+
     if (payable && dayRules.kind !== 'Sunday') {
       current.payableDates.add(date);
     }
 
-    if (paidLeave && dayRules.kind !== 'Sunday') {
+    if (paidLeave && dayRules.kind === 'Weekday') {
       current.paidLeaveDates.add(date);
-    } else if (night && payable && dayRules.kind !== 'Sunday') {
-      current.nightDates.add(date);
+      current.weekDayDates.add(date);
     } else if (payable && dayRules.kind === 'Weekday') {
       current.weekDayDates.add(date);
       const overtimeHours = Math.max(0, round2(productiveHours - dayRules.standardProductiveHours));
       current.weekdayOvertimeHours = round2(current.weekdayOvertimeHours + overtimeHours);
     }
 
-    if (dayRules.kind === 'Saturday' && workedHours > 0) {
-      current.saturdayHours = round2(current.saturdayHours + workedHours);
+    if (night && payable && dayRules.kind !== 'Sunday') {
+      current.nightDates.add(date);
+    }
+
+    if (dayRules.kind === 'Saturday' && payable) {
+      current.saturdayDates.add(date);
+      current.saturdayHours = round2(current.saturdayHours + (workedHours > 0 ? workedHours : 8));
     } else if (dayRules.kind === 'Sunday' && workedHours > 0) {
+      current.sundayDates.add(date);
       current.sundayHours = round2(current.sundayHours + workedHours);
     } else if (dayRules.kind === 'PublicHoliday' && workedHours > 0) {
       current.publicHolidayHours = round2(current.publicHolidayHours + workedHours);
@@ -205,17 +230,27 @@ export const buildPayrollAttendanceSheet = (input: {
 
   return Array.from(buckets.values())
     .map((bucket) => {
-      const weekDaysWorked = bucket.weekDayDates.size;
+      const payrollHours = lookupPayrollTimesheetHours(
+        input.payrollHoursByKey,
+        bucket.empCode,
+        ...codeAliases(bucket.empCode),
+      );
+      const weekDaysWorked = payrollHours?.weekdayDays != null ? Number(payrollHours.weekdayDays) : bucket.weekDayDates.size;
       const paidLeaveDays = bucket.paidLeaveDates.size;
+      const saturdayDaysWorked = payrollHours?.saturdayDays != null ? Number(payrollHours.saturdayDays) : bucket.saturdayDates.size;
+      const sundayDaysWorked = payrollHours?.sundayDays != null ? Number(payrollHours.sundayDays) : bucket.sundayDates.size;
       const nightWorkedDays = bucket.nightDates.size;
       const siteAllowanceDays = bucket.siteDates.size;
-      const totalDaysWorked = bucket.payableDates.size;
+      const saturdayHours = payrollHours?.saturdayHours != null ? Number(payrollHours.saturdayHours) : bucket.saturdayHours;
+      const sundayHours = payrollHours?.sundayHours != null ? Number(payrollHours.sundayHours) : bucket.sundayHours;
+      const weekdayOvertimeHours = payrollHours?.weekdayOvertimeHours != null ? Number(payrollHours.weekdayOvertimeHours) : bucket.weekdayOvertimeHours;
+      const totalDaysWorked = weekDaysWorked + saturdayDaysWorked + sundayDaysWorked;
       const earnings = calculateContractDayRateEarnings({
         ratePerDay: bucket.ratePerDay,
         weekdayDays: weekDaysWorked,
-        weekdayOvertimeHours: bucket.weekdayOvertimeHours,
-        saturdayHours: bucket.saturdayHours,
-        sundayHours: bucket.sundayHours,
+        weekdayOvertimeHours,
+        saturdayHours,
+        sundayHours,
         publicHolidayHours: bucket.publicHolidayHours,
       });
       const amountFor = (...codes: string[]) =>
@@ -244,13 +279,15 @@ export const buildPayrollAttendanceSheet = (input: {
         weekDayTotal,
         paidLeaveDays,
         paidLeaveTotal,
-        saturdayHours: bucket.saturdayHours,
+        saturdayDaysWorked,
+        saturdayHours,
         saturdayTotal,
-        sundayHours: bucket.sundayHours,
+        sundayDaysWorked,
+        sundayHours,
         sundayTotal,
         publicHolidayHours: bucket.publicHolidayHours,
         publicHolidayTotal,
-        weekdayOvertimeHours: bucket.weekdayOvertimeHours,
+        weekdayOvertimeHours,
         weekdayOvertimeTotal,
         nightWorkedDays,
         nightWorkedTotal,

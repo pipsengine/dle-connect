@@ -22,6 +22,11 @@ const baseExportHeaders = [
   'Name',
   'Department',
   'Payroll Group',
+  'Total Weekdays Worked',
+  'Saturdays Worked',
+  'Sundays Worked',
+  'Total Days Worked',
+  'Days Worked',
   'Basic earning',
   'Union Deductions',
   'Generated Gross',
@@ -77,11 +82,29 @@ const exportHeadersFor = (records: any[]) => {
   return { headers, extras };
 };
 
+const isCCodeRecord = (record: { employeeId?: string; employeeCode?: string; isDailyRate?: boolean }) =>
+  Boolean(record.isDailyRate) || /^C\d+/i.test(compact(record.employeeId || record.employeeCode));
+
+const dayCountOrBlank = (record: any, key: 'weekday' | 'saturday' | 'sunday' | 'total' | 'clocked') => {
+  const cCode = isCCodeRecord(record);
+  if (key === 'clocked') return cCode ? '' : (record.timesheetDaysWorked ?? record.timesheetTotalDaysWorked ?? '');
+  if (!cCode) return '';
+  if (key === 'weekday') return record.timesheetWeekdayDays ?? record.timesheetDaysWorked ?? '';
+  if (key === 'saturday') return record.timesheetSaturdayDays ?? '';
+  if (key === 'sunday') return record.timesheetSundayDays ?? '';
+  return record.timesheetTotalDaysWorked ?? '';
+};
+
 const exportRows = (records: any[], extras: Array<{ key: string; label: string }>) => records.map((record) => [
   record.employeeId,
   record.fullName,
   record.department,
   record.payrollGroup,
+  dayCountOrBlank(record, 'weekday'),
+  dayCountOrBlank(record, 'saturday'),
+  dayCountOrBlank(record, 'sunday'),
+  dayCountOrBlank(record, 'total'),
+  dayCountOrBlank(record, 'clocked'),
   basicEarningAmount(record.earningLines),
   unionDeductionAmount(record.deductionLines),
   ...extras.map((item) => otherEarningAmount(record, item.key)),

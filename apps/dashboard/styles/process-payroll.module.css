@@ -816,3 +816,122 @@
     grid-template-columns: repeat(3, 1fr);
   }
 }
+
+.modalOverlay {
+  position: fixed;
+  inset: 0;
+  z-index: 10000;
+  background: rgba(7, 20, 47, 0.45);
+  display: grid;
+  place-items: center;
+  padding: 24px;
+}
+
+.modal {
+  width: min(920px, 100%);
+  max-height: min(88vh, 860px);
+  overflow: auto;
+  background: #fff;
+  border-radius: 16px;
+  box-shadow: 0 24px 64px rgba(7, 20, 47, 0.28);
+  padding: 20px 22px 24px;
+}
+
+.modalHeader {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  align-items: flex-start;
+  border-bottom: 1px solid var(--line);
+  padding-bottom: 14px;
+}
+
+.modalHeader h2 {
+  margin: 2px 0 4px;
+  font-size: 20px;
+  letter-spacing: -0.3px;
+}
+
+.modalEyebrow {
+  margin: 0;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: #5b7194;
+}
+
+.modalClose {
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
+  border: 1px solid #d9e3f0;
+  background: #fff;
+  color: #516a92;
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+}
+
+.modalMeta {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+  margin: 16px 0;
+}
+
+.modalMetaCard {
+  border: 1px solid #e5edf7;
+  background: #f7faff;
+  border-radius: 12px;
+  padding: 10px 12px;
+}
+
+.modalMetaCard span {
+  display: block;
+  font-size: 10px;
+  font-weight: 800;
+  text-transform: uppercase;
+  color: #94a3b8;
+}
+
+.modalMetaCard strong {
+  display: block;
+  margin-top: 4px;
+  font-size: 14px;
+}
+
+.modalGrid {
+  display: grid;
+  grid-template-columns: 1.2fr 0.8fr;
+  gap: 18px;
+}
+
+.modalGrid h3 {
+  margin: 0 0 10px;
+  font-size: 13px;
+}
+
+.modalLine {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: flex-start;
+  padding: 8px 0;
+  border-bottom: 1px solid #eef3f9;
+  font-size: 13px;
+}
+
+.modalLine small {
+  display: block;
+  margin-top: 2px;
+  color: #687c9b;
+  font-size: 11px;
+}
+
+@media (max-width: 780px) {
+  .modalMeta,
+  .modalGrid {
+    grid-template-columns: 1fr;
+  }
+}

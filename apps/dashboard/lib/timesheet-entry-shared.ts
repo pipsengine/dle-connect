@@ -506,7 +506,7 @@ export const timesheetDayRulesForDate = (date: string, holidayDates: string[] = 
   if (holidays.has(date)) {
     return { kind: 'PublicHoliday', ...standardDay };
   }
-  const weekday = new Date(`${date}T12:00:00`).getDay();
+  const weekday = new Date(`${date}T12:00:00Z`).getUTCDay();
   if (weekday === 6) {
     return { kind: 'Saturday', ...standardDay };
   }
@@ -1252,18 +1252,38 @@ export const canBookTimesheetHoursWithoutClock = (
   return isOffshoreTimesheetContext(locationName, workCenterName);
 };
 
+export const utcTimesheetWeekday = (timesheetDate: string) => {
+  const dateKey = String(timesheetDate || '').slice(0, 10);
+  return /^\d{4}-\d{2}-\d{2}$/.test(dateKey) ? new Date(`${dateKey}T12:00:00Z`).getUTCDay() : -1;
+};
+
+const bookedLineHours = (line: { usedHours?: number | null; totalHours?: number | null }) =>
+  round1(Math.max(Number(line.usedHours || 0), Number(line.totalHours || 0), 0));
+
 /** Weekday OT hours that payroll WEEKDAYOVT should pay from a timesheet line. */
 export const weekdayOvertimeHoursFromLine = (
   line: { usedHours?: number | null; offshoreAllowanceHours?: number | null },
   timesheetDate: string,
 ) => {
-  const dateKey = String(timesheetDate || '').slice(0, 10);
-  const day = /^\d{4}-\d{2}-\d{2}$/.test(dateKey) ? new Date(`${dateKey}T12:00:00Z`).getUTCDay() : -1;
+  const day = utcTimesheetWeekday(timesheetDate);
   if (day < 1 || day > 5) return 0;
   const used = Number(line.usedHours || 0);
   const fromUsed = round1(Math.max(0, used - STANDARD_TIMESHEET_HOURS));
   if (fromUsed > 0.001) return fromUsed;
   return round1(Math.max(0, Number(line.offshoreAllowanceHours || 0)));
+};
+
+/** Saturday / Sunday hours for SATEARN / SUNDAYEARN — not weekday day-rate or meal. */
+export const weekendHoursFromTimesheetLine = (
+  line: { usedHours?: number | null; totalHours?: number | null },
+  timesheetDate: string,
+): { saturdayHours: number; sundayHours: number } => {
+  const day = utcTimesheetWeekday(timesheetDate);
+  const hours = bookedLineHours(line);
+  if (hours <= 0) return { saturdayHours: 0, sundayHours: 0 };
+  if (day === 6) return { saturdayHours: hours, sundayHours: 0 };
+  if (day === 0) return { saturdayHours: 0, sundayHours: hours };
+  return { saturdayHours: 0, sundayHours: 0 };
 };
 
 export const includedOffshorePaidOvertimeHours = (

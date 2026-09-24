@@ -2,6 +2,3301 @@
   "schemaVersion": 1,
   "notifications": [
     {
+      "id": "ntf-1790242486018-4e8e7v",
+      "recipientUserId": "P0432",
+      "recipientUsername": "P0432",
+      "recipientEmployeeCode": "P0432",
+      "recipientRoles": [],
+      "kind": "Approval",
+      "module": "Finance Approvals",
+      "title": "Payment approval required",
+      "body": "Mr. ADESHINA ADESEGUN FAWAZ submitted Cash Advance Payment DLPC260937 (NGN 1,095,442) for Reporting Manager approval.",
+      "severity": "warning",
+      "status": "Unread",
+      "href": "/finance/approvals/request/PREQ-1790242442299",
+      "createdAt": "2026-09-24T09:34:46.018Z",
+      "actor": "Mr. ADESHINA ADESEGUN FAWAZ",
+      "channels": [
+        "In-App",
+        "Email"
+      ],
+      "metadata": {
+        "requestId": "PREQ-1790242442299",
+        "requestNumber": "DLPC260937",
+        "stage": "Reporting Manager",
+        "recipientCode": "P0432",
+        "recipientName": "Ms. BADETAN VICTORIA OLAMIDE"
+      }
+    },
+    {
+      "id": "ntf-1790242387232-mutd4p",
+      "recipientUserId": "P0433",
+      "recipientUsername": "P0433",
+      "recipientEmployeeCode": "P0433",
+      "recipientRoles": [],
+      "kind": "Approval",
+      "module": "Finance Approvals",
+      "title": "Payment approval required",
+      "body": "OBUMA DARL submitted Supplier Invoice Payment DLPC260933 (NGN 249,950) for Cost Controller approval.",
+      "severity": "warning",
+      "status": "Unread",
+      "href": "/finance/approvals/request/PREQ-1790071954157",
+      "createdAt": "2026-09-24T09:33:07.232Z",
+      "actor": "Mrs. ODULATE ABIODUN TEMITOPE",
+      "channels": [
+        "In-App",
+        "Email"
+      ],
+      "metadata": {
+        "requestId": "PREQ-1790071954157",
+        "requestNumber": "DLPC260933",
+        "stage": "Cost Controller",
+        "recipientCode": "P0433",
+        "recipientName": "SAMSON ADESOJI ADELOWO"
+      }
+    },
+    {
+      "id": "ntf-1790242386035-e70m4i",
+      "recipientUserId": "L0191",
+      "recipientUsername": "L0191",
+      "recipientEmployeeCode": "L0191",
+      "recipientRoles": [],
+      "kind": "Approval",
+      "module": "Finance Approvals",
+      "title": "Payment approval progressed",
+      "body": "DLPC260933 cleared Project Manager. Now awaiting Cost Controller.",
+      "severity": "info",
+      "status": "Unread",
+      "href": "/finance/approvals/request/PREQ-1790071954157",
+      "createdAt": "2026-09-24T09:33:06.035Z",
+      "actor": "Mrs. ODULATE ABIODUN TEMITOPE",
+      "channels": [
+        "In-App",
+        "Email"
+      ],
+      "metadata": {
+        "requestId": "PREQ-1790071954157",
+        "event": "stage-advanced"
+      }
+    },
+    {
+      "id": "ntf-1790242347968-ki7mcx",
+      "recipientUserId": "P0442",
+      "recipientUsername": "P0442",
+      "recipientEmployeeCode": "P0442",
+      "recipientRoles": [],
+      "kind": "Approval",
+      "module": "Finance Approvals",
+      "title": "Payment approval required",
+      "body": "OBUMA DARL submitted Supplier Invoice Payment DLPC260933 (NGN 249,950) for Project Manager approval.",
+      "severity": "warning",
+      "status": "Unread",
+      "href": "/finance/approvals/request/PREQ-1790071954157",
+      "createdAt": "2026-09-24T09:32:27.968Z",
+      "actor": "Payment Approval Reminder",
+      "channels": [
+        "In-App",
+        "Email"
+      ],
+      "metadata": {
+        "requestId": "PREQ-1790071954157",
+        "requestNumber": "DLPC260933",
+        "stage": "Project Manager",
+        "recipientCode": "P0442",
+        "recipientName": "Mrs. ODULATE ABIODUN TEMITOPE"
+      }
+    },
+    {
+      "id": "ntf-1790242345024-mqg8o2",
+      "recipientUserId": "P0442",
+      "recipientUsername": "P0442",
+      "recipientEmployeeCode": "P0442",
+      "recipientRoles": [],
+      "kind": "Approval",
+      "module": "Finance Approvals",
+      "title": "Payment approval required",
+      "body": "Mr AFEES ANIMASHAUN submitted Expense Payment DLE2609107 (NGN 682,425) for GM approval.",
+      "severity": "warning",
+      "status": "Unread",
+      "href": "/finance/approvals/request/PREQ-1789736627397",
+      "createdAt": "2026-09-24T09:32:25.024Z",
+      "actor": "Payment Approval Reminder",
+      "channels": [
+        "In-App",
+        "Email"
+      ],
+      "metadata": {
+        "requestId": "PREQ-1789736627397",
+        "requestNumber": "DLE2609107",
+        "stage": "GM",
+        "recipientCode": "P0442",
+        "recipientName": "Mrs TEMITOPE ABIODUN ODULATE"
+      }
+    },
+    {
+      "id": "ntf-1790241893099-s2ttvp",
+      "recipientUserId": "P0467",
+      "recipientUsername": "P0467",
+      "recipientEmployeeCode": "P0467",
+      "recipientRoles": [],
+      "kind": "Approval",
+      "module": "Finance Approvals",
+      "title": "Cash advance retirement acknowledged",
+      "body": "DLE2609115 retirement was acknowledged by Treasury. The advance is now closed.",
+      "severity": "success",
+      "status": "Unread",
+      "href": "/finance/approvals/request/PREQ-1789989853089",
+      "createdAt": "2026-09-24T09:24:53.099Z",
+      "actor": "Mr. EMESIANA IFEANYICHUKWU",
+      "channels": [
+        "In-App",
+        "Email"
+      ],
+      "metadata": {
+        "requestId": "PREQ-1789989853089",
+        "event": "retirement-acknowledged"
+      }
+    },
+    {
+      "id": "ntf-1790241104844-3gup8e",
+      "recipientUserId": "C1882",
+      "recipientUsername": "C1882",
+      "recipientEmployeeCode": "C1882",
+      "recipientRoles": [],
+      "kind": "Approval",
+      "module": "Leave Management",
+      "title": "Leave request awaiting your approval",
+      "body": "SAMUEL EMEWU JONAH submitted Sick Leave — SAMUEL EMEWU JONAH (2026-09-23 to 2026-09-24). Review in ESS Approvals within 5 working days.",
+      "severity": "warning",
+      "status": "Unread",
+      "href": "/workforce-portal?tab=leave&leaveSection=Approvals",
+      "createdAt": "2026-09-24T09:11:44.844Z",
+      "actor": "JACOB AKPO",
+      "channels": [
+        "In-App",
+        "Email"
+      ],
+      "metadata": {
+        "requestId": "ess-1790184445730-1gyy9d"
+      }
+    },
+    {
+      "id": "ntf-1790241104320-6tydj2",
+      "recipientUserId": "C1882",
+      "recipientUsername": "C1882",
+      "recipientEmployeeCode": "C1882",
+      "recipientRoles": [],
+      "kind": "Approval",
+      "module": "Leave Management",
+      "title": "Leave request awaiting your approval",
+      "body": "OGWUCHE ACHEM submitted Annual Leave — OGWUCHE ACHEM (2026-09-22 to 2026-09-25). Review in ESS Approvals within 5 working days.",
+      "severity": "warning",
+      "status": "Unread",
+      "href": "/workforce-portal?tab=leave&leaveSection=Approvals",
+      "createdAt": "2026-09-24T09:11:44.320Z",
+      "actor": "JACOB AKPO",
+      "channels": [
+        "In-App",
+        "Email"
+      ],
+      "metadata": {
+        "requestId": "ess-1789993455193-y8sf2b"
+      }
+    },
+    {
+      "id": "ntf-1790241103815-8whj1i",
+      "recipientUserId": "C1544",
+      "recipientUsername": "C1544",
+      "recipientEmployeeCode": "C1544",
+      "recipientRoles": [],
+      "kind": "Approval",
+      "module": "Leave Management",
+      "title": "Leave request awaiting your approval",
+      "body": "RABIU GBOLAGADE submitted Sick Leave — RABIU GBOLAGADE (2026-09-23 to 2026-09-23). Review in ESS Approvals within 5 working days.",
+      "severity": "warning",
+      "status": "Unread",
+      "href": "/workforce-portal?tab=leave&leaveSection=Approvals",
+      "createdAt": "2026-09-24T09:11:43.815Z",
+      "actor": "JACOB AKPO",
+      "channels": [
+        "In-App",
+        "Email"
+      ],
+      "metadata": {
+        "requestId": "ess-1790157794494-y7m4ex"
+      }
+    },
+    {
+      "id": "ntf-1790241103265-s80rse",
+      "recipientUserId": "C1882",
+      "recipientUsername": "C1882",
+      "recipientEmployeeCode": "C1882",
+      "recipientRoles": [],
+      "kind": "Approval",
+      "module": "Leave Management",
+      "title": "Leave request awaiting your approval",
+      "body": "ADEKUNLE KOLAWOLE submitted Annual Leave — ADEKUNLE KOLAWOLE (2026-09-21 to 2026-09-29). Review in ESS Approvals within 5 working days.",
+      "severity": "warning",
+      "status": "Unread",
+      "href": "/workforce-portal?tab=leave&leaveSection=Approvals",
+      "createdAt": "2026-09-24T09:11:43.265Z",
+      "actor": "JACOB AKPO",
+      "channels": [
+        "In-App",
+        "Email"
+      ],
+      "metadata": {
+        "requestId": "ess-1789663296991-xtgawk"
+      }
+    },
+    {
+      "id": "ntf-1790241102588-y218tf",
+      "recipientUserId": "P0072",
+      "recipientUsername": "P0072",
+      "recipientEmployeeCode": "P0072",
+      "recipientRoles": [],
+      "kind": "Approval",
+      "module": "Leave Management",
+      "title": "Leave request awaiting your approval",
+      "body": "Mr. OWOLABI OLASUNKANMI AKEEB submitted Annual Leave — Mr. OWOLABI OLASUNKANMI AKEEB (2026-09-23 to 2026-09-25). Review in ESS Approvals within 5 working days.",
+      "severity": "warning",
+      "status": "Unread",
+      "href": "/workforce-portal?tab=leave&leaveSection=Approvals",
+      "createdAt": "2026-09-24T09:11:42.588Z",
+      "actor": "JACOB AKPO",
+      "channels": [
+        "In-App",
+        "Email"
+      ],
+      "metadata": {
+        "requestId": "ess-1790071857740-d73ld7"
+      }
+    },
+    {
+      "id": "ntf-1790241102026-k52ceh",
+      "recipientUserId": "C1720",
+      "recipientUsername": "C1720",
+      "recipientEmployeeCode": "C1720",
+      "recipientRoles": [],
+      "kind": "Approval",
+      "module": "Leave Management",
+      "title": "Leave request awaiting your approval",
+      "body": "OGUNYEMI AYODELE submitted Annual Leave — OGUNYEMI AYODELE (2026-10-09 to 2026-10-19). Review in ESS Approvals within 5 working days.",
+      "severity": "warning",
+      "status": "Unread",
+      "href": "/workforce-portal?tab=leave&leaveSection=Approvals",
+      "createdAt": "2026-09-24T09:11:42.026Z",
+      "actor": "JACOB AKPO",
+      "channels": [
+        "In-App",
+        "Email"
+      ],
+      "metadata": {
+        "requestId": "ess-1790172623865-aehjyi"
+      }
+    },
+    {
+      "id": "ntf-1790241101006-tz7zoi",
+      "recipientUserId": "P0072",
+      "recipientUsername": "P0072",
+      "recipientEmployeeCode": "P0072",
+      "recipientRoles": [],
+      "kind": "Approval",
+      "module": "Leave Management",
+      "title": "Leave request awaiting your approval",
+      "body": "AMANOKHAI MOSES submitted Annual Leave — AMANOKHAI MOSES (2026-09-24 to 2026-10-05). Review in ESS Approvals within 5 working days.",
+      "severity": "warning",
+      "status": "Unread",
+      "href": "/workforce-portal?tab=leave&leaveSection=Approvals",
+      "createdAt": "2026-09-24T09:11:41.006Z",
+      "actor": "JACOB AKPO",
+      "channels": [
+        "In-App",
+        "Email"
+      ],
+      "metadata": {
+        "requestId": "ess-1790163818424-eqaay1"
+      }
+    },
+    {
+      "id": "ntf-1790240824727-e1hiv7",
+      "recipientUserId": "P0433",
+      "recipientUsername": "P0433",
+      "recipientEmployeeCode": "P0433",
+      "recipientRoles": [],
+      "kind": "Approval",
+      "module": "Finance Approvals",
+      "title": "Payment approval required",
+      "body": "Miss ABE COMFORT OLUFUNKE submitted Supplier Invoice Payment DLE2609140 (NGN 234,014.06) for Cost Controller approval.",
+      "severity": "warning",
+      "status": "Unread",
+      "href": "/finance/approvals/request/PREQ-1790161446229",
+      "createdAt": "2026-09-24T09:07:04.728Z",
+      "actor": "Mr. BASSEY AGAH CLETUS",
+      "channels": [
+        "In-App",
+        "Email"
+      ],
+      "metadata": {
+        "requestId": "PREQ-1790161446229",
+        "requestNumber": "DLE2609140",
+        "stage": "Cost Controller",
+        "recipientCode": "P0433",
+        "recipientName": "SAMSON ADESOJI ADELOWO"
+      }
+    },
+    {
+      "id": "ntf-1790240823265-032qz7",
+      "recipientUserId": "P0465",
+      "recipientUsername": "P0465",
+      "recipientEmployeeCode": "P0465",
+      "recipientRoles": [],
+      "kind": "Approval",
+      "module": "Finance Approvals",
+      "title": "Payment approval progressed",
+      "body": "DLE2609140 cleared Project Manager. Now awaiting Cost Controller.",
+      "severity": "info",
+      "status": "Unread",
+      "href": "/finance/approvals/request/PREQ-1790161446229",
+      "createdAt": "2026-09-24T09:07:03.265Z",
+      "actor": "Mr. BASSEY AGAH CLETUS",
+      "channels": [
+        "In-App",
+        "Email"
+      ],
+      "metadata": {
+        "requestId": "PREQ-1790161446229",
+        "event": "stage-advanced"
+      }
+    },
+    {
+      "id": "ntf-1790240768483-xic7yu",
+      "recipientUserId": "P0442",
+      "recipientUsername": "P0442",
+      "recipientEmployeeCode": "P0442",
+      "recipientRoles": [],
+      "kind": "Approval",
+      "module": "Finance Approvals",
+      "title": "Payment approval required",
+      "body": "Miss ADENUBI GLORY KEHINDE submitted Supplier Invoice Payment DLE2609152 (NGN 536,360.05) for Project Manager approval.",
+      "severity": "warning",
+      "status": "Unread",
+      "href": "/finance/approvals/request/PREQ-1790238761463",
+      "createdAt": "2026-09-24T09:06:08.483Z",
+      "actor": "Mrs. AJIERE NDIDI AGNES",
+      "channels": [
+        "In-App",
+        "Email"
+      ],
+      "metadata": {
+        "requestId": "PREQ-1790238761463",
+        "requestNumber": "DLE2609152",
+        "stage": "Project Manager",
+        "recipientCode": "P0442",
+        "recipientName": "Mrs. ODULATE ABIODUN TEMITOPE"
+      }
+    },
+    {
+      "id": "ntf-1790240767359-0sesek",
+      "recipientUserId": "NYSC0025",
+      "recipientUsername": "NYSC0025",
+      "recipientEmployeeCode": "NYSC0025",
+      "recipientRoles": [],
+      "kind": "Approval",
+      "module": "Finance Approvals",
+      "title": "Payment approval progressed",
+      "body": "DLE2609152 cleared Reporting Manager. Now awaiting Project Manager.",
+      "severity": "info",
+      "status": "Unread",
+      "href": "/finance/approvals/request/PREQ-1790238761463",
+      "createdAt": "2026-09-24T09:06:07.359Z",
+      "actor": "Mrs. AJIERE NDIDI AGNES",
+      "channels": [
+        "In-App",
+        "Email"
+      ],
+      "metadata": {
+        "requestId": "PREQ-1790238761463",
+        "event": "stage-advanced"
+      }
+    },
+    {
+      "id": "ntf-1790240714647-wrqkv1",
+      "recipientUserId": "P0072",
+      "recipientUsername": "P0072",
+      "recipientEmployeeCode": "P0072",
+      "recipientRoles": [],
+      "kind": "Approval",
+      "module": "Leave Management",
+      "title": "Leave request awaiting your approval",
+      "body": "AMANOKHAI MOSES submitted Annual Leave — AMANOKHAI MOSES (2026-09-24 to 2026-10-05). Review in ESS Approvals within 5 working days.",
+      "severity": "warning",
+      "status": "Unread",
+      "href": "/workforce-portal?tab=leave&leaveSection=Approvals",
+      "createdAt": "2026-09-24T09:05:14.647Z",
+      "actor": "JACOB AKPO",
+      "channels": [
+        "In-App",
+        "Email"
+      ],
+      "metadata": {
+        "requestId": "ess-1790163818424-eqaay1"
+      }
+    },
+    {
+      "id": "ntf-1790240712636-vvuot1",
+      "recipientUserId": "C1882",
+      "recipientUsername": "C1882",
+      "recipientEmployeeCode": "C1882",
+      "recipientRoles": [],
+      "kind": "Approval",
+      "module": "Leave Management",
+      "title": "Leave request awaiting your approval",
+      "body": "OGWUCHE ACHEM submitted Annual Leave — OGWUCHE ACHEM (2026-09-22 to 2026-09-25). Review in ESS Approvals within 5 working days.",
+      "severity": "warning",
+      "status": "Unread",
+      "href": "/workforce-portal?tab=leave&leaveSection=Approvals",
+      "createdAt": "2026-09-24T09:05:12.636Z",
+      "actor": "JACOB AKPO",
+      "channels": [
+        "In-App",
+        "Email"
+      ],
+      "metadata": {
+        "requestId": "ess-1789993455193-y8sf2b"
+      }
+    },
+    {
+      "id": "ntf-1790240710613-hynn48",
+      "recipientUserId": "C1544",
+      "recipientUsername": "C1544",
+      "recipientEmployeeCode": "C1544",
+      "recipientRoles": [],
+      "kind": "Approval",
+      "module": "Leave Management",
+      "title": "Leave request awaiting your approval",
+      "body": "RABIU GBOLAGADE submitted Sick Leave — RABIU GBOLAGADE (2026-09-23 to 2026-09-23). Review in ESS Approvals within 5 working days.",
+      "severity": "warning",
+      "status": "Unread",
+      "href": "/workforce-portal?tab=leave&leaveSection=Approvals",
+      "createdAt": "2026-09-24T09:05:10.613Z",
+      "actor": "JACOB AKPO",
+      "channels": [
+        "In-App",
+        "Email"
+      ],
+      "metadata": {
+        "requestId": "ess-1790157794494-y7m4ex"
+      }
+    },
+    {
+      "id": "ntf-1790240707835-bov4sr",
+      "recipientUserId": "C1882",
+      "recipientUsername": "C1882",
+      "recipientEmployeeCode": "C1882",
+      "recipientRoles": [],
+      "kind": "Approval",
+      "module": "Leave Management",
+      "title": "Leave request awaiting your approval",
+      "body": "ADEKUNLE KOLAWOLE submitted Annual Leave — ADEKUNLE KOLAWOLE (2026-09-21 to 2026-09-29). Review in ESS Approvals within 5 working days.",
+      "severity": "warning",
+      "status": "Unread",
+      "href": "/workforce-portal?tab=leave&leaveSection=Approvals",
+      "createdAt": "2026-09-24T09:05:07.835Z",
+      "actor": "JACOB AKPO",
+      "channels": [
+        "In-App",
+        "Email"
+      ],
+      "metadata": {
+        "requestId": "ess-1789663296991-xtgawk"
+      }
+    },
+    {
+      "id": "ntf-1790240704998-jzm0d1",
+      "recipientUserId": "P0072",
+      "recipientUsername": "P0072",
+      "recipientEmployeeCode": "P0072",
+      "recipientRoles": [],
+      "kind": "Approval",
+      "module": "Leave Management",
+      "title": "Leave request awaiting your approval",
+      "body": "Mr. OWOLABI OLASUNKANMI AKEEB submitted Annual Leave — Mr. OWOLABI OLASUNKANMI AKEEB (2026-09-23 to 2026-09-25). Review in ESS Approvals within 5 working days.",
+      "severity": "warning",
+      "status": "Unread",
+      "href": "/workforce-portal?tab=leave&leaveSection=Approvals",
+      "createdAt": "2026-09-24T09:05:04.998Z",
+      "actor": "JACOB AKPO",
+      "channels": [
+        "In-App",
+        "Email"
+      ],
+      "metadata": {
+        "requestId": "ess-1790071857740-d73ld7"
+      }
+    },
+    {
+      "id": "ntf-1790240699846-akhyjn",
+      "recipientUserId": "C1720",
+      "recipientUsername": "C1720",
+      "recipientEmployeeCode": "C1720",
+      "recipientRoles": [],
+      "kind": "Approval",
+      "module": "Leave Management",
+      "title": "Leave request awaiting your approval",
+      "body": "OGUNYEMI AYODELE submitted Annual Leave — OGUNYEMI AYODELE (2026-10-09 to 2026-10-19). Review in ESS Approvals within 5 working days.",
+      "severity": "warning",
+      "status": "Unread",
+      "href": "/workforce-portal?tab=leave&leaveSection=Approvals",
+      "createdAt": "2026-09-24T09:04:59.846Z",
+      "actor": "JACOB AKPO",
+      "channels": [
+        "In-App",
+        "Email"
+      ],
+      "metadata": {
+        "requestId": "ess-1790172623865-aehjyi"
+      }
+    },
+    {
+      "id": "ntf-1790240696937-osvaks",
+      "recipientUserId": "C1882",
+      "recipientUsername": "C1882",
+      "recipientEmployeeCode": "C1882",
+      "recipientRoles": [],
+      "kind": "Approval",
+      "module": "Leave Management",
+      "title": "Leave request awaiting your approval",
+      "body": "SAMUEL EMEWU JONAH submitted Sick Leave — SAMUEL EMEWU JONAH (2026-09-23 to 2026-09-24). Review in ESS Approvals within 5 working days.",
+      "severity": "warning",
+      "status": "Unread",
+      "href": "/workforce-portal?tab=leave&leaveSection=Approvals",
+      "createdAt": "2026-09-24T09:04:56.937Z",
+      "actor": "JACOB AKPO",
+      "channels": [
+        "In-App",
+        "Email"
+      ],
+      "metadata": {
+        "requestId": "ess-1790184445730-1gyy9d"
+      }
+    },
+    {
+      "id": "ntf-1790240663960-w5mooe",
+      "recipientUserId": "L2792",
+      "recipientUsername": "L2792",
+      "recipientEmployeeCode": "L2792",
+      "recipientRoles": [],
+      "kind": "Approval",
+      "module": "Finance Approvals",
+      "title": "Payment approval required",
+      "body": "Miss ABE COMFORT OLUFUNKE submitted Supplier Invoice Payment DLE2609140 (NGN 234,014.06) for Project Manager approval.",
+      "severity": "warning",
+      "status": "Unread",
+      "href": "/finance/approvals/request/PREQ-1790161446229",
+      "createdAt": "2026-09-24T09:04:23.960Z",
+      "actor": "Mr. BASSEY AGAH CLETUS",
+      "channels": [
+        "In-App",
+        "Email"
+      ],
+      "metadata": {
+        "requestId": "PREQ-1790161446229",
+        "requestNumber": "DLE2609140",
+        "stage": "Project Manager",
+        "recipientCode": "L2792",
+        "recipientName": "Mr. BASSEY AGAH CLETUS"
+      }
+    },
+    {
+      "id": "ntf-1790240661979-16gra1",
+      "recipientUserId": "P0465",
+      "recipientUsername": "P0465",
+      "recipientEmployeeCode": "P0465",
+      "recipientRoles": [],
+      "kind": "Approval",
+      "module": "Finance Approvals",
+      "title": "Payment approval progressed",
+      "body": "DLE2609140 cleared Cost Centre Manager. Now awaiting Project Manager.",
+      "severity": "info",
+      "status": "Unread",
+      "href": "/finance/approvals/request/PREQ-1790161446229",
+      "createdAt": "2026-09-24T09:04:21.979Z",
+      "actor": "Mr. BASSEY AGAH CLETUS",
+      "channels": [
+        "In-App",
+        "Email"
+      ],
+      "metadata": {
+        "requestId": "PREQ-1790161446229",
+        "event": "stage-advanced"
+      }
+    },
+    {
+      "id": "ntf-1790240609909-4rpkc9",
+      "recipientUserId": "P0072",
+      "recipientUsername": "P0072",
+      "recipientEmployeeCode": "P0072",
+      "recipientRoles": [],
+      "kind": "Approval",
+      "module": "Leave Management",
+      "title": "Leave request awaiting your approval",
+      "body": "AMANOKHAI MOSES submitted Annual Leave — AMANOKHAI MOSES (2026-09-24 to 2026-10-05). Review in ESS Approvals within 5 working days.",
+      "severity": "warning",
+      "status": "Unread",
+      "href": "/workforce-portal?tab=leave&leaveSection=Approvals",
+      "createdAt": "2026-09-24T09:03:29.909Z",
+      "actor": "Mr. ADEGBOYEGA Babatunde ABUBAKRI",
+      "channels": [
+        "In-App",
+        "Email"
+      ],
+      "metadata": {
+        "requestId": "ess-1790163818424-eqaay1"
+      }
+    },
+    {
+      "id": "ntf-1790240608463-gi6u1x",
+      "recipientUserId": "C1882",
+      "recipientUsername": "C1882",
+      "recipientEmployeeCode": "C1882",
+      "recipientRoles": [],
+      "kind": "Approval",
+      "module": "Leave Management",
+      "title": "Leave request awaiting your approval",
+      "body": "OGWUCHE ACHEM submitted Annual Leave — OGWUCHE ACHEM (2026-09-22 to 2026-09-25). Review in ESS Approvals within 5 working days.",
+      "severity": "warning",
+      "status": "Unread",
+      "href": "/workforce-portal?tab=leave&leaveSection=Approvals",
+      "createdAt": "2026-09-24T09:03:28.463Z",
+      "actor": "Mr. ADEGBOYEGA Babatunde ABUBAKRI",
+      "channels": [
+        "In-App",
+        "Email"
+      ],
+      "metadata": {
+        "requestId": "ess-1789993455193-y8sf2b"
+      }
+    },
+    {
+      "id": "ntf-1790240607524-hry1j7",
+      "recipientUserId": "C1544",
+      "recipientUsername": "C1544",
+      "recipientEmployeeCode": "C1544",
+      "recipientRoles": [],
+      "kind": "Approval",
+      "module": "Leave Management",
+      "title": "Leave request awaiting your approval",
+      "body": "RABIU GBOLAGADE submitted Sick Leave — RABIU GBOLAGADE (2026-09-23 to 2026-09-23). Review in ESS Approvals within 5 working days.",
+      "severity": "warning",
+      "status": "Unread",
+      "href": "/workforce-portal?tab=leave&leaveSection=Approvals",
+      "createdAt": "2026-09-24T09:03:27.524Z",
+      "actor": "Mr. ADEGBOYEGA Babatunde ABUBAKRI",
+      "channels": [
+        "In-App",
+        "Email"
+      ],
+      "metadata": {
+        "requestId": "ess-1790157794494-y7m4ex"
+      }
+    },
+    {
+      "id": "ntf-1790240605913-aj5o7q",
+      "recipientUserId": "C1882",
+      "recipientUsername": "C1882",
+      "recipientEmployeeCode": "C1882",
+      "recipientRoles": [],
+      "kind": "Approval",
+      "module": "Leave Management",
+      "title": "Leave request awaiting your approval",
+      "body": "ADEKUNLE KOLAWOLE submitted Annual Leave — ADEKUNLE KOLAWOLE (2026-09-21 to 2026-09-29). Review in ESS Approvals within 5 working days.",
+      "severity": "warning",
+      "status": "Unread",
+      "href": "/workforce-portal?tab=leave&leaveSection=Approvals",
+      "createdAt": "2026-09-24T09:03:25.913Z",
+      "actor": "Mr. ADEGBOYEGA Babatunde ABUBAKRI",
+      "channels": [
+        "In-App",
+        "Email"
+      ],
+      "metadata": {
+        "requestId": "ess-1789663296991-xtgawk"
+      }
+    },
+    {
+      "id": "ntf-1790240604605-993m68",
+      "recipientUserId": "P0072",
+      "recipientUsername": "P0072",
+      "recipientEmployeeCode": "P0072",
+      "recipientRoles": [],
+      "kind": "Approval",
+      "module": "Leave Management",
+      "title": "Leave request awaiting your approval",
+      "body": "Mr. OWOLABI OLASUNKANMI AKEEB submitted Annual Leave — Mr. OWOLABI OLASUNKANMI AKEEB (2026-09-23 to 2026-09-25). Review in ESS Approvals within 5 working days.",
+      "severity": "warning",
+      "status": "Unread",
+      "href": "/workforce-portal?tab=leave&leaveSection=Approvals",
+      "createdAt": "2026-09-24T09:03:24.605Z",
+      "actor": "Mr. ADEGBOYEGA Babatunde ABUBAKRI",
+      "channels": [
+        "In-App",
+        "Email"
+      ],
+      "metadata": {
+        "requestId": "ess-1790071857740-d73ld7"
+      }
+    },
+    {
+      "id": "ntf-1790240602319-g0bqdu",
+      "recipientUserId": "C1720",
+      "recipientUsername": "C1720",
+      "recipientEmployeeCode": "C1720",
+      "recipientRoles": [],
+      "kind": "Approval",
+      "module": "Leave Management",
+      "title": "Leave request awaiting your approval",
+      "body": "OGUNYEMI AYODELE submitted Annual Leave — OGUNYEMI AYODELE (2026-10-09 to 2026-10-19). Review in ESS Approvals within 5 working days.",
+      "severity": "warning",
+      "status": "Unread",
+      "href": "/workforce-portal?tab=leave&leaveSection=Approvals",
+      "createdAt": "2026-09-24T09:03:22.319Z",
+      "actor": "Mr. ADEGBOYEGA Babatunde ABUBAKRI",
+      "channels": [
+        "In-App",
+        "Email"
+      ],
+      "metadata": {
+        "requestId": "ess-1790172623865-aehjyi"
+      }
+    },
+    {
+      "id": "ntf-1790240600052-4bugrh",
+      "recipientUserId": "C1882",
+      "recipientUsername": "C1882",
+      "recipientEmployeeCode": "C1882",
+      "recipientRoles": [],
+      "kind": "Approval",
+      "module": "Leave Management",
+      "title": "Leave request awaiting your approval",
+      "body": "SAMUEL EMEWU JONAH submitted Sick Leave — SAMUEL EMEWU JONAH (2026-09-23 to 2026-09-24). Review in ESS Approvals within 5 working days.",
+      "severity": "warning",
+      "status": "Unread",
+      "href": "/workforce-portal?tab=leave&leaveSection=Approvals",
+      "createdAt": "2026-09-24T09:03:20.052Z",
+      "actor": "Mr. ADEGBOYEGA Babatunde ABUBAKRI",
+      "channels": [
+        "In-App",
+        "Email"
+      ],
+      "metadata": {
+        "requestId": "ess-1790184445730-1gyy9d"
+      }
+    },
+    {
+      "id": "ntf-1790240571059-up9yzx",
+      "recipientUserId": "system-finance-workflow",
+      "recipientUsername": "system-finance-workflow",
+      "recipientRoles": [
+        "Treasury Officer",
+        "Finance Manager",
+        "Finance Controller",
+        "Finance Administrator",
+        "Accountant"
+      ],
+      "kind": "Approval",
+      "module": "Finance Approvals",
+      "title": "Cash advance retirement submitted",
+      "body": "DLE2609115 retirement was submitted by Mr. ADESHINA ADESEGUN FAWAZ and is awaiting Treasury verification. FLIGHT TICKET",
+      "severity": "warning",
+      "status": "Unread",
+      "href": "/finance/approvals/treasury",
+      "createdAt": "2026-09-24T09:02:51.059Z",
+      "actor": "Mr. ADESHINA ADESEGUN FAWAZ",
+      "channels": [
+        "In-App"
+      ],
+      "metadata": {
+        "requestId": "PREQ-1789989853089",
+        "event": "retirement-submitted"
+      }
+    },
+    {
+      "id": "ntf-1790240138583-odhybe",
+      "recipientUserId": "P0442",
+      "recipientUsername": "P0442",
+      "recipientEmployeeCode": "P0442",
+      "recipientRoles": [],
+      "kind": "Approval",
+      "module": "Finance Approvals",
+      "title": "Payment approval required",
+      "body": "Miss ABE COMFORT OLUFUNKE submitted Supplier Invoice Payment DLE2609147 (NGN 263,375) for GM approval.",
+      "severity": "warning",
+      "status": "Unread",
+      "href": "/finance/approvals/request/PREQ-1790177426183",
+      "createdAt": "2026-09-24T08:55:38.583Z",
+      "actor": "IYANDA OLAITAN RAPHEAL",
+      "channels": [
+        "In-App",
+        "Email"
+      ],
+      "metadata": {
+        "requestId": "PREQ-1790177426183",
+        "requestNumber": "DLE2609147",
+        "stage": "GM",
+        "recipientCode": "P0442",
+        "recipientName": "Mrs. ODULATE ABIODUN TEMITOPE"
+      }
+    },
+    {
+      "id": "ntf-1790240137159-xum2uv",
+      "recipientUserId": "P0465",
+      "recipientUsername": "P0465",
+      "recipientEmployeeCode": "P0465",
+      "recipientRoles": [],
+      "kind": "Approval",
+      "module": "Finance Approvals",
+      "title": "Payment approval progressed",
+      "body": "DLE2609147 cleared Finance Manager. Now awaiting GM.",
+      "severity": "info",
+      "status": "Unread",
+      "href": "/finance/approvals/request/PREQ-1790177426183",
+      "createdAt": "2026-09-24T08:55:37.159Z",
+      "actor": "IYANDA OLAITAN RAPHEAL",
+      "channels": [
+        "In-App",
+        "Email"
+      ],
+      "metadata": {
+        "requestId": "PREQ-1790177426183",
+        "event": "stage-advanced"
+      }
+    },
+    {
+      "id": "ntf-1790239486644-3wwd1b",
+      "recipientUserId": "P0072",
+      "recipientUsername": "P0072",
+      "recipientEmployeeCode": "P0072",
+      "recipientRoles": [],
+      "kind": "Approval",
+      "module": "Leave Management",
+      "title": "Leave request awaiting your approval",
+      "body": "AMANOKHAI MOSES submitted Annual Leave — AMANOKHAI MOSES (2026-09-24 to 2026-10-05). Review in ESS Approvals within 5 working days.",
+      "severity": "warning",
+      "status": "Unread",
+      "href": "/workforce-portal?tab=leave&leaveSection=Approvals",
+      "createdAt": "2026-09-24T08:44:46.644Z",
+      "actor": "ADENIJI SOLOMON SUNDAY",
+      "channels": [
+        "In-App",
+        "Email"
+      ],
+      "metadata": {
+        "requestId": "ess-1790163818424-eqaay1"
+      }
+    },
+    {
+      "id": "ntf-1790239485810-px0inf",
+      "recipientUserId": "C1882",
+      "recipientUsername": "C1882",
+      "recipientEmployeeCode": "C1882",
+      "recipientRoles": [],
+      "kind": "Approval",
+      "module": "Leave Management",
+      "title": "Leave request awaiting your approval",
+      "body": "OGWUCHE ACHEM submitted Annual Leave — OGWUCHE ACHEM (2026-09-22 to 2026-09-25). Review in ESS Approvals within 5 working days.",
+      "severity": "warning",
+      "status": "Unread",
+      "href": "/workforce-portal?tab=leave&leaveSection=Approvals",
+      "createdAt": "2026-09-24T08:44:45.810Z",
+      "actor": "ADENIJI SOLOMON SUNDAY",
+      "channels": [
+        "In-App",
+        "Email"
+      ],
+      "metadata": {
+        "requestId": "ess-1789993455193-y8sf2b"
+      }
+    },
+    {
+      "id": "ntf-1790239485262-bq0dqs",
+      "recipientUserId": "C1544",
+      "recipientUsername": "C1544",
+      "recipientEmployeeCode": "C1544",
+      "recipientRoles": [],
+      "kind": "Approval",
+      "module": "Leave Management",
+      "title": "Leave request awaiting your approval",
+      "body": "RABIU GBOLAGADE submitted Sick Leave — RABIU GBOLAGADE (2026-09-23 to 2026-09-23). Review in ESS Approvals within 5 working days.",
+      "severity": "warning",
+      "status": "Unread",
+      "href": "/workforce-portal?tab=leave&leaveSection=Approvals",
+      "createdAt": "2026-09-24T08:44:45.262Z",
+      "actor": "ADENIJI SOLOMON SUNDAY",
+      "channels": [
+        "In-App",
+        "Email"
+      ],
+      "metadata": {
+        "requestId": "ess-1790157794494-y7m4ex"
+      }
+    },
+    {
+      "id": "ntf-1790239484718-0zf9rb",
+      "recipientUserId": "C1882",
+      "recipientUsername": "C1882",
+      "recipientEmployeeCode": "C1882",
+      "recipientRoles": [],
+      "kind": "Approval",
+      "module": "Leave Management",
+      "title": "Leave request awaiting your approval",
+      "body": "ADEKUNLE KOLAWOLE submitted Annual Leave — ADEKUNLE KOLAWOLE (2026-09-21 to 2026-09-29). Review in ESS Approvals within 5 working days.",
+      "severity": "warning",
+      "status": "Unread",
+      "href": "/workforce-portal?tab=leave&leaveSection=Approvals",
+      "createdAt": "2026-09-24T08:44:44.718Z",
+      "actor": "ADENIJI SOLOMON SUNDAY",
+      "channels": [
+        "In-App",
+        "Email"
+      ],
+      "metadata": {
+        "requestId": "ess-1789663296991-xtgawk"
+      }
+    },
+    {
+      "id": "ntf-1790239484042-t77jox",
+      "recipientUserId": "P0072",
+      "recipientUsername": "P0072",
+      "recipientEmployeeCode": "P0072",
+      "recipientRoles": [],
+      "kind": "Approval",
+      "module": "Leave Management",
+      "title": "Leave request awaiting your approval",
+      "body": "Mr. OWOLABI OLASUNKANMI AKEEB submitted Annual Leave — Mr. OWOLABI OLASUNKANMI AKEEB (2026-09-23 to 2026-09-25). Review in ESS Approvals within 5 working days.",
+      "severity": "warning",
+      "status": "Unread",
+      "href": "/workforce-portal?tab=leave&leaveSection=Approvals",
+      "createdAt": "2026-09-24T08:44:44.042Z",
+      "actor": "ADENIJI SOLOMON SUNDAY",
+      "channels": [
+        "In-App",
+        "Email"
+      ],
+      "metadata": {
+        "requestId": "ess-1790071857740-d73ld7"
+      }
+    },
+    {
+      "id": "ntf-1790239483503-kvq4zm",
+      "recipientUserId": "C1720",
+      "recipientUsername": "C1720",
+      "recipientEmployeeCode": "C1720",
+      "recipientRoles": [],
+      "kind": "Approval",
+      "module": "Leave Management",
+      "title": "Leave request awaiting your approval",
+      "body": "OGUNYEMI AYODELE submitted Annual Leave — OGUNYEMI AYODELE (2026-10-09 to 2026-10-19). Review in ESS Approvals within 5 working days.",
+      "severity": "warning",
+      "status": "Unread",
+      "href": "/workforce-portal?tab=leave&leaveSection=Approvals",
+      "createdAt": "2026-09-24T08:44:43.503Z",
+      "actor": "ADENIJI SOLOMON SUNDAY",
+      "channels": [
+        "In-App",
+        "Email"
+      ],
+      "metadata": {
+        "requestId": "ess-1790172623865-aehjyi"
+      }
+    },
+    {
+      "id": "ntf-1790239482552-qkyp4f",
+      "recipientUserId": "C1882",
+      "recipientUsername": "C1882",
+      "recipientEmployeeCode": "C1882",
+      "recipientRoles": [],
+      "kind": "Approval",
+      "module": "Leave Management",
+      "title": "Leave request awaiting your approval",
+      "body": "SAMUEL EMEWU JONAH submitted Sick Leave — SAMUEL EMEWU JONAH (2026-09-23 to 2026-09-24). Review in ESS Approvals within 5 working days.",
+      "severity": "warning",
+      "status": "Unread",
+      "href": "/workforce-portal?tab=leave&leaveSection=Approvals",
+      "createdAt": "2026-09-24T08:44:42.552Z",
+      "actor": "ADENIJI SOLOMON SUNDAY",
+      "channels": [
+        "In-App",
+        "Email"
+      ],
+      "metadata": {
+        "requestId": "ess-1790184445730-1gyy9d"
+      }
+    },
+    {
+      "id": "ntf-1790239444442-n96n9s",
+      "recipientUserId": "P0072",
+      "recipientUsername": "P0072",
+      "recipientEmployeeCode": "P0072",
+      "recipientRoles": [],
+      "kind": "Approval",
+      "module": "Leave Management",
+      "title": "Leave request awaiting your approval",
+      "body": "AMANOKHAI MOSES submitted Annual Leave — AMANOKHAI MOSES (2026-09-24 to 2026-10-05). Review in ESS Approvals within 5 working days.",
+      "severity": "warning",
+      "status": "Unread",
+      "href": "/workforce-portal?tab=leave&leaveSection=Approvals",
+      "createdAt": "2026-09-24T08:44:04.442Z",
+      "actor": "ADENIJI SOLOMON SUNDAY",
+      "channels": [
+        "In-App",
+        "Email"
+      ],
+      "metadata": {
+        "requestId": "ess-1790163818424-eqaay1"
+      }
+    },
+    {
+      "id": "ntf-1790239443907-5ogppk",
+      "recipientUserId": "C1882",
+      "recipientUsername": "C1882",
+      "recipientEmployeeCode": "C1882",
+      "recipientRoles": [],
+      "kind": "Approval",
+      "module": "Leave Management",
+      "title": "Leave request awaiting your approval",
+      "body": "OGWUCHE ACHEM submitted Annual Leave — OGWUCHE ACHEM (2026-09-22 to 2026-09-25). Review in ESS Approvals within 5 working days.",
+      "severity": "warning",
+      "status": "Unread",
+      "href": "/workforce-portal?tab=leave&leaveSection=Approvals",
+      "createdAt": "2026-09-24T08:44:03.907Z",
+      "actor": "ADENIJI SOLOMON SUNDAY",
+      "channels": [
+        "In-App",
+        "Email"
+      ],
+      "metadata": {
+        "requestId": "ess-1789993455193-y8sf2b"
+      }
+    },
+    {
+      "id": "ntf-1790239443259-nykw9q",
+      "recipientUserId": "C1544",
+      "recipientUsername": "C1544",
+      "recipientEmployeeCode": "C1544",
+      "recipientRoles": [],
+      "kind": "Approval",
+      "module": "Leave Management",
+      "title": "Leave request awaiting your approval",
+      "body": "RABIU GBOLAGADE submitted Sick Leave — RABIU GBOLAGADE (2026-09-23 to 2026-09-23). Review in ESS Approvals within 5 working days.",
+      "severity": "warning",
+      "status": "Unread",
+      "href": "/workforce-portal?tab=leave&leaveSection=Approvals",
+      "createdAt": "2026-09-24T08:44:03.259Z",
+      "actor": "ADENIJI SOLOMON SUNDAY",
+      "channels": [
+        "In-App",
+        "Email"
+      ],
+      "metadata": {
+        "requestId": "ess-1790157794494-y7m4ex"
+      }
+    },
+    {
+      "id": "ntf-1790239442382-xa8iui",
+      "recipientUserId": "C1882",
+      "recipientUsername": "C1882",
+      "recipientEmployeeCode": "C1882",
+      "recipientRoles": [],
+      "kind": "Approval",
+      "module": "Leave Management",
+      "title": "Leave request awaiting your approval",
+      "body": "ADEKUNLE KOLAWOLE submitted Annual Leave — ADEKUNLE KOLAWOLE (2026-09-21 to 2026-09-29). Review in ESS Approvals within 5 working days.",
+      "severity": "warning",
+      "status": "Unread",
+      "href": "/workforce-portal?tab=leave&leaveSection=Approvals",
+      "createdAt": "2026-09-24T08:44:02.382Z",
+      "actor": "ADENIJI SOLOMON SUNDAY",
+      "channels": [
+        "In-App",
+        "Email"
+      ],
+      "metadata": {
+        "requestId": "ess-1789663296991-xtgawk"
+      }
+    },
+    {
+      "id": "ntf-1790239441744-5ugwoj",
+      "recipientUserId": "P0072",
+      "recipientUsername": "P0072",
+      "recipientEmployeeCode": "P0072",
+      "recipientRoles": [],
+      "kind": "Approval",
+      "module": "Leave Management",
+      "title": "Leave request awaiting your approval",
+      "body": "Mr. OWOLABI OLASUNKANMI AKEEB submitted Annual Leave — Mr. OWOLABI OLASUNKANMI AKEEB (2026-09-23 to 2026-09-25). Review in ESS Approvals within 5 working days.",
+      "severity": "warning",
+      "status": "Unread",
+      "href": "/workforce-portal?tab=leave&leaveSection=Approvals",
+      "createdAt": "2026-09-24T08:44:01.745Z",
+      "actor": "ADENIJI SOLOMON SUNDAY",
+      "channels": [
+        "In-App",
+        "Email"
+      ],
+      "metadata": {
+        "requestId": "ess-1790071857740-d73ld7"
+      }
+    },
+    {
+      "id": "ntf-1790239441210-kd5o67",
+      "recipientUserId": "C1720",
+      "recipientUsername": "C1720",
+      "recipientEmployeeCode": "C1720",
+      "recipientRoles": [],
+      "kind": "Approval",
+      "module": "Leave Management",
+      "title": "Leave request awaiting your approval",
+      "body": "OGUNYEMI AYODELE submitted Annual Leave — OGUNYEMI AYODELE (2026-10-09 to 2026-10-19). Review in ESS Approvals within 5 working days.",
+      "severity": "warning",
+      "status": "Unread",
+      "href": "/workforce-portal?tab=leave&leaveSection=Approvals",
+      "createdAt": "2026-09-24T08:44:01.210Z",
+      "actor": "ADENIJI SOLOMON SUNDAY",
+      "channels": [
+        "In-App",
+        "Email"
+      ],
+      "metadata": {
+        "requestId": "ess-1790172623865-aehjyi"
+      }
+    },
+    {
+      "id": "ntf-1790239440120-t1chah",
+      "recipientUserId": "C1882",
+      "recipientUsername": "C1882",
+      "recipientEmployeeCode": "C1882",
+      "recipientRoles": [],
+      "kind": "Approval",
+      "module": "Leave Management",
+      "title": "Leave request awaiting your approval",
+      "body": "SAMUEL EMEWU JONAH submitted Sick Leave — SAMUEL EMEWU JONAH (2026-09-23 to 2026-09-24). Review in ESS Approvals within 5 working days.",
+      "severity": "warning",
+      "status": "Unread",
+      "href": "/workforce-portal?tab=leave&leaveSection=Approvals",
+      "createdAt": "2026-09-24T08:44:00.120Z",
+      "actor": "ADENIJI SOLOMON SUNDAY",
+      "channels": [
+        "In-App",
+        "Email"
+      ],
+      "metadata": {
+        "requestId": "ess-1790184445730-1gyy9d"
+      }
+    },
+    {
+      "id": "ntf-1790239395847-pw0npv",
+      "recipientUserId": "P0072",
+      "recipientUsername": "P0072",
+      "recipientEmployeeCode": "P0072",
+      "recipientRoles": [],
+      "kind": "Approval",
+      "module": "Leave Management",
+      "title": "Leave request awaiting your approval",
+      "body": "AMANOKHAI MOSES submitted Annual Leave — AMANOKHAI MOSES (2026-09-24 to 2026-10-05). Review in ESS Approvals within 5 working days.",
+      "severity": "warning",
+      "status": "Unread",
+      "href": "/workforce-portal?tab=leave&leaveSection=Approvals",
+      "createdAt": "2026-09-24T08:43:15.847Z",
+      "actor": "OVAT SUNDAY",
+      "channels": [
+        "In-App",
+        "Email"
+      ],
+      "metadata": {
+        "requestId": "ess-1790163818424-eqaay1"
+      }
+    },
+    {
+      "id": "ntf-1790239395335-ol6uqj",
+      "recipientUserId": "C1882",
+      "recipientUsername": "C1882",
+      "recipientEmployeeCode": "C1882",
+      "recipientRoles": [],
+      "kind": "Approval",
+      "module": "Leave Management",
+      "title": "Leave request awaiting your approval",
+      "body": "OGWUCHE ACHEM submitted Annual Leave — OGWUCHE ACHEM (2026-09-22 to 2026-09-25). Review in ESS Approvals within 5 working days.",
+      "severity": "warning",
+      "status": "Unread",
+      "href": "/workforce-portal?tab=leave&leaveSection=Approvals",
+      "createdAt": "2026-09-24T08:43:15.335Z",
+      "actor": "OVAT SUNDAY",
+      "channels": [
+        "In-App",
+        "Email"
+      ],
+      "metadata": {
+        "requestId": "ess-1789993455193-y8sf2b"
+      }
+    },
+    {
+      "id": "ntf-1790239394632-xv24vo",
+      "recipientUserId": "C1544",
+      "recipientUsername": "C1544",
+      "recipientEmployeeCode": "C1544",
+      "recipientRoles": [],
+      "kind": "Approval",
+      "module": "Leave Management",
+      "title": "Leave request awaiting your approval",
+      "body": "RABIU GBOLAGADE submitted Sick Leave — RABIU GBOLAGADE (2026-09-23 to 2026-09-23). Review in ESS Approvals within 5 working days.",
+      "severity": "warning",
+      "status": "Unread",
+      "href": "/workforce-portal?tab=leave&leaveSection=Approvals",
+      "createdAt": "2026-09-24T08:43:14.632Z",
+      "actor": "OVAT SUNDAY",
+      "channels": [
+        "In-App",
+        "Email"
+      ],
+      "metadata": {
+        "requestId": "ess-1790157794494-y7m4ex"
+      }
+    },
+    {
+      "id": "ntf-1790239394127-zj0swi",
+      "recipientUserId": "C1882",
+      "recipientUsername": "C1882",
+      "recipientEmployeeCode": "C1882",
+      "recipientRoles": [],
+      "kind": "Approval",
+      "module": "Leave Management",
+      "title": "Leave request awaiting your approval",
+      "body": "ADEKUNLE KOLAWOLE submitted Annual Leave — ADEKUNLE KOLAWOLE (2026-09-21 to 2026-09-29). Review in ESS Approvals within 5 working days.",
+      "severity": "warning",
+      "status": "Unread",
+      "href": "/workforce-portal?tab=leave&leaveSection=Approvals",
+      "createdAt": "2026-09-24T08:43:14.127Z",
+      "actor": "OVAT SUNDAY",
+      "channels": [
+        "In-App",
+        "Email"
+      ],
+      "metadata": {
+        "requestId": "ess-1789663296991-xtgawk"
+      }
+    },
+    {
+      "id": "ntf-1790239393578-1b2xz3",
+      "recipientUserId": "P0072",
+      "recipientUsername": "P0072",
+      "recipientEmployeeCode": "P0072",
+      "recipientRoles": [],
+      "kind": "Approval",
+      "module": "Leave Management",
+      "title": "Leave request awaiting your approval",
+      "body": "Mr. OWOLABI OLASUNKANMI AKEEB submitted Annual Leave — Mr. OWOLABI OLASUNKANMI AKEEB (2026-09-23 to 2026-09-25). Review in ESS Approvals within 5 working days.",
+      "severity": "warning",
+      "status": "Unread",
+      "href": "/workforce-portal?tab=leave&leaveSection=Approvals",
+      "createdAt": "2026-09-24T08:43:13.578Z",
+      "actor": "OVAT SUNDAY",
+      "channels": [
+        "In-App",
+        "Email"
+      ],
+      "metadata": {
+        "requestId": "ess-1790071857740-d73ld7"
+      }
+    },
+    {
+      "id": "ntf-1790239393034-ihzgsu",
+      "recipientUserId": "C1720",
+      "recipientUsername": "C1720",
+      "recipientEmployeeCode": "C1720",
+      "recipientRoles": [],
+      "kind": "Approval",
+      "module": "Leave Management",
+      "title": "Leave request awaiting your approval",
+      "body": "OGUNYEMI AYODELE submitted Annual Leave — OGUNYEMI AYODELE (2026-10-09 to 2026-10-19). Review in ESS Approvals within 5 working days.",
+      "severity": "warning",
+      "status": "Unread",
+      "href": "/workforce-portal?tab=leave&leaveSection=Approvals",
+      "createdAt": "2026-09-24T08:43:13.034Z",
+      "actor": "OVAT SUNDAY",
+      "channels": [
+        "In-App",
+        "Email"
+      ],
+      "metadata": {
+        "requestId": "ess-1790172623865-aehjyi"
+      }
+    },
+    {
+      "id": "ntf-1790239391204-decm8d",
+      "recipientUserId": "C1882",
+      "recipientUsername": "C1882",
+      "recipientEmployeeCode": "C1882",
+      "recipientRoles": [],
+      "kind": "Approval",
+      "module": "Leave Management",
+      "title": "Leave request awaiting your approval",
+      "body": "SAMUEL EMEWU JONAH submitted Sick Leave — SAMUEL EMEWU JONAH (2026-09-23 to 2026-09-24). Review in ESS Approvals within 5 working days.",
+      "severity": "warning",
+      "status": "Unread",
+      "href": "/workforce-portal?tab=leave&leaveSection=Approvals",
+      "createdAt": "2026-09-24T08:43:11.204Z",
+      "actor": "OVAT SUNDAY",
+      "channels": [
+        "In-App",
+        "Email"
+      ],
+      "metadata": {
+        "requestId": "ess-1790184445730-1gyy9d"
+      }
+    },
+    {
+      "id": "ntf-1790239275295-hd7kic",
+      "recipientUserId": "P0072",
+      "recipientUsername": "P0072",
+      "recipientEmployeeCode": "P0072",
+      "recipientRoles": [],
+      "kind": "Approval",
+      "module": "Leave Management",
+      "title": "Leave request awaiting your approval",
+      "body": "AMANOKHAI MOSES submitted Annual Leave — AMANOKHAI MOSES (2026-09-24 to 2026-10-05). Review in ESS Approvals within 5 working days.",
+      "severity": "warning",
+      "status": "Unread",
+      "href": "/workforce-portal?tab=leave&leaveSection=Approvals",
+      "createdAt": "2026-09-24T08:41:15.295Z",
+      "actor": "Miss AGBOOLA OMOTOLANI",
+      "channels": [
+        "In-App",
+        "Email"
+      ],
+      "metadata": {
+        "requestId": "ess-1790163818424-eqaay1"
+      }
+    },
+    {
+      "id": "ntf-1790239273972-fpclrv",
+      "recipientUserId": "C1882",
+      "recipientUsername": "C1882",
+      "recipientEmployeeCode": "C1882",
+      "recipientRoles": [],
+      "kind": "Approval",
+      "module": "Leave Management",
+      "title": "Leave request awaiting your approval",
+      "body": "OGWUCHE ACHEM submitted Annual Leave — OGWUCHE ACHEM (2026-09-22 to 2026-09-25). Review in ESS Approvals within 5 working days.",
+      "severity": "warning",
+      "status": "Unread",
+      "href": "/workforce-portal?tab=leave&leaveSection=Approvals",
+      "createdAt": "2026-09-24T08:41:13.973Z",
+      "actor": "Miss AGBOOLA OMOTOLANI",
+      "channels": [
+        "In-App",
+        "Email"
+      ],
+      "metadata": {
+        "requestId": "ess-1789993455193-y8sf2b"
+      }
+    },
+    {
+      "id": "ntf-1790239272643-nerdvu",
+      "recipientUserId": "C1544",
+      "recipientUsername": "C1544",
+      "recipientEmployeeCode": "C1544",
+      "recipientRoles": [],
+      "kind": "Approval",
+      "module": "Leave Management",
+      "title": "Leave request awaiting your approval",
+      "body": "RABIU GBOLAGADE submitted Sick Leave — RABIU GBOLAGADE (2026-09-23 to 2026-09-23). Review in ESS Approvals within 5 working days.",
+      "severity": "warning",
+      "status": "Unread",
+      "href": "/workforce-portal?tab=leave&leaveSection=Approvals",
+      "createdAt": "2026-09-24T08:41:12.643Z",
+      "actor": "Miss AGBOOLA OMOTOLANI",
+      "channels": [
+        "In-App",
+        "Email"
+      ],
+      "metadata": {
+        "requestId": "ess-1790157794494-y7m4ex"
+      }
+    },
+    {
+      "id": "ntf-1790239271531-clmhkf",
+      "recipientUserId": "C1882",
+      "recipientUsername": "C1882",
+      "recipientEmployeeCode": "C1882",
+      "recipientRoles": [],
+      "kind": "Approval",
+      "module": "Leave Management",
+      "title": "Leave request awaiting your approval",
+      "body": "ADEKUNLE KOLAWOLE submitted Annual Leave — ADEKUNLE KOLAWOLE (2026-09-21 to 2026-09-29). Review in ESS Approvals within 5 working days.",
+      "severity": "warning",
+      "status": "Unread",
+      "href": "/workforce-portal?tab=leave&leaveSection=Approvals",
+      "createdAt": "2026-09-24T08:41:11.531Z",
+      "actor": "Miss AGBOOLA OMOTOLANI",
+      "channels": [
+        "In-App",
+        "Email"
+      ],
+      "metadata": {
+        "requestId": "ess-1789663296991-xtgawk"
+      }
+    },
+    {
+      "id": "ntf-1790239270138-zi1bq8",
+      "recipientUserId": "P0072",
+      "recipientUsername": "P0072",
+      "recipientEmployeeCode": "P0072",
+      "recipientRoles": [],
+      "kind": "Approval",
+      "module": "Leave Management",
+      "title": "Leave request awaiting your approval",
+      "body": "Mr. OWOLABI OLASUNKANMI AKEEB submitted Annual Leave — Mr. OWOLABI OLASUNKANMI AKEEB (2026-09-23 to 2026-09-25). Review in ESS Approvals within 5 working days.",
+      "severity": "warning",
+      "status": "Unread",
+      "href": "/workforce-portal?tab=leave&leaveSection=Approvals",
+      "createdAt": "2026-09-24T08:41:10.138Z",
+      "actor": "Miss AGBOOLA OMOTOLANI",
+      "channels": [
+        "In-App",
+        "Email"
+      ],
+      "metadata": {
+        "requestId": "ess-1790071857740-d73ld7"
+      }
+    },
+    {
+      "id": "ntf-1790239267677-4gdeho",
+      "recipientUserId": "C1720",
+      "recipientUsername": "C1720",
+      "recipientEmployeeCode": "C1720",
+      "recipientRoles": [],
+      "kind": "Approval",
+      "module": "Leave Management",
+      "title": "Leave request awaiting your approval",
+      "body": "OGUNYEMI AYODELE submitted Annual Leave — OGUNYEMI AYODELE (2026-10-09 to 2026-10-19). Review in ESS Approvals within 5 working days.",
+      "severity": "warning",
+      "status": "Unread",
+      "href": "/workforce-portal?tab=leave&leaveSection=Approvals",
+      "createdAt": "2026-09-24T08:41:07.677Z",
+      "actor": "Miss AGBOOLA OMOTOLANI",
+      "channels": [
+        "In-App",
+        "Email"
+      ],
+      "metadata": {
+        "requestId": "ess-1790172623865-aehjyi"
+      }
+    },
+    {
+      "id": "ntf-1790239265073-1iyvno",
+      "recipientUserId": "C1882",
+      "recipientUsername": "C1882",
+      "recipientEmployeeCode": "C1882",
+      "recipientRoles": [],
+      "kind": "Approval",
+      "module": "Leave Management",
+      "title": "Leave request awaiting your approval",
+      "body": "SAMUEL EMEWU JONAH submitted Sick Leave — SAMUEL EMEWU JONAH (2026-09-23 to 2026-09-24). Review in ESS Approvals within 5 working days.",
+      "severity": "warning",
+      "status": "Unread",
+      "href": "/workforce-portal?tab=leave&leaveSection=Approvals",
+      "createdAt": "2026-09-24T08:41:05.073Z",
+      "actor": "Miss AGBOOLA OMOTOLANI",
+      "channels": [
+        "In-App",
+        "Email"
+      ],
+      "metadata": {
+        "requestId": "ess-1790184445730-1gyy9d"
+      }
+    },
+    {
+      "id": "ntf-1790238809500-j7r10a",
+      "recipientUserId": "P0059",
+      "recipientUsername": "P0059",
+      "recipientEmployeeCode": "P0059",
+      "recipientRoles": [],
+      "kind": "Approval",
+      "module": "Finance Approvals",
+      "title": "Payment approval required",
+      "body": "Miss ADENUBI GLORY KEHINDE submitted Supplier Invoice Payment DLE2609152 (NGN 536,360.05) for Reporting Manager approval.",
+      "severity": "warning",
+      "status": "Unread",
+      "href": "/finance/approvals/request/PREQ-1790238761463",
+      "createdAt": "2026-09-24T08:33:29.500Z",
+      "actor": "Miss ADENUBI GLORY KEHINDE",
+      "channels": [
+        "In-App",
+        "Email"
+      ],
+      "metadata": {
+        "requestId": "PREQ-1790238761463",
+        "requestNumber": "DLE2609152",
+        "stage": "Reporting Manager",
+        "recipientCode": "P0059",
+        "recipientName": "Mrs. AJIERE NDIDI AGNES"
+      }
+    },
+    {
+      "id": "ntf-1790238583956-cyh9da",
+      "recipientUserId": "P0429",
+      "recipientUsername": "P0429",
+      "recipientEmployeeCode": "P0429",
+      "recipientRoles": [],
+      "kind": "Approval",
+      "module": "Finance Approvals",
+      "title": "Payment approval required",
+      "body": "Miss ABE COMFORT OLUFUNKE submitted Supplier Invoice Payment DLE2609147 (NGN 263,375) for Finance Manager approval.",
+      "severity": "warning",
+      "status": "Unread",
+      "href": "/finance/approvals/request/PREQ-1790177426183",
+      "createdAt": "2026-09-24T08:29:43.956Z",
+      "actor": "SAMSON ADESOJI ADELOWO",
+      "channels": [
+        "In-App",
+        "Email"
+      ],
+      "metadata": {
+        "requestId": "PREQ-1790177426183",
+        "requestNumber": "DLE2609147",
+        "stage": "Finance Manager",
+        "recipientCode": "P0429",
+        "recipientName": "IYANDA OLAITAN RAPHEAL"
+      }
+    },
+    {
+      "id": "ntf-1790238582726-gy1ic8",
+      "recipientUserId": "P0465",
+      "recipientUsername": "P0465",
+      "recipientEmployeeCode": "P0465",
+      "recipientRoles": [],
+      "kind": "Approval",
+      "module": "Finance Approvals",
+      "title": "Payment approval progressed",
+      "body": "DLE2609147 cleared Cost Controller. Now awaiting Finance Manager.",
+      "severity": "info",
+      "status": "Unread",
+      "href": "/finance/approvals/request/PREQ-1790177426183",
+      "createdAt": "2026-09-24T08:29:42.726Z",
+      "actor": "SAMSON ADESOJI ADELOWO",
+      "channels": [
+        "In-App",
+        "Email"
+      ],
+      "metadata": {
+        "requestId": "PREQ-1790177426183",
+        "event": "stage-advanced"
+      }
+    },
+    {
+      "id": "ntf-1790238093771-3q1d04",
+      "recipientUserId": "P0072",
+      "recipientUsername": "P0072",
+      "recipientEmployeeCode": "P0072",
+      "recipientRoles": [],
+      "kind": "Approval",
+      "module": "Leave Management",
+      "title": "Leave request awaiting your approval",
+      "body": "AMANOKHAI MOSES submitted Annual Leave — AMANOKHAI MOSES (2026-09-24 to 2026-10-05). Review in ESS Approvals within 5 working days.",
+      "severity": "warning",
+      "status": "Unread",
+      "href": "/workforce-portal?tab=leave&leaveSection=Approvals",
+      "createdAt": "2026-09-24T08:21:33.771Z",
+      "actor": "BADEJO KEHINDE",
+      "channels": [
+        "In-App",
+        "Email"
+      ],
+      "metadata": {
+        "requestId": "ess-1790163818424-eqaay1"
+      }
+    },
+    {
+      "id": "ntf-1790238093083-lmwp1x",
+      "recipientUserId": "C1882",
+      "recipientUsername": "C1882",
+      "recipientEmployeeCode": "C1882",
+      "recipientRoles": [],
+      "kind": "Approval",
+      "module": "Leave Management",
+      "title": "Leave request awaiting your approval",
+      "body": "OGWUCHE ACHEM submitted Annual Leave — OGWUCHE ACHEM (2026-09-22 to 2026-09-25). Review in ESS Approvals within 5 working days.",
+      "severity": "warning",
+      "status": "Unread",
+      "href": "/workforce-portal?tab=leave&leaveSection=Approvals",
+      "createdAt": "2026-09-24T08:21:33.083Z",
+      "actor": "BADEJO KEHINDE",
+      "channels": [
+        "In-App",
+        "Email"
+      ],
+      "metadata": {
+        "requestId": "ess-1789993455193-y8sf2b"
+      }
+    },
+    {
+      "id": "ntf-1790238092538-ide3f4",
+      "recipientUserId": "C1544",
+      "recipientUsername": "C1544",
+      "recipientEmployeeCode": "C1544",
+      "recipientRoles": [],
+      "kind": "Approval",
+      "module": "Leave Management",
+      "title": "Leave request awaiting your approval",
+      "body": "RABIU GBOLAGADE submitted Sick Leave — RABIU GBOLAGADE (2026-09-23 to 2026-09-23). Review in ESS Approvals within 5 working days.",
+      "severity": "warning",
+      "status": "Unread",
+      "href": "/workforce-portal?tab=leave&leaveSection=Approvals",
+      "createdAt": "2026-09-24T08:21:32.538Z",
+      "actor": "BADEJO KEHINDE",
+      "channels": [
+        "In-App",
+        "Email"
+      ],
+      "metadata": {
+        "requestId": "ess-1790157794494-y7m4ex"
+      }
+    },
+    {
+      "id": "ntf-1790238091964-o2jqv9",
+      "recipientUserId": "C1882",
+      "recipientUsername": "C1882",
+      "recipientEmployeeCode": "C1882",
+      "recipientRoles": [],
+      "kind": "Approval",
+      "module": "Leave Management",
+      "title": "Leave request awaiting your approval",
+      "body": "ADEKUNLE KOLAWOLE submitted Annual Leave — ADEKUNLE KOLAWOLE (2026-09-21 to 2026-09-29). Review in ESS Approvals within 5 working days.",
+      "severity": "warning",
+      "status": "Unread",
+      "href": "/workforce-portal?tab=leave&leaveSection=Approvals",
+      "createdAt": "2026-09-24T08:21:31.964Z",
+      "actor": "BADEJO KEHINDE",
+      "channels": [
+        "In-App",
+        "Email"
+      ],
+      "metadata": {
+        "requestId": "ess-1789663296991-xtgawk"
+      }
+    },
+    {
+      "id": "ntf-1790238091365-qz9p4j",
+      "recipientUserId": "P0072",
+      "recipientUsername": "P0072",
+      "recipientEmployeeCode": "P0072",
+      "recipientRoles": [],
+      "kind": "Approval",
+      "module": "Leave Management",
+      "title": "Leave request awaiting your approval",
+      "body": "Mr. OWOLABI OLASUNKANMI AKEEB submitted Annual Leave — Mr. OWOLABI OLASUNKANMI AKEEB (2026-09-23 to 2026-09-25). Review in ESS Approvals within 5 working days.",
+      "severity": "warning",
+      "status": "Unread",
+      "href": "/workforce-portal?tab=leave&leaveSection=Approvals",
+      "createdAt": "2026-09-24T08:21:31.365Z",
+      "actor": "BADEJO KEHINDE",
+      "channels": [
+        "In-App",
+        "Email"
+      ],
+      "metadata": {
+        "requestId": "ess-1790071857740-d73ld7"
+      }
+    },
+    {
+      "id": "ntf-1790238090806-hgh2fk",
+      "recipientUserId": "C1720",
+      "recipientUsername": "C1720",
+      "recipientEmployeeCode": "C1720",
+      "recipientRoles": [],
+      "kind": "Approval",
+      "module": "Leave Management",
+      "title": "Leave request awaiting your approval",
+      "body": "OGUNYEMI AYODELE submitted Annual Leave — OGUNYEMI AYODELE (2026-10-09 to 2026-10-19). Review in ESS Approvals within 5 working days.",
+      "severity": "warning",
+      "status": "Unread",
+      "href": "/workforce-portal?tab=leave&leaveSection=Approvals",
+      "createdAt": "2026-09-24T08:21:30.806Z",
+      "actor": "BADEJO KEHINDE",
+      "channels": [
+        "In-App",
+        "Email"
+      ],
+      "metadata": {
+        "requestId": "ess-1790172623865-aehjyi"
+      }
+    },
+    {
+      "id": "ntf-1790238089767-is9hh9",
+      "recipientUserId": "C1882",
+      "recipientUsername": "C1882",
+      "recipientEmployeeCode": "C1882",
+      "recipientRoles": [],
+      "kind": "Approval",
+      "module": "Leave Management",
+      "title": "Leave request awaiting your approval",
+      "body": "SAMUEL EMEWU JONAH submitted Sick Leave — SAMUEL EMEWU JONAH (2026-09-23 to 2026-09-24). Review in ESS Approvals within 5 working days.",
+      "severity": "warning",
+      "status": "Unread",
+      "href": "/workforce-portal?tab=leave&leaveSection=Approvals",
+      "createdAt": "2026-09-24T08:21:29.767Z",
+      "actor": "BADEJO KEHINDE",
+      "channels": [
+        "In-App",
+        "Email"
+      ],
+      "metadata": {
+        "requestId": "ess-1790184445730-1gyy9d"
+      }
+    },
+    {
+      "id": "ntf-1790237753254-t8i0gg",
+      "recipientUserId": "P0442",
+      "recipientUsername": "P0442",
+      "recipientEmployeeCode": "P0442",
+      "recipientRoles": [],
+      "kind": "Approval",
+      "module": "Finance Approvals",
+      "title": "Payment approval required",
+      "body": "Miss ABE COMFORT OLUFUNKE submitted Supplier Invoice Payment DLE2609148 (NGN 505,250) for GM approval.",
+      "severity": "warning",
+      "status": "Unread",
+      "href": "/finance/approvals/request/PREQ-1790178050887",
+      "createdAt": "2026-09-24T08:15:53.254Z",
+      "actor": "IYANDA OLAITAN RAPHEAL",
+      "channels": [
+        "In-App",
+        "Email"
+      ],
+      "metadata": {
+        "requestId": "PREQ-1790178050887",
+        "requestNumber": "DLE2609148",
+        "stage": "GM",
+        "recipientCode": "P0442",
+        "recipientName": "Mrs. ODULATE ABIODUN TEMITOPE"
+      }
+    },
+    {
+      "id": "ntf-1790237751407-nwj2pd",
+      "recipientUserId": "P0465",
+      "recipientUsername": "P0465",
+      "recipientEmployeeCode": "P0465",
+      "recipientRoles": [],
+      "kind": "Approval",
+      "module": "Finance Approvals",
+      "title": "Payment approval progressed",
+      "body": "DLE2609148 cleared Finance Manager. Now awaiting GM.",
+      "severity": "info",
+      "status": "Unread",
+      "href": "/finance/approvals/request/PREQ-1790178050887",
+      "createdAt": "2026-09-24T08:15:51.407Z",
+      "actor": "IYANDA OLAITAN RAPHEAL",
+      "channels": [
+        "In-App",
+        "Email"
+      ],
+      "metadata": {
+        "requestId": "PREQ-1790178050887",
+        "event": "stage-advanced"
+      }
+    },
+    {
+      "id": "ntf-1790237715151-tbi3ki",
+      "recipientUserId": "P0072",
+      "recipientUsername": "P0072",
+      "recipientEmployeeCode": "P0072",
+      "recipientRoles": [],
+      "kind": "Approval",
+      "module": "Leave Management",
+      "title": "Leave request awaiting your approval",
+      "body": "AMANOKHAI MOSES submitted Annual Leave — AMANOKHAI MOSES (2026-09-24 to 2026-10-05). Review in ESS Approvals within 5 working days.",
+      "severity": "warning",
+      "status": "Unread",
+      "href": "/workforce-portal?tab=leave&leaveSection=Approvals",
+      "createdAt": "2026-09-24T08:15:15.151Z",
+      "actor": "MOHAMMED MOMOH",
+      "channels": [
+        "In-App",
+        "Email"
+      ],
+      "metadata": {
+        "requestId": "ess-1790163818424-eqaay1"
+      }
+    },
+    {
+      "id": "ntf-1790237714638-zzrdhs",
+      "recipientUserId": "C1882",
+      "recipientUsername": "C1882",
+      "recipientEmployeeCode": "C1882",
+      "recipientRoles": [],
+      "kind": "Approval",
+      "module": "Leave Management",
+      "title": "Leave request awaiting your approval",
+      "body": "OGWUCHE ACHEM submitted Annual Leave — OGWUCHE ACHEM (2026-09-22 to 2026-09-25). Review in ESS Approvals within 5 working days.",
+      "severity": "warning",
+      "status": "Unread",
+      "href": "/workforce-portal?tab=leave&leaveSection=Approvals",
+      "createdAt": "2026-09-24T08:15:14.638Z",
+      "actor": "MOHAMMED MOMOH",
+      "channels": [
+        "In-App",
+        "Email"
+      ],
+      "metadata": {
+        "requestId": "ess-1789993455193-y8sf2b"
+      }
+    },
+    {
+      "id": "ntf-1790237714116-iyspy6",
+      "recipientUserId": "C1544",
+      "recipientUsername": "C1544",
+      "recipientEmployeeCode": "C1544",
+      "recipientRoles": [],
+      "kind": "Approval",
+      "module": "Leave Management",
+      "title": "Leave request awaiting your approval",
+      "body": "RABIU GBOLAGADE submitted Sick Leave — RABIU GBOLAGADE (2026-09-23 to 2026-09-23). Review in ESS Approvals within 5 working days.",
+      "severity": "warning",
+      "status": "Unread",
+      "href": "/workforce-portal?tab=leave&leaveSection=Approvals",
+      "createdAt": "2026-09-24T08:15:14.116Z",
+      "actor": "MOHAMMED MOMOH",
+      "channels": [
+        "In-App",
+        "Email"
+      ],
+      "metadata": {
+        "requestId": "ess-1790157794494-y7m4ex"
+      }
+    },
+    {
+      "id": "ntf-1790237713507-gljqp0",
+      "recipientUserId": "C1882",
+      "recipientUsername": "C1882",
+      "recipientEmployeeCode": "C1882",
+      "recipientRoles": [],
+      "kind": "Approval",
+      "module": "Leave Management",
+      "title": "Leave request awaiting your approval",
+      "body": "ADEKUNLE KOLAWOLE submitted Annual Leave — ADEKUNLE KOLAWOLE (2026-09-21 to 2026-09-29). Review in ESS Approvals within 5 working days.",
+      "severity": "warning",
+      "status": "Unread",
+      "href": "/workforce-portal?tab=leave&leaveSection=Approvals",
+      "createdAt": "2026-09-24T08:15:13.507Z",
+      "actor": "MOHAMMED MOMOH",
+      "channels": [
+        "In-App",
+        "Email"
+      ],
+      "metadata": {
+        "requestId": "ess-1789663296991-xtgawk"
+      }
+    },
+    {
+      "id": "ntf-1790237712984-h3tku0",
+      "recipientUserId": "P0072",
+      "recipientUsername": "P0072",
+      "recipientEmployeeCode": "P0072",
+      "recipientRoles": [],
+      "kind": "Approval",
+      "module": "Leave Management",
+      "title": "Leave request awaiting your approval",
+      "body": "Mr. OWOLABI OLASUNKANMI AKEEB submitted Annual Leave — Mr. OWOLABI OLASUNKANMI AKEEB (2026-09-23 to 2026-09-25). Review in ESS Approvals within 5 working days.",
+      "severity": "warning",
+      "status": "Unread",
+      "href": "/workforce-portal?tab=leave&leaveSection=Approvals",
+      "createdAt": "2026-09-24T08:15:12.984Z",
+      "actor": "MOHAMMED MOMOH",
+      "channels": [
+        "In-App",
+        "Email"
+      ],
+      "metadata": {
+        "requestId": "ess-1790071857740-d73ld7"
+      }
+    },
+    {
+      "id": "ntf-1790237712342-bg1u4b",
+      "recipientUserId": "C1720",
+      "recipientUsername": "C1720",
+      "recipientEmployeeCode": "C1720",
+      "recipientRoles": [],
+      "kind": "Approval",
+      "module": "Leave Management",
+      "title": "Leave request awaiting your approval",
+      "body": "OGUNYEMI AYODELE submitted Annual Leave — OGUNYEMI AYODELE (2026-10-09 to 2026-10-19). Review in ESS Approvals within 5 working days.",
+      "severity": "warning",
+      "status": "Unread",
+      "href": "/workforce-portal?tab=leave&leaveSection=Approvals",
+      "createdAt": "2026-09-24T08:15:12.342Z",
+      "actor": "MOHAMMED MOMOH",
+      "channels": [
+        "In-App",
+        "Email"
+      ],
+      "metadata": {
+        "requestId": "ess-1790172623865-aehjyi"
+      }
+    },
+    {
+      "id": "ntf-1790237711459-fzume4",
+      "recipientUserId": "C1882",
+      "recipientUsername": "C1882",
+      "recipientEmployeeCode": "C1882",
+      "recipientRoles": [],
+      "kind": "Approval",
+      "module": "Leave Management",
+      "title": "Leave request awaiting your approval",
+      "body": "SAMUEL EMEWU JONAH submitted Sick Leave — SAMUEL EMEWU JONAH (2026-09-23 to 2026-09-24). Review in ESS Approvals within 5 working days.",
+      "severity": "warning",
+      "status": "Unread",
+      "href": "/workforce-portal?tab=leave&leaveSection=Approvals",
+      "createdAt": "2026-09-24T08:15:11.459Z",
+      "actor": "MOHAMMED MOMOH",
+      "channels": [
+        "In-App",
+        "Email"
+      ],
+      "metadata": {
+        "requestId": "ess-1790184445730-1gyy9d"
+      }
+    },
+    {
+      "id": "ntf-1790237709931-r5u5kh",
+      "recipientUserId": "system-leave-workflow",
+      "recipientUsername": "system-leave-workflow",
+      "recipientRoles": [
+        "HR Manager",
+        "HR Head",
+        "HR Director"
+      ],
+      "kind": "Approval",
+      "module": "Leave Management",
+      "title": "Leave request awaiting HR approval",
+      "body": "Sick Leave — SAMUEL EMEWU JONAH has been approved by the line manager and is awaiting HR Manager / Head approval.",
+      "severity": "warning",
+      "status": "Unread",
+      "href": "/workforce-portal?tab=leave&leaveSection=Approvals",
+      "createdAt": "2026-09-24T08:15:09.931Z",
+      "actor": "MOHAMMED MOMOH",
+      "channels": [
+        "In-App",
+        "Email"
+      ],
+      "metadata": {
+        "requestId": "ess-1790184445730-1gyy9d"
+      }
+    },
+    {
+      "id": "ntf-1790237709350-t94jgi",
+      "recipientUserId": "C1788",
+      "recipientUsername": "C1788",
+      "recipientEmployeeCode": "C1788",
+      "recipientRoles": [],
+      "kind": "Workflow",
+      "module": "Leave Management",
+      "title": "Leave request awaiting HR approval",
+      "body": "Sick Leave — SAMUEL EMEWU JONAH has been approved by the line manager and is awaiting HR Manager / Head approval.",
+      "severity": "info",
+      "status": "Unread",
+      "href": "/workforce-portal?tab=leave&leaveSection=applications",
+      "createdAt": "2026-09-24T08:15:09.350Z",
+      "actor": "MOHAMMED MOMOH",
+      "channels": [
+        "In-App",
+        "Email"
+      ],
+      "metadata": {
+        "requestId": "ess-1790184445730-1gyy9d"
+      }
+    },
+    {
+      "id": "ntf-1790237675439-czo4s6",
+      "recipientUserId": "P0072",
+      "recipientUsername": "P0072",
+      "recipientEmployeeCode": "P0072",
+      "recipientRoles": [],
+      "kind": "Approval",
+      "module": "Leave Management",
+      "title": "Leave request awaiting your approval",
+      "body": "AMANOKHAI MOSES submitted Annual Leave — AMANOKHAI MOSES (2026-09-24 to 2026-10-05). Review in ESS Approvals within 5 working days.",
+      "severity": "warning",
+      "status": "Unread",
+      "href": "/workforce-portal?tab=leave&leaveSection=Approvals",
+      "createdAt": "2026-09-24T08:14:35.439Z",
+      "actor": "MOHAMMED MOMOH",
+      "channels": [
+        "In-App",
+        "Email"
+      ],
+      "metadata": {
+        "requestId": "ess-1790163818424-eqaay1"
+      }
+    },
+    {
+      "id": "ntf-1790237673408-y0egje",
+      "recipientUserId": "C1882",
+      "recipientUsername": "C1882",
+      "recipientEmployeeCode": "C1882",
+      "recipientRoles": [],
+      "kind": "Approval",
+      "module": "Leave Management",
+      "title": "Leave request awaiting your approval",
+      "body": "SAMUEL EMEWU JONAH submitted Sick Leave — SAMUEL EMEWU JONAH (2026-09-23 to 2026-09-24). Review in ESS Approvals within 5 working days.",
+      "severity": "warning",
+      "status": "Unread",
+      "href": "/workforce-portal?tab=leave&leaveSection=Approvals",
+      "createdAt": "2026-09-24T08:14:33.408Z",
+      "actor": "MOHAMMED MOMOH",
+      "channels": [
+        "In-App",
+        "Email"
+      ],
+      "metadata": {
+        "requestId": "ess-1790184445730-1gyy9d"
+      }
+    },
+    {
+      "id": "ntf-1790237672368-t8nv3i",
+      "recipientUserId": "C1882",
+      "recipientUsername": "C1882",
+      "recipientEmployeeCode": "C1882",
+      "recipientRoles": [],
+      "kind": "Approval",
+      "module": "Leave Management",
+      "title": "Leave request awaiting your approval",
+      "body": "OGWUCHE ACHEM submitted Annual Leave — OGWUCHE ACHEM (2026-09-22 to 2026-09-25). Review in ESS Approvals within 5 working days.",
+      "severity": "warning",
+      "status": "Unread",
+      "href": "/workforce-portal?tab=leave&leaveSection=Approvals",
+      "createdAt": "2026-09-24T08:14:32.368Z",
+      "actor": "MOHAMMED MOMOH",
+      "channels": [
+        "In-App",
+        "Email"
+      ],
+      "metadata": {
+        "requestId": "ess-1789993455193-y8sf2b"
+      }
+    },
+    {
+      "id": "ntf-1790237670958-ieqzvq",
+      "recipientUserId": "C1544",
+      "recipientUsername": "C1544",
+      "recipientEmployeeCode": "C1544",
+      "recipientRoles": [],
+      "kind": "Approval",
+      "module": "Leave Management",
+      "title": "Leave request awaiting your approval",
+      "body": "RABIU GBOLAGADE submitted Sick Leave — RABIU GBOLAGADE (2026-09-23 to 2026-09-23). Review in ESS Approvals within 5 working days.",
+      "severity": "warning",
+      "status": "Unread",
+      "href": "/workforce-portal?tab=leave&leaveSection=Approvals",
+      "createdAt": "2026-09-24T08:14:30.958Z",
+      "actor": "MOHAMMED MOMOH",
+      "channels": [
+        "In-App",
+        "Email"
+      ],
+      "metadata": {
+        "requestId": "ess-1790157794494-y7m4ex"
+      }
+    },
+    {
+      "id": "ntf-1790237670168-88ldk9",
+      "recipientUserId": "C1882",
+      "recipientUsername": "C1882",
+      "recipientEmployeeCode": "C1882",
+      "recipientRoles": [],
+      "kind": "Approval",
+      "module": "Leave Management",
+      "title": "Leave request awaiting your approval",
+      "body": "ADEKUNLE KOLAWOLE submitted Annual Leave — ADEKUNLE KOLAWOLE (2026-09-21 to 2026-09-29). Review in ESS Approvals within 5 working days.",
+      "severity": "warning",
+      "status": "Unread",
+      "href": "/workforce-portal?tab=leave&leaveSection=Approvals",
+      "createdAt": "2026-09-24T08:14:30.169Z",
+      "actor": "MOHAMMED MOMOH",
+      "channels": [
+        "In-App",
+        "Email"
+      ],
+      "metadata": {
+        "requestId": "ess-1789663296991-xtgawk"
+      }
+    },
+    {
+      "id": "ntf-1790237669317-i3rsc8",
+      "recipientUserId": "P0072",
+      "recipientUsername": "P0072",
+      "recipientEmployeeCode": "P0072",
+      "recipientRoles": [],
+      "kind": "Approval",
+      "module": "Leave Management",
+      "title": "Leave request awaiting your approval",
+      "body": "Mr. OWOLABI OLASUNKANMI AKEEB submitted Annual Leave — Mr. OWOLABI OLASUNKANMI AKEEB (2026-09-23 to 2026-09-25). Review in ESS Approvals within 5 working days.",
+      "severity": "warning",
+      "status": "Unread",
+      "href": "/workforce-portal?tab=leave&leaveSection=Approvals",
+      "createdAt": "2026-09-24T08:14:29.317Z",
+      "actor": "MOHAMMED MOMOH",
+      "channels": [
+        "In-App",
+        "Email"
+      ],
+      "metadata": {
+        "requestId": "ess-1790071857740-d73ld7"
+      }
+    },
+    {
+      "id": "ntf-1790237667747-1iws0x",
+      "recipientUserId": "C1720",
+      "recipientUsername": "C1720",
+      "recipientEmployeeCode": "C1720",
+      "recipientRoles": [],
+      "kind": "Approval",
+      "module": "Leave Management",
+      "title": "Leave request awaiting your approval",
+      "body": "OGUNYEMI AYODELE submitted Annual Leave — OGUNYEMI AYODELE (2026-10-09 to 2026-10-19). Review in ESS Approvals within 5 working days.",
+      "severity": "warning",
+      "status": "Unread",
+      "href": "/workforce-portal?tab=leave&leaveSection=Approvals",
+      "createdAt": "2026-09-24T08:14:27.747Z",
+      "actor": "MOHAMMED MOMOH",
+      "channels": [
+        "In-App",
+        "Email"
+      ],
+      "metadata": {
+        "requestId": "ess-1790172623865-aehjyi"
+      }
+    },
+    {
+      "id": "ntf-1790237587527-4fzee4",
+      "recipientUserId": "P0442",
+      "recipientUsername": "P0442",
+      "recipientEmployeeCode": "P0442",
+      "recipientRoles": [],
+      "kind": "Approval",
+      "module": "Finance Approvals",
+      "title": "Payment approval required",
+      "body": "Mrs CLAUDIA ONYINYE NWANKWO submitted Expense Payment DLE2609113 (NGN 40,000) for GM approval.",
+      "severity": "warning",
+      "status": "Unread",
+      "href": "/finance/approvals/request/PREQ-1789985129658",
+      "createdAt": "2026-09-24T08:13:07.527Z",
+      "actor": "IYANDA OLAITAN RAPHEAL",
+      "channels": [
+        "In-App",
+        "Email"
+      ],
+      "metadata": {
+        "requestId": "PREQ-1789985129658",
+        "requestNumber": "DLE2609113",
+        "stage": "GM",
+        "recipientCode": "P0442",
+        "recipientName": "Mrs. ODULATE ABIODUN TEMITOPE"
+      }
+    },
+    {
+      "id": "ntf-1790237586558-trk1gv",
+      "recipientUserId": "L2772",
+      "recipientUsername": "L2772",
+      "recipientEmployeeCode": "L2772",
+      "recipientRoles": [],
+      "kind": "Approval",
+      "module": "Finance Approvals",
+      "title": "Payment approval progressed",
+      "body": "DLE2609113 cleared Finance Manager. Now awaiting GM.",
+      "severity": "info",
+      "status": "Unread",
+      "href": "/finance/approvals/request/PREQ-1789985129658",
+      "createdAt": "2026-09-24T08:13:06.558Z",
+      "actor": "IYANDA OLAITAN RAPHEAL",
+      "channels": [
+        "In-App",
+        "Email"
+      ],
+      "metadata": {
+        "requestId": "PREQ-1789985129658",
+        "event": "stage-advanced"
+      }
+    },
+    {
+      "id": "ntf-1790237537405-3uan6a",
+      "recipientUserId": "P0429",
+      "recipientUsername": "P0429",
+      "recipientEmployeeCode": "P0429",
+      "recipientRoles": [],
+      "kind": "Approval",
+      "module": "Finance Approvals",
+      "title": "Payment approval required",
+      "body": "Miss ABE COMFORT OLUFUNKE submitted Supplier Invoice Payment DLE2609148 (NGN 505,250) for Finance Manager approval.",
+      "severity": "warning",
+      "status": "Unread",
+      "href": "/finance/approvals/request/PREQ-1790178050887",
+      "createdAt": "2026-09-24T08:12:17.405Z",
+      "actor": "SAMSON ADESOJI ADELOWO",
+      "channels": [
+        "In-App",
+        "Email"
+      ],
+      "metadata": {
+        "requestId": "PREQ-1790178050887",
+        "requestNumber": "DLE2609148",
+        "stage": "Finance Manager",
+        "recipientCode": "P0429",
+        "recipientName": "IYANDA OLAITAN RAPHEAL"
+      }
+    },
+    {
+      "id": "ntf-1790237534751-4s1iab",
+      "recipientUserId": "P0465",
+      "recipientUsername": "P0465",
+      "recipientEmployeeCode": "P0465",
+      "recipientRoles": [],
+      "kind": "Approval",
+      "module": "Finance Approvals",
+      "title": "Payment approval progressed",
+      "body": "DLE2609148 cleared Cost Controller. Now awaiting Finance Manager.",
+      "severity": "info",
+      "status": "Unread",
+      "href": "/finance/approvals/request/PREQ-1790178050887",
+      "createdAt": "2026-09-24T08:12:14.751Z",
+      "actor": "SAMSON ADESOJI ADELOWO",
+      "channels": [
+        "In-App",
+        "Email"
+      ],
+      "metadata": {
+        "requestId": "PREQ-1790178050887",
+        "event": "stage-advanced"
+      }
+    },
+    {
+      "id": "ntf-1790237438234-xgsw31",
+      "recipientUserId": "P0429",
+      "recipientUsername": "P0429",
+      "recipientEmployeeCode": "P0429",
+      "recipientRoles": [],
+      "kind": "Approval",
+      "module": "Finance Approvals",
+      "title": "Payment approval required",
+      "body": "Mrs CLAUDIA ONYINYE NWANKWO submitted Expense Payment DLE2609113 (NGN 40,000) for Finance Manager approval.",
+      "severity": "warning",
+      "status": "Unread",
+      "href": "/finance/approvals/request/PREQ-1789985129658",
+      "createdAt": "2026-09-24T08:10:38.234Z",
+      "actor": "SAMSON ADESOJI ADELOWO",
+      "channels": [
+        "In-App",
+        "Email"
+      ],
+      "metadata": {
+        "requestId": "PREQ-1789985129658",
+        "requestNumber": "DLE2609113",
+        "stage": "Finance Manager",
+        "recipientCode": "P0429",
+        "recipientName": "IYANDA OLAITAN RAPHEAL"
+      }
+    },
+    {
+      "id": "ntf-1790237437682-zv9tof",
+      "recipientUserId": "L2772",
+      "recipientUsername": "L2772",
+      "recipientEmployeeCode": "L2772",
+      "recipientRoles": [],
+      "kind": "Approval",
+      "module": "Finance Approvals",
+      "title": "Payment approval progressed",
+      "body": "DLE2609113 cleared Cost Controller. Now awaiting Finance Manager.",
+      "severity": "info",
+      "status": "Unread",
+      "href": "/finance/approvals/request/PREQ-1789985129658",
+      "createdAt": "2026-09-24T08:10:37.682Z",
+      "actor": "SAMSON ADESOJI ADELOWO",
+      "channels": [
+        "In-App",
+        "Email"
+      ],
+      "metadata": {
+        "requestId": "PREQ-1789985129658",
+        "event": "stage-advanced"
+      }
+    },
+    {
+      "id": "ntf-1790237213739-hytb1m",
+      "recipientUserId": "C1544",
+      "recipientUsername": "C1544",
+      "recipientEmployeeCode": "C1544",
+      "recipientRoles": [],
+      "kind": "Approval",
+      "module": "Leave Management",
+      "title": "Leave request awaiting your approval",
+      "body": "RABIU GBOLAGADE submitted Sick Leave — RABIU GBOLAGADE (2026-09-23 to 2026-09-23). Review in ESS Approvals within 5 working days.",
+      "severity": "warning",
+      "status": "Unread",
+      "href": "/workforce-portal?tab=leave&leaveSection=Approvals",
+      "createdAt": "2026-09-24T08:06:53.739Z",
+      "actor": "Miss ABE COMFORT OLUFUNKE",
+      "channels": [
+        "In-App",
+        "Email"
+      ],
+      "metadata": {
+        "requestId": "ess-1790157794494-y7m4ex"
+      }
+    },
+    {
+      "id": "ntf-1790237213166-tw6epi",
+      "recipientUserId": "C1882",
+      "recipientUsername": "C1882",
+      "recipientEmployeeCode": "C1882",
+      "recipientRoles": [],
+      "kind": "Approval",
+      "module": "Leave Management",
+      "title": "Leave request awaiting your approval",
+      "body": "ADEKUNLE KOLAWOLE submitted Annual Leave — ADEKUNLE KOLAWOLE (2026-09-21 to 2026-09-29). Review in ESS Approvals within 5 working days.",
+      "severity": "warning",
+      "status": "Unread",
+      "href": "/workforce-portal?tab=leave&leaveSection=Approvals",
+      "createdAt": "2026-09-24T08:06:53.166Z",
+      "actor": "Miss ABE COMFORT OLUFUNKE",
+      "channels": [
+        "In-App",
+        "Email"
+      ],
+      "metadata": {
+        "requestId": "ess-1789663296991-xtgawk"
+      }
+    },
+    {
+      "id": "ntf-1790237211971-p5v30t",
+      "recipientUserId": "P0072",
+      "recipientUsername": "P0072",
+      "recipientEmployeeCode": "P0072",
+      "recipientRoles": [],
+      "kind": "Approval",
+      "module": "Leave Management",
+      "title": "Leave request awaiting your approval",
+      "body": "Mr. OWOLABI OLASUNKANMI AKEEB submitted Annual Leave — Mr. OWOLABI OLASUNKANMI AKEEB (2026-09-23 to 2026-09-25). Review in ESS Approvals within 5 working days.",
+      "severity": "warning",
+      "status": "Unread",
+      "href": "/workforce-portal?tab=leave&leaveSection=Approvals",
+      "createdAt": "2026-09-24T08:06:51.971Z",
+      "actor": "Miss ABE COMFORT OLUFUNKE",
+      "channels": [
+        "In-App",
+        "Email"
+      ],
+      "metadata": {
+        "requestId": "ess-1790071857740-d73ld7"
+      }
+    },
+    {
+      "id": "ntf-1790237211349-tvm738",
+      "recipientUserId": "C1720",
+      "recipientUsername": "C1720",
+      "recipientEmployeeCode": "C1720",
+      "recipientRoles": [],
+      "kind": "Approval",
+      "module": "Leave Management",
+      "title": "Leave request awaiting your approval",
+      "body": "OGUNYEMI AYODELE submitted Annual Leave — OGUNYEMI AYODELE (2026-10-09 to 2026-10-19). Review in ESS Approvals within 5 working days.",
+      "severity": "warning",
+      "status": "Unread",
+      "href": "/workforce-portal?tab=leave&leaveSection=Approvals",
+      "createdAt": "2026-09-24T08:06:51.349Z",
+      "actor": "Miss ABE COMFORT OLUFUNKE",
+      "channels": [
+        "In-App",
+        "Email"
+      ],
+      "metadata": {
+        "requestId": "ess-1790172623865-aehjyi"
+      }
+    },
+    {
+      "id": "ntf-1790237210753-37s22f",
+      "recipientUserId": "P0072",
+      "recipientUsername": "P0072",
+      "recipientEmployeeCode": "P0072",
+      "recipientRoles": [],
+      "kind": "Approval",
+      "module": "Leave Management",
+      "title": "Leave request awaiting your approval",
+      "body": "AMANOKHAI MOSES submitted Annual Leave — AMANOKHAI MOSES (2026-09-24 to 2026-10-05). Review in ESS Approvals within 5 working days.",
+      "severity": "warning",
+      "status": "Unread",
+      "href": "/workforce-portal?tab=leave&leaveSection=Approvals",
+      "createdAt": "2026-09-24T08:06:50.753Z",
+      "actor": "Miss ABE COMFORT OLUFUNKE",
+      "channels": [
+        "In-App",
+        "Email"
+      ],
+      "metadata": {
+        "requestId": "ess-1790163818424-eqaay1"
+      }
+    },
+    {
+      "id": "ntf-1790237198759-1dtrgk",
+      "recipientUserId": "C1882",
+      "recipientUsername": "C1882",
+      "recipientEmployeeCode": "C1882",
+      "recipientRoles": [],
+      "kind": "Approval",
+      "module": "Leave Management",
+      "title": "Leave request awaiting your approval",
+      "body": "SAMUEL EMEWU JONAH submitted Sick Leave — SAMUEL EMEWU JONAH (2026-09-23 to 2026-09-24). Review in ESS Approvals within 5 working days.",
+      "severity": "warning",
+      "status": "Unread",
+      "href": "/workforce-portal?tab=leave&leaveSection=Approvals",
+      "createdAt": "2026-09-24T08:06:38.760Z",
+      "actor": "Miss ABE COMFORT OLUFUNKE",
+      "channels": [
+        "In-App",
+        "Email"
+      ],
+      "metadata": {
+        "requestId": "ess-1790184445730-1gyy9d"
+      }
+    },
+    {
+      "id": "ntf-1790237197037-3414pq",
+      "recipientUserId": "C1882",
+      "recipientUsername": "C1882",
+      "recipientEmployeeCode": "C1882",
+      "recipientRoles": [],
+      "kind": "Approval",
+      "module": "Leave Management",
+      "title": "Leave request awaiting your approval",
+      "body": "OGWUCHE ACHEM submitted Annual Leave — OGWUCHE ACHEM (2026-09-22 to 2026-09-25). Review in ESS Approvals within 5 working days.",
+      "severity": "warning",
+      "status": "Unread",
+      "href": "/workforce-portal?tab=leave&leaveSection=Approvals",
+      "createdAt": "2026-09-24T08:06:37.037Z",
+      "actor": "Miss ABE COMFORT OLUFUNKE",
+      "channels": [
+        "In-App",
+        "Email"
+      ],
+      "metadata": {
+        "requestId": "ess-1789993455193-y8sf2b"
+      }
+    },
+    {
+      "id": "ntf-1790236052752-8f53x1",
+      "recipientUserId": "system-finance-workflow",
+      "recipientUsername": "system-finance-workflow",
+      "recipientRoles": [
+        "Treasury Officer",
+        "Finance Manager",
+        "Finance Controller",
+        "Accountant"
+      ],
+      "kind": "Approval",
+      "module": "Finance Approvals",
+      "title": "Payment ready for Treasury",
+      "body": "DLE260991 is fully approved and ready for payment.",
+      "severity": "warning",
+      "status": "Unread",
+      "href": "/finance/approvals/treasury",
+      "createdAt": "2026-09-24T07:47:32.753Z",
+      "actor": "IYANDA OLAITAN RAPHEAL",
+      "channels": [
+        "In-App"
+      ],
+      "metadata": {
+        "requestId": "PREQ-1789460848215",
+        "event": "treasury-ready"
+      }
+    },
+    {
+      "id": "ntf-1790236052283-w2mk3c",
+      "recipientUserId": "C1705",
+      "recipientUsername": "C1705",
+      "recipientEmployeeCode": "C1705",
+      "recipientRoles": [],
+      "kind": "Approval",
+      "module": "Finance Approvals",
+      "title": "Payment request approved",
+      "body": "DLE260991 is fully approved and ready for treasury hand-off.",
+      "severity": "success",
+      "status": "Unread",
+      "href": "/finance/approvals/request/PREQ-1789460848215",
+      "createdAt": "2026-09-24T07:47:32.283Z",
+      "actor": "IYANDA OLAITAN RAPHEAL",
+      "channels": [
+        "In-App",
+        "Email"
+      ],
+      "metadata": {
+        "requestId": "PREQ-1789460848215",
+        "event": "approved"
+      }
+    },
+    {
+      "id": "ntf-1790235757640-it7qld",
+      "recipientUserId": "system-finance-workflow",
+      "recipientUsername": "system-finance-workflow",
+      "recipientRoles": [
+        "Treasury Officer",
+        "Finance Manager",
+        "Finance Controller",
+        "Accountant"
+      ],
+      "kind": "Approval",
+      "module": "Finance Approvals",
+      "title": "Payment ready for Treasury",
+      "body": "DLE2609145 is fully approved and ready for payment.",
+      "severity": "warning",
+      "status": "Unread",
+      "href": "/finance/approvals/treasury",
+      "createdAt": "2026-09-24T07:42:37.640Z",
+      "actor": "IYANDA OLAITAN RAPHEAL",
+      "channels": [
+        "In-App"
+      ],
+      "metadata": {
+        "requestId": "PREQ-1790174648135",
+        "event": "treasury-ready"
+      }
+    },
+    {
+      "id": "ntf-1790235752763-v66aih",
+      "recipientUserId": "P0181",
+      "recipientUsername": "P0181",
+      "recipientEmployeeCode": "P0181",
+      "recipientRoles": [],
+      "kind": "Approval",
+      "module": "Finance Approvals",
+      "title": "Payment request approved",
+      "body": "DLE2609145 is fully approved and ready for treasury hand-off.",
+      "severity": "success",
+      "status": "Unread",
+      "href": "/finance/approvals/request/PREQ-1790174648135",
+      "createdAt": "2026-09-24T07:42:32.763Z",
+      "actor": "IYANDA OLAITAN RAPHEAL",
+      "channels": [
+        "In-App",
+        "Email"
+      ],
+      "metadata": {
+        "requestId": "PREQ-1790174648135",
+        "event": "approved"
+      }
+    },
+    {
+      "id": "ntf-1790235498159-ym4ddj",
+      "recipientUserId": "C1882",
+      "recipientUsername": "C1882",
+      "recipientEmployeeCode": "C1882",
+      "recipientRoles": [],
+      "kind": "Approval",
+      "module": "Leave Management",
+      "title": "Leave request awaiting your approval",
+      "body": "SAMUEL EMEWU JONAH submitted Sick Leave — SAMUEL EMEWU JONAH (2026-09-23 to 2026-09-24). Review in ESS Approvals within 5 working days.",
+      "severity": "warning",
+      "status": "Unread",
+      "href": "/workforce-portal?tab=leave&leaveSection=Approvals",
+      "createdAt": "2026-09-24T07:38:18.159Z",
+      "actor": "Mr. ADESINA ADEKUNLE",
+      "channels": [
+        "In-App",
+        "Email"
+      ],
+      "metadata": {
+        "requestId": "ess-1790184445730-1gyy9d"
+      }
+    },
+    {
+      "id": "ntf-1790235496463-o64wnx",
+      "recipientUserId": "C1882",
+      "recipientUsername": "C1882",
+      "recipientEmployeeCode": "C1882",
+      "recipientRoles": [],
+      "kind": "Approval",
+      "module": "Leave Management",
+      "title": "Leave request awaiting your approval",
+      "body": "ADEKUNLE KOLAWOLE submitted Annual Leave — ADEKUNLE KOLAWOLE (2026-09-21 to 2026-09-29). Review in ESS Approvals within 5 working days.",
+      "severity": "warning",
+      "status": "Unread",
+      "href": "/workforce-portal?tab=leave&leaveSection=Approvals",
+      "createdAt": "2026-09-24T07:38:16.463Z",
+      "actor": "Mr. ADESINA ADEKUNLE",
+      "channels": [
+        "In-App",
+        "Email"
+      ],
+      "metadata": {
+        "requestId": "ess-1789663296991-xtgawk"
+      }
+    },
+    {
+      "id": "ntf-1790235490588-c4hyfj",
+      "recipientUserId": "P0072",
+      "recipientUsername": "P0072",
+      "recipientEmployeeCode": "P0072",
+      "recipientRoles": [],
+      "kind": "Approval",
+      "module": "Leave Management",
+      "title": "Leave request awaiting your approval",
+      "body": "Mr. OWOLABI OLASUNKANMI AKEEB submitted Annual Leave — Mr. OWOLABI OLASUNKANMI AKEEB (2026-09-23 to 2026-09-25). Review in ESS Approvals within 5 working days.",
+      "severity": "warning",
+      "status": "Unread",
+      "href": "/workforce-portal?tab=leave&leaveSection=Approvals",
+      "createdAt": "2026-09-24T07:38:10.588Z",
+      "actor": "Mr. ADESINA ADEKUNLE",
+      "channels": [
+        "In-App",
+        "Email"
+      ],
+      "metadata": {
+        "requestId": "ess-1790071857740-d73ld7"
+      }
+    },
+    {
+      "id": "ntf-1790235483422-rd3h01",
+      "recipientUserId": "C1720",
+      "recipientUsername": "C1720",
+      "recipientEmployeeCode": "C1720",
+      "recipientRoles": [],
+      "kind": "Approval",
+      "module": "Leave Management",
+      "title": "Leave request awaiting your approval",
+      "body": "OGUNYEMI AYODELE submitted Annual Leave — OGUNYEMI AYODELE (2026-10-09 to 2026-10-19). Review in ESS Approvals within 5 working days.",
+      "severity": "warning",
+      "status": "Unread",
+      "href": "/workforce-portal?tab=leave&leaveSection=Approvals",
+      "createdAt": "2026-09-24T07:38:03.422Z",
+      "actor": "Mr. ADESINA ADEKUNLE",
+      "channels": [
+        "In-App",
+        "Email"
+      ],
+      "metadata": {
+        "requestId": "ess-1790172623865-aehjyi"
+      }
+    },
+    {
+      "id": "ntf-1790235480310-4wjxzb",
+      "recipientUserId": "P0072",
+      "recipientUsername": "P0072",
+      "recipientEmployeeCode": "P0072",
+      "recipientRoles": [],
+      "kind": "Approval",
+      "module": "Leave Management",
+      "title": "Leave request awaiting your approval",
+      "body": "AMANOKHAI MOSES submitted Annual Leave — AMANOKHAI MOSES (2026-09-24 to 2026-10-05). Review in ESS Approvals within 5 working days.",
+      "severity": "warning",
+      "status": "Unread",
+      "href": "/workforce-portal?tab=leave&leaveSection=Approvals",
+      "createdAt": "2026-09-24T07:38:00.310Z",
+      "actor": "Mr. ADESINA ADEKUNLE",
+      "channels": [
+        "In-App",
+        "Email"
+      ],
+      "metadata": {
+        "requestId": "ess-1790163818424-eqaay1"
+      }
+    },
+    {
+      "id": "ntf-1790235476738-fwvnl1",
+      "recipientUserId": "C1882",
+      "recipientUsername": "C1882",
+      "recipientEmployeeCode": "C1882",
+      "recipientRoles": [],
+      "kind": "Approval",
+      "module": "Leave Management",
+      "title": "Leave request awaiting your approval",
+      "body": "OGWUCHE ACHEM submitted Annual Leave — OGWUCHE ACHEM (2026-09-22 to 2026-09-25). Review in ESS Approvals within 5 working days.",
+      "severity": "warning",
+      "status": "Unread",
+      "href": "/workforce-portal?tab=leave&leaveSection=Approvals",
+      "createdAt": "2026-09-24T07:37:56.738Z",
+      "actor": "Mr. ADESINA ADEKUNLE",
+      "channels": [
+        "In-App",
+        "Email"
+      ],
+      "metadata": {
+        "requestId": "ess-1789993455193-y8sf2b"
+      }
+    },
+    {
+      "id": "ntf-1790235473461-bjlw5e",
+      "recipientUserId": "C1544",
+      "recipientUsername": "C1544",
+      "recipientEmployeeCode": "C1544",
+      "recipientRoles": [],
+      "kind": "Approval",
+      "module": "Leave Management",
+      "title": "Leave request awaiting your approval",
+      "body": "RABIU GBOLAGADE submitted Sick Leave — RABIU GBOLAGADE (2026-09-23 to 2026-09-23). Review in ESS Approvals within 5 working days.",
+      "severity": "warning",
+      "status": "Unread",
+      "href": "/workforce-portal?tab=leave&leaveSection=Approvals",
+      "createdAt": "2026-09-24T07:37:53.461Z",
+      "actor": "Mr. ADESINA ADEKUNLE",
+      "channels": [
+        "In-App",
+        "Email"
+      ],
+      "metadata": {
+        "requestId": "ess-1790157794494-y7m4ex"
+      }
+    },
+    {
+      "id": "ntf-1790235359362-w1nomw",
+      "recipientUserId": "P0272",
+      "recipientUsername": "P0272",
+      "recipientEmployeeCode": "P0272",
+      "recipientRoles": [],
+      "kind": "Approval",
+      "module": "Finance Approvals",
+      "title": "Payment disbursed",
+      "body": "DLE260821 has been paid by Treasury. Payment evidence uploaded (Evidence: PaymentDetailPdfServlet PENTAGON SECURITIES LIMITED aug 26.pdf).",
+      "severity": "success",
+      "status": "Unread",
+      "href": "/finance/approvals/request/PREQ-1787048721296",
+      "createdAt": "2026-09-24T07:35:59.362Z",
+      "actor": "Mr. EMESIANA IFEANYICHUKWU",
+      "channels": [
+        "In-App",
+        "Email"
+      ],
+      "metadata": {
+        "requestId": "PREQ-1787048721296",
+        "event": "paid"
+      }
+    },
+    {
+      "id": "ntf-1790235282352-roxdte",
+      "recipientUserId": "P0272",
+      "recipientUsername": "P0272",
+      "recipientEmployeeCode": "P0272",
+      "recipientRoles": [],
+      "kind": "Approval",
+      "module": "Finance Approvals",
+      "title": "Payment disbursed",
+      "body": "DLE260824 has been paid by Treasury. Payment evidence uploaded (Evidence: PaymentDetailPdfServlet CENTRONIC ENTERPRISES aug 26.pdf).",
+      "severity": "success",
+      "status": "Unread",
+      "href": "/finance/approvals/request/PREQ-1787049753232",
+      "createdAt": "2026-09-24T07:34:42.353Z",
+      "actor": "Mr. EMESIANA IFEANYICHUKWU",
+      "channels": [
+        "In-App",
+        "Email"
+      ],
+      "metadata": {
+        "requestId": "PREQ-1787049753232",
+        "event": "paid"
+      }
+    },
+    {
+      "id": "ntf-1790235178571-swun2l",
+      "recipientUserId": "P0452",
+      "recipientUsername": "P0452",
+      "recipientEmployeeCode": "P0452",
+      "recipientRoles": [],
+      "kind": "Approval",
+      "module": "Finance Approvals",
+      "title": "Payment disbursed",
+      "body": "DLE2609135 has been paid by Treasury. Payment evidence uploaded (Evidence: PaymentDetailPdfServlet ODULATE TEMITOPE ABIODUN 240k.pdf).",
+      "severity": "success",
+      "status": "Unread",
+      "href": "/finance/approvals/request/PREQ-1790156702495",
+      "createdAt": "2026-09-24T07:32:58.571Z",
+      "actor": "Mr. EMESIANA IFEANYICHUKWU",
+      "channels": [
+        "In-App",
+        "Email"
+      ],
+      "metadata": {
+        "requestId": "PREQ-1790156702495",
+        "event": "paid"
+      }
+    },
+    {
+      "id": "ntf-1790235075359-jyg0ft",
+      "recipientUserId": "NYSC0025",
+      "recipientUsername": "NYSC0025",
+      "recipientEmployeeCode": "NYSC0025",
+      "recipientRoles": [],
+      "kind": "Approval",
+      "module": "Finance Approvals",
+      "title": "Payment disbursed",
+      "body": "DLE2609127 has been paid by Treasury. Payment evidence uploaded (Evidence: PaymentDetailPdfServlet PHILLIPS AYODEJI OLAJOYEGBE 50k.pdf). Please submit retirement with receipts.",
+      "severity": "success",
+      "status": "Unread",
+      "href": "/finance/approvals/request/PREQ-1790081818894",
+      "createdAt": "2026-09-24T07:31:15.359Z",
+      "actor": "Mr. EMESIANA IFEANYICHUKWU",
+      "channels": [
+        "In-App",
+        "Email"
+      ],
+      "metadata": {
+        "requestId": "PREQ-1790081818894",
+        "event": "paid"
+      }
+    },
+    {
+      "id": "ntf-1790235013648-srobdp",
+      "recipientUserId": "L2781",
+      "recipientUsername": "L2781",
+      "recipientEmployeeCode": "L2781",
+      "recipientRoles": [],
+      "kind": "Approval",
+      "module": "Finance Approvals",
+      "title": "Payment disbursed",
+      "body": "DLPC260916 has been paid by Treasury. Payment evidence uploaded (Evidence: PaymentDetailPdfServlet OLORUNYOMI IYANU JOSHUA.pdf).",
+      "severity": "success",
+      "status": "Unread",
+      "href": "/finance/approvals/request/PREQ-1789118189459",
+      "createdAt": "2026-09-24T07:30:13.648Z",
+      "actor": "Mr. EMESIANA IFEANYICHUKWU",
+      "channels": [
+        "In-App",
+        "Email"
+      ],
+      "metadata": {
+        "requestId": "PREQ-1789118189459",
+        "event": "paid"
+      }
+    },
+    {
+      "id": "ntf-1790234923703-kuui9r",
+      "recipientUserId": "C1705",
+      "recipientUsername": "C1705",
+      "recipientEmployeeCode": "C1705",
+      "recipientRoles": [],
+      "kind": "Approval",
+      "module": "Finance Approvals",
+      "title": "Payment disbursed",
+      "body": "DLE2609104 has been paid by Treasury. Payment evidence uploaded (Evidence: PaymentDetailPdfServlet NNABUIKE RAYMOND ODOELECHI 153k.pdf).",
+      "severity": "success",
+      "status": "Unread",
+      "href": "/finance/approvals/request/PREQ-1789650375439",
+      "createdAt": "2026-09-24T07:28:43.703Z",
+      "actor": "Mr. EMESIANA IFEANYICHUKWU",
+      "channels": [
+        "In-App",
+        "Email"
+      ],
+      "metadata": {
+        "requestId": "PREQ-1789650375439",
+        "event": "paid"
+      }
+    },
+    {
+      "id": "ntf-1790234841303-vdigbs",
+      "recipientUserId": "P0290",
+      "recipientUsername": "P0290",
+      "recipientEmployeeCode": "P0290",
+      "recipientRoles": [],
+      "kind": "Approval",
+      "module": "Finance Approvals",
+      "title": "Payment disbursed",
+      "body": "DLE2609146 has been paid by Treasury. Payment evidence uploaded (Evidence: PaymentDetailPdfServlet LIMERUT VENTURE LTD 117k.pdf).",
+      "severity": "success",
+      "status": "Unread",
+      "href": "/finance/approvals/request/PREQ-1790175961430",
+      "createdAt": "2026-09-24T07:27:21.304Z",
+      "actor": "Mr. EMESIANA IFEANYICHUKWU",
+      "channels": [
+        "In-App",
+        "Email"
+      ],
+      "metadata": {
+        "requestId": "PREQ-1790175961430",
+        "event": "paid"
+      }
+    },
+    {
+      "id": "ntf-1790234245229-udts97",
+      "recipientUserId": "C1544",
+      "recipientUsername": "C1544",
+      "recipientEmployeeCode": "C1544",
+      "recipientRoles": [],
+      "kind": "Approval",
+      "module": "Leave Management",
+      "title": "Leave request awaiting your approval",
+      "body": "RABIU GBOLAGADE submitted Sick Leave — RABIU GBOLAGADE (2026-09-23 to 2026-09-23). Review in ESS Approvals within 5 working days.",
+      "severity": "warning",
+      "status": "Unread",
+      "href": "/workforce-portal?tab=leave&leaveSection=Approvals",
+      "createdAt": "2026-09-24T07:17:25.229Z",
+      "actor": "Mr. OKEWU SUNDAY",
+      "channels": [
+        "In-App",
+        "Email"
+      ],
+      "metadata": {
+        "requestId": "ess-1790157794494-y7m4ex"
+      }
+    },
+    {
+      "id": "ntf-1790234244702-scu8ei",
+      "recipientUserId": "C1882",
+      "recipientUsername": "C1882",
+      "recipientEmployeeCode": "C1882",
+      "recipientRoles": [],
+      "kind": "Approval",
+      "module": "Leave Management",
+      "title": "Leave request awaiting your approval",
+      "body": "ADEKUNLE KOLAWOLE submitted Annual Leave — ADEKUNLE KOLAWOLE (2026-09-21 to 2026-09-29). Review in ESS Approvals within 5 working days.",
+      "severity": "warning",
+      "status": "Unread",
+      "href": "/workforce-portal?tab=leave&leaveSection=Approvals",
+      "createdAt": "2026-09-24T07:17:24.702Z",
+      "actor": "Mr. OKEWU SUNDAY",
+      "channels": [
+        "In-App",
+        "Email"
+      ],
+      "metadata": {
+        "requestId": "ess-1789663296991-xtgawk"
+      }
+    },
+    {
+      "id": "ntf-1790234244018-34llry",
+      "recipientUserId": "P0072",
+      "recipientUsername": "P0072",
+      "recipientEmployeeCode": "P0072",
+      "recipientRoles": [],
+      "kind": "Approval",
+      "module": "Leave Management",
+      "title": "Leave request awaiting your approval",
+      "body": "Mr. OWOLABI OLASUNKANMI AKEEB submitted Annual Leave — Mr. OWOLABI OLASUNKANMI AKEEB (2026-09-23 to 2026-09-25). Review in ESS Approvals within 5 working days.",
+      "severity": "warning",
+      "status": "Unread",
+      "href": "/workforce-portal?tab=leave&leaveSection=Approvals",
+      "createdAt": "2026-09-24T07:17:24.019Z",
+      "actor": "Mr. OKEWU SUNDAY",
+      "channels": [
+        "In-App",
+        "Email"
+      ],
+      "metadata": {
+        "requestId": "ess-1790071857740-d73ld7"
+      }
+    },
+    {
+      "id": "ntf-1790234243499-hcsz90",
+      "recipientUserId": "C1720",
+      "recipientUsername": "C1720",
+      "recipientEmployeeCode": "C1720",
+      "recipientRoles": [],
+      "kind": "Approval",
+      "module": "Leave Management",
+      "title": "Leave request awaiting your approval",
+      "body": "OGUNYEMI AYODELE submitted Annual Leave — OGUNYEMI AYODELE (2026-10-09 to 2026-10-19). Review in ESS Approvals within 5 working days.",
+      "severity": "warning",
+      "status": "Unread",
+      "href": "/workforce-portal?tab=leave&leaveSection=Approvals",
+      "createdAt": "2026-09-24T07:17:23.499Z",
+      "actor": "Mr. OKEWU SUNDAY",
+      "channels": [
+        "In-App",
+        "Email"
+      ],
+      "metadata": {
+        "requestId": "ess-1790172623865-aehjyi"
+      }
+    },
+    {
+      "id": "ntf-1790234242980-6sr2fl",
+      "recipientUserId": "P0072",
+      "recipientUsername": "P0072",
+      "recipientEmployeeCode": "P0072",
+      "recipientRoles": [],
+      "kind": "Approval",
+      "module": "Leave Management",
+      "title": "Leave request awaiting your approval",
+      "body": "AMANOKHAI MOSES submitted Annual Leave — AMANOKHAI MOSES (2026-09-24 to 2026-10-05). Review in ESS Approvals within 5 working days.",
+      "severity": "warning",
+      "status": "Unread",
+      "href": "/workforce-portal?tab=leave&leaveSection=Approvals",
+      "createdAt": "2026-09-24T07:17:22.980Z",
+      "actor": "Mr. OKEWU SUNDAY",
+      "channels": [
+        "In-App",
+        "Email"
+      ],
+      "metadata": {
+        "requestId": "ess-1790163818424-eqaay1"
+      }
+    },
+    {
+      "id": "ntf-1790234242442-q67drn",
+      "recipientUserId": "C1882",
+      "recipientUsername": "C1882",
+      "recipientEmployeeCode": "C1882",
+      "recipientRoles": [],
+      "kind": "Approval",
+      "module": "Leave Management",
+      "title": "Leave request awaiting your approval",
+      "body": "OGWUCHE ACHEM submitted Annual Leave — OGWUCHE ACHEM (2026-09-22 to 2026-09-25). Review in ESS Approvals within 5 working days.",
+      "severity": "warning",
+      "status": "Unread",
+      "href": "/workforce-portal?tab=leave&leaveSection=Approvals",
+      "createdAt": "2026-09-24T07:17:22.442Z",
+      "actor": "Mr. OKEWU SUNDAY",
+      "channels": [
+        "In-App",
+        "Email"
+      ],
+      "metadata": {
+        "requestId": "ess-1789993455193-y8sf2b"
+      }
+    },
+    {
+      "id": "ntf-1790234241538-aw0c1v",
+      "recipientUserId": "C1882",
+      "recipientUsername": "C1882",
+      "recipientEmployeeCode": "C1882",
+      "recipientRoles": [],
+      "kind": "Approval",
+      "module": "Leave Management",
+      "title": "Leave request awaiting your approval",
+      "body": "SAMUEL EMEWU JONAH submitted Sick Leave — SAMUEL EMEWU JONAH (2026-09-23 to 2026-09-24). Review in ESS Approvals within 5 working days.",
+      "severity": "warning",
+      "status": "Unread",
+      "href": "/workforce-portal?tab=leave&leaveSection=Approvals",
+      "createdAt": "2026-09-24T07:17:21.538Z",
+      "actor": "Mr. OKEWU SUNDAY",
+      "channels": [
+        "In-App",
+        "Email"
+      ],
+      "metadata": {
+        "requestId": "ess-1790184445730-1gyy9d"
+      }
+    },
+    {
+      "id": "ntf-1790231965092-r7h0dg",
+      "recipientUserId": "C1882",
+      "recipientUsername": "C1882",
+      "recipientEmployeeCode": "C1882",
+      "recipientRoles": [],
+      "kind": "Approval",
+      "module": "Leave Management",
+      "title": "Leave request awaiting your approval",
+      "body": "SAMUEL EMEWU JONAH submitted Sick Leave — SAMUEL EMEWU JONAH (2026-09-23 to 2026-09-24). Review in ESS Approvals within 5 working days.",
+      "severity": "warning",
+      "status": "Unread",
+      "href": "/workforce-portal?tab=leave&leaveSection=Approvals",
+      "createdAt": "2026-09-24T06:39:25.092Z",
+      "actor": "KENECHUKWU SUNDAY",
+      "channels": [
+        "In-App",
+        "Email"
+      ],
+      "metadata": {
+        "requestId": "ess-1790184445730-1gyy9d"
+      }
+    },
+    {
+      "id": "ntf-1790231964562-vb3p2j",
+      "recipientUserId": "C1544",
+      "recipientUsername": "C1544",
+      "recipientEmployeeCode": "C1544",
+      "recipientRoles": [],
+      "kind": "Approval",
+      "module": "Leave Management",
+      "title": "Leave request awaiting your approval",
+      "body": "RABIU GBOLAGADE submitted Sick Leave — RABIU GBOLAGADE (2026-09-23 to 2026-09-23). Review in ESS Approvals within 5 working days.",
+      "severity": "warning",
+      "status": "Unread",
+      "href": "/workforce-portal?tab=leave&leaveSection=Approvals",
+      "createdAt": "2026-09-24T06:39:24.562Z",
+      "actor": "KENECHUKWU SUNDAY",
+      "channels": [
+        "In-App",
+        "Email"
+      ],
+      "metadata": {
+        "requestId": "ess-1790157794494-y7m4ex"
+      }
+    },
+    {
+      "id": "ntf-1790231963366-x6xa2f",
+      "recipientUserId": "C1882",
+      "recipientUsername": "C1882",
+      "recipientEmployeeCode": "C1882",
+      "recipientRoles": [],
+      "kind": "Approval",
+      "module": "Leave Management",
+      "title": "Leave request awaiting your approval",
+      "body": "ADEKUNLE KOLAWOLE submitted Annual Leave — ADEKUNLE KOLAWOLE (2026-09-21 to 2026-09-29). Review in ESS Approvals within 5 working days.",
+      "severity": "warning",
+      "status": "Unread",
+      "href": "/workforce-portal?tab=leave&leaveSection=Approvals",
+      "createdAt": "2026-09-24T06:39:23.366Z",
+      "actor": "KENECHUKWU SUNDAY",
+      "channels": [
+        "In-App",
+        "Email"
+      ],
+      "metadata": {
+        "requestId": "ess-1789663296991-xtgawk"
+      }
+    },
+    {
+      "id": "ntf-1790231962861-pchfyo",
+      "recipientUserId": "P0072",
+      "recipientUsername": "P0072",
+      "recipientEmployeeCode": "P0072",
+      "recipientRoles": [],
+      "kind": "Approval",
+      "module": "Leave Management",
+      "title": "Leave request awaiting your approval",
+      "body": "Mr. OWOLABI OLASUNKANMI AKEEB submitted Annual Leave — Mr. OWOLABI OLASUNKANMI AKEEB (2026-09-23 to 2026-09-25). Review in ESS Approvals within 5 working days.",
+      "severity": "warning",
+      "status": "Unread",
+      "href": "/workforce-portal?tab=leave&leaveSection=Approvals",
+      "createdAt": "2026-09-24T06:39:22.861Z",
+      "actor": "KENECHUKWU SUNDAY",
+      "channels": [
+        "In-App",
+        "Email"
+      ],
+      "metadata": {
+        "requestId": "ess-1790071857740-d73ld7"
+      }
+    },
+    {
+      "id": "ntf-1790231962261-41327z",
+      "recipientUserId": "C1720",
+      "recipientUsername": "C1720",
+      "recipientEmployeeCode": "C1720",
+      "recipientRoles": [],
+      "kind": "Approval",
+      "module": "Leave Management",
+      "title": "Leave request awaiting your approval",
+      "body": "OGUNYEMI AYODELE submitted Annual Leave — OGUNYEMI AYODELE (2026-10-09 to 2026-10-19). Review in ESS Approvals within 5 working days.",
+      "severity": "warning",
+      "status": "Unread",
+      "href": "/workforce-portal?tab=leave&leaveSection=Approvals",
+      "createdAt": "2026-09-24T06:39:22.261Z",
+      "actor": "KENECHUKWU SUNDAY",
+      "channels": [
+        "In-App",
+        "Email"
+      ],
+      "metadata": {
+        "requestId": "ess-1790172623865-aehjyi"
+      }
+    },
+    {
+      "id": "ntf-1790231961740-elbh1s",
+      "recipientUserId": "P0072",
+      "recipientUsername": "P0072",
+      "recipientEmployeeCode": "P0072",
+      "recipientRoles": [],
+      "kind": "Approval",
+      "module": "Leave Management",
+      "title": "Leave request awaiting your approval",
+      "body": "AMANOKHAI MOSES submitted Annual Leave — AMANOKHAI MOSES (2026-09-24 to 2026-10-05). Review in ESS Approvals within 5 working days.",
+      "severity": "warning",
+      "status": "Unread",
+      "href": "/workforce-portal?tab=leave&leaveSection=Approvals",
+      "createdAt": "2026-09-24T06:39:21.741Z",
+      "actor": "KENECHUKWU SUNDAY",
+      "channels": [
+        "In-App",
+        "Email"
+      ],
+      "metadata": {
+        "requestId": "ess-1790163818424-eqaay1"
+      }
+    },
+    {
+      "id": "ntf-1790231960805-l56acb",
+      "recipientUserId": "C1882",
+      "recipientUsername": "C1882",
+      "recipientEmployeeCode": "C1882",
+      "recipientRoles": [],
+      "kind": "Approval",
+      "module": "Leave Management",
+      "title": "Leave request awaiting your approval",
+      "body": "OGWUCHE ACHEM submitted Annual Leave — OGWUCHE ACHEM (2026-09-22 to 2026-09-25). Review in ESS Approvals within 5 working days.",
+      "severity": "warning",
+      "status": "Unread",
+      "href": "/workforce-portal?tab=leave&leaveSection=Approvals",
+      "createdAt": "2026-09-24T06:39:20.805Z",
+      "actor": "KENECHUKWU SUNDAY",
+      "channels": [
+        "In-App",
+        "Email"
+      ],
+      "metadata": {
+        "requestId": "ess-1789993455193-y8sf2b"
+      }
+    },
+    {
+      "id": "ntf-1790231957583-ld26gg",
+      "recipientUserId": "P0432",
+      "recipientUsername": "P0432",
+      "recipientEmployeeCode": "P0432",
+      "recipientRoles": [
+        "HR Manager"
+      ],
+      "kind": "Approval",
+      "module": "Profile",
+      "title": "Profile update awaiting your approval — KENECHUKWU SUNDAY",
+      "body": "Personal Information update: Marital status, State of origin, LGA, Religion, Languages spoken",
+      "severity": "warning",
+      "status": "Unread",
+      "href": "/workforce-portal?tab=profile&profileApprovalId=ess-profile-1790231957559-fpbtok",
+      "createdAt": "2026-09-24T06:39:17.583Z",
+      "actor": "KENECHUKWU SUNDAY",
+      "channels": [
+        "In-App",
+        "Email"
+      ],
+      "metadata": {
+        "requestId": "ess-profile-1790231957559-fpbtok",
+        "module": "ess-profile-update"
+      }
+    },
+    {
+      "id": "ntf-1790231957574-j2tjah",
+      "recipientUserId": "profile-workflow",
+      "recipientUsername": "profile-workflow",
+      "recipientEmployeeCode": "profile-workflow",
+      "recipientRoles": [
+        "HR Manager"
+      ],
+      "kind": "Approval",
+      "module": "Profile",
+      "title": "Profile update awaiting HR approval — KENECHUKWU SUNDAY",
+      "body": "KENECHUKWU SUNDAY submitted Personal Information update (Marital status, State of origin, LGA, Religion, Languages spoken). Review and approve in ESS.",
+      "severity": "warning",
+      "status": "Unread",
+      "href": "/workforce-portal?tab=profile&profileApprovalId=ess-profile-1790231957559-fpbtok",
+      "createdAt": "2026-09-24T06:39:17.574Z",
+      "actor": "KENECHUKWU SUNDAY",
+      "channels": [
+        "In-App"
+      ],
+      "metadata": {
+        "requestId": "ess-profile-1790231957559-fpbtok",
+        "module": "ess-profile-update",
+        "serviceId": "profile-update"
+      }
+    },
+    {
       "id": "ntf-1790231406683-mhkqtz",
       "recipientUserId": "C1882",
       "recipientUsername": "C1882",

@@ -5,12 +5,14 @@ import {
   buildProjectTimesheetApprovals,
   canonicalTimesheetEmployeeKey,
   isPayrollPayableWorkDay,
+  isTimesheetCountableForPayroll,
   isTimesheetPayrollReadyStatus,
   normalizeTimesheetStatus,
   readProjects,
   readTimesheetData,
   readTimesheetPayrollUpdates,
   readTimesheetPeriod,
+  synthesizeTimesheetHoursForPeriod,
   type TimesheetHeader,
   type TimesheetLine,
   type TimesheetStatus,
@@ -19,12 +21,8 @@ import { buildPayrollAttendanceSheet } from '@/lib/timesheet-payroll-attendance-
 import { buildCCodeProjectFinanceCosts, type ProjectFinanceCostResult } from '@/lib/project-finance-cost-service';
 import { normalizePayrollMatchKey } from '@/lib/sage-people-payroll-store';
 import { getPayrollPublicHolidayDates } from '@/lib/nigeria-public-holidays';
-import {
-  bookedTimesheetHours,
-  lineOvertimeHours,
-  prorateBookedHours,
-  resolveTimesheetLabourRateNgn,
-} from '@/lib/timesheet-report-metrics';
+import { bookedTimesheetHours, lineOvertimeHours, prorateBookedHours, resolveTimesheetLabourRateNgn } from '@/lib/timesheet-report-metrics';
+import { utcTimesheetWeekday } from '@/lib/timesheet-entry-shared';
 
 export const maxDuration = 120;
 
@@ -270,8 +268,9 @@ export async function GET(request: Request) {
     const payrollReady = searchParams.get('payrollReady');
     const query = searchParams.get('query')?.trim() || '';
 
+    const exportMode = searchParams.get('exportMode') === 'full' || searchParams.get('format') === 'csv' || searchParams.get('format') === 'excel';
     const [{ headers, lines }, payrollUpdates, projects, payrollEmployees, holidayDates] = await Promise.all([
-      readTimesheetData(),
+      readTimesheetData({ forceRefresh: exportMode }),
       readTimesheetPayrollUpdates(),
       readProjects(),
       readPayrollEmployees(),
@@ -463,10 +462,12 @@ export async function GET(request: Request) {
 
     const periodDaysByEmployee = new Map<string, Set<string>>();
     for (const row of filteredRows) {
-      if (row.dayWorked !== 1) continue;
+      if (!isTimesheetCountableForPayroll(row.normalizedStatus)) continue;
       const employeeKey = canonicalTimesheetEmployeeKey(row);
       const dates = periodDaysByEmployee.get(employeeKey) || new Set<string>();
-      dates.add(row.timesheetDate);
+      const sundayHours = utcTimesheetWeekday(row.timesheetDate) === 0
+        && (Number(row.usedHours || 0) > 0 || Number(row.totalHours || 0) > 0 || Number(row.attendanceHours || 0) > 0);
+      if (row.dayWorked === 1 || sundayHours) dates.add(row.timesheetDate);
       periodDaysByEmployee.set(employeeKey, dates);
     }
     for (const row of filteredRows) {
@@ -481,15 +482,23 @@ export async function GET(request: Request) {
       ...scopedRows.map((row) => row.costCentre).filter(Boolean),
     ])).sort();
 
-    const exportMode = searchParams.get('exportMode') === 'full' || searchParams.get('format') === 'csv' || searchParams.get('format') === 'excel';
     const detailLimit = exportMode ? Number.POSITIVE_INFINITY : 1000;
     const reportLimit = exportMode ? Number.POSITIVE_INFINITY : 500;
     const canViewCosts = scope === 'enterprise' || scope === 'cost-control' || scope === 'project-manager';
+    const payrollHoursByKey = new Map<string, import('@/lib/timesheet-entry-store').PayrollTimesheetHoursEntry>();
+    const periodIds = [...new Set(filteredRows.map((row) => row.periodId).filter(Boolean))];
+    for (const periodId of periodIds) {
+      const hours = await synthesizeTimesheetHoursForPeriod(periodId).catch(() => new Map());
+      for (const [key, value] of hours) {
+        if (!payrollHoursByKey.has(key)) payrollHoursByKey.set(key, value);
+      }
+    }
     const payrollAttendanceSheet = buildPayrollAttendanceSheet({
-      rows: filteredRows,
+      rows: filteredRows.filter((row) => isTimesheetCountableForPayroll(row.normalizedStatus)),
       employeesByKey,
       holidayDates,
       canViewCosts,
+      payrollHoursByKey,
     });
     const emptyProjectFinanceCost: ProjectFinanceCostResult = {
       projects: [],

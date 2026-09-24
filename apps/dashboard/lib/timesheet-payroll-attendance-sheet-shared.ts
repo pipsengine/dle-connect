@@ -10,8 +10,10 @@ export const PAYROLL_ATTENDANCE_SHEET_COLUMNS = [
   'WKD TOT',
   'PAID LEAVE (DAYS)',
   'L TOT',
+  'SATURDAYS WORKED',
   'TOTAL SATURDAY (HRS)',
   'S TOT',
+  'SUNDAYS WORKED',
   'TOTAL SUNDAY (HRS)',
   'SN TOT',
   'TOTAL PUBLIC HOLIDAY (HRS)',
@@ -35,8 +37,10 @@ export type PayrollAttendanceSheetRow = {
   weekDayTotal: number;
   paidLeaveDays: number;
   paidLeaveTotal: number;
+  saturdayDaysWorked: number;
   saturdayHours: number;
   saturdayTotal: number;
+  sundayDaysWorked: number;
   sundayHours: number;
   sundayTotal: number;
   publicHolidayHours: number;
@@ -64,8 +68,10 @@ export const payrollAttendanceSheetToExcelRows = (
     canViewCosts ? row.weekDayTotal : 'Restricted',
     row.paidLeaveDays,
     canViewCosts ? row.paidLeaveTotal : 'Restricted',
+    row.saturdayDaysWorked,
     row.saturdayHours,
     canViewCosts ? row.saturdayTotal : 'Restricted',
+    row.sundayDaysWorked,
     row.sundayHours,
     canViewCosts ? row.sundayTotal : 'Restricted',
     row.publicHolidayHours,

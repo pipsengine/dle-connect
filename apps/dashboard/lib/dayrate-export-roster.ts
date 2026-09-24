@@ -88,15 +88,32 @@ export const buildDayrateExportRoster = (input: {
 
   if (applied?.rows?.length) {
     const seen = new Set<string>();
+    const markSeen = (keys: string[]) => {
+      keys.forEach((key) => {
+        if (key) seen.add(key);
+      });
+    };
     const entries: DayrateExportRosterEntry[] = [];
     for (const row of applied.rows) {
       const code = upper(canonicalContractEmployeeCode(row.employeeCode) || row.employeeCode);
       if (!code || seen.has(code)) continue;
-      seen.add(code);
+      markSeen([code, ...scheduleMatchKeys(row)]);
       entries.push({
         scheduleRow: row,
         record: findCalculationRecord(calcIndex, row, directory),
         company: row.company === 'DLPC' ? 'DLPC' : 'DLE',
+      });
+    }
+    for (const record of input.calculatedRecords.filter(isDailyRateRecord)) {
+      const keys = recordMatchKeys(record);
+      if (keys.some((key) => seen.has(key))) continue;
+      const code = upper(canonicalContractEmployeeCode(record.employeeCode) || record.employeeCode);
+      if (!code || seen.has(code)) continue;
+      markSeen([code, ...keys]);
+      entries.push({
+        scheduleRow: null,
+        record,
+        company: resolveOfficialCompanyBucket(record),
       });
     }
     return entries;
