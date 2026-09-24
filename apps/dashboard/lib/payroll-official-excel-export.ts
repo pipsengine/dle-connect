@@ -1071,7 +1071,7 @@ const buildUsdReportSheet = (records: Enriched[], periodLabel: string): ExcelWor
       const earningTotal = roundMoney((record.earningLines || []).reduce((sum, line) => sum + Number(line.amount || 0), 0))
         || roundMoney(Number(record.grossPay || 0));
       const deductionTotal = roundMoney(Number(record.totalDeductions || record.deductions || 0));
-      const { itf, nsitf } = splitEmployerStatutory(record);
+      const { itf, nsitf } = isPensionEligibleStaff(record) ? splitEmployerStatutory(record) : { itf: 0, nsitf: 0 };
       const periodSalary = roundMoney(Number(record.periodPackageGross || record.grossPay || 0));
       dataRows.push([
         usdOfficialEmployeeCode(record),

@@ -1,0 +1,17 @@
+{
+  "schemaVersion": 1,
+  "wishes": [
+    {
+      "wishId": "wish-1790231429544-m4xb2c",
+      "celebrationDate": "2026-09-24",
+      "honoreeCode": "C1979",
+      "honoreeKind": "birthday",
+      "honoreeName": "Wahabi Yusuf",
+      "authorCode": "C2633",
+      "authorName": "KENECHUKWU SUNDAY",
+      "message": "Happy birthday and long life ahead!",
+      "createdAt": "2026-09-24T06:30:29.544Z"
+    }
+  ],
+  "sendLedger": []
+}
