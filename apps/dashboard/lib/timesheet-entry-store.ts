@@ -28,6 +28,7 @@ import {
   normalizeProjectAllocations,
   isNightShiftEligibleAttendance,
   hasDayShiftDuration,
+  isManualOffshoreLine,
   isOffshoreTimesheetContext,
   OFFSHORE_LOCATION_NAME,
   withOffshoreTimesheetLocation,
@@ -2568,7 +2569,32 @@ export const aggregateEmployeeAttendanceForHeaders = (
   const countedNightDates = new Set<string>();
   const countedHolidayDates = new Set<string>();
 
-  for (const line of lines) {
+  const lineRank = (line: TimesheetLine, header: TimesheetHeader) => {
+    const offshore = isManualOffshoreLine(line)
+      || isOffshoreTimesheetContext(header.locationName, header.workCenterName);
+    const booked = timesheetLineHasBookedHours(line) || Number(line.offshoreAllowanceHours || 0) > 0.001;
+    if (offshore && booked) return 3;
+    if (booked) return 2;
+    return 1;
+  };
+  const countableLines = lines.filter((line) => {
+    if (!headerIds.has(line.headerId)) return false;
+    const header = headerById.get(line.headerId);
+    if (!header) return false;
+    const status = normalizeTimesheetStatus(header.status);
+    if (!isTimesheetCountableForPayroll(status)) return false;
+    if (options?.payrollReadyOnly && !payrollReadyHeaderStatuses.has(status)) return false;
+    return true;
+  }).sort((left, right) => {
+    const leftHeader = headerById.get(left.headerId)!;
+    const rightHeader = headerById.get(right.headerId)!;
+    const leftKey = `${canonicalTimesheetEmployeeKey(left)}::${leftHeader.timesheetDate || ''}`;
+    const rightKey = `${canonicalTimesheetEmployeeKey(right)}::${rightHeader.timesheetDate || ''}`;
+    if (leftKey !== rightKey) return leftKey < rightKey ? -1 : 1;
+    return lineRank(right, rightHeader) - lineRank(left, leftHeader);
+  });
+
+  for (const line of countableLines) {
     if (!headerIds.has(line.headerId)) continue;
     const header = headerById.get(line.headerId);
     if (!header) continue;

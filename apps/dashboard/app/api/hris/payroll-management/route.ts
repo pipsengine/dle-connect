@@ -121,12 +121,20 @@ const loadReviewRecordsForPeriod = async (period: string) => {
 
 const dailyRateDaysWorked = (record: {
   timesheetDaysWorked?: number | string | null;
+  timesheetWeekdayDays?: number | string | null;
+  timesheetSaturdayDays?: number | string | null;
+  timesheetSundayDays?: number | string | null;
   daysWorked?: number | string | null;
+  grossPay?: number | string | null;
 }) => {
-  const raw = record?.timesheetDaysWorked ?? record?.daysWorked;
-  if (raw == null || raw === '') return 0;
-  const days = Number(raw);
-  return Number.isFinite(days) ? days : 0;
+  const gross = Number(record?.grossPay || 0);
+  if (Number.isFinite(gross) && gross > 0) return 1;
+  const days = Number(record?.timesheetWeekdayDays || 0)
+    + Number(record?.timesheetSaturdayDays || 0)
+    + Number(record?.timesheetSundayDays || 0)
+    + Number(record?.timesheetDaysWorked || 0)
+    + Number(record?.daysWorked || 0);
+  return days > 0 ? days : 0;
 };
 
 const employeeWorkedInPeriod = (record: {

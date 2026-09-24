@@ -237,10 +237,15 @@ const extractSheetRow = (sheetXml: string, rowNumber: number) => {
   return match?.[0] || '';
 };
 
-const patchTableXml = (tableXml: string, ref: string, autoFilterRef: string) =>
-  tableXml
+const patchTableXml = (tableXml: string, ref: string, autoFilterRef: string) => {
+  let next = tableXml
     .replace(/(<table\b[^>]*\bref=")[^"]+(")/, `$1${ref}$2`)
     .replace(/(<autoFilter ref=")[^"]+(")/, `$1${autoFilterRef}$2`);
+  if (!/\btotalsRowCount=/.test(next)) {
+    next = next.replace(/<table\b/, '<table totalsRowCount="1"');
+  }
+  return next;
+};
 
 const sumDetailRows = (rows: DetailRow[]) => ({
   count: rows.length,

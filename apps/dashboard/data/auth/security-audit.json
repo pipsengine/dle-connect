@@ -1,5 +1,69 @@
 [
   {
+    "id": "sec-1790274119708-7198b648",
+    "at": "2026-09-24T18:21:59.708Z",
+    "user": "P0146",
+    "action": "Login",
+    "ipAddress": "192.168.5.227:59268",
+    "device": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/153.0.0.0 Safari/537.36",
+    "performedBy": "P0146"
+  },
+  {
+    "id": "sec-1790273770580-fd813758",
+    "at": "2026-09-24T18:16:10.580Z",
+    "user": "C2477",
+    "action": "Failed login",
+    "ipAddress": "129.18.144.130",
+    "device": "Mozilla/5.0 (Linux; U; Android 14; TECNO KL4 Build/UP1A.231005.007; wv) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/152.0.7977.87 Mobile Safari/537.36 OPR/99.6.2254.2363",
+    "performedBy": "System",
+    "newValue": "Failed attempts: 1"
+  },
+  {
+    "id": "sec-1790273715814-6d926409",
+    "at": "2026-09-24T18:15:15.814Z",
+    "user": "C2290",
+    "action": "Login",
+    "ipAddress": "129.18.183.234:50848",
+    "device": "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/153.0.0.0 Mobile Safari/537.36",
+    "performedBy": "C2290"
+  },
+  {
+    "id": "sec-1790271839296-8103901d",
+    "at": "2026-09-24T17:43:59.296Z",
+    "user": "P0413",
+    "action": "Login",
+    "ipAddress": "102.89.75.91:5567",
+    "device": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/153.0.0.0 Safari/537.36",
+    "performedBy": "P0413"
+  },
+  {
+    "id": "sec-1790271612644-d66bed00",
+    "at": "2026-09-24T17:40:12.644Z",
+    "user": "P0146",
+    "action": "Login",
+    "ipAddress": "192.168.5.227:49212",
+    "device": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/153.0.0.0 Safari/537.36",
+    "performedBy": "P0146"
+  },
+  {
+    "id": "sec-1790271480919-33309284",
+    "at": "2026-09-24T17:38:00.919Z",
+    "user": "P0146",
+    "action": "Logout",
+    "ipAddress": "192.168.5.227:49212",
+    "device": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/153.0.0.0 Safari/537.36",
+    "performedBy": "P0146"
+  },
+  {
+    "id": "sec-1790270700135-c2d9b1d9",
+    "at": "2026-09-24T17:25:00.135Z",
+    "user": "P0146",
+    "action": "Login",
+    "ipAddress": "192.168.5.227:51336",
+    "device": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/153.0.0.0 Safari/537.36",
+    "performedBy": "P0146"
+  },
+  {
     "id": "sec-1790270218111-7f8af7b0",
     "at": "2026-09-24T17:16:58.111Z",
     "user": "IT0130",
