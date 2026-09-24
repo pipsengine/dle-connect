@@ -1,6 +1,6 @@
 import { calculateContractDayRateEarnings } from '@/lib/payroll-earnings-engine';
 import { NIGHT_INCONVENIENCE_ALLOWANCE_AMOUNT } from '@/lib/timesheet-entry-shared';
-import { hasBiometricClockIn, isNightTimesheetBooking, isTimesheetPaidLeaveLine, timesheetDayRulesForDate } from '@/lib/timesheet-entry-shared';
+import { hasBiometricClockIn, isNightTimesheetBooking, isTimesheetPaidLeaveLine, timesheetDayRulesForDate, weekdayOvertimeHoursFromLine } from '@/lib/timesheet-entry-shared';
 import { canonicalTimesheetEmployeeKey, lookupPayrollTimesheetHours, type PayrollTimesheetHoursEntry } from '@/lib/timesheet-entry-store';
 import { bookedTimesheetHours } from '@/lib/timesheet-report-metrics';
 import {
@@ -31,6 +31,7 @@ type AttendanceSourceRow = {
   usedHours?: number;
   productiveHours: number;
   totalHours: number;
+  offshoreAllowanceHours?: number;
   dayWorked?: number;
   labourRateNgn?: number;
   clockIn?: string | null;
@@ -203,12 +204,13 @@ export const buildPayrollAttendanceSheet = (input: {
     if (paidLeave && dayRules.kind === 'Weekday') {
       current.paidLeaveDates.add(date);
       current.weekDayDates.add(date);
-    } else if (payable && dayRules.kind === 'Weekday' && !night) {
+    } else if (payable && dayRules.kind === 'Weekday') {
       current.weekDayDates.add(date);
-      const overtimeHours = Math.max(0, round2(productiveHours - dayRules.standardProductiveHours));
+      const overtimeHours = weekdayOvertimeHoursFromLine({
+        usedHours: row.usedHours,
+        offshoreAllowanceHours: row.offshoreAllowanceHours,
+      }, date, holidays);
       current.weekdayOvertimeHours = round2(current.weekdayOvertimeHours + overtimeHours);
-    } else if (payable && dayRules.kind === 'Weekday' && night) {
-      current.weekDayDates.add(date);
     }
 
     if (night && (payable || workedHours > 0 || dayRules.kind === 'Sunday')) {

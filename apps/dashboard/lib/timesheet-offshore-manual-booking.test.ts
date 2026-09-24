@@ -5,6 +5,8 @@ import {
   isOffshoreLocationName,
   isOffshoreTimesheetContext,
   isTimesheetAbsentLine,
+  isInactiveTimesheetEmployeeStatus,
+  stripMisplacedYardOffshoreStamp,
   isPaperAttendanceLine,
   preserveManualTimesheetBookings,
   markLineAsManualOffshore,
@@ -292,5 +294,33 @@ const offshoreValidated = validateTimesheetLine(
 );
 assert.equal(offshoreValidated.validationStatus, 'Valid', 'standard 4h offshore OT does not need Overtime Management');
 assert.equal(offshoreValidated.usedHours, 12);
+
+const bookedWithoutClock = {
+  clockIn: null,
+  usedHours: 8,
+  totalHours: 9,
+  projectAllocations: [{ projectCode: 'DL2424', hours: 8 }],
+};
+assert.equal(isTimesheetAbsentLine(bookedWithoutClock), false, 'saved hours stay present without a clock');
+assert.equal(canBookTimesheetHoursWithoutClock(bookedWithoutClock, 'Welding', 'Day (07:00-16:00)', 'IDI_ORO'), true);
+assert.equal(isInactiveTimesheetEmployeeStatus('Suspended'), true);
+assert.equal(isInactiveTimesheetEmployeeStatus('Active'), false);
+
+const yardStamped = stripMisplacedYardOffshoreStamp({
+  ...paperPresent,
+  remarks: `${PAPER_ATTENDANCE_REMARKS_MARKER} | ${OFFSHORE_REMARKS_MARKER}`,
+  offshoreAllowanceHours: 4,
+  projectAllocations: [{
+    projectId: 'DL2424',
+    projectCode: 'DL2424',
+    projectName: 'DL2424',
+    hours: 12,
+    remarks: '8h project + 4h paid overtime (WEEKDAYOVT).',
+  }],
+});
+assert.equal(yardStamped.offshoreAllowanceHours, 0);
+assert.equal(String(yardStamped.remarks || '').includes(OFFSHORE_REMARKS_MARKER), false);
+assert.equal(yardStamped.usedHours, 8, 'false offshore overtime comes off the yard day');
+assert.equal(String(yardStamped.remarks || '').includes(PAPER_ATTENDANCE_REMARKS_MARKER), true);
 
 console.log('timesheet-offshore-manual-booking.test.ts: ok');

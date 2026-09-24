@@ -55,6 +55,7 @@ const night = buildPayrollAttendanceSheet({
   rows: [row({ lineId: 'night', shiftLabel: '02 (Night)', timesheetDate: '2026-09-21', dayWorked: 1 })],
 });
 assert.equal(night[0].weekDaysWorked, 1, 'night shift on Monday is still a weekday worked');
+assert.equal(night[0].weekdayOvertimeHours, 0, 'an 8-hour night weekday has no weekday overtime');
 assert.equal(night[0].nightWorkedDays, 1);
 assert.equal(night[0].nightWorkedHours, 8);
 assert.equal(night[0].totalDaysWorked, 1);
@@ -62,6 +63,16 @@ assert.equal(night[0].totalDaysWorked, 1);
 const nightFromHeaderId = buildPayrollAttendanceSheet({
   rows: [row({ lineId: 'night-id', shiftLabel: 'Unassigned', headerId: 'hdr-2026-09-21-fitting-night', timesheetDate: '2026-09-21', dayWorked: 1 })],
 });
+const nightOvertime = buildPayrollAttendanceSheet({
+  rows: [row({ lineId: 'night-ot', shiftLabel: '02 (Night)', timesheetDate: '2026-09-21', usedHours: 10, productiveHours: 10, totalHours: 10, dayWorked: 1 })],
+});
+assert.equal(nightOvertime[0].weekdayOvertimeHours, 2, 'night weekday hours above 8 stay in the overtime column');
+
+const offshoreAllowance = buildPayrollAttendanceSheet({
+  rows: [row({ lineId: 'offshore-ot', timesheetDate: '2026-09-21', usedHours: 8, productiveHours: 8, totalHours: 8, offshoreAllowanceHours: 4, dayWorked: 1 })],
+});
+assert.equal(offshoreAllowance[0].weekdayOvertimeHours, 4, 'offshore allowance hours stay in the overtime column');
+
 assert.equal(nightFromHeaderId[0].nightWorkedDays, 1, 'night header id fills NIGHT WORKED (DAYS)');
 assert.equal(nightFromHeaderId[0].nightWorkedHours, 8);
 

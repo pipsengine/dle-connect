@@ -80,6 +80,16 @@ assert.equal(utcTimesheetWeekday('2026-09-06'), 0, 'Sunday');
 assert.deepEqual(weekendHoursFromTimesheetLine({ usedHours: 8, totalHours: 8 }, '2026-09-04'), { saturdayHours: 0, sundayHours: 0 });
 assert.deepEqual(weekendHoursFromTimesheetLine({ usedHours: 8, totalHours: 8 }, '2026-09-05'), { saturdayHours: 8, sundayHours: 0 });
 assert.deepEqual(weekendHoursFromTimesheetLine({ usedHours: 6, totalHours: 6 }, '2026-09-06'), { saturdayHours: 0, sundayHours: 6 });
+assert.deepEqual(
+  weekendHoursFromTimesheetLine({ usedHours: 0, totalHours: 0, attendanceDuration: 10.8 }, '2026-08-16'),
+  { saturdayHours: 0, sundayHours: 10.8 },
+  'clocked Sunday with no project allocation still reaches Sunday pay',
+);
+assert.deepEqual(
+  weekendHoursFromTimesheetLine({ usedHours: 8, totalHours: 9, attendanceDuration: 11.2 }, '2026-09-06'),
+  { saturdayHours: 0, sundayHours: 9 },
+  'allocated Sunday hours stay ahead of the raw clock span',
+);
 
 assert.equal(timesheetDayRulesForDate(eidMaulud, [eidMaulud]).kind, 'PublicHoliday');
 assert.equal(weekdayOvertimeHoursFromLine({ usedHours: 10 }, eidMaulud, [eidMaulud]), 0, 'PH hours are not WEEKDAYOVT');

@@ -20,7 +20,7 @@ import {
   type BankScheduleStaffPack,
 } from '@/lib/payroll-bank-schedule-packs';
 import { buildPayrollAttendanceSheet, type PayrollAttendanceSheetRow } from '@/lib/timesheet-payroll-attendance-sheet';
-import { isTimesheetCountableForPayroll, readTimesheetData } from '@/lib/timesheet-entry-store';
+import { buildTimesheetHoursMapForPayrollPeriod, isTimesheetCountableForPayroll, readTimesheetData } from '@/lib/timesheet-entry-store';
 import { getPayrollPublicHolidayDates } from '@/lib/nigeria-public-holidays';
 import { NIGHT_INCONVENIENCE_ALLOWANCE_AMOUNT } from '@/lib/timesheet-entry-shared';
 import { resolvePayrollCompany, type PayrollCompany } from '@/lib/payroll-schedule-scope';
@@ -1402,6 +1402,14 @@ const DAYRATE_DLPC_COLUMNS = [
   'Amount Payable',
 ] as const;
 
+/** Hours shown beside Wkd Ovt Amt. Sheet hours win; if pay exists with no hours, derive the hours from that pay. */
+const weekdayOvertimeHoursMatchingPay = (sheetHours: number, amount: number, dailyRate: number) => {
+  const hours = Number(sheetHours || 0);
+  if (hours > 0) return Math.round(hours * 10) / 10;
+  if (amount > 0 && dailyRate > 0) return Math.round((amount / ((dailyRate / 8) * 1.5)) * 10) / 10;
+  return 0;
+};
+
 const buildDayrateDetailSheet = (
   records: Enriched[],
   attendance: Map<string, PayrollAttendanceSheetRow>,
@@ -1427,7 +1435,7 @@ const buildDayrateDetailSheet = (
     const saturdayDays = Number(record.timesheetSaturdayDays ?? att?.saturdayDaysWorked ?? 0);
     const sundayDays = Number(record.timesheetSundayDays ?? att?.sundayDaysWorked ?? 0);
     const totalDays = Number(record.timesheetTotalDaysWorked ?? (weekDays + saturdayDays + sundayDays));
-    const weekdayOvtHrs = Number(att?.weekdayOvertimeHours ?? 0);
+    const sheetOvtHrs = Number(att?.weekdayOvertimeHours ?? 0);
     const satHrs = Number(att?.saturdayHours ?? 0);
     const sunHrs = Number(att?.sundayHours ?? 0);
     const phHrs = Number(att?.publicHolidayHours ?? 0);
@@ -1438,7 +1446,8 @@ const buildDayrateDetailSheet = (
       || roundMoney(weekDays * dailyRate);
     const wkdOvtAmt = lineAmount(record.earningLines, /WEEKDAYOVT/i)
       || Number(att?.weekdayOvertimeTotal || 0)
-      || (dailyRate > 0 ? roundMoney((dailyRate / 8) * 1.5 * weekdayOvtHrs) : 0);
+      || (dailyRate > 0 ? roundMoney((dailyRate / 8) * 1.5 * sheetOvtHrs) : 0);
+    const weekdayOvtHrs = weekdayOvertimeHoursMatchingPay(sheetOvtHrs, wkdOvtAmt, dailyRate);
     const satAmt = lineAmount(record.earningLines, /SATEARN/i)
       || Number(att?.saturdayTotal || 0)
       || (dailyRate > 0 ? roundMoney((dailyRate / 8) * 1.5 * satHrs) : 0);
@@ -1545,7 +1554,7 @@ const buildDayrateDetailSheet = (
           const saturdayDays = Number(record.timesheetSaturdayDays ?? att?.saturdayDaysWorked ?? 0);
           const sundayDays = Number(record.timesheetSundayDays ?? att?.sundayDaysWorked ?? 0);
           const totalDays = Number(record.timesheetTotalDaysWorked ?? (weekDays + saturdayDays + sundayDays));
-          const weekdayOvtHrs = Number(att?.weekdayOvertimeHours ?? 0);
+          const sheetOvtHrs = Number(att?.weekdayOvertimeHours ?? 0);
           const satHrs = Number(att?.saturdayHours ?? 0);
           const sunHrs = Number(att?.sundayHours ?? 0);
           const phHrs = Number(att?.publicHolidayHours ?? 0);
@@ -1555,7 +1564,8 @@ const buildDayrateDetailSheet = (
             || roundMoney(weekDays * dailyRate);
           const wkdOvtAmt = lineAmount(record.earningLines, /WEEKDAYOVT/i)
             || Number(att?.weekdayOvertimeTotal || 0)
-            || (dailyRate > 0 ? roundMoney((dailyRate / 8) * 1.5 * weekdayOvtHrs) : 0);
+            || (dailyRate > 0 ? roundMoney((dailyRate / 8) * 1.5 * sheetOvtHrs) : 0);
+          const weekdayOvtHrs = weekdayOvertimeHoursMatchingPay(sheetOvtHrs, wkdOvtAmt, dailyRate);
           const satAmt = lineAmount(record.earningLines, /SATEARN/i)
             || Number(att?.saturdayTotal || 0)
             || (dailyRate > 0 ? roundMoney((dailyRate / 8) * 1.5 * satHrs) : 0);
@@ -1657,7 +1667,7 @@ const buildDayrateDetailSheet = (
           const saturdayDays = Number(record.timesheetSaturdayDays ?? att?.saturdayDaysWorked ?? 0);
           const sundayDays = Number(record.timesheetSundayDays ?? att?.sundayDaysWorked ?? 0);
           const totalDays = Number(record.timesheetTotalDaysWorked ?? (weekDays + saturdayDays + sundayDays));
-          const weekdayOvtHrs = Number(att?.weekdayOvertimeHours ?? 0);
+          const sheetOvtHrs = Number(att?.weekdayOvertimeHours ?? 0);
           const satHrs = Number(att?.saturdayHours ?? 0);
           const sunHrs = Number(att?.sundayHours ?? 0);
           const phHrs = Number(att?.publicHolidayHours ?? 0);
@@ -1667,7 +1677,8 @@ const buildDayrateDetailSheet = (
             || roundMoney(weekDays * dailyRate);
           const wkdOvtAmt = lineAmount(record.earningLines, /WEEKDAYOVT/i)
             || Number(att?.weekdayOvertimeTotal || 0)
-            || (dailyRate > 0 ? roundMoney((dailyRate / 8) * 1.5 * weekdayOvtHrs) : 0);
+            || (dailyRate > 0 ? roundMoney((dailyRate / 8) * 1.5 * sheetOvtHrs) : 0);
+          const weekdayOvtHrs = weekdayOvertimeHoursMatchingPay(sheetOvtHrs, wkdOvtAmt, dailyRate);
           const satAmt = lineAmount(record.earningLines, /SATEARN/i)
             || Number(att?.saturdayTotal || 0)
             || (dailyRate > 0 ? roundMoney((dailyRate / 8) * 1.5 * satHrs) : 0);
@@ -1789,13 +1800,15 @@ export const loadDayrateAttendanceByEmpCode = async (period: string) => {
           usedHours: Number(line.usedHours || 0),
           productiveHours: Number(line.usedHours || line.totalHours || 0),
           totalHours: Number(line.totalHours || 0),
+          offshoreAllowanceHours: Number(line.offshoreAllowanceHours || 0),
           clockIn: line.clockIn,
           dayWorked: undefined as number | undefined,
           labourRateNgn: Number((line as { labourRateNgn?: number }).labourRateNgn || 0) || undefined,
         };
       });
     const holidayDates = await getPayrollPublicHolidayDates().catch(() => [] as string[]);
-    const sheet = buildPayrollAttendanceSheet({ rows: attendanceRows, holidayDates, canViewCosts: true });
+    const payrollHours = await buildTimesheetHoursMapForPayrollPeriod(period).catch(() => undefined);
+    const sheet = buildPayrollAttendanceSheet({ rows: attendanceRows, holidayDates, canViewCosts: true, payrollHoursByKey: payrollHours });
     const map = new Map<string, PayrollAttendanceSheetRow>();
     for (const row of sheet) {
       map.set(upper(row.empCode), row);

@@ -1232,6 +1232,9 @@ export const isProtectedTimesheetBooking = (line: {
   || isManualOffshoreLine(line)
   || isTimesheetPaidLeaveLine(line);
 
+export const isInactiveTimesheetEmployeeStatus = (value: unknown) =>
+  /exited|suspended|terminated|inactive|disabled|resigned|retired|deleted|deceased/.test(String(value || '').trim().toLowerCase());
+
 export const isTimesheetAbsentLine = (line: {
   clockIn?: string | null;
   attendanceMode?: 'Biometric' | 'Manual' | null;
@@ -1243,6 +1246,7 @@ export const isTimesheetAbsentLine = (line: {
   idleAllocations?: Array<{ reasonName?: string; hours?: number }> | null;
 }) =>
   !String(line.clockIn || '').trim()
+  && !timesheetLineHasBookedHours(line)
   && !isManualOffshoreLine(line)
   && !isPaperAttendanceLine(line)
   && !isTimesheetPaidLeaveLine(line);
@@ -1263,6 +1267,7 @@ export const canBookTimesheetHoursWithoutClock = (
   shiftLabel?: string | null,
   locationName?: string | null,
 ) => {
+  if (timesheetLineHasBookedHours(line)) return true;
   if (resolveTimesheetShift(shiftLabel).kind === 'Night') return true;
   if (isManualOffshoreLine(line) || isPaperAttendanceLine(line) || isTimesheetPaidLeaveLine(line)) return true;
   return isOffshoreTimesheetContext(locationName, workCenterName);
@@ -1273,8 +1278,11 @@ export const utcTimesheetWeekday = (timesheetDate: string) => {
   return /^\d{4}-\d{2}-\d{2}$/.test(dateKey) ? new Date(`${dateKey}T12:00:00Z`).getUTCDay() : -1;
 };
 
-const bookedLineHours = (line: { usedHours?: number | null; totalHours?: number | null }) =>
-  round1(Math.max(Number(line.usedHours || 0), Number(line.totalHours || 0), 0));
+const bookedLineHours = (line: { usedHours?: number | null; totalHours?: number | null; attendanceDuration?: number | null }) => {
+  const allocated = Math.max(Number(line.usedHours || 0), Number(line.totalHours || 0), 0);
+  if (allocated > 0) return round1(allocated);
+  return round1(Math.max(0, Number(line.attendanceDuration || 0)));
+};
 
 /** Weekday OT hours that payroll WEEKDAYOVT should pay from a timesheet line. */
 export const weekdayOvertimeHoursFromLine = (
@@ -1291,7 +1299,7 @@ export const weekdayOvertimeHoursFromLine = (
 
 /** Saturday / Sunday / public-holiday hours. PH beats weekend (PUBHOL 2×, not SATEARN). */
 export const premiumHoursFromTimesheetLine = (
-  line: { usedHours?: number | null; totalHours?: number | null },
+  line: { usedHours?: number | null; totalHours?: number | null; attendanceDuration?: number | null },
   timesheetDate: string,
   holidayDates: string[] = [],
 ): { saturdayHours: number; sundayHours: number; publicHolidayHours: number } => {
@@ -1307,7 +1315,7 @@ export const premiumHoursFromTimesheetLine = (
 
 /** Saturday / Sunday hours for SATEARN / SUNDAYEARN — not weekday day-rate or meal. */
 export const weekendHoursFromTimesheetLine = (
-  line: { usedHours?: number | null; totalHours?: number | null },
+  line: { usedHours?: number | null; totalHours?: number | null; attendanceDuration?: number | null },
   timesheetDate: string,
   holidayDates: string[] = [],
 ): { saturdayHours: number; sundayHours: number } => {
@@ -1697,6 +1705,41 @@ export const ensureOffshorePaidOvertime = (
       : [String(marked.remarks || '').trim(), OFFSHORE_REMARKS_MARKER].filter(Boolean).join(' | '),
     validationStatus: 'Valid',
     validationMessage: `Offshore: ${OFFSHORE_PAYROLL_HOURS}h project + ${OFFSHORE_ALLOWANCE_HOURS}h paid overtime + ${OFFSHORE_BREAK_HOURS}h break.`,
+  });
+};
+
+const stripOffshoreMarker = (remarks: string | null | undefined) =>
+  String(remarks || '')
+    .replace(/\s*\|\s*OFFSHORE_MANUAL/gi, '')
+    .replace(/OFFSHORE_MANUAL\s*\|\s*/gi, '')
+    .replace(/OFFSHORE_MANUAL/gi, '')
+    .trim() || null;
+
+/** Yard row stamped as offshore when the person was not mobilized that day. Keeps the booked day. */
+export const stripMisplacedYardOffshoreStamp = (line: TimesheetLine): TimesheetLine => {
+  const allowance = Number(line.offshoreAllowanceHours || 0);
+  if (!isManualOffshoreLine(line) && allowance <= 0.001) return line;
+  const projectAllocations = (line.projectAllocations || []).map((item) => {
+    const paidOt = /paid overtime/i.test(String(item.remarks || ''));
+    const hours = Number(item.hours || 0);
+    if (!paidOt && hours <= STANDARD_TIMESHEET_HOURS + 0.001) return item;
+    return {
+      ...item,
+      hours: paidOt ? STANDARD_TIMESHEET_HOURS : hours,
+      remarks: paidOt ? 'Paper book: present at work, clock registered late.' : item.remarks,
+    };
+  });
+  const validationMessage = String(line.validationMessage || '').startsWith('Offshore:')
+    ? (String(line.remarks || '').includes(PAPER_ATTENDANCE_REMARKS_MARKER)
+      ? 'Paper attendance: 8h project + 1h break. No biometric punch invented.'
+      : 'Booked hours retained. Offshore stamp removed because this day is not a mobilization.')
+    : line.validationMessage;
+  return reconcileTimesheetLineHours({
+    ...line,
+    projectAllocations,
+    remarks: stripOffshoreMarker(line.remarks),
+    offshoreAllowanceHours: 0,
+    validationMessage,
   });
 };
 

@@ -71,7 +71,7 @@ import {
   resolveOvertimeBookingOptions,
 } from '@/lib/timesheet-overtime-config';
 import { applyTimesheetLineDefaults, ensureClockedLinesHaveProjectAllocation } from '@/lib/timesheet-line-defaults';
-import { normalizeIdleAllocations, normalizeProjectAllocations, reconcileTimesheetLineHours, resolvePrimaryProjectCode, validateTimesheetLinesForPersist, TIMESHEET_SHIFT_LABELS, resolveTimesheetShift, timesheetHeaderMatchesShift, buildTimesheetHeaderId, timesheetWorkCentersMatch, isOffshoreWorkCenterName, isOffshoreLocationName, isOffshoreTimesheetContext, isManualOffshoreLine, isTimesheetAbsentLine, isTimesheetInApprovalCapture, applyNightPaperClock, timesheetLineHasBookedHours, buildManualOffshoreLine, buildRosterTimesheetLine, projectCodeFromOffshoreWorkCenter, resolveOffshoreProjectCode, resolveOffshoreSheetWorkCenter, timesheetOffshoreWorkCentersMatch, MIXED_TIMESHEET_WORK_CENTER, OFFSHORE_LOCATION_NAME, DEFAULT_TIMESHEET_SHIFT_LABEL, supervisorTimesheetMessage, dedupeTimesheetLinesByEmployee, isIdleTimeProjectCode, upsertMatrixProjectHours, ensureOffshorePaidOvertime, canBookTimesheetHoursWithoutClock, withOffshoreLocationName, withOffshoreTimesheetLocation, type TimesheetDayContext } from '@/lib/timesheet-entry-shared';
+import { normalizeIdleAllocations, normalizeProjectAllocations, reconcileTimesheetLineHours, resolvePrimaryProjectCode, validateTimesheetLinesForPersist, TIMESHEET_SHIFT_LABELS, resolveTimesheetShift, timesheetHeaderMatchesShift, buildTimesheetHeaderId, timesheetWorkCentersMatch, isOffshoreWorkCenterName, isOffshoreLocationName, isOffshoreTimesheetContext, isManualOffshoreLine, isTimesheetAbsentLine, isInactiveTimesheetEmployeeStatus, isTimesheetInApprovalCapture, applyNightPaperClock, timesheetLineHasBookedHours, buildManualOffshoreLine, buildRosterTimesheetLine, projectCodeFromOffshoreWorkCenter, resolveOffshoreProjectCode, resolveOffshoreSheetWorkCenter, timesheetOffshoreWorkCentersMatch, MIXED_TIMESHEET_WORK_CENTER, OFFSHORE_LOCATION_NAME, DEFAULT_TIMESHEET_SHIFT_LABEL, supervisorTimesheetMessage, dedupeTimesheetLinesByEmployee, isIdleTimeProjectCode, upsertMatrixProjectHours, ensureOffshorePaidOvertime, canBookTimesheetHoursWithoutClock, withOffshoreLocationName, withOffshoreTimesheetLocation, type TimesheetDayContext } from '@/lib/timesheet-entry-shared';
 import { displaceUncommittedBookingsOnOtherDrafts, employeeAlreadyCommittedOnOtherTimesheet, employeeIsOtherTimesheetSupervisor, findSameDayBookingConflicts, releaseLinesAlreadyBookedElsewhere, type TimesheetAlreadyBookedSkip } from '@/lib/timesheet-booking-clash';
 import { assertTimesheetRecaptureAllowed, reopenTimesheetForRecapture } from '@/lib/timesheet-recapture';
 import { submitTimesheetForApproval } from '@/lib/timesheet-submit';
@@ -739,7 +739,7 @@ const resolveDashboardRoot = () => {
 const readPublicHolidayDates = async (): Promise<string[]> => getPayrollPublicHolidayDates();
 
 const activeText = (value: unknown) => clean(value).toLowerCase();
-const isInactiveText = (value: unknown) => /exited|suspended|terminated|inactive|disabled|resigned|retired|deleted/.test(activeText(value));
+const isInactiveText = (value: unknown) => isInactiveTimesheetEmployeeStatus(value);
 
 const readActiveAuthProjectManagers = async (): Promise<ProjectManagerOption[]> => {
   try {
@@ -822,26 +822,9 @@ const assignedEmployeesForSupervisor = async (supervisor: string, employees: Sup
     const byEmployeeCode = new Map(employees.map((employee) => [clean(employee.employeeCode).toLowerCase(), employee]));
     return assignments
       .filter((assignment) => assignment.employeeCode && assignment.matchedStatus !== 'Unresolved')
-      .map((assignment) => {
+      .flatMap((assignment) => {
         const employee = byEmployeeCode.get(clean(assignment.employeeCode).toLowerCase());
-        return employee || {
-          employeeId: assignment.employeeCode || '',
-          employeeCode: assignment.employeeCode || '',
-          sourceEmployeeId: assignment.employeeCode || '',
-          fullName: assignment.employeeName || assignment.employeeCode || '',
-          jobTitle: assignment.tradeRole || 'Assigned Crew',
-          department: assignment.assignmentGroup || 'Operations',
-          division: assignment.assignmentGroup || '',
-          businessUnit: assignment.assignmentGroup || '',
-          costCenter: '',
-          projectSite: '',
-          workCenter: '',
-          workLocation: '',
-          officeLocation: '',
-          location: '',
-          managerName: supervisor,
-          status: 'Active',
-        } as SupervisorSourceEmployee;
+        return employee && !isInactiveText(employee.status) ? [employee] : [];
       });
   } catch (error) {
     console.warn('Timesheet supervisor assignment list could not be loaded; falling back to reporting manager data:', error);
@@ -946,7 +929,7 @@ const buildPayload = async (
   ]);
   const { headers, lines: allLines } = timesheetData;
   const employees = payrollEmployeeSource.employees;
-  const activeEmployees = employees.filter((employee) => !['Resigned', 'Terminated', 'Retired'].includes(employee.status));
+  const activeEmployees = employees.filter((employee) => !isInactiveText(employee.status));
   const supervisorIndex = buildSupervisorIndex(activeEmployees);
   const projectManagers = await buildProjectManagerOptions(activeEmployees);
 
@@ -1101,26 +1084,9 @@ const buildPayload = async (
   const employeesByCode = new Map(activeEmployees.map((employee) => [clean(employee.employeeCode).toLowerCase(), employee]));
   const assignedFromGlobalRows = assignmentRows
     .filter((assignment) => assignmentMatchesSupervisor(assignment, targetSupervisorCode) && assignment.employeeCode && assignment.matchedStatus !== 'Unresolved')
-    .map((assignment) => {
+    .flatMap((assignment) => {
       const employee = employeesByCode.get(clean(assignment.employeeCode).toLowerCase());
-      return employee || {
-        employeeId: assignment.employeeCode || '',
-        employeeCode: assignment.employeeCode || '',
-        sourceEmployeeId: assignment.employeeCode || '',
-        fullName: assignment.employeeName || assignment.employeeCode || '',
-        jobTitle: assignment.tradeRole || 'Assigned Crew',
-        department: assignment.assignmentGroup || 'Operations',
-        division: assignment.assignmentGroup || '',
-        businessUnit: assignment.assignmentGroup || '',
-        costCenter: '',
-        projectSite: '',
-        workCenter: '',
-        workLocation: '',
-        officeLocation: '',
-        location: '',
-        managerName: targetSupervisor,
-        status: 'Active',
-      };
+      return employee ? [employee] : [];
     });
   const assignedSupervisorEmployees = (await assignedEmployeesForSupervisor(targetSupervisor, activeEmployees))
     .concat(assignedFromGlobalRows)
@@ -1298,17 +1264,18 @@ const buildPayload = async (
     managerName: targetSupervisor,
     status: clean(employee.status) || 'Active',
   });
-  const mobilizedOffshoreEmployees = sheetMobilizations.map((item) => {
+  const mobilizedOffshoreEmployees = sheetMobilizations.flatMap((item) => {
     const employee = employeesByCode.get(item.employeeCode.toLowerCase());
-    return toOffshoreRosterEmployee({
-      employeeId: employee?.employeeId || item.employeeCode,
+    if (!employee || isInactiveText(employee.status)) return [];
+    return [toOffshoreRosterEmployee({
+      employeeId: employee.employeeId || item.employeeCode,
       employeeCode: item.employeeCode,
-      fullName: employee?.fullName || item.employeeName,
-      jobTitle: employee?.jobTitle,
-      department: employee?.department || item.projectCode,
-      status: employee?.status,
+      fullName: employee.fullName || item.employeeName,
+      jobTitle: employee.jobTitle,
+      department: employee.department || item.projectCode,
+      status: employee.status,
       workCenter: item.projectCode || projectCodeFromOffshoreWorkCenter(item.workCenterName),
-    });
+    })];
   }).sort((a, b) => a.fullName.localeCompare(b.fullName));
   const offshoreRosterEmployees = resolveOffshoreTimesheetRoster(mobilizedOffshoreEmployees);
   const selectedSupervisorEmployees = isOffshoreSheet ? offshoreRosterEmployees : homeSupervisorEmployees;
@@ -1512,6 +1479,19 @@ const buildPayload = async (
       return workCenterName ? { ...line, workCenterName } : line;
     });
     lines = dedupeTimesheetLinesByEmployee(lines).lines;
+    const withoutInactiveBlanks = lines.filter((line) => {
+      const empty = !String(line.clockIn || '').trim()
+        && Number(line.attendanceDuration || 0) <= 0.001
+        && !timesheetLineHasBookedHours(line)
+        && Number(line.offshoreAllowanceHours || 0) <= 0.001;
+      if (!empty) return true;
+      const keys = [line.employeeNo, line.employeeId].map((value) => clean(value).toLowerCase()).filter(Boolean);
+      return keys.some((key) => employeesByCode.has(key));
+    });
+    if (withoutInactiveBlanks.length !== lines.length) {
+      lines = withoutInactiveBlanks;
+      persistRoster = true;
+    }
     lines = overlayMissingTimesheetClocks(
       lines,
       allLines.filter((line) => {
