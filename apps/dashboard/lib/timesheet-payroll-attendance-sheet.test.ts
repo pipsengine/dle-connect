@@ -4,6 +4,7 @@
  */
 import assert from 'node:assert/strict';
 import { buildPayrollAttendanceSheet } from './timesheet-payroll-attendance-sheet.ts';
+import { PAYROLL_ATTENDANCE_SHEET_COLUMNS } from './timesheet-payroll-attendance-sheet-shared.ts';
 import { timesheetDayRulesForDate } from './timesheet-entry-shared.ts';
 
 const row = (overrides: Record<string, unknown>) => ({
@@ -55,7 +56,57 @@ const night = buildPayrollAttendanceSheet({
 });
 assert.equal(night[0].weekDaysWorked, 1, 'night shift on Monday is still a weekday worked');
 assert.equal(night[0].nightWorkedDays, 1);
+assert.equal(night[0].nightWorkedHours, 8);
 assert.equal(night[0].totalDaysWorked, 1);
+
+const nightFromHeaderId = buildPayrollAttendanceSheet({
+  rows: [row({ lineId: 'night-id', shiftLabel: 'Unassigned', headerId: 'hdr-2026-09-21-fitting-night', timesheetDate: '2026-09-21', dayWorked: 1 })],
+});
+assert.equal(nightFromHeaderId[0].nightWorkedDays, 1, 'night header id fills NIGHT WORKED (DAYS)');
+assert.equal(nightFromHeaderId[0].nightWorkedHours, 8);
+
+const eidMaulud = buildPayrollAttendanceSheet({
+  holidayDates: ['2026-08-25'],
+  rows: [row({
+    lineId: 'ph',
+    timesheetDate: '2026-08-25',
+    usedHours: 8,
+    totalHours: 8,
+    productiveHours: 8,
+    attendanceHours: 8,
+    dayWorked: 1,
+  })],
+});
+assert.equal(eidMaulud[0].weekDaysWorked, 0, '25 Aug 2026 Id el Maulud is not a weekday');
+assert.equal(eidMaulud[0].publicHolidayHours, 8, 'PH booked hours go to TOTAL PUBLIC HOLIDAY (HRS)');
+assert.equal(eidMaulud[0].weekdayOvertimeHours, 0);
+
+const eidOverlay = buildPayrollAttendanceSheet({
+  holidayDates: ['2026-08-25'],
+  rows: [row({ lineId: 'ph-overlay', timesheetDate: '2026-08-25', employeeNo: 'C2001', employeeId: 'C2001', dayWorked: 1 })],
+  payrollHoursByKey: new Map([['C2001', {
+    daysWorked: 16,
+    bookedHours: 136,
+    weekdayDays: 16,
+    saturdayDays: 2,
+    sundayDays: 0,
+    saturdayHours: 16,
+    sundayHours: 0,
+    publicHolidayHours: 8,
+    nightDays: 3,
+    nightHours: 24,
+    weekdayOvertimeHours: 0,
+    employeeNo: 'C2001',
+  }]]),
+});
+assert.equal(eidOverlay[0].weekDaysWorked, 16);
+assert.equal(eidOverlay[0].publicHolidayHours, 8);
+assert.equal(eidOverlay[0].nightWorkedDays, 3);
+assert.equal(eidOverlay[0].nightWorkedHours, 24);
+
+const columns = PAYROLL_ATTENDANCE_SHEET_COLUMNS;
+assert.equal(columns.includes('NIGHT WORKED (DAYS)'), true);
+assert.equal(columns.includes('TOTAL NIGHT (HRS)'), true);
 
 const remarksOnly = buildPayrollAttendanceSheet({
   rows: [row({

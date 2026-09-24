@@ -16,6 +16,7 @@ import {
   readTimesheetPeriods,
   rebuildPayrollSnapshotForPeriod,
 } from '@/lib/timesheet-entry-store';
+import { getPayrollPublicHolidayDates } from '@/lib/nigeria-public-holidays';
 
 export type WorkforceVerifyStatus = 'Matched' | 'Variance' | 'Missing' | 'No Timesheet' | 'Not Daily Rate';
 
@@ -177,12 +178,13 @@ export async function readWorkforceOperationsAnalytics(options?: {
     await rebuildPayrollSnapshotForPeriod(periodId, options.actor || 'Workforce Operations Verify').catch(() => undefined);
   }
 
-  const [employeeSource, { headers, lines }, periods, payrollUpdates, liveHoursMap] = await Promise.all([
+  const [employeeSource, { headers, lines }, periods, payrollUpdates, liveHoursMap, holidayDates] = await Promise.all([
     readPayrollEmployees(),
     readTimesheetData(),
     readTimesheetPeriods(),
     readTimesheetPayrollUpdates(),
     buildTimesheetHoursMapForPayrollPeriod(periodToken),
+    getPayrollPublicHolidayDates().catch(() => [] as string[]),
   ]);
 
   const period = periods.find((item) => item.id === periodId) || periods[0];
@@ -197,10 +199,12 @@ export async function readWorkforceOperationsAnalytics(options?: {
   const periodTotals = aggregateEmployeeAttendanceForHeaders(headers, lines, {
     headerIds: countableHeaderIds,
     payrollReadyOnly: false,
+    holidayDates,
   });
   const payrollReadyTotals = aggregateEmployeeAttendanceForHeaders(headers, lines, {
     headerIds: countableHeaderIds,
     payrollReadyOnly: true,
+    holidayDates,
   });
 
   const employeeDirectory = employeeSource.employees;

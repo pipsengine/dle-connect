@@ -3,6 +3,7 @@ import { cookies } from 'next/headers';
 import { assertTimesheetEntryAndApprovalAccess } from '@/lib/access/timesheet-access';
 import { AUTH_COOKIE, verifySessionToken } from '@/lib/auth/session';
 import { permissionsForRequest } from '@/lib/auth/request-permissions';
+import { getPayrollPublicHolidayDates } from '@/lib/nigeria-public-holidays';
 import { getUiPermissions, hasAccTimesheetStageApprove, permissionsFromRequest, resolveAccessContext } from '@/lib/hris-access';
 import {
   aggregateEmployeeAttendanceForHeaders,
@@ -616,7 +617,11 @@ const processPayrollBatch = async (headerIds: string[], actor: string, post: boo
   const uniqueHeaderIds = Array.from(new Set(headerIds.filter(Boolean)));
   if (!uniqueHeaderIds.length) return { processed: 0 };
 
-  const [{ headers, lines }, periods] = await Promise.all([readTimesheetData(), readTimesheetPeriods()]);
+  const [{ headers, lines }, periods, holidayDates] = await Promise.all([
+    readTimesheetData(),
+    readTimesheetPeriods(),
+    getPayrollPublicHolidayDates().catch(() => [] as string[]),
+  ]);
   let updates = await readTimesheetPayrollUpdates();
   const touchedHeaders: TimesheetHeader[] = [];
 
@@ -644,6 +649,7 @@ const processPayrollBatch = async (headerIds: string[], actor: string, post: boo
     const totals = aggregateEmployeeAttendanceForHeaders(headers, lines, {
       headerIds: allPeriodHeaderIds,
       payrollReadyOnly: false,
+      holidayDates,
     });
 
     const period = resolvePeriod(periods, sampleHeader.timesheetDate);

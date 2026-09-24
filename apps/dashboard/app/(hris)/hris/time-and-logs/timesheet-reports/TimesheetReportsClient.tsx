@@ -858,11 +858,11 @@ export default function TimesheetReportsClient() {
         }
         downloadExcelFile({
           title: 'Payroll Attendance Sheet',
-          subtitle: `${from} to ${to} · ${sheetRows.length.toLocaleString()} employees · week days, leave, weekend/PH hours, OT, night & site`,
+          subtitle: `${from} to ${to} · ${sheetRows.length.toLocaleString()} employees · days and hours only`,
           sheetName: 'Attendance Sheet',
           fileName: `payroll-attendance-sheet-${from}-to-${to}.xls`,
           columns: [...PAYROLL_ATTENDANCE_SHEET_COLUMNS],
-          rows: payrollAttendanceSheetToExcelRows(sheetRows, canViewCosts),
+          rows: payrollAttendanceSheetToExcelRows(sheetRows),
         });
         setExportNotice(`Exported payroll attendance sheet for ${sheetRows.length.toLocaleString()} employees.`);
         return;
@@ -949,7 +949,7 @@ export default function TimesheetReportsClient() {
               subtitle: `${from} to ${to} · ${Number(exportPayload.payrollAttendanceSheetCount || 0).toLocaleString()} employees · unique calendar dates only`,
               sheetName: 'Days Worked',
               columns: [...PAYROLL_ATTENDANCE_SHEET_COLUMNS],
-              rows: payrollAttendanceSheetToExcelRows(exportPayload.payrollAttendanceSheet || [], canViewCosts),
+              rows: payrollAttendanceSheetToExcelRows(exportPayload.payrollAttendanceSheet || []),
             },
             {
               title: 'Timesheet Capture Export',

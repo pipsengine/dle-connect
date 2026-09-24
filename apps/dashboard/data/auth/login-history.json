@@ -1,68 +1,1449 @@
 [
   {
-    "id": "login-1790243457720-46c93835",
-    "at": "2026-09-24T09:50:57.720Z",
-    "userId": "usr-P0290",
-    "username": "P0290",
-    "ipAddress": "192.168.5.188:52096",
+    "id": "login-1790258714994-8367ca56",
+    "at": "2026-09-24T14:05:14.994Z",
+    "userId": "usr-L2792",
+    "username": "L2792",
+    "ipAddress": "192.168.5.233:53158",
+    "device": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/153.0.0.0 Safari/537.36 Edg/153.0.0.0",
+    "status": "Success"
+  },
+  {
+    "id": "login-1790258590546-fde3c8dd",
+    "at": "2026-09-24T14:03:10.547Z",
+    "userId": "usr-P0059",
+    "username": "P0059",
+    "ipAddress": "192.168.5.137:56675",
+    "device": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/153.0.0.0 Safari/537.36 Edg/153.0.0.0",
+    "status": "Success"
+  },
+  {
+    "id": "login-1790258524581-b3d8fff5",
+    "at": "2026-09-24T14:02:04.581Z",
+    "userId": "usr-P0465",
+    "username": "P0465",
+    "ipAddress": "192.168.5.105:61028",
     "device": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/153.0.0.0 Safari/537.36",
     "status": "Success"
   },
   {
-    "id": "login-1790243301623-3f481642",
-    "at": "2026-09-24T09:48:21.623Z",
-    "userId": "usr-P0045",
-    "username": "P0045",
-    "ipAddress": "129.18.144.130:52013",
-    "device": "Mozilla/5.0 (Windows NT 6.2; Win64; x64; rv:109.0) Gecko/20100101 Firefox/115.0",
+    "id": "login-1790258171654-a7a78d15",
+    "at": "2026-09-24T13:56:11.654Z",
+    "userId": "usr-IT0125",
+    "username": "IT0125",
+    "ipAddress": "192.168.5.180:58479",
+    "device": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/153.0.0.0 Safari/537.36",
     "status": "Success"
   },
   {
-    "id": "login-1790243241465-87bc3356",
-    "at": "2026-09-24T09:47:21.465Z",
-    "userId": "unknown",
-    "username": "OLOKO",
-    "ipAddress": "192.168.5.122:51988",
-    "device": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/109.0.0.0 Safari/537.36",
-    "status": "Failed",
-    "reason": "Unknown user"
+    "id": "login-1790258001747-866e7f5d",
+    "at": "2026-09-24T13:53:21.747Z",
+    "userId": "usr-NYSC0032",
+    "username": "NYSC0032",
+    "ipAddress": "192.168.5.172:58445",
+    "device": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/154.0.0.0 Safari/537.36",
+    "status": "Success"
   },
   {
-    "id": "login-1790243229823-ff6d1e40",
-    "at": "2026-09-24T09:47:09.823Z",
-    "userId": "unknown",
-    "username": "OLOKO",
-    "ipAddress": "192.168.5.122:51988",
-    "device": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/109.0.0.0 Safari/537.36",
-    "status": "Failed",
-    "reason": "Unknown user"
+    "id": "login-1790257991109-298d200d",
+    "at": "2026-09-24T13:53:11.110Z",
+    "userId": "usr-IT0125",
+    "username": "IT0125",
+    "ipAddress": "192.168.5.172:58445",
+    "device": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/154.0.0.0 Safari/537.36",
+    "status": "Logout"
   },
   {
-    "id": "login-1790243228795-8e0ca1d7",
-    "at": "2026-09-24T09:47:08.795Z",
+    "id": "login-1790257920458-e260c2a3",
+    "at": "2026-09-24T13:52:00.458Z",
+    "userId": "usr-IT0125",
+    "username": "IT0125",
+    "ipAddress": "192.168.5.172:58445",
+    "device": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/154.0.0.0 Safari/537.36",
+    "status": "Success"
+  },
+  {
+    "id": "login-1790257862699-374025d0",
+    "at": "2026-09-24T13:51:02.699Z",
+    "userId": "usr-IT0125",
+    "username": "IT0125",
+    "ipAddress": "192.168.5.172:58445",
+    "device": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/154.0.0.0 Safari/537.36",
+    "status": "Failed",
+    "reason": "Invalid password"
+  },
+  {
+    "id": "login-1790257849240-3d15db50",
+    "at": "2026-09-24T13:50:49.240Z",
+    "userId": "usr-IT0125",
+    "username": "IT0125",
+    "ipAddress": "192.168.5.172:58445",
+    "device": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/154.0.0.0 Safari/537.36",
+    "status": "Failed",
+    "reason": "Invalid password"
+  },
+  {
+    "id": "login-1790257835816-5469cd09",
+    "at": "2026-09-24T13:50:35.816Z",
+    "userId": "usr-P0316",
+    "username": "P0316",
+    "ipAddress": "192.168.88.203:49797",
+    "device": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/153.0.0.0 Safari/537.36 Edg/153.0.0.0",
+    "status": "Success"
+  },
+  {
+    "id": "login-1790257785991-fb62c9c5",
+    "at": "2026-09-24T13:49:45.991Z",
+    "userId": "usr-NYSC0032",
+    "username": "NYSC0032",
+    "ipAddress": "192.168.5.172:58445",
+    "device": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/154.0.0.0 Safari/537.36",
+    "status": "Success"
+  },
+  {
+    "id": "login-1790257766459-7a5481d3",
+    "at": "2026-09-24T13:49:26.459Z",
+    "userId": "usr-C2460",
+    "username": "C2460",
+    "ipAddress": "192.168.88.203:49797",
+    "device": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/153.0.0.0 Safari/537.36 Edg/153.0.0.0",
+    "status": "Logout"
+  },
+  {
+    "id": "login-1790257761348-026546b6",
+    "at": "2026-09-24T13:49:21.349Z",
+    "userId": "usr-C2460",
+    "username": "C2460",
+    "ipAddress": "192.168.88.203:49797",
+    "device": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/153.0.0.0 Safari/537.36 Edg/153.0.0.0",
+    "status": "Success"
+  },
+  {
+    "id": "login-1790257723381-fe2fe425",
+    "at": "2026-09-24T13:48:43.381Z",
+    "userId": "usr-P0433",
+    "username": "P0433",
+    "ipAddress": "192.168.5.161:63005",
+    "device": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/153.0.0.0 Safari/537.36",
+    "status": "Logout"
+  },
+  {
+    "id": "login-1790257707857-ec0566e9",
+    "at": "2026-09-24T13:48:27.857Z",
+    "userId": "usr-C2460",
+    "username": "C2460",
+    "ipAddress": "192.168.88.209:52165",
+    "device": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/153.0.0.0 Safari/537.36 Edg/153.0.0.0",
+    "status": "Success"
+  },
+  {
+    "id": "login-1790257693662-d39cd495",
+    "at": "2026-09-24T13:48:13.663Z",
+    "userId": "usr-C2460",
+    "username": "C2460",
+    "ipAddress": "192.168.88.209:52165",
+    "device": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/153.0.0.0 Safari/537.36 Edg/153.0.0.0",
+    "status": "Success"
+  },
+  {
+    "id": "login-1790257561808-92139f2a",
+    "at": "2026-09-24T13:46:01.808Z",
+    "userId": "usr-P0146",
+    "username": "P0146",
+    "ipAddress": "192.168.5.227:53020",
+    "device": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/153.0.0.0 Safari/537.36",
+    "status": "Success"
+  },
+  {
+    "id": "login-1790257551470-e6074721",
+    "at": "2026-09-24T13:45:51.470Z",
+    "userId": "usr-IT0130",
+    "username": "IT0130",
+    "ipAddress": "192.168.5.180:51730",
+    "device": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/153.0.0.0 Safari/537.36",
+    "status": "Logout"
+  },
+  {
+    "id": "login-1790257490287-e32c1cd5",
+    "at": "2026-09-24T13:44:50.287Z",
+    "userId": "usr-IT0130",
+    "username": "IT0130",
+    "ipAddress": "192.168.5.180:51730",
+    "device": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/153.0.0.0 Safari/537.36",
+    "status": "Success"
+  },
+  {
+    "id": "login-1790257437789-2ba01ae5",
+    "at": "2026-09-24T13:43:57.789Z",
+    "userId": "usr-P0146",
+    "username": "P0146",
+    "ipAddress": "192.168.5.227:62050",
+    "device": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/153.0.0.0 Safari/537.36",
+    "status": "Success"
+  },
+  {
+    "id": "login-1790257327924-45b8a5d0",
+    "at": "2026-09-24T13:42:07.924Z",
+    "userId": "usr-IT0125",
+    "username": "IT0125",
+    "ipAddress": "192.168.5.180:51465",
+    "device": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/153.0.0.0 Safari/537.36",
+    "status": "Failed",
+    "reason": "Invalid password"
+  },
+  {
+    "id": "login-1790257181649-6399d944",
+    "at": "2026-09-24T13:39:41.650Z",
+    "userId": "usr-L2782",
+    "username": "L2782",
+    "ipAddress": "129.18.144.130:58510",
+    "device": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/153.0.0.0 Safari/537.36 Edg/153.0.0.0",
+    "status": "Success"
+  },
+  {
+    "id": "login-1790257122517-82c0c39a",
+    "at": "2026-09-24T13:38:42.517Z",
+    "userId": "usr-P0433",
+    "username": "P0433",
+    "ipAddress": "192.168.5.161:52687",
+    "device": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/153.0.0.0 Safari/537.36",
+    "status": "Success"
+  },
+  {
+    "id": "login-1790257120175-51464612",
+    "at": "2026-09-24T13:38:40.175Z",
+    "userId": "usr-P0316",
+    "username": "P0316",
+    "ipAddress": "192.168.88.203:62760",
+    "device": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/153.0.0.0 Safari/537.36 Edg/153.0.0.0",
+    "status": "Logout"
+  },
+  {
+    "id": "login-1790257075781-cabd038e",
+    "at": "2026-09-24T13:37:55.781Z",
+    "userId": "usr-IT0125",
+    "username": "IT0125",
+    "ipAddress": "192.168.5.180:51465",
+    "device": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/153.0.0.0 Safari/537.36",
+    "status": "Failed",
+    "reason": "Invalid password"
+  },
+  {
+    "id": "login-1790256942613-05472c4e",
+    "at": "2026-09-24T13:35:42.613Z",
+    "userId": "usr-IT0125",
+    "username": "IT0125",
+    "ipAddress": "192.168.5.180:51465",
+    "device": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/153.0.0.0 Safari/537.36",
+    "status": "Failed",
+    "reason": "Invalid password"
+  },
+  {
+    "id": "login-1790256880926-6c9567af",
+    "at": "2026-09-24T13:34:40.926Z",
+    "userId": "usr-IT0125",
+    "username": "IT0125",
+    "ipAddress": "192.168.5.180:51465",
+    "device": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/153.0.0.0 Safari/537.36",
+    "status": "Failed",
+    "reason": "Invalid password"
+  },
+  {
+    "id": "login-1790256871784-8565117b",
+    "at": "2026-09-24T13:34:31.784Z",
     "userId": "usr-NYSC0018",
     "username": "NYSC0018",
-    "ipAddress": "129.18.144.130:61378",
+    "ipAddress": "192.168.5.211:51080",
     "device": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/153.0.0.0 Safari/537.36",
     "status": "Success"
   },
   {
-    "id": "login-1790243205372-cfc3435a",
-    "at": "2026-09-24T09:46:45.372Z",
-    "userId": "usr-C2193",
-    "username": "C2193",
-    "ipAddress": "102.88.107.108:10041",
+    "id": "login-1790256865056-126564b3",
+    "at": "2026-09-24T13:34:25.056Z",
+    "userId": "usr-IT0125",
+    "username": "IT0125",
+    "ipAddress": "192.168.5.180:51465",
+    "device": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/153.0.0.0 Safari/537.36",
+    "status": "Failed",
+    "reason": "Invalid password"
+  },
+  {
+    "id": "login-1790256859100-45e7bf32",
+    "at": "2026-09-24T13:34:19.100Z",
+    "userId": "usr-P0442",
+    "username": "P0442",
+    "ipAddress": "192.168.5.154:61731",
+    "device": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/152.0.0.0 Safari/537.36",
+    "status": "Success"
+  },
+  {
+    "id": "login-1790256847998-48effec5",
+    "at": "2026-09-24T13:34:07.998Z",
+    "userId": "usr-P0442",
+    "username": "P0442",
+    "ipAddress": "192.168.5.154:61731",
+    "device": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/152.0.0.0 Safari/537.36",
+    "status": "Logout"
+  },
+  {
+    "id": "login-1790256759049-7bc15f61",
+    "at": "2026-09-24T13:32:39.049Z",
+    "userId": "usr-IT0128",
+    "username": "IT0128",
+    "ipAddress": "192.168.5.180:51465",
+    "device": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/153.0.0.0 Safari/537.36",
+    "status": "Logout"
+  },
+  {
+    "id": "login-1790256757528-524a37c9",
+    "at": "2026-09-24T13:32:37.528Z",
+    "userId": "usr-IT0128",
+    "username": "IT0128",
+    "ipAddress": "192.168.5.180:51465",
+    "device": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/153.0.0.0 Safari/537.36",
+    "status": "Logout"
+  },
+  {
+    "id": "login-1790256698631-0e394c19",
+    "at": "2026-09-24T13:31:38.631Z",
+    "userId": "usr-P0059",
+    "username": "P0059",
+    "ipAddress": "192.168.5.137:55937",
+    "device": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/153.0.0.0 Safari/537.36 Edg/153.0.0.0",
+    "status": "Logout"
+  },
+  {
+    "id": "login-1790256660993-8eff456c",
+    "at": "2026-09-24T13:31:00.993Z",
+    "userId": "usr-P0385",
+    "username": "P0385",
+    "ipAddress": "192.168.5.230:64180",
+    "device": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/153.0.0.0 Safari/537.36",
+    "status": "Success"
+  },
+  {
+    "id": "login-1790256393686-2449c73e",
+    "at": "2026-09-24T13:26:33.686Z",
+    "userId": "usr-IT0128",
+    "username": "IT0128",
+    "ipAddress": "192.168.5.180:51465",
+    "device": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/153.0.0.0 Safari/537.36",
+    "status": "Success"
+  },
+  {
+    "id": "login-1790256246799-b13c259f",
+    "at": "2026-09-24T13:24:06.799Z",
+    "userId": "usr-P0442",
+    "username": "P0442",
+    "ipAddress": "192.168.5.154:53371",
+    "device": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/152.0.0.0 Safari/537.36",
+    "status": "Success"
+  },
+  {
+    "id": "login-1790256153963-644af717",
+    "at": "2026-09-24T13:22:33.963Z",
+    "userId": "usr-P0146",
+    "username": "P0146",
+    "ipAddress": "192.168.5.227:59945",
+    "device": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/153.0.0.0 Safari/537.36",
+    "status": "Success"
+  },
+  {
+    "id": "login-1790256120491-dd1cedb4",
+    "at": "2026-09-24T13:22:00.491Z",
+    "userId": "usr-NYSC0035",
+    "username": "NYSC0035",
+    "ipAddress": "192.168.5.153:64866",
+    "device": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/153.0.0.0 Safari/537.36",
+    "status": "Success"
+  },
+  {
+    "id": "login-1790256077494-f86edb6e",
+    "at": "2026-09-24T13:21:17.494Z",
+    "userId": "usr-L2788",
+    "username": "L2788",
+    "ipAddress": "129.18.144.130:65304",
+    "device": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/153.0.0.0 Safari/537.36 Edg/153.0.0.0",
+    "status": "Success"
+  },
+  {
+    "id": "login-1790256076893-47c42280",
+    "at": "2026-09-24T13:21:16.893Z",
+    "userId": "usr-IT0130",
+    "username": "IT0130",
+    "ipAddress": "192.168.5.180:51465",
+    "device": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/153.0.0.0 Safari/537.36",
+    "status": "Success"
+  },
+  {
+    "id": "login-1790256030207-ce2fab15",
+    "at": "2026-09-24T13:20:30.207Z",
+    "userId": "usr-P0059",
+    "username": "P0059",
+    "ipAddress": "192.168.5.137:54228",
+    "device": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/153.0.0.0 Safari/537.36 Edg/153.0.0.0",
+    "status": "Success"
+  },
+  {
+    "id": "login-1790256009896-207f8961",
+    "at": "2026-09-24T13:20:09.896Z",
+    "userId": "usr-P0059",
+    "username": "P0059",
+    "ipAddress": "192.168.5.137:52402",
+    "device": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/153.0.0.0 Safari/537.36",
+    "status": "Success"
+  },
+  {
+    "id": "login-1790255899864-be52f230",
+    "at": "2026-09-24T13:18:19.864Z",
+    "userId": "usr-NYSC0032",
+    "username": "NYSC0032",
+    "ipAddress": "192.168.5.172:57695",
+    "device": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/154.0.0.0 Safari/537.36",
+    "status": "Success"
+  },
+  {
+    "id": "login-1790255785949-8d73c303",
+    "at": "2026-09-24T13:16:25.949Z",
+    "userId": "usr-P0448",
+    "username": "P0448",
+    "ipAddress": "192.168.5.186:64649",
+    "device": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/153.0.0.0 Safari/537.36",
+    "status": "Success"
+  },
+  {
+    "id": "login-1790255748641-923eb908",
+    "at": "2026-09-24T13:15:48.641Z",
+    "userId": "usr-L2788",
+    "username": "L2788",
+    "ipAddress": "129.18.144.130:64716",
+    "device": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/153.0.0.0 Safari/537.36 Edg/153.0.0.0",
+    "status": "Logout"
+  },
+  {
+    "id": "login-1790255609440-1cd5c4e3",
+    "at": "2026-09-24T13:13:29.440Z",
+    "userId": "usr-P0429",
+    "username": "P0429",
+    "ipAddress": "192.168.5.198:54054",
+    "device": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/153.0.0.0 Safari/537.36",
+    "status": "Success"
+  },
+  {
+    "id": "login-1790255511002-62b66ba3",
+    "at": "2026-09-24T13:11:51.003Z",
+    "userId": "usr-P0442",
+    "username": "P0442",
+    "ipAddress": "192.168.5.154:63212",
+    "device": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/152.0.0.0 Safari/537.36",
+    "status": "Logout"
+  },
+  {
+    "id": "login-1790255390294-e521e849",
+    "at": "2026-09-24T13:09:50.294Z",
+    "userId": "usr-P0436",
+    "username": "P0436",
+    "ipAddress": "102.90.101.180:15327",
+    "device": "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/153.0.0.0 Mobile Safari/537.36 EdgA/153.0.0.0",
+    "status": "Success"
+  },
+  {
+    "id": "login-1790255384054-63e3e7f2",
+    "at": "2026-09-24T13:09:44.055Z",
+    "userId": "unknown",
+    "username": "(blank)",
+    "ipAddress": "102.90.101.180:15327",
+    "device": "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/153.0.0.0 Mobile Safari/537.36 EdgA/153.0.0.0",
+    "status": "Failed",
+    "reason": "Missing username or password"
+  },
+  {
+    "id": "login-1790255352587-605237b4",
+    "at": "2026-09-24T13:09:12.588Z",
+    "userId": "usr-NYSC0025",
+    "username": "NYSC0025",
+    "ipAddress": "192.168.5.116:57969",
+    "device": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/153.0.0.0 Safari/537.36",
+    "status": "Logout"
+  },
+  {
+    "id": "login-1790255131162-28e1b74f",
+    "at": "2026-09-24T13:05:31.162Z",
+    "userId": "usr-C2460",
+    "username": "C2460",
+    "ipAddress": "192.168.88.209:51868",
+    "device": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/153.0.0.0 Safari/537.36 Edg/153.0.0.0",
+    "status": "Success"
+  },
+  {
+    "id": "login-1790255099381-696a4210",
+    "at": "2026-09-24T13:04:59.381Z",
+    "userId": "usr-P0436",
+    "username": "P0436",
+    "ipAddress": "192.168.5.118:59164",
+    "device": "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/153.0.0.0 Mobile Safari/537.36 EdgA/153.0.0.0",
+    "status": "Success"
+  },
+  {
+    "id": "login-1790254941343-b1251674",
+    "at": "2026-09-24T13:02:21.343Z",
+    "userId": "unknown",
+    "username": "(blank)",
+    "ipAddress": "192.168.5.118:59164",
+    "device": "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/153.0.0.0 Mobile Safari/537.36 EdgA/153.0.0.0",
+    "status": "Failed",
+    "reason": "Missing username or password"
+  },
+  {
+    "id": "login-1790254817084-d681edd8",
+    "at": "2026-09-24T13:00:17.084Z",
+    "userId": "usr-P0442",
+    "username": "P0442",
+    "ipAddress": "192.168.5.154:63212",
+    "device": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/152.0.0.0 Safari/537.36",
+    "status": "Success"
+  },
+  {
+    "id": "login-1790254751412-e7d709dc",
+    "at": "2026-09-24T12:59:11.412Z",
+    "userId": "usr-NYSC0025",
+    "username": "NYSC0025",
+    "ipAddress": "192.168.5.116:57969",
+    "device": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/153.0.0.0 Safari/537.36",
+    "status": "Success"
+  },
+  {
+    "id": "login-1790254748434-e6861f97",
+    "at": "2026-09-24T12:59:08.434Z",
+    "userId": "usr-P0448",
+    "username": "P0448",
+    "ipAddress": "192.168.5.186:64649",
+    "device": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/153.0.0.0 Safari/537.36",
+    "status": "Success"
+  },
+  {
+    "id": "login-1790253941100-68e9b383",
+    "at": "2026-09-24T12:45:41.100Z",
+    "userId": "usr-L2788",
+    "username": "L2788",
+    "ipAddress": "129.18.144.130:64716",
+    "device": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/153.0.0.0 Safari/537.36 Edg/153.0.0.0",
+    "status": "Success"
+  },
+  {
+    "id": "login-1790253894945-ac64f2f0",
+    "at": "2026-09-24T12:44:54.945Z",
+    "userId": "usr-C2342",
+    "username": "C2342",
+    "ipAddress": "102.89.44.92:16252",
     "device": "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/152.0.0.0 Mobile Safari/537.36",
     "status": "Success"
   },
   {
-    "id": "login-1790243204978-0c3f244d",
-    "at": "2026-09-24T09:46:44.978Z",
-    "userId": "unknown",
-    "username": "OLOKO",
-    "ipAddress": "192.168.5.122:51988",
-    "device": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/109.0.0.0 Safari/537.36",
+    "id": "login-1790253865644-94ff653b",
+    "at": "2026-09-24T12:44:25.644Z",
+    "userId": "usr-C2342",
+    "username": "C2342",
+    "ipAddress": "102.89.44.92:16252",
+    "device": "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/152.0.0.0 Mobile Safari/537.36",
     "status": "Failed",
-    "reason": "Unknown user"
+    "reason": "Invalid password"
+  },
+  {
+    "id": "login-1790253857678-4b7ad481",
+    "at": "2026-09-24T12:44:17.678Z",
+    "userId": "usr-C2342",
+    "username": "C2342",
+    "ipAddress": "102.89.44.92:16252",
+    "device": "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/152.0.0.0 Mobile Safari/537.36",
+    "status": "Failed",
+    "reason": "Invalid password"
+  },
+  {
+    "id": "login-1790253689237-55a4cea6",
+    "at": "2026-09-24T12:41:29.237Z",
+    "userId": "usr-C2522",
+    "username": "C2522",
+    "ipAddress": "102.88.108.44:41240",
+    "device": "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/153.0.0.0 Mobile Safari/537.36",
+    "status": "Success"
+  },
+  {
+    "id": "login-1790253637953-acf3d0d9",
+    "at": "2026-09-24T12:40:37.953Z",
+    "userId": "usr-P0316",
+    "username": "P0316",
+    "ipAddress": "192.168.88.203:59650",
+    "device": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/153.0.0.0 Safari/537.36 Edg/153.0.0.0",
+    "status": "Success"
+  },
+  {
+    "id": "login-1790253560457-dcdd68fb",
+    "at": "2026-09-24T12:39:20.457Z",
+    "userId": "usr-C2460",
+    "username": "C2460",
+    "ipAddress": "192.168.88.203:59650",
+    "device": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/153.0.0.0 Safari/537.36 Edg/153.0.0.0",
+    "status": "Logout"
+  },
+  {
+    "id": "login-1790253550135-145ce7dc",
+    "at": "2026-09-24T12:39:10.135Z",
+    "userId": "usr-C2460",
+    "username": "C2460",
+    "ipAddress": "192.168.88.203:59650",
+    "device": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/153.0.0.0 Safari/537.36 Edg/153.0.0.0",
+    "status": "Success"
+  },
+  {
+    "id": "login-1790253165973-e5343329",
+    "at": "2026-09-24T12:32:45.973Z",
+    "userId": "usr-L2764",
+    "username": "L2764",
+    "ipAddress": "192.168.88.88:52235",
+    "device": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/153.0.0.0 Safari/537.36",
+    "status": "Logout"
+  },
+  {
+    "id": "login-1790252999905-b26e6db8",
+    "at": "2026-09-24T12:29:59.905Z",
+    "userId": "usr-P0290",
+    "username": "P0290",
+    "ipAddress": "192.168.5.188:58332",
+    "device": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/153.0.0.0 Safari/537.36",
+    "status": "Success"
+  },
+  {
+    "id": "login-1790252944235-c04a8f5e",
+    "at": "2026-09-24T12:29:04.235Z",
+    "userId": "usr-L2764",
+    "username": "L2764",
+    "ipAddress": "192.168.88.88:52235",
+    "device": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/153.0.0.0 Safari/537.36",
+    "status": "Success"
+  },
+  {
+    "id": "login-1790252762744-e720043b",
+    "at": "2026-09-24T12:26:02.744Z",
+    "userId": "usr-L2770",
+    "username": "L2770",
+    "ipAddress": "129.18.144.130:62702",
+    "device": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/152.0.0.0 Safari/537.36",
+    "status": "Success"
+  },
+  {
+    "id": "login-1790252725376-af0404ae",
+    "at": "2026-09-24T12:25:25.377Z",
+    "userId": "usr-L2782",
+    "username": "L2782",
+    "ipAddress": "192.168.5.162:58881",
+    "device": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/153.0.0.0 Safari/537.36 Edg/153.0.0.0",
+    "status": "Success"
+  },
+  {
+    "id": "login-1790252724852-e5b5dc60",
+    "at": "2026-09-24T12:25:24.852Z",
+    "userId": "usr-L2770",
+    "username": "L2770",
+    "ipAddress": "129.18.144.130:62702",
+    "device": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/152.0.0.0 Safari/537.36",
+    "status": "Success"
+  },
+  {
+    "id": "login-1790252693001-77c9791a",
+    "at": "2026-09-24T12:24:53.001Z",
+    "userId": "usr-P0290",
+    "username": "P0290",
+    "ipAddress": "192.168.5.188:58218",
+    "device": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/153.0.0.0 Safari/537.36",
+    "status": "Success"
+  },
+  {
+    "id": "login-1790252449281-a2b5dafa",
+    "at": "2026-09-24T12:20:49.281Z",
+    "userId": "usr-P0465",
+    "username": "P0465",
+    "ipAddress": "192.168.5.105:59088",
+    "device": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/153.0.0.0 Safari/537.36",
+    "status": "Success"
+  },
+  {
+    "id": "login-1790252246527-88a6b906",
+    "at": "2026-09-24T12:17:26.527Z",
+    "userId": "usr-C2512",
+    "username": "C2512",
+    "ipAddress": "192.168.88.245:60882",
+    "device": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/153.0.0.0 Safari/537.36 Edg/153.0.0.0",
+    "status": "Success"
+  },
+  {
+    "id": "login-1790252221700-fab35a4a",
+    "at": "2026-09-24T12:17:01.700Z",
+    "userId": "usr-L0191",
+    "username": "L0191",
+    "ipAddress": "192.168.88.210:51486",
+    "device": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/153.0.0.0 Safari/537.36",
+    "status": "Success"
+  },
+  {
+    "id": "login-1790252128203-1e0c5a9f",
+    "at": "2026-09-24T12:15:28.203Z",
+    "userId": "usr-P0385",
+    "username": "P0385",
+    "ipAddress": "192.168.5.230:59639",
+    "device": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/153.0.0.0 Safari/537.36",
+    "status": "Success"
+  },
+  {
+    "id": "login-1790252018571-b8150dc6",
+    "at": "2026-09-24T12:13:38.571Z",
+    "userId": "usr-P0432",
+    "username": "P0432",
+    "ipAddress": "192.168.5.191:62696",
+    "device": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/152.0.0.0 Safari/537.36",
+    "status": "Logout"
+  },
+  {
+    "id": "login-1790251752747-fa316a71",
+    "at": "2026-09-24T12:09:12.747Z",
+    "userId": "usr-NYSC0025",
+    "username": "NYSC0025",
+    "ipAddress": "192.168.5.116:56782",
+    "device": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/153.0.0.0 Safari/537.36",
+    "status": "Success"
+  },
+  {
+    "id": "login-1790251349774-7defc80b",
+    "at": "2026-09-24T12:02:29.774Z",
+    "userId": "usr-P0429",
+    "username": "P0429",
+    "ipAddress": "192.168.5.198:51701",
+    "device": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/153.0.0.0 Safari/537.36",
+    "status": "Success"
+  },
+  {
+    "id": "login-1790251308771-91f55df8",
+    "at": "2026-09-24T12:01:48.771Z",
+    "userId": "usr-P0387",
+    "username": "P0387",
+    "ipAddress": "192.168.88.170:49216",
+    "device": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/153.0.0.0 Safari/537.36",
+    "status": "Success"
+  },
+  {
+    "id": "login-1790251302895-9900598a",
+    "at": "2026-09-24T12:01:42.896Z",
+    "userId": "usr-C1967",
+    "username": "C1967",
+    "ipAddress": "192.168.5.113:36958",
+    "device": "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/153.0.0.0 Mobile Safari/537.36",
+    "status": "Logout"
+  },
+  {
+    "id": "login-1790251286755-187a97a6",
+    "at": "2026-09-24T12:01:26.755Z",
+    "userId": "usr-P0432",
+    "username": "P0432",
+    "ipAddress": "192.168.5.191:50506",
+    "device": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/152.0.0.0 Safari/537.36",
+    "status": "Success"
+  },
+  {
+    "id": "login-1790251266052-de44cb9d",
+    "at": "2026-09-24T12:01:06.052Z",
+    "userId": "usr-L2782",
+    "username": "L2782",
+    "ipAddress": "192.168.5.162:61452",
+    "device": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/153.0.0.0 Safari/537.36 Edg/153.0.0.0",
+    "status": "Success"
+  },
+  {
+    "id": "login-1790251249691-ddf9c2a6",
+    "at": "2026-09-24T12:00:49.691Z",
+    "userId": "usr-P0387",
+    "username": "P0387",
+    "ipAddress": "192.168.88.170:49216",
+    "device": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/153.0.0.0 Safari/537.36",
+    "status": "Success"
+  },
+  {
+    "id": "login-1790251240552-743e21d2",
+    "at": "2026-09-24T12:00:40.552Z",
+    "userId": "usr-C1967",
+    "username": "C1967",
+    "ipAddress": "192.168.5.113:36958",
+    "device": "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/153.0.0.0 Mobile Safari/537.36",
+    "status": "Success"
+  },
+  {
+    "id": "login-1790251191541-2dbc017d",
+    "at": "2026-09-24T11:59:51.541Z",
+    "userId": "usr-C2460",
+    "username": "C2460",
+    "ipAddress": "192.168.88.209:51408",
+    "device": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/153.0.0.0 Safari/537.36 Edg/153.0.0.0",
+    "status": "Success"
+  },
+  {
+    "id": "login-1790251146644-a70dd80e",
+    "at": "2026-09-24T11:59:06.644Z",
+    "userId": "usr-L2781",
+    "username": "L2781",
+    "ipAddress": "192.168.88.208:49919",
+    "device": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/152.0.0.0 Safari/537.36",
+    "status": "Success"
+  },
+  {
+    "id": "login-1790251105171-feb17792",
+    "at": "2026-09-24T11:58:25.171Z",
+    "userId": "usr-P0146",
+    "username": "P0146",
+    "ipAddress": "192.168.5.227:57982",
+    "device": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/153.0.0.0 Safari/537.36",
+    "status": "Success"
+  },
+  {
+    "id": "login-1790250270479-df1750f0",
+    "at": "2026-09-24T11:44:30.479Z",
+    "userId": "usr-L0191",
+    "username": "L0191",
+    "ipAddress": "192.168.88.210:51313",
+    "device": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/153.0.0.0 Safari/537.36",
+    "status": "Success"
+  },
+  {
+    "id": "login-1790250258387-7e4d3ea6",
+    "at": "2026-09-24T11:44:18.387Z",
+    "userId": "usr-P0465",
+    "username": "P0465",
+    "ipAddress": "192.168.5.105:58021",
+    "device": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/153.0.0.0 Safari/537.36",
+    "status": "Success"
+  },
+  {
+    "id": "login-1790250102011-36930010",
+    "at": "2026-09-24T11:41:42.011Z",
+    "userId": "usr-P0146",
+    "username": "P0146",
+    "ipAddress": "192.168.5.227:65521",
+    "device": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/153.0.0.0 Safari/537.36",
+    "status": "Success"
+  },
+  {
+    "id": "login-1790250076133-765495cf",
+    "at": "2026-09-24T11:41:16.133Z",
+    "userId": "usr-L2781",
+    "username": "L2781",
+    "ipAddress": "192.168.88.208:64338",
+    "device": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/152.0.0.0 Safari/537.36",
+    "status": "Success"
+  },
+  {
+    "id": "login-1790249507722-c9ea4fa0",
+    "at": "2026-09-24T11:31:47.722Z",
+    "userId": "usr-C1967",
+    "username": "C1967",
+    "ipAddress": "192.168.5.113:35532",
+    "device": "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/153.0.0.0 Mobile Safari/537.36",
+    "status": "Success"
+  },
+  {
+    "id": "login-1790249430088-cbb1c3df",
+    "at": "2026-09-24T11:30:30.088Z",
+    "userId": "usr-C1967",
+    "username": "C1967",
+    "ipAddress": "192.168.5.113:35532",
+    "device": "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/153.0.0.0 Mobile Safari/537.36",
+    "status": "Logout"
+  },
+  {
+    "id": "login-1790249305352-3bef1bf5",
+    "at": "2026-09-24T11:28:25.352Z",
+    "userId": "usr-C1967",
+    "username": "C1967",
+    "ipAddress": "192.168.5.113:35532",
+    "device": "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/153.0.0.0 Mobile Safari/537.36",
+    "status": "Success"
+  },
+  {
+    "id": "login-1790249224628-dc2722c8",
+    "at": "2026-09-24T11:27:04.628Z",
+    "userId": "usr-C2138",
+    "username": "C2138",
+    "ipAddress": "197.210.8.104",
+    "device": "Mozilla/5.0 (Linux; U; Android 12; TECNO KH6 Build/SP1A.210812.016; wv) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/151.0.7922.199 Mobile Safari/537.36 OPR/99.4.2254.1608",
+    "status": "Success"
+  },
+  {
+    "id": "login-1790249065914-55640d82",
+    "at": "2026-09-24T11:24:25.915Z",
+    "userId": "usr-L2781",
+    "username": "L2781",
+    "ipAddress": "129.18.183.234:62973",
+    "device": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/152.0.0.0 Safari/537.36",
+    "status": "Success"
+  },
+  {
+    "id": "login-1790249060624-e2c96e1a",
+    "at": "2026-09-24T11:24:20.624Z",
+    "userId": "usr-L2781",
+    "username": "L2781",
+    "ipAddress": "129.18.183.234:62973",
+    "device": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/152.0.0.0 Safari/537.36",
+    "status": "Logout"
+  },
+  {
+    "id": "login-1790248979493-8a7ea004",
+    "at": "2026-09-24T11:22:59.493Z",
+    "userId": "usr-P0387",
+    "username": "P0387",
+    "ipAddress": "192.168.88.170:64643",
+    "device": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/153.0.0.0 Safari/537.36",
+    "status": "Success"
+  },
+  {
+    "id": "login-1790248975572-0ffc1a1f",
+    "at": "2026-09-24T11:22:55.572Z",
+    "userId": "usr-P0387",
+    "username": "P0387",
+    "ipAddress": "192.168.88.170:64643",
+    "device": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/153.0.0.0 Safari/537.36",
+    "status": "Logout"
+  },
+  {
+    "id": "login-1790248961851-ee1d32c9",
+    "at": "2026-09-24T11:22:41.851Z",
+    "userId": "usr-P0146",
+    "username": "P0146",
+    "ipAddress": "192.168.5.227:59959",
+    "device": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/153.0.0.0 Safari/537.36",
+    "status": "Success"
+  },
+  {
+    "id": "login-1790248938939-7943f41a",
+    "at": "2026-09-24T11:22:18.939Z",
+    "userId": "usr-L2781",
+    "username": "L2781",
+    "ipAddress": "129.18.183.234:62973",
+    "device": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/152.0.0.0 Safari/537.36",
+    "status": "Success"
+  },
+  {
+    "id": "login-1790248933078-dbb78e22",
+    "at": "2026-09-24T11:22:13.078Z",
+    "userId": "usr-P0387",
+    "username": "P0387",
+    "ipAddress": "192.168.88.170:64629",
+    "device": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/153.0.0.0 Safari/537.36",
+    "status": "Success"
+  },
+  {
+    "id": "login-1790248228286-3598fc67",
+    "at": "2026-09-24T11:10:28.286Z",
+    "userId": "usr-L1986",
+    "username": "L1986",
+    "ipAddress": "192.168.5.132:57978",
+    "device": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/153.0.0.0 Safari/537.36",
+    "status": "Success"
+  },
+  {
+    "id": "login-1790248224344-72ae0df4",
+    "at": "2026-09-24T11:10:24.344Z",
+    "userId": "usr-P0146",
+    "username": "P0146",
+    "ipAddress": "192.168.5.227:59510",
+    "device": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/153.0.0.0 Safari/537.36",
+    "status": "Success"
+  },
+  {
+    "id": "login-1790248087354-84792d1d",
+    "at": "2026-09-24T11:08:07.354Z",
+    "userId": "usr-L2781",
+    "username": "L2781",
+    "ipAddress": "102.89.68.86:29427",
+    "device": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/153.0.0.0 Safari/537.36",
+    "status": "Success"
+  },
+  {
+    "id": "login-1790247878470-5f3aff4d",
+    "at": "2026-09-24T11:04:38.470Z",
+    "userId": "usr-P0060",
+    "username": "P0060",
+    "ipAddress": "192.168.5.134:58565",
+    "device": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/153.0.0.0 Safari/537.36 Edg/153.0.0.0",
+    "status": "Success"
+  },
+  {
+    "id": "login-1790247787273-fc05cf42",
+    "at": "2026-09-24T11:03:07.273Z",
+    "userId": "usr-L1986",
+    "username": "L1986",
+    "ipAddress": "192.168.5.132:57376",
+    "device": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/153.0.0.0 Safari/537.36",
+    "status": "Success"
+  },
+  {
+    "id": "login-1790247782155-ee6078c6",
+    "at": "2026-09-24T11:03:02.155Z",
+    "userId": "usr-P0433",
+    "username": "P0433",
+    "ipAddress": "192.168.5.161:64024",
+    "device": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/153.0.0.0 Safari/537.36",
+    "status": "Success"
+  },
+  {
+    "id": "login-1790247753780-6540eaa8",
+    "at": "2026-09-24T11:02:33.780Z",
+    "userId": "usr-L1986",
+    "username": "L1986",
+    "ipAddress": "192.168.5.132:57376",
+    "device": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/153.0.0.0 Safari/537.36",
+    "status": "Logout"
+  },
+  {
+    "id": "login-1790247717626-6a4e9d50",
+    "at": "2026-09-24T11:01:57.626Z",
+    "userId": "usr-P0080",
+    "username": "P0080",
+    "ipAddress": "129.18.144.130:50118",
+    "device": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/153.0.0.0 Safari/537.36",
+    "status": "Logout"
+  },
+  {
+    "id": "login-1790247670480-4c79799c",
+    "at": "2026-09-24T11:01:10.480Z",
+    "userId": "usr-P0080",
+    "username": "P0080",
+    "ipAddress": "129.18.144.130:50118",
+    "device": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/153.0.0.0 Safari/537.36",
+    "status": "Success"
+  },
+  {
+    "id": "login-1790247635215-c2e40553",
+    "at": "2026-09-24T11:00:35.215Z",
+    "userId": "usr-P0080",
+    "username": "P0080",
+    "ipAddress": "129.18.144.130:50118",
+    "device": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/153.0.0.0 Safari/537.36",
+    "status": "Failed",
+    "reason": "Invalid password"
+  },
+  {
+    "id": "login-1790247566485-55ee2bea",
+    "at": "2026-09-24T10:59:26.485Z",
+    "userId": "usr-L2781",
+    "username": "L2781",
+    "ipAddress": "102.89.68.86:32362",
+    "device": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/153.0.0.0 Safari/537.36",
+    "status": "Success"
+  },
+  {
+    "id": "login-1790247335868-c5fc0a8b",
+    "at": "2026-09-24T10:55:35.868Z",
+    "userId": "usr-P0432",
+    "username": "P0432",
+    "ipAddress": "192.168.5.191:58181",
+    "device": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/152.0.0.0 Safari/537.36",
+    "status": "Success"
+  },
+  {
+    "id": "login-1790247110109-5caa65f6",
+    "at": "2026-09-24T10:51:50.109Z",
+    "userId": "usr-P0433",
+    "username": "P0433",
+    "ipAddress": "192.168.5.161:55550",
+    "device": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/153.0.0.0 Safari/537.36",
+    "status": "Success"
+  },
+  {
+    "id": "login-1790247103120-f3d8f188",
+    "at": "2026-09-24T10:51:43.120Z",
+    "userId": "usr-L1986",
+    "username": "L1986",
+    "ipAddress": "192.168.5.132:57376",
+    "device": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/153.0.0.0 Safari/537.36",
+    "status": "Success"
+  },
+  {
+    "id": "login-1790247053334-169e7d10",
+    "at": "2026-09-24T10:50:53.334Z",
+    "userId": "usr-P0465",
+    "username": "P0465",
+    "ipAddress": "192.168.5.105:56354",
+    "device": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/153.0.0.0 Safari/537.36",
+    "status": "Success"
+  },
+  {
+    "id": "login-1790247034142-3ca4f3ad",
+    "at": "2026-09-24T10:50:34.142Z",
+    "userId": "usr-L1986",
+    "username": "L1986",
+    "ipAddress": "192.168.5.132:57376",
+    "device": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/153.0.0.0 Safari/537.36",
+    "status": "Success"
+  },
+  {
+    "id": "login-1790247001681-4e7f07f6",
+    "at": "2026-09-24T10:50:01.682Z",
+    "userId": "usr-L1986",
+    "username": "L1986",
+    "ipAddress": "192.168.5.132:57376",
+    "device": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/153.0.0.0 Safari/537.36",
+    "status": "Success"
+  },
+  {
+    "id": "login-1790246954307-bfac8d3b",
+    "at": "2026-09-24T10:49:14.307Z",
+    "userId": "usr-P0385",
+    "username": "P0385",
+    "ipAddress": "192.168.5.230:61385",
+    "device": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/153.0.0.0 Safari/537.36",
+    "status": "Success"
+  },
+  {
+    "id": "login-1790246856436-31add397",
+    "at": "2026-09-24T10:47:36.436Z",
+    "userId": "usr-P0060",
+    "username": "P0060",
+    "ipAddress": "192.168.5.109:52736",
+    "device": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/153.0.0.0 Safari/537.36 Edg/153.0.0.0",
+    "status": "Success"
+  },
+  {
+    "id": "login-1790246855870-bdabc88c",
+    "at": "2026-09-24T10:47:35.870Z",
+    "userId": "usr-C2412",
+    "username": "C2412",
+    "ipAddress": "105.113.80.189",
+    "device": "Mozilla/5.0 (Linux; U; Android 11; CPH2349 Build/RP1A.200720.011; wv) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/151.0.7922.199 Mobile Safari/537.36 OPR/99.3.2254.1107",
+    "status": "Success"
+  },
+  {
+    "id": "login-1790246703272-a895792b",
+    "at": "2026-09-24T10:45:03.272Z",
+    "userId": "usr-L0191",
+    "username": "L0191",
+    "ipAddress": "192.168.88.121:54404",
+    "device": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/150.0.0.0 Safari/537.36",
+    "status": "Success"
+  },
+  {
+    "id": "login-1790246550675-8460e79e",
+    "at": "2026-09-24T10:42:30.675Z",
+    "userId": "usr-C2412",
+    "username": "C2412",
+    "ipAddress": "105.113.80.189",
+    "device": "Mozilla/5.0 (Linux; U; Android 11; CPH2349 Build/RP1A.200720.011; wv) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/151.0.7922.199 Mobile Safari/537.36 OPR/99.3.2254.1107",
+    "status": "Success"
+  },
+  {
+    "id": "login-1790246501053-94a058de",
+    "at": "2026-09-24T10:41:41.053Z",
+    "userId": "usr-P0443",
+    "username": "P0443",
+    "ipAddress": "192.168.5.251:49752",
+    "device": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/153.0.0.0 Safari/537.36 Edg/153.0.0.0",
+    "status": "Success"
+  },
+  {
+    "id": "login-1790246477230-3aa40375",
+    "at": "2026-09-24T10:41:17.231Z",
+    "userId": "usr-P0436",
+    "username": "P0436",
+    "ipAddress": "192.168.5.210:60033",
+    "device": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/153.0.0.0 Safari/537.36 Edg/153.0.0.0",
+    "status": "Success"
+  },
+  {
+    "id": "login-1790246440644-9d832d63",
+    "at": "2026-09-24T10:40:40.644Z",
+    "userId": "usr-C2412",
+    "username": "C2412",
+    "ipAddress": "105.113.80.189",
+    "device": "Mozilla/5.0 (Linux; U; Android 11; CPH2349 Build/RP1A.200720.011; wv) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/151.0.7922.199 Mobile Safari/537.36 OPR/99.3.2254.1107",
+    "status": "Success"
+  },
+  {
+    "id": "login-1790246141095-190ed48f",
+    "at": "2026-09-24T10:35:41.096Z",
+    "userId": "usr-C2136",
+    "username": "C2136",
+    "ipAddress": "102.89.47.86:2464",
+    "device": "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0.0.0 Safari/537.36",
+    "status": "Success"
+  },
+  {
+    "id": "login-1790246118464-dd1f0f86",
+    "at": "2026-09-24T10:35:18.464Z",
+    "userId": "usr-C2512",
+    "username": "C2512",
+    "ipAddress": "192.168.88.245:52556",
+    "device": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/153.0.0.0 Safari/537.36 Edg/153.0.0.0",
+    "status": "Success"
+  },
+  {
+    "id": "login-1790245781048-33369768",
+    "at": "2026-09-24T10:29:41.048Z",
+    "userId": "usr-L0191",
+    "username": "L0191",
+    "ipAddress": "192.168.88.121:53849",
+    "device": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/150.0.0.0 Safari/537.36",
+    "status": "Success"
+  },
+  {
+    "id": "login-1790245724177-0c1f89b7",
+    "at": "2026-09-24T10:28:44.177Z",
+    "userId": "usr-P0465",
+    "username": "P0465",
+    "ipAddress": "192.168.5.105:55551",
+    "device": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/153.0.0.0 Safari/537.36",
+    "status": "Success"
+  },
+  {
+    "id": "login-1790245632457-b137c773",
+    "at": "2026-09-24T10:27:12.457Z",
+    "userId": "usr-P0429",
+    "username": "P0429",
+    "ipAddress": "192.168.5.198:50381",
+    "device": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/153.0.0.0 Safari/537.36",
+    "status": "Success"
+  },
+  {
+    "id": "login-1790245598600-f55d9d0c",
+    "at": "2026-09-24T10:26:38.600Z",
+    "userId": "usr-P0433",
+    "username": "P0433",
+    "ipAddress": "192.168.5.161:51887",
+    "device": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/153.0.0.0 Safari/537.36",
+    "status": "Success"
+  },
+  {
+    "id": "login-1790245521607-492c5678",
+    "at": "2026-09-24T10:25:21.607Z",
+    "userId": "usr-NYSC0032",
+    "username": "NYSC0032",
+    "ipAddress": "192.168.5.172:51424",
+    "device": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/154.0.0.0 Safari/537.36",
+    "status": "Logout"
+  },
+  {
+    "id": "login-1790245520987-347cb0fc",
+    "at": "2026-09-24T10:25:20.988Z",
+    "userId": "usr-P0429",
+    "username": "P0429",
+    "ipAddress": "192.168.5.198:50381",
+    "device": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/153.0.0.0 Safari/537.36",
+    "status": "Logout"
+  },
+  {
+    "id": "login-1790245440049-0c2c4e69",
+    "at": "2026-09-24T10:24:00.049Z",
+    "userId": "usr-C1771",
+    "username": "C1771",
+    "ipAddress": "102.89.47.86:4126",
+    "device": "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/151.0.0.0 Mobile Safari/537.36",
+    "status": "Success"
+  },
+  {
+    "id": "login-1790245357303-7fe2debf",
+    "at": "2026-09-24T10:22:37.303Z",
+    "userId": "usr-L2782",
+    "username": "L2782",
+    "ipAddress": "192.168.5.162:52650",
+    "device": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/153.0.0.0 Safari/537.36 Edg/153.0.0.0",
+    "status": "Success"
+  },
+  {
+    "id": "login-1790245330650-58446fe1",
+    "at": "2026-09-24T10:22:10.650Z",
+    "userId": "usr-C2537",
+    "username": "C2537",
+    "ipAddress": "192.168.5.180:65424",
+    "device": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/153.0.0.0 Safari/537.36",
+    "status": "Failed",
+    "reason": "Invalid password"
+  },
+  {
+    "id": "login-1790245192580-d715012e",
+    "at": "2026-09-24T10:19:52.580Z",
+    "userId": "usr-P0385",
+    "username": "P0385",
+    "ipAddress": "192.168.5.230:55497",
+    "device": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/153.0.0.0 Safari/537.36",
+    "status": "Success"
+  },
+  {
+    "id": "login-1790245181292-f94b8dc8",
+    "at": "2026-09-24T10:19:41.292Z",
+    "userId": "usr-L2781",
+    "username": "L2781",
+    "ipAddress": "192.168.88.208:57590",
+    "device": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/152.0.0.0 Safari/537.36",
+    "status": "Success"
+  },
+  {
+    "id": "login-1790244997868-e98f5ca8",
+    "at": "2026-09-24T10:16:37.869Z",
+    "userId": "usr-P0465",
+    "username": "P0465",
+    "ipAddress": "192.168.5.105:55170",
+    "device": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/153.0.0.0 Safari/537.36",
+    "status": "Success"
+  },
+  {
+    "id": "login-1790244920126-667efbe8",
+    "at": "2026-09-24T10:15:20.126Z",
+    "userId": "usr-NYSC0032",
+    "username": "NYSC0032",
+    "ipAddress": "192.168.5.172:51424",
+    "device": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/154.0.0.0 Safari/537.36",
+    "status": "Success"
+  },
+  {
+    "id": "login-1790244919719-f033e172",
+    "at": "2026-09-24T10:15:19.719Z",
+    "userId": "usr-P0429",
+    "username": "P0429",
+    "ipAddress": "192.168.5.198:50898",
+    "device": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/153.0.0.0 Safari/537.36",
+    "status": "Success"
+  },
+  {
+    "id": "login-1790244883990-5a81b2f4",
+    "at": "2026-09-24T10:14:43.990Z",
+    "userId": "usr-P0013",
+    "username": "P0013",
+    "ipAddress": "129.18.183.234:56963",
+    "device": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/153.0.0.0 Safari/537.36",
+    "status": "Success"
+  },
+  {
+    "id": "login-1790244834462-bc44d84a",
+    "at": "2026-09-24T10:13:54.462Z",
+    "userId": "usr-P0181",
+    "username": "P0181",
+    "ipAddress": "192.168.5.143:61433",
+    "device": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/154.0.0.0 Safari/537.36",
+    "status": "Success"
+  },
+  {
+    "id": "login-1790244711696-be2e6049",
+    "at": "2026-09-24T10:11:51.696Z",
+    "userId": "usr-P0045",
+    "username": "P0045",
+    "ipAddress": "129.18.144.130:52235",
+    "device": "Mozilla/5.0 (Windows NT 6.2; Win64; x64; rv:109.0) Gecko/20100101 Firefox/115.0",
+    "status": "Success"
+  },
+  {
+    "id": "login-1790244694964-24b88ff7",
+    "at": "2026-09-24T10:11:34.964Z",
+    "userId": "unknown",
+    "username": "(blank)",
+    "ipAddress": "129.18.144.130:52233",
+    "device": "Mozilla/5.0 (Windows NT 6.2; Win64; x64; rv:109.0) Gecko/20100101 Firefox/115.0",
+    "status": "Failed",
+    "reason": "Missing username or password"
+  },
+  {
+    "id": "login-1790244619283-76df1054",
+    "at": "2026-09-24T10:10:19.283Z",
+    "userId": "usr-C1783",
+    "username": "C1783",
+    "ipAddress": "192.168.88.237:55861",
+    "device": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/153.0.0.0 Safari/537.36",
+    "status": "Success"
+  },
+  {
+    "id": "login-1790244615016-c498caa0",
+    "at": "2026-09-24T10:10:15.016Z",
+    "userId": "usr-P0146",
+    "username": "P0146",
+    "ipAddress": "192.168.5.227:55825",
+    "device": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/153.0.0.0 Safari/537.36",
+    "status": "Success"
+  },
+  {
+    "id": "login-1790244594343-4d666c0b",
+    "at": "2026-09-24T10:09:54.343Z",
+    "userId": "usr-P0146",
+    "username": "P0146",
+    "ipAddress": "192.168.5.227:55825",
+    "device": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/153.0.0.0 Safari/537.36",
+    "status": "Logout"
+  },
+  {
+    "id": "login-1790244586643-0ea8b6fe",
+    "at": "2026-09-24T10:09:46.643Z",
+    "userId": "usr-P0146",
+    "username": "P0146",
+    "ipAddress": "192.168.5.227:55825",
+    "device": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/153.0.0.0 Safari/537.36",
+    "status": "Success"
+  },
+  {
+    "id": "login-1790244586434-547e6d99",
+    "at": "2026-09-24T10:09:46.435Z",
+    "userId": "usr-C2225",
+    "username": "C2225",
+    "ipAddress": "102.89.68.93:50031",
+    "device": "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/153.0.0.0 Mobile Safari/537.36",
+    "status": "Success"
+  },
+  {
+    "id": "login-1790244586378-368db5b4",
+    "at": "2026-09-24T10:09:46.378Z",
+    "userId": "usr-C2632",
+    "username": "C2632",
+    "ipAddress": "102.89.47.55:28780",
+    "device": "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/151.0.0.0 Mobile Safari/537.36",
+    "status": "Success"
+  },
+  {
+    "id": "login-1790244147977-3f5dbff9",
+    "at": "2026-09-24T10:02:27.977Z",
+    "userId": "usr-L2781",
+    "username": "L2781",
+    "ipAddress": "192.168.88.208:56202",
+    "device": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/152.0.0.0 Safari/537.36",
+    "status": "Success"
+  },
+  {
+    "id": "login-1790243944793-becc6a5f",
+    "at": "2026-09-24T09:59:04.793Z",
+    "userId": "usr-C2463",
+    "username": "C2463",
+    "ipAddress": "192.168.5.149:45138",
+    "device": "Mozilla/5.0 (Linux; U; Android 14; en-gb; 24117RN76G Build/UP1A.231005.007) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.6723.86 Mobile Safari/537.36 PHX/22.3",
+    "status": "Failed",
+    "reason": "Invalid password"
+  },
+  {
+    "id": "login-1790243872922-da27dfcc",
+    "at": "2026-09-24T09:57:52.922Z",
+    "userId": "usr-L2770",
+    "username": "L2770",
+    "ipAddress": "192.168.5.211:50591",
+    "device": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/152.0.0.0 Safari/537.36",
+    "status": "Success"
+  },
+  {
+    "id": "login-1790243872911-695ab94d",
+    "at": "2026-09-24T09:57:52.911Z",
+    "userId": "usr-L2788",
+    "username": "L2788",
+    "ipAddress": "192.168.5.141:52703",
+    "device": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/153.0.0.0 Safari/537.36 Edg/153.0.0.0",
+    "status": "Success"
+  },
+  {
+    "id": "login-1790243872708-3e143c0c",
+    "at": "2026-09-24T09:57:52.708Z",
+    "userId": "usr-C2463",
+    "username": "C2463",
+    "ipAddress": "192.168.5.149:45138",
+    "device": "Mozilla/5.0 (Linux; U; Android 14; en-gb; 24117RN76G Build/UP1A.231005.007) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.6723.86 Mobile Safari/537.36 PHX/22.3",
+    "status": "Failed",
+    "reason": "Invalid password"
   }
 ]

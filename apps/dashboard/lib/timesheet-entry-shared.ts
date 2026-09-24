@@ -129,6 +129,22 @@ export const clockTimeToMinutes = (value?: string | null): number | null => {
   return parseClockMinutes(raw);
 };
 
+/** Night timesheet booking: shift 02, header id `*-night`, or evening clock-in (18:00+). Early morning day clocks are not nights. */
+export const isNightTimesheetBooking = (
+  shiftLabel?: string | null,
+  headerId?: string | null,
+  clockIn?: string | null,
+) => {
+  const id = String(headerId || '').toLowerCase();
+  if (/(^|[-_/])night($|[-_/])/i.test(id) || id.endsWith('night')) return true;
+  const label = String(shiftLabel || '').trim();
+  if (label && !/^unassigned$/i.test(label)) {
+    return resolveTimesheetShift(label).kind === 'Night';
+  }
+  const minutes = clockTimeToMinutes(clockIn);
+  return minutes != null && minutes >= NIGHT_SHIFT_START_MINUTES;
+};
+
 /** True when the timesheet/biometric row has a real clock-in punch (not absent / placeholder). */
 export const hasBiometricClockIn = (clockIn?: string | null) => clockTimeToMinutes(clockIn) !== null;
 
@@ -1264,26 +1280,39 @@ const bookedLineHours = (line: { usedHours?: number | null; totalHours?: number 
 export const weekdayOvertimeHoursFromLine = (
   line: { usedHours?: number | null; offshoreAllowanceHours?: number | null },
   timesheetDate: string,
+  holidayDates: string[] = [],
 ) => {
-  const day = utcTimesheetWeekday(timesheetDate);
-  if (day < 1 || day > 5) return 0;
+  if (timesheetDayRulesForDate(timesheetDate, holidayDates).kind !== 'Weekday') return 0;
   const used = Number(line.usedHours || 0);
   const fromUsed = round1(Math.max(0, used - STANDARD_TIMESHEET_HOURS));
   if (fromUsed > 0.001) return fromUsed;
   return round1(Math.max(0, Number(line.offshoreAllowanceHours || 0)));
 };
 
+/** Saturday / Sunday / public-holiday hours. PH beats weekend (PUBHOL 2×, not SATEARN). */
+export const premiumHoursFromTimesheetLine = (
+  line: { usedHours?: number | null; totalHours?: number | null },
+  timesheetDate: string,
+  holidayDates: string[] = [],
+): { saturdayHours: number; sundayHours: number; publicHolidayHours: number } => {
+  const hours = bookedLineHours(line);
+  const empty = { saturdayHours: 0, sundayHours: 0, publicHolidayHours: 0 };
+  if (hours <= 0) return empty;
+  const kind = timesheetDayRulesForDate(timesheetDate, holidayDates).kind;
+  if (kind === 'PublicHoliday') return { saturdayHours: 0, sundayHours: 0, publicHolidayHours: hours };
+  if (kind === 'Saturday') return { saturdayHours: hours, sundayHours: 0, publicHolidayHours: 0 };
+  if (kind === 'Sunday') return { saturdayHours: 0, sundayHours: hours, publicHolidayHours: 0 };
+  return empty;
+};
+
 /** Saturday / Sunday hours for SATEARN / SUNDAYEARN — not weekday day-rate or meal. */
 export const weekendHoursFromTimesheetLine = (
   line: { usedHours?: number | null; totalHours?: number | null },
   timesheetDate: string,
+  holidayDates: string[] = [],
 ): { saturdayHours: number; sundayHours: number } => {
-  const day = utcTimesheetWeekday(timesheetDate);
-  const hours = bookedLineHours(line);
-  if (hours <= 0) return { saturdayHours: 0, sundayHours: 0 };
-  if (day === 6) return { saturdayHours: hours, sundayHours: 0 };
-  if (day === 0) return { saturdayHours: 0, sundayHours: hours };
-  return { saturdayHours: 0, sundayHours: 0 };
+  const premium = premiumHoursFromTimesheetLine(line, timesheetDate, holidayDates);
+  return { saturdayHours: premium.saturdayHours, sundayHours: premium.sundayHours };
 };
 
 export const includedOffshorePaidOvertimeHours = (

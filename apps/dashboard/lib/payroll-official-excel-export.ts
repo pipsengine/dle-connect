@@ -21,6 +21,8 @@ import {
 } from '@/lib/payroll-bank-schedule-packs';
 import { buildPayrollAttendanceSheet, type PayrollAttendanceSheetRow } from '@/lib/timesheet-payroll-attendance-sheet';
 import { isTimesheetCountableForPayroll, readTimesheetData } from '@/lib/timesheet-entry-store';
+import { getPayrollPublicHolidayDates } from '@/lib/nigeria-public-holidays';
+import { NIGHT_INCONVENIENCE_ALLOWANCE_AMOUNT } from '@/lib/timesheet-entry-shared';
 import { resolvePayrollCompany, type PayrollCompany } from '@/lib/payroll-schedule-scope';
 import { ngnSalaryScheduleCostSummary } from '@/lib/salary-schedule-overlay';
 import { earningComponentFamily } from '@/lib/payroll-earning-component';
@@ -1351,11 +1353,13 @@ const DAYRATE_DLE_COLUMNS = [
   'Sundays Worked',
   'Total Days Worked',
   'Weekday OVT',
+  'Public Holiday',
   'Night Worked',
   'Wkd Earning',
   'Wkd Ovt Amt',
   'Sat Ovt Amt',
   'Sun Ovt Amt',
+  'PH Amt',
   'Night Amt',
   'Meal Allowance',
   'Transport',
@@ -1446,7 +1450,7 @@ const buildDayrateDetailSheet = (
       || (dailyRate > 0 ? roundMoney((dailyRate / 8) * 2 * phHrs) : 0);
     const nightAmt = lineAmount(record.earningLines, /NIGHT/i)
       || Number(att?.nightWorkedTotal || 0)
-      || roundMoney(1100 * nightDays);
+      || roundMoney(NIGHT_INCONVENIENCE_ALLOWANCE_AMOUNT * nightDays);
     const meal = lineAmount(record.earningLines, /^MEAL$|MEAL ALLOW|PER_MEAL/i)
       || roundMoney(500 * weekDays);
     const transport = lineAmount(record.earningLines, /TRANSPORT ALLOW|EXP_TRANS|^TRANSPORT$/i);
@@ -1474,11 +1478,13 @@ const buildDayrateDetailSheet = (
         sundayDays,
         totalDays,
         weekdayOvtHrs,
+        phHrs,
         nightDays,
         roundMoney(wkdEarning),
         blankOr(wkdOvtAmt),
         blankOr(satAmt),
         blankOr(sunAmt),
+        blankOr(phAmt),
         blankOr(nightAmt),
         roundMoney(meal),
         blankOr(transport),
@@ -1542,6 +1548,7 @@ const buildDayrateDetailSheet = (
           const weekdayOvtHrs = Number(att?.weekdayOvertimeHours ?? 0);
           const satHrs = Number(att?.saturdayHours ?? 0);
           const sunHrs = Number(att?.sundayHours ?? 0);
+          const phHrs = Number(att?.publicHolidayHours ?? 0);
           const nightDays = Number(att?.nightWorkedDays ?? 0);
           const wkdEarning = lineAmount(record.earningLines, /JCWEEKDAY(?!_NT)/i) + lineAmount(record.earningLines, /JCWEEKDAY_NT/i)
             || Number(att?.weekDayTotal || 0)
@@ -1555,9 +1562,12 @@ const buildDayrateDetailSheet = (
           const sunAmt = lineAmount(record.earningLines, /SUNDAYEARN/i)
             || Number(att?.sundayTotal || 0)
             || (dailyRate > 0 ? roundMoney((dailyRate / 8) * 2 * sunHrs) : 0);
+          const phAmt = lineAmount(record.earningLines, /PUBHOL/i)
+            || Number(att?.publicHolidayTotal || 0)
+            || (dailyRate > 0 ? roundMoney((dailyRate / 8) * 2 * phHrs) : 0);
           const nightAmt = lineAmount(record.earningLines, /NIGHT/i)
             || Number(att?.nightWorkedTotal || 0)
-            || roundMoney(1100 * nightDays);
+            || roundMoney(NIGHT_INCONVENIENCE_ALLOWANCE_AMOUNT * nightDays);
           const meal = lineAmount(record.earningLines, /^MEAL$|MEAL ALLOW|PER_MEAL/i)
             || roundMoney(500 * weekDays);
           const transport = lineAmount(record.earningLines, /TRANSPORT ALLOW|EXP_TRANS|^TRANSPORT$/i);
@@ -1566,7 +1576,7 @@ const buildDayrateDetailSheet = (
           const tcmTransport = lineAmount(record.earningLines, /TCM.?TRN|TCMTRANS|TCM_TRNSPT/i);
           const arrears = lineAmount(record.earningLines, /ARREARS/i);
           const totalEarnings = Number(record.grossPay || 0)
-            || wkdEarning + wkdOvtAmt + satAmt + sunAmt + nightAmt + meal + transport + site + tcmMeal + tcmTransport + arrears;
+            || wkdEarning + wkdOvtAmt + satAmt + sunAmt + phAmt + nightAmt + meal + transport + site + tcmMeal + tcmTransport + arrears;
           const wht = Number(record.paye || 0) || totalEarnings * 0.05;
           const netPay = Number(record.netPay || 0) || totalEarnings - wht;
           return {
@@ -1578,11 +1588,13 @@ const buildDayrateDetailSheet = (
             weekdayOvtHrs: acc.weekdayOvtHrs + weekdayOvtHrs,
             satHrs: acc.satHrs + satHrs,
             sunHrs: acc.sunHrs + sunHrs,
+            phHrs: acc.phHrs + phHrs,
             nightDays: acc.nightDays + nightDays,
             wkdEarning: acc.wkdEarning + wkdEarning,
             wkdOvtAmt: acc.wkdOvtAmt + wkdOvtAmt,
             satAmt: acc.satAmt + satAmt,
             sunAmt: acc.sunAmt + sunAmt,
+            phAmt: acc.phAmt + phAmt,
             nightAmt: acc.nightAmt + nightAmt,
             meal: acc.meal + meal,
             transport: acc.transport + transport,
@@ -1596,8 +1608,8 @@ const buildDayrateDetailSheet = (
           };
         },
         {
-          dailyRate: 0, weekDays: 0, saturdayDays: 0, sundayDays: 0, totalDays: 0, weekdayOvtHrs: 0, satHrs: 0, sunHrs: 0, nightDays: 0,
-          wkdEarning: 0, wkdOvtAmt: 0, satAmt: 0, sunAmt: 0, nightAmt: 0, meal: 0,
+          dailyRate: 0, weekDays: 0, saturdayDays: 0, sundayDays: 0, totalDays: 0, weekdayOvtHrs: 0, satHrs: 0, sunHrs: 0, phHrs: 0, nightDays: 0,
+          wkdEarning: 0, wkdOvtAmt: 0, satAmt: 0, sunAmt: 0, phAmt: 0, nightAmt: 0, meal: 0,
           transport: 0, site: 0, tcmMeal: 0, tcmTransport: 0, arrears: 0,
           totalEarnings: 0, wht: 0, netPay: 0,
         },
@@ -1611,11 +1623,13 @@ const buildDayrateDetailSheet = (
         roundMoney(totals.sundayDays),
         roundMoney(totals.totalDays),
         roundMoney(totals.weekdayOvtHrs),
+        roundMoney(totals.phHrs),
         roundMoney(totals.nightDays),
         roundMoney(totals.wkdEarning),
         blankOr(totals.wkdOvtAmt),
         blankOr(totals.satAmt),
         blankOr(totals.sunAmt),
+        blankOr(totals.phAmt),
         blankOr(totals.nightAmt),
         roundMoney(totals.meal),
         blankOr(totals.transport),
@@ -1665,7 +1679,7 @@ const buildDayrateDetailSheet = (
             || (dailyRate > 0 ? roundMoney((dailyRate / 8) * 2 * phHrs) : 0);
           const nightAmt = lineAmount(record.earningLines, /NIGHT/i)
             || Number(att?.nightWorkedTotal || 0)
-            || roundMoney(1100 * nightDays);
+            || roundMoney(NIGHT_INCONVENIENCE_ALLOWANCE_AMOUNT * nightDays);
           const meal = lineAmount(record.earningLines, /^MEAL$|MEAL ALLOW|PER_MEAL/i)
             || roundMoney(500 * weekDays);
           const transport = lineAmount(record.earningLines, /TRANSPORT ALLOW|EXP_TRANS|^TRANSPORT$/i);
@@ -1765,7 +1779,8 @@ export const loadDayrateAttendanceByEmpCode = async (period: string) => {
           employeeName: line.employeeName,
           jobTitle: compact((line as { jobTitle?: string }).jobTitle),
           location: compact((line as { location?: string }).location),
-          shiftLabel: compact((line as { shiftLabel?: string }).shiftLabel),
+          shiftLabel: compact(header?.shiftLabel || (line as { shiftLabel?: string }).shiftLabel),
+          headerId: compact(header?.id || line.headerId),
           projectCode: compact(line.projectAllocations?.[0]?.projectCode || 'General'),
           projectSite: compact((line as { projectSite?: string }).projectSite),
           lineRemarks: compact(line.remarks),
@@ -1774,11 +1789,13 @@ export const loadDayrateAttendanceByEmpCode = async (period: string) => {
           usedHours: Number(line.usedHours || 0),
           productiveHours: Number(line.usedHours || line.totalHours || 0),
           totalHours: Number(line.totalHours || 0),
+          clockIn: line.clockIn,
           dayWorked: undefined as number | undefined,
           labourRateNgn: Number((line as { labourRateNgn?: number }).labourRateNgn || 0) || undefined,
         };
       });
-    const sheet = buildPayrollAttendanceSheet({ rows: attendanceRows, canViewCosts: true });
+    const holidayDates = await getPayrollPublicHolidayDates().catch(() => [] as string[]);
+    const sheet = buildPayrollAttendanceSheet({ rows: attendanceRows, holidayDates, canViewCosts: true });
     const map = new Map<string, PayrollAttendanceSheetRow>();
     for (const row of sheet) {
       map.set(upper(row.empCode), row);

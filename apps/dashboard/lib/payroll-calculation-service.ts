@@ -373,10 +373,11 @@ const applyDailyRateFromTimesheets = (
   const saturdayHours = excel ? Number(excel.saturdayHours || 0) : Number(timesheet?.saturdayHours || 0);
   const sundayHours = excel ? Number(excel.sundayHours || 0) : Number(timesheet?.sundayHours || 0);
   const publicHolidayHours = excel ? Number(excel.publicHolidayHours || 0) : Number(timesheet?.publicHolidayHours || 0);
+  const nightDays = excel && Number(excel.nightAmt || 0) > 0 ? 0 : Number(excel?.nightDays || timesheet?.nightDays || 0);
   const weekendHours = saturdayHours + sundayHours + publicHolidayHours;
   // Daily-rate staff are timesheet-driven only — no hoursPerPeriod / package fallback.
   // An HR Excel overlay can still pay OT/weekend hours when weekday days are zero (pre-2026-09).
-  if (weekdayDays <= 0 && weekendHours <= 0 && !(excel && dayrateBookedHours(excel) > 0)) {
+  if (weekdayDays <= 0 && weekendHours <= 0 && nightDays <= 0 && !(excel && dayrateBookedHours(excel) > 0)) {
     return {
       ...amounts,
       periodPackageGross: 0,
@@ -415,6 +416,7 @@ const applyDailyRateFromTimesheets = (
     saturdayHours,
     sundayHours,
     publicHolidayHours,
+    nightDays,
     period,
   });
   return {

@@ -334,6 +334,7 @@ export async function GET(request: Request) {
           usedHours: lineProductive,
           offshoreAllowanceHours: line.offshoreAllowanceHours,
           timesheetDate: header.timesheetDate,
+          holidayDates,
         });
         const overtimeShares = prorateBookedHours(lineOvertime, allocationHoursList.map((hours) => hours || 1));
         const labourRate = resolveTimesheetLabourRateNgn(employee);

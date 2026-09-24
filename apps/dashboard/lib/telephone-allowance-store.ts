@@ -9,7 +9,9 @@ import sql from 'mssql';
 import type { SessionPayload } from '@/lib/auth/session';
 import { getDleEnterpriseDbPool } from '@/lib/dle-enterprise-db';
 import { createEnterpriseNotification } from '@/lib/enterprise-notifications-store';
-import { readPayrollEmployees } from '@/lib/payroll-employee-source';
+import { readDirectoryEmployees, readPayrollEmployees } from '@/lib/payroll-employee-source';
+import { payslipIdentityMap } from '@/lib/payroll-payslip-identity-store';
+import { normalizePayrollMatchKey } from '@/lib/sage-people-payroll-store';
 import type { TelephoneAllowanceCapabilities } from '@/lib/telephone-allowance-access';
 import {
   assertTransition,
@@ -755,8 +757,15 @@ const loadPaymentsForCycle = async (mode: SqlMode, cycleId: string): Promise<Tel
   return (rs.recordset || []).map(mapPaymentRow);
 };
 
+const usefulLabel = (value: unknown) => {
+  const text = compact(value);
+  if (!text || /^unassigned\b/i.test(text)) return '';
+  return text;
+};
+
 const directoryIndex = async () => {
-  const source = await readPayrollEmployees();
+  const source = await readDirectoryEmployees();
+  const identities = await payslipIdentityMap().catch(() => new Map());
   const byCode = new Map<string, {
     employeeCode: string;
     employeeName: string;
@@ -770,19 +779,36 @@ const directoryIndex = async () => {
   for (const emp of source.employees) {
     const code = upperCode(emp.employeeCode || emp.employeeId);
     if (!code) continue;
-    byCode.set(code, {
+    const identity = identities.get(normalizePayrollMatchKey(code))
+      || identities.get(normalizePayrollMatchKey(emp.employeeId))
+      || identities.get(code);
+    const hit = {
       employeeCode: compact(emp.employeeCode) || code,
       employeeName: compact(emp.fullName),
-      department: compact(emp.department),
-      jobTitle: compact(emp.jobTitle),
-      bankName: compact(emp.bankName) || null,
-      accountNo: compact(emp.accountNo) || null,
-      sortCode: compact(emp.branchCode) || null,
+      department: usefulLabel(emp.department) || usefulLabel(identity?.department) || usefulLabel(emp.division) || usefulLabel(emp.businessUnit),
+      jobTitle: usefulLabel(emp.jobTitle) || usefulLabel(identity?.jobTitle),
+      bankName: compact(emp.bankName) || compact(identity?.bankName) || null,
+      accountNo: compact(emp.accountNo) || compact(identity?.accountNo) || null,
+      sortCode: compact(emp.branchCode) || compact(identity?.branchCode) || null,
       status: compact(emp.status),
-    });
+    };
+    const aliases = new Set([
+      code,
+      upperCode(emp.employeeId),
+      upperCode(normalizePayrollMatchKey(code)),
+      upperCode(normalizePayrollMatchKey(emp.employeeId)),
+    ]);
+    for (const alias of aliases) {
+      if (alias) byCode.set(alias, hit);
+    }
   }
   return byCode;
 };
+
+const lookupDirectory = (
+  directory: Awaited<ReturnType<typeof directoryIndex>>,
+  employeeCode: string,
+) => directory.get(upperCode(employeeCode)) || directory.get(upperCode(normalizePayrollMatchKey(employeeCode)));
 
 const syncExceptionsForCycle = async (mode: SqlMode, cycle: TelephoneCycle, actor: string) => {
   const openTypes = new Set<string>();
@@ -1013,7 +1039,11 @@ type DirectoryHit = {
   bankName: string | null;
   accountNo: string | null;
   sortCode: string | null;
+  status?: string;
 };
+
+const isInactiveDirectoryStatus = (status: string | null | undefined) =>
+  /terminated|resigned|retired|inactive|deceased|exited|separated/i.test(String(status || '').trim());
 
 const buildEmployeesForNewCycle = (
   year: number,
@@ -1037,6 +1067,7 @@ const buildEmployeesForNewCycle = (
   const employees: CycleEmployeeLine[] = [];
   for (const code of codes) {
     const dir = directory.get(code);
+    if (dir && isInactiveDirectoryStatus(dir.status)) continue;
     const prev = previousByCode.get(code);
     const fromEntitlement = buildLineFromEntitlements(entitlements, dir?.employeeCode || prev?.employeeCode || code, year, pair, {
       employeeName: dir?.employeeName || prev?.employeeName,
@@ -1083,11 +1114,91 @@ export const getCycle = async (idOrCode: string): Promise<TelephoneCycle | null>
   return loadCycle(mode, idOrCode);
 };
 
+const removeInactiveDirectoryEmployees = async (cycle: TelephoneCycle): Promise<TelephoneCycle> => {
+  if (cycle.locked || (!canEditSchedule(cycle.status, cycle.locked) && !canHrReviewEdit(cycle.status))) return cycle;
+  const directory = await directoryIndex();
+  const inactive = cycle.employees.filter((line) => {
+    if (line.changeBadge === 'REMOVED') return false;
+    const dir = lookupDirectory(directory, line.employeeCode);
+    return Boolean(dir && isInactiveDirectoryStatus(dir.status));
+  });
+  const inactiveCodes = new Set(inactive.map((line) => upperCode(line.employeeCode)));
+  let profileChanged = false;
+  const employees = cycle.employees
+    .filter((line) => !inactiveCodes.has(upperCode(line.employeeCode)))
+    .map((line) => {
+      const dir = lookupDirectory(directory, line.employeeCode);
+      if (!dir) return line;
+      const department = usefulLabel(line.department) || dir.department;
+      const jobTitle = usefulLabel(line.jobTitle) || dir.jobTitle;
+      const bankName = compact(line.bankName) || dir.bankName;
+      const accountNo = compact(line.accountNo) || dir.accountNo;
+      const sortCode = compact(line.sortCode) || dir.sortCode;
+      if (
+        department === line.department
+        && jobTitle === (line.jobTitle || '')
+        && (bankName || null) === (line.bankName || null)
+        && (accountNo || null) === (line.accountNo || null)
+        && (sortCode || null) === (line.sortCode || null)
+      ) return line;
+      profileChanged = true;
+      return refreshLineBadge({
+        ...line,
+        department,
+        jobTitle,
+        bankName,
+        accountNo,
+        sortCode,
+      }, line.changeBadge);
+    });
+  const totaled = applyTotals({ ...cycle, employees });
+  const totalsChanged = totaled.beneficiaryCount !== cycle.beneficiaryCount
+    || roundMoney(totaled.month1Total) !== roundMoney(cycle.month1Total)
+    || roundMoney(totaled.month2Total) !== roundMoney(cycle.month2Total)
+    || roundMoney(totaled.bimonthlyTotal) !== roundMoney(cycle.bimonthlyTotal);
+  if (!inactive.length && !profileChanged && !totalsChanged) return cycle;
+
+  const now = nowIso();
+  const removals: CycleChange[] = inactive.map((line) => ({
+    id: newId(),
+    employeeCode: line.employeeCode,
+    employeeName: line.employeeName,
+    changeType: 'REMOVE',
+    effectiveMonth: 'BOTH',
+    previousMonthlyRate: line.monthlyRate,
+    newMonthlyRate: 0,
+    month1Eligible: false,
+    month2Eligible: false,
+    reason: 'Inactive in Employee Directory',
+    comment: null,
+    actor: 'Employee Directory',
+    createdAt: now,
+  }));
+  const mode = await resolveMode();
+  let next = bumpRowVersion({
+    ...totaled,
+    changes: inactive.length ? [...removals, ...cycle.changes] : cycle.changes,
+  });
+  next = await saveCycle(mode, next);
+  await appendAudit(mode, {
+    cycleId: next.id,
+    user: 'Employee Directory',
+    role: 'System',
+    action: inactive.length ? 'REMOVE_INACTIVE_DIRECTORY' : 'SYNC_DIRECTORY_PROFILE',
+    newValue: inactive.length
+      ? inactive.map((line) => line.employeeCode).join(', ')
+      : `beneficiaries ${next.beneficiaryCount}; total ${next.bimonthlyTotal}`,
+    reason: inactive.length ? 'Inactive in Employee Directory' : 'Department and totals refreshed from Employee Directory',
+    workflowStage: next.status,
+  });
+  return next;
+};
+
 export const getCurrentCycle = async (): Promise<TelephoneCycle | null> => {
   const cycles = await listCycles();
   if (!cycles.length) return null;
   const open = cycles.find((c) => !['PAID', 'COMPLETED'].includes(c.status));
-  if (open) return open;
+  if (open) return removeInactiveDirectoryEmployees(open);
   const { year, pair } = currentOpenPair();
   return cycles.find((c) => c.year === year && c.pairCode === pair.code) || cycles[0] || null;
 };
@@ -2623,6 +2734,7 @@ export const compareCycles = async (currentId: string, previousId: string) => {
 export const searchDirectoryEmployees = async (query: string) => {
   const q = compact(query).toLowerCase();
   const source = await readPayrollEmployees();
+  const directory = await directoryIndex();
   const employees = source.employees
     .filter((emp) => {
       if (!q) return true;
@@ -2632,16 +2744,20 @@ export const searchDirectoryEmployees = async (query: string) => {
       return hay.includes(q);
     })
     .slice(0, 50)
-    .map((emp) => ({
-      employeeCode: compact(emp.employeeCode) || compact(emp.employeeId),
-      employeeName: compact(emp.fullName),
-      department: compact(emp.department),
-      jobTitle: compact(emp.jobTitle),
-      status: compact(emp.status),
-      bankName: compact(emp.bankName) || null,
-      accountNoMasked: maskAccount(emp.accountNo),
-      hasBank: Boolean(compact(emp.accountNo)),
-    }));
+    .map((emp) => {
+      const code = compact(emp.employeeCode) || compact(emp.employeeId);
+      const dir = lookupDirectory(directory, code);
+      return {
+        employeeCode: code,
+        employeeName: compact(emp.fullName),
+        department: usefulLabel(emp.department) || dir?.department || '',
+        jobTitle: usefulLabel(emp.jobTitle) || dir?.jobTitle || '',
+        status: compact(emp.status),
+        bankName: compact(emp.bankName) || dir?.bankName || null,
+        accountNoMasked: maskAccount(emp.accountNo || dir?.accountNo),
+        hasBank: Boolean(compact(emp.accountNo) || compact(dir?.accountNo)),
+      };
+    });
 
   return {
     query: compact(query),

@@ -40,9 +40,13 @@ import {
   selectTimesheetHeaderForLocation,
   weekdayOvertimeHoursFromLine,
   weekendHoursFromTimesheetLine,
+  premiumHoursFromTimesheetLine,
+  timesheetDayRulesForDate,
+  isNightTimesheetBooking,
   type TimesheetLine,
 } from '@/lib/timesheet-entry-shared';
 import { overlayMissingTimesheetClocks, selectCanonicalTimesheetHeader, timesheetAssignmentGroupIsExclusive } from '@/lib/timesheet-sheet-identity';
+import { getPayrollPublicHolidayDates } from '@/lib/nigeria-public-holidays';
 import {
   TIMESHEET_OCTOBER_2026_PERIOD_ID,
   TIMESHEET_SEPTEMBER_2026_PERIOD_ID,
@@ -2471,6 +2475,9 @@ export type EmployeeAttendanceAggregate = {
   sundayDays: number;
   saturdayHours: number;
   sundayHours: number;
+  publicHolidayHours: number;
+  nightDays: number;
+  nightHours: number;
   attendanceHours: number;
   bookedHours: number;
   idleHours: number;
@@ -2488,6 +2495,8 @@ export type PayrollTimesheetHoursEntry = {
   saturdayHours?: number;
   sundayHours?: number;
   publicHolidayHours?: number;
+  nightDays?: number;
+  nightHours?: number;
   employeeNo?: string;
   employeeName?: string;
 };
@@ -2548,13 +2557,16 @@ export const isPayrollPayableWorkDay = (
 export const aggregateEmployeeAttendanceForHeaders = (
   headers: TimesheetHeader[],
   lines: TimesheetLine[],
-  options?: { headerIds?: string[]; payrollReadyOnly?: boolean },
+  options?: { headerIds?: string[]; payrollReadyOnly?: boolean; holidayDates?: string[] },
 ) => {
   const headerIds = new Set(options?.headerIds || headers.map((header) => header.id));
   const headerById = new Map(headers.filter((header) => headerIds.has(header.id)).map((header) => [header.id, header]));
+  const holidayDates = options?.holidayDates || [];
   const totals = new Map<string, EmployeeAttendanceAggregate>();
   const countedEmployeeDates = new Set<string>();
   const countedSundayDates = new Set<string>();
+  const countedNightDates = new Set<string>();
+  const countedHolidayDates = new Set<string>();
 
   for (const line of lines) {
     if (!headerIds.has(line.headerId)) continue;
@@ -2565,15 +2577,20 @@ export const aggregateEmployeeAttendanceForHeaders = (
     if (options?.payrollReadyOnly && !payrollReadyHeaderStatuses.has(status)) continue;
 
     const dateKey = header.timesheetDate || '';
+    const dayKind = timesheetDayRulesForDate(dateKey, holidayDates).kind;
     const paidDay = isPayrollPayableWorkDay(line, dateKey);
     const employeeKey = canonicalTimesheetEmployeeKey(line);
     const employeeDateKey = `${employeeKey}::${dateKey}`;
-    if (paidDay && dateKey && countedEmployeeDates.has(employeeDateKey)) {
+    const night = isNightTimesheetBooking(header.shiftLabel, header.id, line.clockIn);
+    const nightKey = dateKey ? `${employeeKey}::${dateKey}` : '';
+    const alreadyCountedDay = Boolean(paidDay && dateKey && countedEmployeeDates.has(employeeDateKey));
+    const nightStillNeeded = Boolean(night && nightKey && !countedNightDates.has(nightKey));
+    if (alreadyCountedDay && !nightStillNeeded) {
       const current = totals.get(employeeKey);
       if (current) current.skippedDuplicateDays += 1;
       continue;
     }
-    if (paidDay && dateKey) countedEmployeeDates.add(employeeDateKey);
+    if (paidDay && dateKey && !alreadyCountedDay) countedEmployeeDates.add(employeeDateKey);
 
     const current = totals.get(employeeKey) || {
       employeeId: employeeKey,
@@ -2584,6 +2601,9 @@ export const aggregateEmployeeAttendanceForHeaders = (
       sundayDays: 0,
       saturdayHours: 0,
       sundayHours: 0,
+      publicHolidayHours: 0,
+      nightDays: 0,
+      nightHours: 0,
       attendanceHours: 0,
       bookedHours: 0,
       idleHours: 0,
@@ -2591,27 +2611,54 @@ export const aggregateEmployeeAttendanceForHeaders = (
       skippedDuplicateDays: 0,
     };
     if (!current.employeeName && line.employeeName) current.employeeName = line.employeeName;
-    current.daysWorked += paidDay ? 1 : 0;
     const utcDay = /^\d{4}-\d{2}-\d{2}$/.test(dateKey) ? new Date(`${dateKey}T12:00:00Z`).getUTCDay() : -1;
-    if (paidDay && utcDay >= 1 && utcDay <= 5) current.weekdayDays += 1;
-    if (paidDay && utcDay === 6) current.saturdayDays += 1;
-    const weekend = weekendHoursFromTimesheetLine(line, dateKey);
-    if (utcDay === 0 && weekend.sundayHours > 0) {
+    const premium = premiumHoursFromTimesheetLine(line, dateKey, holidayDates);
+    const isPublicHoliday = dayKind === 'PublicHoliday';
+    if (!alreadyCountedDay && isPublicHoliday && (premium.publicHolidayHours > 0 || paidDay)) {
+      const holidayKey = `${employeeKey}::${dateKey}`;
+      if (!countedHolidayDates.has(holidayKey)) {
+        countedHolidayDates.add(holidayKey);
+        const holidayHours = premium.publicHolidayHours > 0 ? premium.publicHolidayHours : 8;
+        current.publicHolidayHours = Math.round((current.publicHolidayHours + holidayHours) * 10) / 10;
+      }
+    } else if (!alreadyCountedDay) {
+      current.daysWorked += paidDay ? 1 : 0;
+      if (paidDay && utcDay >= 1 && utcDay <= 5) current.weekdayDays += 1;
+      if (paidDay && utcDay === 6) current.saturdayDays += 1;
+    }
+    const weekend = weekendHoursFromTimesheetLine(line, dateKey, holidayDates);
+    if (!alreadyCountedDay && utcDay === 0 && weekend.sundayHours > 0) {
       const sundayKey = `${employeeKey}::${dateKey}`;
       if (!countedSundayDates.has(sundayKey)) {
         countedSundayDates.add(sundayKey);
         current.sundayDays += 1;
       }
     }
-    const saturdayHours = weekend.saturdayHours > 0
-      ? weekend.saturdayHours
-      : paidDay && utcDay === 6 ? 8 : 0;
-    current.saturdayHours = Math.round((current.saturdayHours + saturdayHours) * 10) / 10;
-    current.sundayHours = Math.round((current.sundayHours + weekend.sundayHours) * 10) / 10;
+    if (!alreadyCountedDay) {
+      const saturdayHours = weekend.saturdayHours > 0
+        ? weekend.saturdayHours
+        : paidDay && utcDay === 6 && !isPublicHoliday ? 8 : 0;
+      current.saturdayHours = Math.round((current.saturdayHours + saturdayHours) * 10) / 10;
+      current.sundayHours = Math.round((current.sundayHours + weekend.sundayHours) * 10) / 10;
+      current.weekdayOvertimeHours = Math.round((current.weekdayOvertimeHours + weekdayOvertimeHoursFromLine(line, dateKey, holidayDates)) * 10) / 10;
+    }
     current.attendanceHours = Math.round((current.attendanceHours + normalizePaidWorkHours(line.attendanceDuration)) * 10) / 10;
     current.bookedHours = Math.round((current.bookedHours + normalizePaidWorkHours(line.totalHours)) * 10) / 10;
     current.idleHours = Math.round((current.idleHours + line.idleHours) * 10) / 10;
-    current.weekdayOvertimeHours = Math.round((current.weekdayOvertimeHours + weekdayOvertimeHoursFromLine(line, dateKey)) * 10) / 10;
+    if (night && nightKey && !countedNightDates.has(nightKey)) {
+      countedNightDates.add(nightKey);
+      current.nightDays += 1;
+      const nightHours = Math.max(
+        premium.saturdayHours,
+        premium.publicHolidayHours,
+        premium.sundayHours,
+        normalizePaidWorkHours(line.totalHours),
+        normalizePaidWorkHours(line.usedHours),
+        normalizePaidWorkHours(line.attendanceDuration),
+        8,
+      );
+      current.nightHours = Math.round((current.nightHours + nightHours) * 10) / 10;
+    }
     totals.set(employeeKey, current);
   }
 
@@ -2620,10 +2667,12 @@ export const aggregateEmployeeAttendanceForHeaders = (
 
 export const synthesizeTimesheetHoursForPeriod = async (periodId: string) => {
   const { headers, lines } = await readTimesheetData();
+  const holidayDates = await getPayrollPublicHolidayDates().catch(() => [] as string[]);
   const periodHeaders = headers.filter((header) => header.periodId === periodId && isTimesheetCountableForPayroll(header.status));
   const totals = aggregateEmployeeAttendanceForHeaders(headers, lines, {
     headerIds: periodHeaders.map((header) => header.id),
     payrollReadyOnly: false,
+    holidayDates,
   });
   const aliasesByEmployee = new Map<string, { employeeNo?: string; employeeName?: string }>();
   for (const line of lines) {
@@ -2645,6 +2694,9 @@ export const synthesizeTimesheetHoursForPeriod = async (periodId: string) => {
       sundayDays: aggregate.sundayDays,
       saturdayHours: aggregate.saturdayHours,
       sundayHours: aggregate.sundayHours,
+      publicHolidayHours: aggregate.publicHolidayHours,
+      nightDays: aggregate.nightDays,
+      nightHours: aggregate.nightHours,
       bookedHours: aggregate.bookedHours,
       weekdayOvertimeHours: aggregate.weekdayOvertimeHours,
       employeeNo: alias?.employeeNo,
@@ -2682,6 +2734,8 @@ const hasTimesheetHours = (map: Map<string, PayrollTimesheetHoursEntry>, employe
       || Number(entry.weekdayDays || 0) > 0
       || Number(entry.saturdayHours || 0) > 0
       || Number(entry.sundayHours || 0) > 0
+      || Number(entry.publicHolidayHours || 0) > 0
+      || Number(entry.nightDays || 0) > 0
     ));
   });
 };
@@ -2733,6 +2787,9 @@ export async function buildTimesheetHoursMapForPayrollPeriod(
           sundayDays: data.sundayDays,
           saturdayHours: data.saturdayHours,
           sundayHours: data.sundayHours,
+          publicHolidayHours: data.publicHolidayHours,
+          nightDays: data.nightDays,
+          nightHours: data.nightHours,
           bookedHours: data.bookedHours,
           weekdayOvertimeHours: data.weekdayOvertimeHours,
         });
@@ -2858,7 +2915,11 @@ export async function refreshTimesheetPayrollUpdatesForHeaders(headerIds: string
   const uniqueHeaderIds = Array.from(new Set(headerIds.filter(Boolean)));
   if (!uniqueHeaderIds.length) return { processed: 0 };
 
-  const [{ headers, lines }, periods] = await Promise.all([readTimesheetData(), readTimesheetPeriods()]);
+  const [{ headers, lines }, periods, holidayDates] = await Promise.all([
+    readTimesheetData(),
+    readTimesheetPeriods(),
+    getPayrollPublicHolidayDates().catch(() => [] as string[]),
+  ]);
   let updates = await readTimesheetPayrollUpdates();
   const touchedHeaders: TimesheetHeader[] = [];
   const groupedByPeriod = new Map<string, string[]>();
@@ -2883,6 +2944,7 @@ export async function refreshTimesheetPayrollUpdatesForHeaders(headerIds: string
     const totals = aggregateEmployeeAttendanceForHeaders(headers, lines, {
       headerIds: allPeriodHeaderIds,
       payrollReadyOnly: false,
+      holidayDates,
     });
 
     const period =
@@ -3266,11 +3328,13 @@ export const rebuildPayrollSnapshotForPeriod = async (periodId: string, actor: s
 
 const createPayrollUpdateForPeriod = async (periodId: string, actor: string): Promise<TimesheetPayrollUpdate> => {
   const { headers, lines } = await readTimesheetData();
+  const holidayDates = await getPayrollPublicHolidayDates().catch(() => [] as string[]);
   const period = await readTimesheetPeriod(new Date(`${periodId.replace('per-', '')}-15T00:00:00`));
   const periodHeaders = headers.filter((header) => header.periodId === periodId && isTimesheetCountableForPayroll(header.status));
   const totals = aggregateEmployeeAttendanceForHeaders(headers, lines, {
     headerIds: periodHeaders.map((header) => header.id),
     payrollReadyOnly: false,
+    holidayDates,
   });
 
   const update: TimesheetPayrollUpdate = {

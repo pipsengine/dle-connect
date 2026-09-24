@@ -7,23 +7,16 @@ export const PAYROLL_ATTENDANCE_SHEET_COLUMNS = [
   'Job Title',
   'Location',
   'WEEK DAYS WORKED',
-  'WKD TOT',
   'PAID LEAVE (DAYS)',
-  'L TOT',
   'SATURDAYS WORKED',
   'TOTAL SATURDAY (HRS)',
-  'S TOT',
   'SUNDAYS WORKED',
   'TOTAL SUNDAY (HRS)',
-  'SN TOT',
   'TOTAL PUBLIC HOLIDAY (HRS)',
-  'PH TOT',
   'TOTAL OVERTIME WEEKDAY (HRS)',
-  'OVT TOT',
   'NIGHT WORKED (DAYS)',
-  'NW TOT',
+  'TOTAL NIGHT (HRS)',
   'SITE ALLOWANCE (DAYS)',
-  'SA TOT',
   'TOTAL NUMBER OF DAYS WORKED',
 ] as const;
 
@@ -48,6 +41,7 @@ export type PayrollAttendanceSheetRow = {
   weekdayOvertimeHours: number;
   weekdayOvertimeTotal: number;
   nightWorkedDays: number;
+  nightWorkedHours: number;
   nightWorkedTotal: number;
   siteAllowanceDays: number;
   siteAllowanceTotal: number;
@@ -56,7 +50,6 @@ export type PayrollAttendanceSheetRow = {
 
 export const payrollAttendanceSheetToExcelRows = (
   rows: PayrollAttendanceSheetRow[],
-  canViewCosts = true,
 ): (string | number)[][] =>
   rows.map((row) => [
     row.empCode,
@@ -65,22 +58,15 @@ export const payrollAttendanceSheetToExcelRows = (
     row.jobTitle,
     row.location,
     row.weekDaysWorked,
-    canViewCosts ? row.weekDayTotal : 'Restricted',
     row.paidLeaveDays,
-    canViewCosts ? row.paidLeaveTotal : 'Restricted',
     row.saturdayDaysWorked,
     row.saturdayHours,
-    canViewCosts ? row.saturdayTotal : 'Restricted',
     row.sundayDaysWorked,
     row.sundayHours,
-    canViewCosts ? row.sundayTotal : 'Restricted',
     row.publicHolidayHours,
-    canViewCosts ? row.publicHolidayTotal : 'Restricted',
     row.weekdayOvertimeHours,
-    canViewCosts ? row.weekdayOvertimeTotal : 'Restricted',
     row.nightWorkedDays,
-    canViewCosts ? row.nightWorkedTotal : 'Restricted',
+    row.nightWorkedHours,
     row.siteAllowanceDays,
-    canViewCosts ? row.siteAllowanceTotal : 'Restricted',
     row.totalDaysWorked,
   ]);

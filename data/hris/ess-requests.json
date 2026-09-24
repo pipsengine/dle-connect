@@ -1,5 +1,81 @@
 [
   {
+    "id": "ess-1790085466628-0ietn0",
+    "employeeId": "L1050",
+    "serviceId": "leave",
+    "category": "Leave Application",
+    "title": "CONTRACT LEAVE — OLADIPO ESTHER",
+    "status": "Line Manager Review",
+    "priority": "Normal",
+    "submittedAt": "Tue Sep 22 2026 15:10:52 GMT+0100 (West Africa Standard Time)",
+    "updatedAt": "Thu Sep 24 2026 15:01:34 GMT+0100 (West Africa Standard Time)",
+    "approvers": [
+      "Line Manager / Lead / Supervisor",
+      "HR Manager / Head"
+    ],
+    "leaveType": "CONTRACT LEAVE",
+    "startDate": "2026-10-05",
+    "endDate": "2026-10-13",
+    "days": 7,
+    "payrollPeriod": "2026-10",
+    "paidLeave": false,
+    "reason": "for exam purpose. \ni humbly request for additional 3days to enable me round up the submission of some of my school work. i sincerely apologize for any inconvenience this might cause. thanks for your favourably consideration.",
+    "relieverEmployeeId": "P0279",
+    "relieverName": "Mrs. AINA AJOKE OLAJUMOKE",
+    "lineManagerEmployeeId": "P0279",
+    "lineManagerName": "Mrs. AINA AJOKE OLAJUMOKE",
+    "handover": "none",
+    "workflow": [
+      {
+        "stage": "Employee Request",
+        "owner": "OLADIPO ESTHER",
+        "status": "Completed",
+        "actedAt": "2026-09-22T14:07:08.543Z",
+        "comment": "Submitted from Employee Self-Service."
+      },
+      {
+        "stage": "Line Manager / Lead / Supervisor",
+        "owner": "Mrs. AINA AJOKE OLAJUMOKE",
+        "status": "Current",
+        "actedAt": null,
+        "comment": "Approval validity: 5 working days."
+      },
+      {
+        "stage": "HR Manager / Head",
+        "owner": "HR Manager / Head",
+        "status": "Pending",
+        "actedAt": null,
+        "comment": "Final HR approval and leave balance confirmation."
+      },
+      {
+        "stage": "Requester Notification",
+        "owner": "OLADIPO ESTHER",
+        "status": "Pending",
+        "actedAt": null,
+        "comment": "Requester notified after final approval."
+      },
+      {
+        "stage": "Reliever Notification",
+        "owner": "Mrs. AINA AJOKE OLAJUMOKE",
+        "status": "Pending",
+        "actedAt": null,
+        "comment": "Reliever notified after final approval."
+      }
+    ],
+    "comments": [
+      {
+        "at": "2026-09-22T14:07:08.543Z",
+        "actor": "OLADIPO ESTHER",
+        "comment": "Leave Application submitted from workforce portal."
+      },
+      {
+        "at": "2026-09-23T18:38:27.811Z",
+        "actor": "ODUNNIYI SAYO FUAD",
+        "comment": "Line manager email delivered to Mrs. AINA AJOKE OLAJUMOKE (jumokeaina@dormanlongeng.com) via graph."
+      }
+    ]
+  },
+  {
     "id": "ess-1789980396444-7aaphr",
     "employeeId": "L2067",
     "category": "Leave Application",
@@ -7,7 +83,7 @@
     "status": "Line Manager Review",
     "priority": "Normal",
     "submittedAt": "Mon Sep 21 2026 10:03:59 GMT+0100 (West Africa Standard Time)",
-    "updatedAt": "Thu Sep 24 2026 10:28:41 GMT+0100 (West Africa Standard Time)",
+    "updatedAt": "Thu Sep 24 2026 15:01:34 GMT+0100 (West Africa Standard Time)",
     "approvers": [
       "Line Manager / Lead / Supervisor",
       "HR Manager / Head"
@@ -29,6 +105,436 @@
     "workflow": []
   },
   {
+    "id": "ess-1790180405096-fw6nrk",
+    "employeeId": "P0449",
+    "serviceId": "leave",
+    "category": "Leave Application",
+    "title": "Annual Leave — Mr. OKE OLUWASEGUN OLABODE",
+    "status": "Line Manager Review",
+    "priority": "Normal",
+    "submittedAt": "Wed Sep 23 2026 18:22:51 GMT+0100 (West Africa Standard Time)",
+    "updatedAt": "Thu Sep 24 2026 15:01:34 GMT+0100 (West Africa Standard Time)",
+    "approvers": [
+      "Line Manager / Lead / Supervisor",
+      "HR Manager / Head"
+    ],
+    "leaveType": "Annual Leave",
+    "startDate": "2026-10-01",
+    "endDate": "2026-10-16",
+    "days": 11,
+    "payrollPeriod": "2026-10",
+    "paidLeave": true,
+    "reason": "This is to attend to personal exigencies",
+    "relieverEmployeeId": "P0454",
+    "relieverName": "Mr. ISHOLA SAMSON OLUWAFEMI",
+    "lineManagerEmployeeId": "P0442",
+    "lineManagerName": "Mrs. ODULATE ABIODUN TEMITOPE",
+    "workflow": [
+      {
+        "stage": "Employee Request",
+        "owner": "Mr. OKE OLUWASEGUN OLABODE",
+        "status": "Completed",
+        "actedAt": "2026-09-23T16:22:55.856Z",
+        "comment": "Submitted from Employee Self-Service."
+      },
+      {
+        "stage": "Line Manager / Lead / Supervisor",
+        "owner": "Mrs. ODULATE ABIODUN TEMITOPE",
+        "status": "Current",
+        "actedAt": null,
+        "comment": "Approval validity: 5 working days."
+      },
+      {
+        "stage": "HR Manager / Head",
+        "owner": "HR Manager / Head",
+        "status": "Pending",
+        "actedAt": null,
+        "comment": "Final HR approval and leave balance confirmation."
+      },
+      {
+        "stage": "Requester Notification",
+        "owner": "Mr. OKE OLUWASEGUN OLABODE",
+        "status": "Pending",
+        "actedAt": null,
+        "comment": "Requester notified after final approval."
+      },
+      {
+        "stage": "Reliever Notification",
+        "owner": "Mr. ISHOLA SAMSON OLUWAFEMI",
+        "status": "Pending",
+        "actedAt": null,
+        "comment": "Reliever notified after final approval."
+      }
+    ],
+    "comments": [
+      {
+        "at": "2026-09-23T16:22:55.856Z",
+        "actor": "Mr. OKE OLUWASEGUN OLABODE",
+        "comment": "Request submitted from workforce portal. Leave allowance will post to payroll after approval."
+      },
+      {
+        "at": "2026-09-23T18:38:23.093Z",
+        "actor": "ODUNNIYI SAYO FUAD",
+        "comment": "Line manager email delivered to Mrs. ODULATE ABIODUN TEMITOPE (temitopeodulate@dormanlongeng.com) via graph."
+      }
+    ]
+  },
+  {
+    "id": "ess-1790172623865-aehjyi",
+    "employeeId": "C2491",
+    "serviceId": "leave",
+    "category": "Leave Application",
+    "title": "Annual Leave — OGUNYEMI AYODELE",
+    "status": "HR Review",
+    "priority": "Normal",
+    "submittedAt": "Wed Sep 23 2026 15:18:28 GMT+0100 (West Africa Standard Time)",
+    "updatedAt": "Thu Sep 24 2026 15:01:34 GMT+0100 (West Africa Standard Time)",
+    "approvers": [
+      "Line Manager / Lead / Supervisor",
+      "HR Manager / Head"
+    ],
+    "leaveType": "Annual Leave",
+    "startDate": "2026-10-09",
+    "endDate": "2026-10-19",
+    "days": 7,
+    "payrollPeriod": "2026-10",
+    "paidLeave": true,
+    "relieverEmployeeId": "C2412",
+    "relieverName": "BABATUNDE OYELEYE",
+    "lineManagerEmployeeId": "C1720",
+    "lineManagerName": "RAYMOND ADANOU",
+    "workflow": [
+      {
+        "stage": "Employee Request",
+        "owner": "OGUNYEMI AYODELE",
+        "status": "Completed",
+        "actedAt": "2026-09-23T14:18:27.822Z",
+        "comment": "Submitted from Employee Self-Service."
+      },
+      {
+        "stage": "Line Manager / Lead / Supervisor",
+        "owner": "C1720 - ADANOU RAYMOND",
+        "status": "Completed",
+        "actedAt": "2026-09-23T14:18:27.822Z",
+        "comment": "Approval validity: 5 working days."
+      },
+      {
+        "stage": "HR Manager / Head",
+        "owner": "HR Manager / Head",
+        "status": "Current",
+        "actedAt": null,
+        "comment": "Final HR approval and leave balance confirmation."
+      },
+      {
+        "stage": "Requester Notification",
+        "owner": "OGUNYEMI AYODELE",
+        "status": "Pending",
+        "actedAt": null,
+        "comment": "Requester notified after final approval."
+      },
+      {
+        "stage": "Reliever Notification",
+        "owner": "BABATUNDE OYELEYE",
+        "status": "Pending",
+        "actedAt": null,
+        "comment": "Reliever notified after final approval."
+      }
+    ],
+    "comments": [
+      {
+        "at": "2026-09-23T14:12:24.822Z",
+        "actor": "OGUNYEMI AYODELE",
+        "comment": "Leave Application submitted from workforce portal."
+      },
+      {
+        "at": "2026-09-23T14:18:27.822Z",
+        "actor": "RAYMOND ADANOU",
+        "comment": "Line manager / supervisor approval completed. Routed to HR Manager / Head."
+      }
+    ]
+  },
+  {
+    "id": "ess-1790163818424-eqaay1",
+    "employeeId": "C2724",
+    "serviceId": "leave",
+    "category": "Leave Application",
+    "title": "Annual Leave — AMANOKHAI MOSES",
+    "status": "HR Review",
+    "priority": "Normal",
+    "submittedAt": "Wed Sep 23 2026 13:01:08 GMT+0100 (West Africa Standard Time)",
+    "updatedAt": "Thu Sep 24 2026 15:01:34 GMT+0100 (West Africa Standard Time)",
+    "approvers": [
+      "Line Manager / Lead / Supervisor",
+      "HR Manager / Head"
+    ],
+    "leaveType": "Annual Leave",
+    "startDate": "2026-09-24",
+    "endDate": "2026-10-05",
+    "days": 7,
+    "payrollPeriod": "2026-09",
+    "paidLeave": true,
+    "reason": "Health issues",
+    "relieverEmployeeId": "C2421",
+    "relieverName": "DANIEL OKPE",
+    "lineManagerEmployeeId": "P0072",
+    "lineManagerName": "Mr. AKANDE OWOLOJA",
+    "workflow": [
+      {
+        "stage": "Employee Request",
+        "owner": "AMANOKHAI MOSES",
+        "status": "Completed",
+        "actedAt": "2026-09-23T11:57:22.763Z",
+        "comment": "Submitted from Employee Self-Service."
+      },
+      {
+        "stage": "Line Manager / Lead / Supervisor",
+        "owner": "Mr. AKANDE OWOLOJA",
+        "status": "Current",
+        "actedAt": null,
+        "comment": "Approval validity: 5 working days."
+      },
+      {
+        "stage": "HR Manager / Head",
+        "owner": "HR Manager / Head",
+        "status": "Pending",
+        "actedAt": null,
+        "comment": "Final HR approval and leave balance confirmation."
+      },
+      {
+        "stage": "Requester Notification",
+        "owner": "AMANOKHAI MOSES",
+        "status": "Pending",
+        "actedAt": null,
+        "comment": "Requester notified after final approval."
+      },
+      {
+        "stage": "Reliever Notification",
+        "owner": "DANIEL OKPE",
+        "status": "Pending",
+        "actedAt": null,
+        "comment": "Reliever notified after final approval."
+      }
+    ],
+    "comments": [
+      {
+        "at": "2026-09-23T11:57:22.763Z",
+        "actor": "AMANOKHAI MOSES",
+        "comment": "Leave Application submitted from workforce portal."
+      }
+    ]
+  },
+  {
+    "id": "ess-1790071857740-d73ld7",
+    "employeeId": "P0050",
+    "category": "Leave Application",
+    "title": "Annual Leave — Mr. OWOLABI OLASUNKANMI AKEEB",
+    "status": "HR Review",
+    "priority": "Normal",
+    "submittedAt": "Tue Sep 22 2026 11:15:27 GMT+0100 (West Africa Standard Time)",
+    "updatedAt": "Thu Sep 24 2026 15:01:34 GMT+0100 (West Africa Standard Time)",
+    "approvers": [
+      "Line Manager / Lead / Supervisor",
+      "HR Manager / Head"
+    ],
+    "comments": [
+      {
+        "at": "2026-09-22T10:40:46.569Z",
+        "actor": "Mr. OWOLOJA AKANDE",
+        "comment": "Line manager / supervisor approval completed. Routed to HR Manager / Head."
+      }
+    ],
+    "leaveType": "Annual Leave",
+    "startDate": "2026-09-23",
+    "endDate": "2026-09-25",
+    "days": 3,
+    "relieverEmployeeId": "C1686",
+    "relieverName": "FRED MICAH",
+    "lineManagerEmployeeId": "P0072",
+    "lineManagerName": "Mr. AKANDE OWOLOJA",
+    "workflow": [
+      {
+        "stage": "Employee Request",
+        "owner": "Mr. OWOLABI OLASUNKANMI AKEEB",
+        "status": "Completed",
+        "actedAt": "2026-09-22T10:40:46.569Z",
+        "comment": "Submitted from Employee Self-Service."
+      },
+      {
+        "stage": "Line Manager / Lead / Supervisor",
+        "owner": "P0072 - Mr OWOLOJA AKANDE",
+        "status": "Completed",
+        "actedAt": "2026-09-22T10:40:46.569Z",
+        "comment": "Approval validity: 5 working days."
+      },
+      {
+        "stage": "HR Manager / Head",
+        "owner": "HR Manager / Head",
+        "status": "Current",
+        "actedAt": null,
+        "comment": "Final HR approval and leave balance confirmation."
+      },
+      {
+        "stage": "Requester Notification",
+        "owner": "Mr. OWOLABI OLASUNKANMI AKEEB",
+        "status": "Pending",
+        "actedAt": null,
+        "comment": "Requester notified after final approval."
+      },
+      {
+        "stage": "Reliever Notification",
+        "owner": "FRED MICAH",
+        "status": "Pending",
+        "actedAt": null,
+        "comment": "Reliever notified after final approval."
+      }
+    ]
+  },
+  {
+    "id": "ess-1789663296991-xtgawk",
+    "employeeId": "C2387",
+    "category": "Leave Application",
+    "title": "Annual Leave — ADEKUNLE KOLAWOLE",
+    "status": "HR Review",
+    "priority": "Normal",
+    "submittedAt": "Thu Sep 17 2026 17:43:57 GMT+0100 (West Africa Standard Time)",
+    "updatedAt": "Thu Sep 24 2026 15:01:34 GMT+0100 (West Africa Standard Time)",
+    "approvers": [
+      "Line Manager / Lead / Supervisor",
+      "HR Manager / Head"
+    ],
+    "comments": [
+      {
+        "at": "2026-09-17T16:42:46.940Z",
+        "actor": "KOLAWOLE ADEKUNLE",
+        "comment": "Leave Application submitted from workforce portal."
+      },
+      {
+        "at": "2026-09-17T16:43:57.025Z",
+        "actor": "MOMOH MOHAMMED",
+        "comment": "Line manager / supervisor approval completed. Routed to HR Manager / Head."
+      }
+    ],
+    "leaveType": "Annual Leave",
+    "startDate": "2026-09-21",
+    "endDate": "2026-09-29",
+    "days": 7,
+    "relieverName": "EMMANUEL SUNDAY",
+    "lineManagerEmployeeId": "C1882",
+    "lineManagerName": "MOHAMMED MOMOH",
+    "workflow": [
+      {
+        "stage": "Employee Request",
+        "owner": "KOLAWOLE ADEKUNLE",
+        "status": "Completed",
+        "actedAt": "2026-09-17T16:43:57.025Z",
+        "comment": "Submitted from Employee Self-Service."
+      },
+      {
+        "stage": "Line Manager / Lead / Supervisor",
+        "owner": "C1882 - MOHAMMED",
+        "status": "Completed",
+        "actedAt": "2026-09-17T16:43:57.025Z",
+        "comment": "Approval validity: 5 working days."
+      },
+      {
+        "stage": "HR Manager / Head",
+        "owner": "HR Manager / Head",
+        "status": "Current",
+        "actedAt": null,
+        "comment": "Final HR approval and leave balance confirmation."
+      },
+      {
+        "stage": "Requester Notification",
+        "owner": "KOLAWOLE ADEKUNLE",
+        "status": "Pending",
+        "actedAt": null,
+        "comment": "Requester notified after final approval."
+      },
+      {
+        "stage": "Reliever Notification",
+        "owner": "EMMANUEL SUNDAY",
+        "status": "Pending",
+        "actedAt": null,
+        "comment": "Reliever notified after final approval."
+      }
+    ]
+  },
+  {
+    "id": "ess-1790157794494-y7m4ex",
+    "employeeId": "C2088",
+    "serviceId": "leave",
+    "category": "Leave Application",
+    "title": "Sick Leave — RABIU GBOLAGADE",
+    "status": "HR Review",
+    "priority": "Normal",
+    "submittedAt": "Wed Sep 23 2026 11:14:30 GMT+0100 (West Africa Standard Time)",
+    "updatedAt": "Thu Sep 24 2026 15:01:34 GMT+0100 (West Africa Standard Time)",
+    "approvers": [
+      "Line Manager / Lead / Supervisor",
+      "HR Manager / Head"
+    ],
+    "leaveType": "Sick Leave",
+    "startDate": "2026-09-23",
+    "endDate": "2026-09-23",
+    "days": 1,
+    "payrollPeriod": "2026-09",
+    "paidLeave": false,
+    "reason": "I am treating malaria",
+    "relieverEmployeeId": "C2725",
+    "relieverName": "AMODU AUDU HENRY",
+    "lineManagerEmployeeId": "C1544",
+    "lineManagerName": "ADENIYI JOSEPH",
+    "workflow": [
+      {
+        "stage": "Employee Request",
+        "owner": "RABIU GBOLAGADE",
+        "status": "Completed",
+        "actedAt": "2026-09-23T11:42:01.474Z",
+        "comment": "Submitted from Employee Self-Service."
+      },
+      {
+        "stage": "Line Manager / Lead / Supervisor",
+        "owner": "C1544 - JOSEPH ADENIYI",
+        "status": "Completed",
+        "actedAt": "2026-09-23T11:42:01.474Z",
+        "comment": "Approval validity: 5 working days."
+      },
+      {
+        "stage": "HR Manager / Head",
+        "owner": "HR Manager / Head",
+        "status": "Current",
+        "actedAt": null,
+        "comment": "Final HR approval and leave balance confirmation."
+      },
+      {
+        "stage": "Requester Notification",
+        "owner": "RABIU GBOLAGADE",
+        "status": "Pending",
+        "actedAt": null,
+        "comment": "Requester notified after final approval."
+      },
+      {
+        "stage": "Reliever Notification",
+        "owner": "AMODU AUDU HENRY",
+        "status": "Pending",
+        "actedAt": null,
+        "comment": "Reliever notified after final approval."
+      }
+    ],
+    "comments": [
+      {
+        "at": "2026-09-23T10:12:38.500Z",
+        "actor": "RABIU GBOLAGADE",
+        "comment": "Leave Application submitted from workforce portal."
+      },
+      {
+        "at": "2026-09-23T11:42:01.474Z",
+        "actor": "ADENIYI JOSEPH",
+        "comment": "Line manager / supervisor approval completed. Routed to HR Manager / Head."
+      }
+    ]
+  },
+  {
     "id": "ess-1789726466109-f2boz9",
     "employeeId": "C2725",
     "category": "Leave Application",
@@ -36,7 +542,7 @@
     "status": "HR Review",
     "priority": "Normal",
     "submittedAt": "Fri Sep 18 2026 11:27:39 GMT+0100 (West Africa Standard Time)",
-    "updatedAt": "Thu Sep 24 2026 10:28:41 GMT+0100 (West Africa Standard Time)",
+    "updatedAt": "Thu Sep 24 2026 15:01:34 GMT+0100 (West Africa Standard Time)",
     "approvers": [
       "Line Manager / Lead / Supervisor",
       "HR Manager / Head"
@@ -111,7 +617,7 @@
     "status": "HR Review",
     "priority": "Normal",
     "submittedAt": "Mon Sep 21 2026 17:08:02 GMT+0100 (West Africa Standard Time)",
-    "updatedAt": "Thu Sep 24 2026 10:28:41 GMT+0100 (West Africa Standard Time)",
+    "updatedAt": "Thu Sep 24 2026 15:01:34 GMT+0100 (West Africa Standard Time)",
     "approvers": [
       "Line Manager / Lead / Supervisor",
       "HR Manager / Head"
@@ -174,81 +680,6 @@
     ]
   },
   {
-    "id": "ess-1790180405096-fw6nrk",
-    "employeeId": "P0449",
-    "serviceId": "leave",
-    "category": "Leave Application",
-    "title": "Annual Leave — Mr. OKE OLUWASEGUN OLABODE",
-    "status": "Line Manager Review",
-    "priority": "Normal",
-    "submittedAt": "Wed Sep 23 2026 18:22:51 GMT+0100 (West Africa Standard Time)",
-    "updatedAt": "Thu Sep 24 2026 10:28:41 GMT+0100 (West Africa Standard Time)",
-    "approvers": [
-      "Line Manager / Lead / Supervisor",
-      "HR Manager / Head"
-    ],
-    "leaveType": "Annual Leave",
-    "startDate": "2026-10-01",
-    "endDate": "2026-10-16",
-    "days": 11,
-    "payrollPeriod": "2026-10",
-    "paidLeave": true,
-    "reason": "This is to attend to personal exigencies",
-    "relieverEmployeeId": "P0454",
-    "relieverName": "Mr. ISHOLA SAMSON OLUWAFEMI",
-    "lineManagerEmployeeId": "P0442",
-    "lineManagerName": "Mrs. ODULATE ABIODUN TEMITOPE",
-    "workflow": [
-      {
-        "stage": "Employee Request",
-        "owner": "Mr. OKE OLUWASEGUN OLABODE",
-        "status": "Completed",
-        "actedAt": "2026-09-23T16:22:55.856Z",
-        "comment": "Submitted from Employee Self-Service."
-      },
-      {
-        "stage": "Line Manager / Lead / Supervisor",
-        "owner": "Mrs. ODULATE ABIODUN TEMITOPE",
-        "status": "Current",
-        "actedAt": null,
-        "comment": "Approval validity: 5 working days."
-      },
-      {
-        "stage": "HR Manager / Head",
-        "owner": "HR Manager / Head",
-        "status": "Pending",
-        "actedAt": null,
-        "comment": "Final HR approval and leave balance confirmation."
-      },
-      {
-        "stage": "Requester Notification",
-        "owner": "Mr. OKE OLUWASEGUN OLABODE",
-        "status": "Pending",
-        "actedAt": null,
-        "comment": "Requester notified after final approval."
-      },
-      {
-        "stage": "Reliever Notification",
-        "owner": "Mr. ISHOLA SAMSON OLUWAFEMI",
-        "status": "Pending",
-        "actedAt": null,
-        "comment": "Reliever notified after final approval."
-      }
-    ],
-    "comments": [
-      {
-        "at": "2026-09-23T16:22:55.856Z",
-        "actor": "Mr. OKE OLUWASEGUN OLABODE",
-        "comment": "Request submitted from workforce portal. Leave allowance will post to payroll after approval."
-      },
-      {
-        "at": "2026-09-23T18:38:23.093Z",
-        "actor": "ODUNNIYI SAYO FUAD",
-        "comment": "Line manager email delivered to Mrs. ODULATE ABIODUN TEMITOPE (temitopeodulate@dormanlongeng.com) via graph."
-      }
-    ]
-  },
-  {
     "id": "ess-1789993455193-y8sf2b",
     "employeeId": "C2052",
     "category": "Leave Application",
@@ -256,7 +687,7 @@
     "status": "HR Review",
     "priority": "Normal",
     "submittedAt": "Mon Sep 21 2026 13:27:31 GMT+0100 (West Africa Standard Time)",
-    "updatedAt": "Thu Sep 24 2026 10:28:41 GMT+0100 (West Africa Standard Time)",
+    "updatedAt": "Thu Sep 24 2026 15:01:34 GMT+0100 (West Africa Standard Time)",
     "approvers": [
       "Line Manager / Lead / Supervisor",
       "HR Manager / Head"
@@ -326,7 +757,7 @@
     "status": "HR Review",
     "priority": "Normal",
     "submittedAt": "Wed Sep 23 2026 18:30:45 GMT+0100 (West Africa Standard Time)",
-    "updatedAt": "Thu Sep 24 2026 10:28:41 GMT+0100 (West Africa Standard Time)",
+    "updatedAt": "Thu Sep 24 2026 15:01:34 GMT+0100 (West Africa Standard Time)",
     "approvers": [
       "Line Manager / Lead / Supervisor",
       "HR Manager / Head"
@@ -390,435 +821,77 @@
     ]
   },
   {
-    "id": "ess-1790085466628-0ietn0",
-    "employeeId": "L1050",
-    "serviceId": "leave",
-    "category": "Leave Application",
-    "title": "CONTRACT LEAVE — OLADIPO ESTHER",
-    "status": "Line Manager Review",
+    "id": "ess-profile-1790255164484-nefz4z",
+    "employeeId": "C2342",
+    "serviceId": "profile-update",
+    "category": "Profile Update",
+    "title": "Personal Information update",
+    "status": "HR Review",
     "priority": "Normal",
-    "submittedAt": "Tue Sep 22 2026 15:10:52 GMT+0100 (West Africa Standard Time)",
-    "updatedAt": "Thu Sep 24 2026 10:28:41 GMT+0100 (West Africa Standard Time)",
+    "submittedAt": "2026-09-24T13:06:04.484Z",
+    "updatedAt": "2026-09-24T13:06:10.496Z",
     "approvers": [
-      "Line Manager / Lead / Supervisor",
-      "HR Manager / Head"
+      "Ms. BADETAN VICTORIA OLAMIDE"
     ],
-    "leaveType": "CONTRACT LEAVE",
-    "startDate": "2026-10-05",
-    "endDate": "2026-10-13",
-    "days": 7,
-    "payrollPeriod": "2026-10",
-    "paidLeave": false,
-    "reason": "for exam purpose. \ni humbly request for additional 3days to enable me round up the submission of some of my school work. i sincerely apologize for any inconvenience this might cause. thanks for your favourably consideration.",
-    "relieverEmployeeId": "P0279",
-    "relieverName": "Mrs. AINA AJOKE OLAJUMOKE",
-    "lineManagerEmployeeId": "P0279",
-    "lineManagerName": "Mrs. AINA AJOKE OLAJUMOKE",
-    "handover": "none",
+    "hrApproverEmployeeCodes": [
+      "P0432"
+    ],
+    "profileSectionId": "personal",
+    "profileChanges": {
+      "maritalStatus": "Married",
+      "stateOfOrigin": "Ogun",
+      "localGovernmentArea": "Abeokuta South",
+      "religion": "Christianity",
+      "languagesSpoken": "Yoruba and English"
+    },
+    "profilePreviousValues": {
+      "title": "",
+      "first_name": "TAIWO",
+      "middle_name": "",
+      "last_name": "OGUNBIYI",
+      "preferredName": "",
+      "date_of_birth": "08 Sept 1974",
+      "gender": "M",
+      "maritalStatus": "",
+      "nationality": "Nigeria",
+      "region": "",
+      "stateOfOrigin": "",
+      "localGovernmentArea": "",
+      "religion": "",
+      "languagesSpoken": ""
+    },
     "workflow": [
       {
-        "stage": "Employee Request",
-        "owner": "OLADIPO ESTHER",
+        "stage": "Employee",
+        "owner": "OGUNBIYI TAIWO",
         "status": "Completed",
-        "actedAt": "2026-09-22T14:07:08.543Z",
+        "actedAt": "2026-09-24T13:06:04.484Z",
         "comment": "Submitted from Employee Self-Service."
       },
       {
-        "stage": "Line Manager / Lead / Supervisor",
-        "owner": "Mrs. AINA AJOKE OLAJUMOKE",
+        "stage": "HR Operations",
+        "owner": "HR Manager",
         "status": "Current",
         "actedAt": null,
-        "comment": "Approval validity: 5 working days."
+        "comment": null
       },
       {
-        "stage": "HR Manager / Head",
-        "owner": "HR Manager / Head",
+        "stage": "HR Manager",
+        "owner": "HR Manager",
         "status": "Pending",
         "actedAt": null,
-        "comment": "Final HR approval and leave balance confirmation."
-      },
-      {
-        "stage": "Requester Notification",
-        "owner": "OLADIPO ESTHER",
-        "status": "Pending",
-        "actedAt": null,
-        "comment": "Requester notified after final approval."
-      },
-      {
-        "stage": "Reliever Notification",
-        "owner": "Mrs. AINA AJOKE OLAJUMOKE",
-        "status": "Pending",
-        "actedAt": null,
-        "comment": "Reliever notified after final approval."
+        "comment": null
       }
     ],
     "comments": [
       {
-        "at": "2026-09-22T14:07:08.543Z",
-        "actor": "OLADIPO ESTHER",
-        "comment": "Leave Application submitted from workforce portal."
-      },
-      {
-        "at": "2026-09-23T18:38:27.811Z",
-        "actor": "ODUNNIYI SAYO FUAD",
-        "comment": "Line manager email delivered to Mrs. AINA AJOKE OLAJUMOKE (jumokeaina@dormanlongeng.com) via graph."
-      }
-    ]
-  },
-  {
-    "id": "ess-1790163818424-eqaay1",
-    "employeeId": "C2724",
-    "serviceId": "leave",
-    "category": "Leave Application",
-    "title": "Annual Leave — AMANOKHAI MOSES",
-    "status": "HR Review",
-    "priority": "Normal",
-    "submittedAt": "Wed Sep 23 2026 13:01:08 GMT+0100 (West Africa Standard Time)",
-    "updatedAt": "Thu Sep 24 2026 10:28:41 GMT+0100 (West Africa Standard Time)",
-    "approvers": [
-      "Line Manager / Lead / Supervisor",
-      "HR Manager / Head"
-    ],
-    "leaveType": "Annual Leave",
-    "startDate": "2026-09-24",
-    "endDate": "2026-10-05",
-    "days": 7,
-    "payrollPeriod": "2026-09",
-    "paidLeave": true,
-    "reason": "Health issues",
-    "relieverEmployeeId": "C2421",
-    "relieverName": "DANIEL OKPE",
-    "lineManagerEmployeeId": "P0072",
-    "lineManagerName": "Mr. AKANDE OWOLOJA",
-    "workflow": [
-      {
-        "stage": "Employee Request",
-        "owner": "AMANOKHAI MOSES",
-        "status": "Completed",
-        "actedAt": "2026-09-23T11:57:22.763Z",
-        "comment": "Submitted from Employee Self-Service."
-      },
-      {
-        "stage": "Line Manager / Lead / Supervisor",
-        "owner": "Mr. AKANDE OWOLOJA",
-        "status": "Current",
-        "actedAt": null,
-        "comment": "Approval validity: 5 working days."
-      },
-      {
-        "stage": "HR Manager / Head",
-        "owner": "HR Manager / Head",
-        "status": "Pending",
-        "actedAt": null,
-        "comment": "Final HR approval and leave balance confirmation."
-      },
-      {
-        "stage": "Requester Notification",
-        "owner": "AMANOKHAI MOSES",
-        "status": "Pending",
-        "actedAt": null,
-        "comment": "Requester notified after final approval."
-      },
-      {
-        "stage": "Reliever Notification",
-        "owner": "DANIEL OKPE",
-        "status": "Pending",
-        "actedAt": null,
-        "comment": "Reliever notified after final approval."
+        "at": "2026-09-24T13:06:04.484Z",
+        "actor": "OGUNBIYI TAIWO",
+        "comment": "Submitted Personal Information changes (Marital status, State of origin, LGA, Religion, Languages spoken) for HR approval."
       }
     ],
-    "comments": [
-      {
-        "at": "2026-09-23T11:57:22.763Z",
-        "actor": "AMANOKHAI MOSES",
-        "comment": "Leave Application submitted from workforce portal."
-      }
-    ]
-  },
-  {
-    "id": "ess-1790172623865-aehjyi",
-    "employeeId": "C2491",
-    "serviceId": "leave",
-    "category": "Leave Application",
-    "title": "Annual Leave — OGUNYEMI AYODELE",
-    "status": "HR Review",
-    "priority": "Normal",
-    "submittedAt": "Wed Sep 23 2026 15:18:28 GMT+0100 (West Africa Standard Time)",
-    "updatedAt": "Thu Sep 24 2026 10:28:41 GMT+0100 (West Africa Standard Time)",
-    "approvers": [
-      "Line Manager / Lead / Supervisor",
-      "HR Manager / Head"
-    ],
-    "leaveType": "Annual Leave",
-    "startDate": "2026-10-09",
-    "endDate": "2026-10-19",
-    "days": 7,
-    "payrollPeriod": "2026-10",
-    "paidLeave": true,
-    "relieverEmployeeId": "C2412",
-    "relieverName": "BABATUNDE OYELEYE",
-    "lineManagerEmployeeId": "C1720",
-    "lineManagerName": "RAYMOND ADANOU",
-    "workflow": [
-      {
-        "stage": "Employee Request",
-        "owner": "OGUNYEMI AYODELE",
-        "status": "Completed",
-        "actedAt": "2026-09-23T14:18:27.822Z",
-        "comment": "Submitted from Employee Self-Service."
-      },
-      {
-        "stage": "Line Manager / Lead / Supervisor",
-        "owner": "C1720 - ADANOU RAYMOND",
-        "status": "Completed",
-        "actedAt": "2026-09-23T14:18:27.822Z",
-        "comment": "Approval validity: 5 working days."
-      },
-      {
-        "stage": "HR Manager / Head",
-        "owner": "HR Manager / Head",
-        "status": "Current",
-        "actedAt": null,
-        "comment": "Final HR approval and leave balance confirmation."
-      },
-      {
-        "stage": "Requester Notification",
-        "owner": "OGUNYEMI AYODELE",
-        "status": "Pending",
-        "actedAt": null,
-        "comment": "Requester notified after final approval."
-      },
-      {
-        "stage": "Reliever Notification",
-        "owner": "BABATUNDE OYELEYE",
-        "status": "Pending",
-        "actedAt": null,
-        "comment": "Reliever notified after final approval."
-      }
-    ],
-    "comments": [
-      {
-        "at": "2026-09-23T14:12:24.822Z",
-        "actor": "OGUNYEMI AYODELE",
-        "comment": "Leave Application submitted from workforce portal."
-      },
-      {
-        "at": "2026-09-23T14:18:27.822Z",
-        "actor": "RAYMOND ADANOU",
-        "comment": "Line manager / supervisor approval completed. Routed to HR Manager / Head."
-      }
-    ]
-  },
-  {
-    "id": "ess-1790071857740-d73ld7",
-    "employeeId": "P0050",
-    "category": "Leave Application",
-    "title": "Annual Leave — Mr. OWOLABI OLASUNKANMI AKEEB",
-    "status": "HR Review",
-    "priority": "Normal",
-    "submittedAt": "Tue Sep 22 2026 11:15:27 GMT+0100 (West Africa Standard Time)",
-    "updatedAt": "Thu Sep 24 2026 10:28:41 GMT+0100 (West Africa Standard Time)",
-    "approvers": [
-      "Line Manager / Lead / Supervisor",
-      "HR Manager / Head"
-    ],
-    "comments": [
-      {
-        "at": "2026-09-22T10:40:46.569Z",
-        "actor": "Mr. OWOLOJA AKANDE",
-        "comment": "Line manager / supervisor approval completed. Routed to HR Manager / Head."
-      }
-    ],
-    "leaveType": "Annual Leave",
-    "startDate": "2026-09-23",
-    "endDate": "2026-09-25",
-    "days": 3,
-    "relieverEmployeeId": "C1686",
-    "relieverName": "FRED MICAH",
-    "lineManagerEmployeeId": "P0072",
-    "lineManagerName": "Mr. AKANDE OWOLOJA",
-    "workflow": [
-      {
-        "stage": "Employee Request",
-        "owner": "Mr. OWOLABI OLASUNKANMI AKEEB",
-        "status": "Completed",
-        "actedAt": "2026-09-22T10:40:46.569Z",
-        "comment": "Submitted from Employee Self-Service."
-      },
-      {
-        "stage": "Line Manager / Lead / Supervisor",
-        "owner": "P0072 - Mr OWOLOJA AKANDE",
-        "status": "Completed",
-        "actedAt": "2026-09-22T10:40:46.569Z",
-        "comment": "Approval validity: 5 working days."
-      },
-      {
-        "stage": "HR Manager / Head",
-        "owner": "HR Manager / Head",
-        "status": "Current",
-        "actedAt": null,
-        "comment": "Final HR approval and leave balance confirmation."
-      },
-      {
-        "stage": "Requester Notification",
-        "owner": "Mr. OWOLABI OLASUNKANMI AKEEB",
-        "status": "Pending",
-        "actedAt": null,
-        "comment": "Requester notified after final approval."
-      },
-      {
-        "stage": "Reliever Notification",
-        "owner": "FRED MICAH",
-        "status": "Pending",
-        "actedAt": null,
-        "comment": "Reliever notified after final approval."
-      }
-    ]
-  },
-  {
-    "id": "ess-1789663296991-xtgawk",
-    "employeeId": "C2387",
-    "category": "Leave Application",
-    "title": "Annual Leave — ADEKUNLE KOLAWOLE",
-    "status": "HR Review",
-    "priority": "Normal",
-    "submittedAt": "Thu Sep 17 2026 17:43:57 GMT+0100 (West Africa Standard Time)",
-    "updatedAt": "Thu Sep 24 2026 10:28:41 GMT+0100 (West Africa Standard Time)",
-    "approvers": [
-      "Line Manager / Lead / Supervisor",
-      "HR Manager / Head"
-    ],
-    "comments": [
-      {
-        "at": "2026-09-17T16:42:46.940Z",
-        "actor": "KOLAWOLE ADEKUNLE",
-        "comment": "Leave Application submitted from workforce portal."
-      },
-      {
-        "at": "2026-09-17T16:43:57.025Z",
-        "actor": "MOMOH MOHAMMED",
-        "comment": "Line manager / supervisor approval completed. Routed to HR Manager / Head."
-      }
-    ],
-    "leaveType": "Annual Leave",
-    "startDate": "2026-09-21",
-    "endDate": "2026-09-29",
-    "days": 7,
-    "relieverName": "EMMANUEL SUNDAY",
-    "lineManagerEmployeeId": "C1882",
-    "lineManagerName": "MOHAMMED MOMOH",
-    "workflow": [
-      {
-        "stage": "Employee Request",
-        "owner": "KOLAWOLE ADEKUNLE",
-        "status": "Completed",
-        "actedAt": "2026-09-17T16:43:57.025Z",
-        "comment": "Submitted from Employee Self-Service."
-      },
-      {
-        "stage": "Line Manager / Lead / Supervisor",
-        "owner": "C1882 - MOHAMMED",
-        "status": "Completed",
-        "actedAt": "2026-09-17T16:43:57.025Z",
-        "comment": "Approval validity: 5 working days."
-      },
-      {
-        "stage": "HR Manager / Head",
-        "owner": "HR Manager / Head",
-        "status": "Current",
-        "actedAt": null,
-        "comment": "Final HR approval and leave balance confirmation."
-      },
-      {
-        "stage": "Requester Notification",
-        "owner": "KOLAWOLE ADEKUNLE",
-        "status": "Pending",
-        "actedAt": null,
-        "comment": "Requester notified after final approval."
-      },
-      {
-        "stage": "Reliever Notification",
-        "owner": "EMMANUEL SUNDAY",
-        "status": "Pending",
-        "actedAt": null,
-        "comment": "Reliever notified after final approval."
-      }
-    ]
-  },
-  {
-    "id": "ess-1790157794494-y7m4ex",
-    "employeeId": "C2088",
-    "serviceId": "leave",
-    "category": "Leave Application",
-    "title": "Sick Leave — RABIU GBOLAGADE",
-    "status": "HR Review",
-    "priority": "Normal",
-    "submittedAt": "Wed Sep 23 2026 11:14:30 GMT+0100 (West Africa Standard Time)",
-    "updatedAt": "Thu Sep 24 2026 10:28:41 GMT+0100 (West Africa Standard Time)",
-    "approvers": [
-      "Line Manager / Lead / Supervisor",
-      "HR Manager / Head"
-    ],
-    "leaveType": "Sick Leave",
-    "startDate": "2026-09-23",
-    "endDate": "2026-09-23",
-    "days": 1,
-    "payrollPeriod": "2026-09",
-    "paidLeave": false,
-    "reason": "I am treating malaria",
-    "relieverEmployeeId": "C2725",
-    "relieverName": "AMODU AUDU HENRY",
     "lineManagerEmployeeId": "C1544",
-    "lineManagerName": "ADENIYI JOSEPH",
-    "workflow": [
-      {
-        "stage": "Employee Request",
-        "owner": "RABIU GBOLAGADE",
-        "status": "Completed",
-        "actedAt": "2026-09-23T11:42:01.474Z",
-        "comment": "Submitted from Employee Self-Service."
-      },
-      {
-        "stage": "Line Manager / Lead / Supervisor",
-        "owner": "C1544 - JOSEPH ADENIYI",
-        "status": "Completed",
-        "actedAt": "2026-09-23T11:42:01.474Z",
-        "comment": "Approval validity: 5 working days."
-      },
-      {
-        "stage": "HR Manager / Head",
-        "owner": "HR Manager / Head",
-        "status": "Current",
-        "actedAt": null,
-        "comment": "Final HR approval and leave balance confirmation."
-      },
-      {
-        "stage": "Requester Notification",
-        "owner": "RABIU GBOLAGADE",
-        "status": "Pending",
-        "actedAt": null,
-        "comment": "Requester notified after final approval."
-      },
-      {
-        "stage": "Reliever Notification",
-        "owner": "AMODU AUDU HENRY",
-        "status": "Pending",
-        "actedAt": null,
-        "comment": "Reliever notified after final approval."
-      }
-    ],
-    "comments": [
-      {
-        "at": "2026-09-23T10:12:38.500Z",
-        "actor": "RABIU GBOLAGADE",
-        "comment": "Leave Application submitted from workforce portal."
-      },
-      {
-        "at": "2026-09-23T11:42:01.474Z",
-        "actor": "ADENIYI JOSEPH",
-        "comment": "Line manager / supervisor approval completed. Routed to HR Manager / Head."
-      }
-    ]
+    "lineManagerName": "ADENIYI JOSEPH"
   },
   {
     "id": "ess-profile-1790231957559-fpbtok",

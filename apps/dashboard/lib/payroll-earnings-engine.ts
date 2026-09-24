@@ -17,6 +17,7 @@ import {
   isHrDayrateScheduleOverrideSource,
 } from '@/lib/dayrate-schedule-override-read';
 import { payrollExcelAmountOverlayApplies } from '@/lib/payroll-source-of-truth';
+import { NIGHT_INCONVENIENCE_ALLOWANCE_AMOUNT } from '@/lib/timesheet-entry-shared';
 import {
   hrisDataFileCandidates,
   hrisDataFileMtime,
@@ -501,6 +502,7 @@ export const contractDayRatePayrollResult = (input: {
   publicHolidayHours?: number;
   saturdayHours?: number;
   sundayHours?: number;
+  nightDays?: number;
   mealAmount?: number | null;
 }): PayrollEarningsResult => {
   const result = calculateContractDayRateEarnings({
@@ -510,6 +512,7 @@ export const contractDayRatePayrollResult = (input: {
     publicHolidayHours: input.publicHolidayHours,
     saturdayHours: input.saturdayHours,
     sundayHours: input.sundayHours,
+    nightDays: input.nightDays,
     mealAmount: input.mealAmount,
   });
   const lines = result.earningLines.map((line) => ({
@@ -697,6 +700,7 @@ export const mergeTimesheetDayRateEarnings = (
     saturdayHours?: number;
     sundayHours?: number;
     publicHolidayHours?: number;
+    nightDays?: number;
     period?: string;
   },
 ): PayrollEarningsResult => {
@@ -713,6 +717,7 @@ export const mergeTimesheetDayRateEarnings = (
         saturdayHours: excel.saturdayHours,
         sundayHours: excel.sundayHours,
         publicHolidayHours: excel.publicHolidayHours,
+        nightDays: num(excel.nightAmt) > 0 ? 0 : excel.nightDays,
         mealAmount: num(excel.mealAllowance),
       })
     : contractDayRatePayrollResult({
@@ -722,6 +727,7 @@ export const mergeTimesheetDayRateEarnings = (
         saturdayHours: input.saturdayHours,
         sundayHours: input.sundayHours,
         publicHolidayHours: input.publicHolidayHours,
+        nightDays: input.nightDays,
       });
   // Permanent authority rule: timesheet JCWEEKDAY (+ auto meal) is the day-rate base.
   // Never stack Sage Dayrate Payment Schedule OT / weekend / meal on top — that inflated July re-runs.
@@ -1524,6 +1530,7 @@ export const calculateContractDayRateEarnings = (input: {
   publicHolidayHours?: number;
   saturdayHours?: number;
   sundayHours?: number;
+  nightDays?: number;
   mealAmount?: number | null;
 }) => {
   const ratePerDay = Math.max(0, num(input.ratePerDay));
@@ -1537,6 +1544,7 @@ export const calculateContractDayRateEarnings = (input: {
     { code: 'PUBHOL', name: 'PUBLIC HOLIDAY EARNING', taxable: true, percentOfGross: 0, amount: roundMoney(ratePerHour * Math.max(0, num(input.publicHolidayHours)) * 2), calculation: '(Day rate / 8) * hours worked * 2' },
     { code: 'SATEARN', name: 'SATURDAY EARNING', taxable: true, percentOfGross: 0, amount: roundMoney(ratePerHour * Math.max(0, num(input.saturdayHours)) * 1.5), calculation: '(Day rate / 8) * hours worked * 1.5' },
     { code: 'SUNDAYEARN', name: 'SUNDAY EARNING', taxable: true, percentOfGross: 0, amount: roundMoney(ratePerHour * Math.max(0, num(input.sundayHours)) * 2), calculation: '(Day rate / 8) * hours worked * 2' },
+    { code: 'NIGHT_ALLOW', name: 'NIGHT ALLOWANCE', taxable: false, percentOfGross: 0, amount: roundMoney(Math.max(0, num(input.nightDays)) * NIGHT_INCONVENIENCE_ALLOWANCE_AMOUNT), calculation: 'Night days * ₦1,500 inconvenience allowance' },
   ].filter((line) => line.amount > 0);
   return {
     profileId: 'contract-day-rate' as const,

@@ -5,6 +5,7 @@ import { isTimesheetWagePayrollEmployee } from '@/lib/payroll-employee-classific
 import { calculateTimesheetPeriod, aggregateEmployeeAttendanceForHeaders, canonicalTimesheetEmployeeKey, isTimesheetCountableForPayroll, readTimesheetData, readTimesheetPayrollUpdates, readTimesheetPeriods } from '@/lib/timesheet-entry-store';
 import { normalizePayrollMatchKey } from '@/lib/sage-people-payroll-store';
 import { mergeTimesheetDayRateEarnings } from '@/lib/payroll-earnings-engine';
+import { getPayrollPublicHolidayDates } from '@/lib/nigeria-public-holidays';
 import { explicitPayrollDayRate } from '@/lib/payroll-source-of-truth';
 import { activePayrollPeriod, payrollPeriodLabel } from '@/lib/payroll-periods';
 import { activeTaxVersion, calculatePayrollTax, payrollInputFromEmployee, readPayrollTaxConfig } from '@/lib/payroll-tax-engine';
@@ -64,6 +65,7 @@ const buildPayload = async (request: Request) => {
   const dailyEmployees = employees.filter((employee) => isTimesheetWagePayrollEmployee(employee));
   const { headers, lines } = await readTimesheetData();
   const payrollUpdates = await readTimesheetPayrollUpdates();
+  const holidayDates = await getPayrollPublicHolidayDates().catch(() => [] as string[]);
   const period = (await readTimesheetPeriods()).find((item) => item.id === periodId) || calculateTimesheetPeriod(new Date(`${payrollPeriod}-15T00:00:00`));
   const maxPayableDays = CONFIGURED_MAX_PAYABLE_DAYS > 0 ? Math.min(CONFIGURED_MAX_PAYABLE_DAYS, inclusiveDays(period.startDate, period.endDate)) : inclusiveDays(period.startDate, period.endDate);
   const countablePeriodHeaders = headers.filter((header) => header.periodId === periodId && isTimesheetCountableForPayroll(header.status));
@@ -102,10 +104,12 @@ const buildPayload = async (request: Request) => {
   const attendanceTotals = aggregateEmployeeAttendanceForHeaders(headers, lines, {
     headerIds: Array.from(periodHeaderIds),
     payrollReadyOnly: false,
+    holidayDates,
   });
   const payrollReadyTotals = aggregateEmployeeAttendanceForHeaders(headers, lines, {
     headerIds: Array.from(periodHeaderIds),
     payrollReadyOnly: true,
+    holidayDates,
   });
   const aliasByEmployeeId = new Map<string, { employeeNo?: string; employeeName?: string }>();
   for (const line of lines) {

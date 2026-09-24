@@ -65,9 +65,11 @@ export const lineOvertimeHours = (input: {
   usedHours: number;
   offshoreAllowanceHours?: number | null;
   timesheetDate: string;
+  holidayDates?: string[];
 }) => weekdayOvertimeHoursFromLine(
   { usedHours: input.usedHours, offshoreAllowanceHours: input.offshoreAllowanceHours },
   input.timesheetDate,
+  input.holidayDates,
 );
 
 /** Punch time as written. ISO values keep the clock in the string so Excel does not shift timezone. */

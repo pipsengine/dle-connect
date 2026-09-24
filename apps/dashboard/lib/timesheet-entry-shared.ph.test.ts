@@ -8,9 +8,12 @@ import {
   overtimePaysHoursAboveStandard,
   resolveTimesheetHours,
   timesheetDayKindLabel,
+  isNightTimesheetBooking,
   timesheetDayRulesForDate,
   utcTimesheetWeekday,
+  weekdayOvertimeHoursFromLine,
   weekendHoursFromTimesheetLine,
+  premiumHoursFromTimesheetLine,
 } from './timesheet-entry-shared';
 
 const independence = '2026-10-01';
@@ -77,5 +80,18 @@ assert.equal(utcTimesheetWeekday('2026-09-06'), 0, 'Sunday');
 assert.deepEqual(weekendHoursFromTimesheetLine({ usedHours: 8, totalHours: 8 }, '2026-09-04'), { saturdayHours: 0, sundayHours: 0 });
 assert.deepEqual(weekendHoursFromTimesheetLine({ usedHours: 8, totalHours: 8 }, '2026-09-05'), { saturdayHours: 8, sundayHours: 0 });
 assert.deepEqual(weekendHoursFromTimesheetLine({ usedHours: 6, totalHours: 6 }, '2026-09-06'), { saturdayHours: 0, sundayHours: 6 });
+
+assert.equal(timesheetDayRulesForDate(eidMaulud, [eidMaulud]).kind, 'PublicHoliday');
+assert.equal(weekdayOvertimeHoursFromLine({ usedHours: 10 }, eidMaulud, [eidMaulud]), 0, 'PH hours are not WEEKDAYOVT');
+assert.equal(weekdayOvertimeHoursFromLine({ usedHours: 10 }, eidMaulud, []), 2, 'without holiday list Tuesday OT still applies');
+assert.deepEqual(
+  premiumHoursFromTimesheetLine({ usedHours: 8, totalHours: 8 }, eidMaulud, [eidMaulud]),
+  { saturdayHours: 0, sundayHours: 0, publicHolidayHours: 8 },
+);
+assert.equal(isNightTimesheetBooking('02 (Night)'), true);
+assert.equal(isNightTimesheetBooking('01 (Day)', 'hdr-2026-08-25-crew-night'), true);
+assert.equal(isNightTimesheetBooking('Unassigned', 'hdr-fitting-day', '18:40'), true);
+assert.equal(isNightTimesheetBooking('01 (Day)', 'hdr-fitting-day', '18:40'), false);
+assert.equal(isNightTimesheetBooking('Unassigned', 'hdr-fitting-day', '05:54'), false);
 
 console.log('timesheet public-holiday recognition tests passed');
