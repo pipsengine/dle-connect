@@ -2,6 +2,52 @@
   "schemaVersion": 1,
   "notifications": [
     {
+      "id": "ntf-1790316835916-ff3yxf",
+      "recipientUserId": "P0072",
+      "recipientUsername": "P0072",
+      "recipientEmployeeCode": "P0072",
+      "recipientRoles": [],
+      "kind": "Approval",
+      "module": "Leave Management",
+      "title": "Leave request awaiting your approval",
+      "body": "Mr. OWOLABI OLASUNKANMI AKEEB submitted Annual Leave — Mr. OWOLABI OLASUNKANMI AKEEB (2026-09-23 to 2026-09-25). Review in ESS Approvals within 5 working days.",
+      "severity": "warning",
+      "status": "Unread",
+      "href": "/workforce-portal?tab=leave&leaveSection=Approvals",
+      "createdAt": "2026-09-25T06:13:55.916Z",
+      "actor": "EZENWA CHIBUZOR",
+      "channels": [
+        "In-App",
+        "Email"
+      ],
+      "metadata": {
+        "requestId": "ess-1790071857740-d73ld7"
+      }
+    },
+    {
+      "id": "ntf-1790316834880-n6zskf",
+      "recipientUserId": "C1882",
+      "recipientUsername": "C1882",
+      "recipientEmployeeCode": "C1882",
+      "recipientRoles": [],
+      "kind": "Approval",
+      "module": "Leave Management",
+      "title": "Leave request awaiting your approval",
+      "body": "ADEKUNLE KOLAWOLE submitted Annual Leave — ADEKUNLE KOLAWOLE (2026-09-21 to 2026-09-29). Review in ESS Approvals within 5 working days.",
+      "severity": "warning",
+      "status": "Unread",
+      "href": "/workforce-portal?tab=leave&leaveSection=Approvals",
+      "createdAt": "2026-09-25T06:13:54.880Z",
+      "actor": "EZENWA CHIBUZOR",
+      "channels": [
+        "In-App",
+        "Email"
+      ],
+      "metadata": {
+        "requestId": "ess-1789663296991-xtgawk"
+      }
+    },
+    {
       "id": "ntf-1790316717611-uwjskf",
       "recipientUserId": "C1544",
       "recipientUsername": "C1544",

@@ -1,5 +1,77 @@
 [
   {
+    "id": "delivery-1790316836152-ru5um3",
+    "requestId": "ess-1790071857740-d73ld7",
+    "module": "leave",
+    "step": "line-manager-approval-email",
+    "channel": "email",
+    "status": "failed",
+    "recipientCode": "P0072",
+    "provider": "graph",
+    "error": "No email address found for Mr. AKANDE OWOLOJA (P0072).",
+    "actor": "EZENWA CHIBUZOR",
+    "createdAt": "2026-09-25T06:13:56.152Z"
+  },
+  {
+    "id": "delivery-1790316835941-7suczv",
+    "requestId": "ess-1790071857740-d73ld7",
+    "module": "leave",
+    "step": "line-manager-approval-email-in-app",
+    "channel": "in-app",
+    "status": "success",
+    "recipientCode": "P0072",
+    "actor": "EZENWA CHIBUZOR",
+    "createdAt": "2026-09-25T06:13:55.941Z",
+    "durationMs": 46
+  },
+  {
+    "id": "delivery-1790316835895-8krs6x",
+    "requestId": "ess-1790071857740-d73ld7",
+    "module": "leave",
+    "step": "line-manager-approval-email-in-app",
+    "channel": "in-app",
+    "status": "started",
+    "recipientCode": "P0072",
+    "actor": "EZENWA CHIBUZOR",
+    "createdAt": "2026-09-25T06:13:55.895Z"
+  },
+  {
+    "id": "delivery-1790316835183-utq2vx",
+    "requestId": "ess-1789663296991-xtgawk",
+    "module": "leave",
+    "step": "line-manager-approval-email",
+    "channel": "email",
+    "status": "failed",
+    "recipientCode": "C1882",
+    "provider": "graph",
+    "error": "No email address found for MOHAMMED MOMOH (C1882).",
+    "actor": "EZENWA CHIBUZOR",
+    "createdAt": "2026-09-25T06:13:55.183Z"
+  },
+  {
+    "id": "delivery-1790316834921-n8bonc",
+    "requestId": "ess-1789663296991-xtgawk",
+    "module": "leave",
+    "step": "line-manager-approval-email-in-app",
+    "channel": "in-app",
+    "status": "success",
+    "recipientCode": "C1882",
+    "actor": "EZENWA CHIBUZOR",
+    "createdAt": "2026-09-25T06:13:54.921Z",
+    "durationMs": 131
+  },
+  {
+    "id": "delivery-1790316834790-ulaxkm",
+    "requestId": "ess-1789663296991-xtgawk",
+    "module": "leave",
+    "step": "line-manager-approval-email-in-app",
+    "channel": "in-app",
+    "status": "started",
+    "recipientCode": "C1882",
+    "actor": "EZENWA CHIBUZOR",
+    "createdAt": "2026-09-25T06:13:54.790Z"
+  },
+  {
     "id": "delivery-1790316717905-bxluqi",
     "requestId": "ess-1790157794494-y7m4ex",
     "module": "leave",
