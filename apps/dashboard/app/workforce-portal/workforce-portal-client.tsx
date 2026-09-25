@@ -1019,7 +1019,7 @@ function EssLeaveWorkspace({ payload, employee, onLeaveSubmitted, onLeaveAction,
     ...(usesCarryForward && endDate > `${new Date().getFullYear()}-03-31` ? ['Carry Forward Leave must be consumed on or before 31 March.'] : []),
     ...(leaveType === 'Annual Leave' && days > 0 && days < 10 ? ['This request does not qualify for Leave Allowance.'] : []),
     ...(!selectedDates.length ? ['Select at least one leave day within the period.'] : []),
-    ...(!reliever ? ['A department reliever is required.'] : []),
+    ...(!reliever ? ['A reliever is required.'] : []),
     ...(!ack ? ['Policy acknowledgement is required before submission.'] : []),
   ];
 
@@ -1227,8 +1227,8 @@ function EssLeaveWorkspace({ payload, employee, onLeaveSubmitted, onLeaveAction,
                 </div>
               ) : null}
               <select value={reliever} onChange={(e) => setReliever(e.target.value)} className="h-11 rounded-lg border border-slate-200 px-3 text-sm font-bold">
-                <option value="">Select department reliever...</option>
-                {relieverOptions.map((item) => <option key={item.employeeId} value={item.employeeId}>{item.fullName} - {item.jobTitle}</option>)}
+                <option value="">Select reliever...</option>
+                {relieverOptions.map((item) => <option key={item.employeeId} value={item.employeeId}>{item.fullName} - {item.jobTitle} - {item.department}</option>)}
               </select>
               <input value={contact} onChange={(e) => setContact(e.target.value)} placeholder="Contact number while on leave" className="h-11 rounded-lg border border-slate-200 px-3 text-sm font-bold" />
               <input value={address} onChange={(e) => setAddress(e.target.value)} placeholder="Leave address / location" className="h-11 rounded-lg border border-slate-200 px-3 text-sm font-bold md:col-span-2" />

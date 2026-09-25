@@ -2024,9 +2024,9 @@ export const validateEssLeaveApplication = async (input: {
     const { employee, leaveType, startDate, endDate, relieverEmployeeId } = input;
   const employeeSource = await readPayrollEmployees();
   const reliever = employeeSource.employees.find((item) => item.employeeId === relieverEmployeeId || item.employeeCode === relieverEmployeeId);
-  if (!reliever) return { ok: false as const, status: 400, message: 'A department reliever must be selected.' };
-  if (compact(reliever.department).toLowerCase() !== compact(employee.department).toLowerCase()) {
-    return { ok: false as const, status: 400, message: 'Reliever must be selected from the same department.' };
+  if (!reliever) return { ok: false as const, status: 400, message: 'A reliever must be selected.' };
+  if (/inactive|terminated|resigned/i.test(compact(reliever.status))) {
+    return { ok: false as const, status: 400, message: 'Reliever must be an active employee.' };
   }
   if ((reliever.employeeCode || reliever.employeeId) === (employee.employeeCode || employee.employeeId)) {
     return { ok: false as const, status: 400, message: 'Employee cannot be selected as own reliever.' };

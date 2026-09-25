@@ -1199,10 +1199,8 @@ export async function GET(request: Request) {
     })();
     const relieverOptions = employeeSource.employees
       .filter((item) => (item.employeeId !== employee.employeeId && (item.employeeCode || item.employeeId) !== (employee.employeeCode || employee.employeeId)))
-      .filter((item) => compact(item.department).toLowerCase() === employeeDepartment)
       .filter((item) => !/inactive|terminated|resigned/i.test(compact(item.status)))
       .sort((a, b) => a.fullName.localeCompare(b.fullName))
-      .slice(0, 250)
       .map((item) => ({
         employeeId: item.employeeId,
         employeeCode: item.employeeCode || item.employeeId,
@@ -1988,7 +1986,7 @@ export async function POST(request: Request) {
     const relieverNameInput = compact(body.relieverName);
     const isLeaveRequest = catalogItem.id === 'leave' || /leave application/i.test(catalogItem.label);
     if (isLeaveRequest && !compact(body.leaveType)) {
-      return err(400, 'Leave applications must be submitted from the Leave workspace with dates and a department reliever.');
+      return err(400, 'Leave applications must be submitted from the Leave workspace with dates and a reliever.');
     }
     const reliever = relieverEmployeeId
       ? employeeSource.employees.find((item) => item.employeeId === relieverEmployeeId || item.employeeCode === relieverEmployeeId)
@@ -1999,7 +1997,7 @@ export async function POST(request: Request) {
     if (isLeaveRequest) {
       if (!leaveType) return err(400, 'leaveType is required');
       if (!startDate || !endDate) return err(400, 'startDate and endDate are required');
-      if (!reliever) return err(400, 'A department reliever must be selected.');
+      if (!reliever) return err(400, 'A reliever must be selected.');
       const selectedDates = resolvedSelectedDates;
       const acknowledgeHolidays = Boolean(body.acknowledgeHolidays);
       const policyCheck = await validateEssLeaveApplication({
