@@ -678,4 +678,18 @@ CREATE TABLE [finance].[PaymentRequestComments] (
 
 IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'IX_FinancePayReqComments_Request' AND object_id = OBJECT_ID(N'[finance].[PaymentRequestComments]'))
   CREATE INDEX [IX_FinancePayReqComments_Request] ON [finance].[PaymentRequestComments] ([RequestId], [CreatedAt] ASC);
+
+IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'IX_FinancePayReq_StatusApprover' AND object_id = OBJECT_ID(N'[finance].[PaymentRequests]'))
+  CREATE INDEX [IX_FinancePayReq_StatusApprover] ON [finance].[PaymentRequests] ([Status], [CurrentApproverCode]) INCLUDE ([RequestId], [RequesterCode], [UpdatedAt]);
+
+IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'IX_FinancePayReq_RequesterStatus' AND object_id = OBJECT_ID(N'[finance].[PaymentRequests]'))
+  CREATE INDEX [IX_FinancePayReq_RequesterStatus] ON [finance].[PaymentRequests] ([RequesterCode], [Status]) INCLUDE ([RequestId], [UpdatedAt]);
+
+IF OBJECT_ID(N'[hris].[LeaveApplications]', N'U') IS NOT NULL
+AND NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'IX_LeaveApplications_EmployeeStatus' AND object_id = OBJECT_ID(N'[hris].[LeaveApplications]'))
+  CREATE INDEX [IX_LeaveApplications_EmployeeStatus] ON [hris].[LeaveApplications] ([EmployeeId], [StatusName]) INCLUDE ([ApprovalStatus], [StartDate]);
+
+IF OBJECT_ID(N'[it].[Assets]', N'U') IS NOT NULL
+AND NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'IX_ItAssets_AssignedEmployee' AND object_id = OBJECT_ID(N'[it].[Assets]'))
+  CREATE INDEX [IX_ItAssets_AssignedEmployee] ON [it].[Assets] ([AssignedEmployeeId], [IsActive]) INCLUDE ([AssetTag], [AssignedOn]);
 `;

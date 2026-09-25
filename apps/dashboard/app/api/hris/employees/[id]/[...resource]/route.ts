@@ -1,11 +1,15 @@
+import { mkdir, readFile, unlink, writeFile } from 'fs/promises';
+import path from 'path';
 import { NextResponse } from 'next/server';
 import {
   insertEmployeeProfileDocumentInDb,
   readEmployeeContractsFromDb,
+  readEmployeeDocumentFileMeta,
   readEmployeeEmergencyContactsFromDb,
   readEmployeeProfileDocumentsFromDb,
   syncHrisEmployeeProfileToDb,
 } from '@/lib/dle-enterprise-db';
+import { listItAssetsForEmployee } from '@/lib/it-asset-management-store';
 import type { DleEmployeeDirectoryRow } from '@/lib/dle-enterprise-db';
 import { readDirectoryEmployees, invalidatePayrollEmployeeCache } from '@/lib/payroll-employee-source';
 import { invalidateHrisEmployeeCaches } from '@/lib/hris-employee-cache';
@@ -2697,6 +2701,43 @@ const persistHrisProfileToEnterprise = async (rec: EmployeeRecord, options?: { r
 const persistEmergencyContactsToEnterprise = async (rec: EmployeeRecord) =>
   persistHrisProfileToEnterprise(rec, { replaceEmergencyContacts: true });
 
+const hrisDataDir = () => (
+  process.env.DLE_HRIS_DATA_DIR
+    ? path.resolve(process.env.DLE_HRIS_DATA_DIR)
+    : path.join(process.cwd(), 'data', 'hris')
+);
+
+const mimeFromDocumentName = (fileName: string) => {
+  const named: Record<string, string> = {
+    pdf: 'application/pdf',
+    jpg: 'image/jpeg',
+    jpeg: 'image/jpeg',
+    png: 'image/png',
+    webp: 'image/webp',
+    docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    csv: 'text/csv',
+  };
+  const ext = fileName.split('.').pop()?.toLowerCase() || '';
+  return named[ext] || '';
+};
+
+const saveEmployeeDocumentBytes = async (employeeCode: string, fileName: string, contentBase64: string) => {
+  const payload = String(contentBase64 || '').replace(/^data:[^;]+;base64,/, '').trim();
+  const bytes = Buffer.from(payload, 'base64');
+  if (!bytes.length) throw new Error('File content is empty.');
+  const safeCode = employeeCode.replace(/[^A-Za-z0-9_-]/g, '') || 'employee';
+  const safeName = fileName.replace(/[^A-Za-z0-9._-]/g, '_').slice(0, 160) || 'document';
+  const storedName = `${Date.now()}-${safeName}`;
+  const relative = path.join('employee-documents', safeCode, storedName);
+  const absolute = path.resolve(hrisDataDir(), relative);
+  const root = path.resolve(hrisDataDir(), 'employee-documents');
+  if (!absolute.startsWith(root)) throw new Error('Invalid document path.');
+  await mkdir(path.dirname(absolute), { recursive: true });
+  await writeFile(absolute, bytes);
+  return { byteLength: bytes.length, storageUri: relative.replace(/\\/g, '/') };
+};
+
 const ensureRecordFromDb = async (employeeId: string) => {
   const employeeSource = await readDirectoryEmployees();
   const found = employeeSource.employees.find((row) => row.employeeCode.toLowerCase() === employeeId.toLowerCase() || row.employeeId.toLowerCase() === employeeId.toLowerCase());
@@ -2719,7 +2760,35 @@ const ensureRecordFromDb = async (employeeId: string) => {
   if (documents.length) record.documents = documents;
   if (extensions.medicalHse) record.medicalHse = extensions.medicalHse;
   if (extensions.training?.length) record.training = extensions.training;
-  if (extensions.assets?.length) record.assets = extensions.assets;
+  const hrAssets = extensions.assets || [];
+  try {
+    const itAssets = await listItAssetsForEmployee(found.employeeCode);
+    const mapped: AssetItem[] = itAssets.map((asset) => {
+      const conditionText = String(asset.assetCondition || '').toLowerCase();
+      const condition: AssetItem['condition'] = /repair|poor|damage|fault/.test(conditionText)
+        ? 'Needs Repair'
+        : /good|new|excellent/.test(conditionText)
+          ? 'Good'
+          : 'Fair';
+      const returned = /return|unassign|disposed|retired/i.test(String(asset.status || ''));
+      return {
+        id: asset.assetId || asset.assetTag,
+        assetType: asset.assetType || asset.category || 'Asset',
+        assetTag: asset.assetTag,
+        assetName: asset.name || asset.model || asset.assetTag,
+        serialNumber: asset.serialNumber,
+        assignedDate: asset.assignedOn || new Date().toISOString().slice(0, 10),
+        condition,
+        returnStatus: returned ? 'Returned' : 'Assigned',
+      };
+    });
+    const itTags = new Set(mapped.map((asset) => asset.assetTag.toLowerCase()).filter(Boolean));
+    const extra = hrAssets.filter((asset) => !itTags.has(String(asset.assetTag || '').toLowerCase()));
+    record.assets = [...mapped, ...extra];
+  } catch (error) {
+    console.error('[employee-profile] IT asset lookup failed', error);
+    if (hrAssets.length) record.assets = hrAssets;
+  }
   if (extensions.performanceSummary) record.performanceSummary = extensions.performanceSummary;
   if (extensions.disciplinary?.length) record.disciplinary = extensions.disciplinary;
   if (extensions.employmentExtras) {
@@ -2987,6 +3056,21 @@ export async function GET(request: Request, ctx: { params: Promise<{ id: string;
   if (root === 'next-of-kin') return jsonOk(rec.nextOfKin);
   if (root === 'documents') {
     if (!perms.canViewDocuments) return jsonErr(403, 'Permission denied');
+    if (rest[0] && rest[1] === 'file') {
+      const meta = await readEmployeeDocumentFileMeta(rec.profile.employeeId, rest[0]);
+      if (!meta?.storageUri) return jsonErr(404, 'Document file was not found.');
+      const rootDir = path.resolve(hrisDataDir(), 'employee-documents');
+      const absolute = path.resolve(hrisDataDir(), meta.storageUri);
+      if (!absolute.startsWith(rootDir)) return jsonErr(400, 'Invalid document path.');
+      const bytes = await readFile(absolute);
+      return new NextResponse(bytes, {
+        headers: {
+          'content-type': meta.mimeType || 'application/octet-stream',
+          'content-disposition': `inline; filename="${meta.fileName.replace(/"/g, '')}"`,
+          'cache-control': 'private, no-store',
+        },
+      });
+    }
     const canAccess = (doc: DocumentItem) => {
       const conf = (doc.confidentialityLevel || 'Internal') as DocumentItem['confidentialityLevel'];
       if (conf === 'Restricted') {
@@ -6903,7 +6987,9 @@ export async function POST(request: Request, ctx: { params: Promise<{ id: string
     const validatePayload = (p: any) => {
       const category = normalizeStr(p?.category, 120);
       const fileName = normalizeStr(p?.fileName, 240);
-      const mimeType = normalizeStr(p?.mimeType, 120);
+      const suppliedMime = normalizeStr(p?.mimeType, 120) || '';
+      const inferredMime = fileName ? mimeFromDocumentName(fileName) : '';
+      const mimeType = !suppliedMime || suppliedMime === 'application/octet-stream' ? (inferredMime || suppliedMime) : suppliedMime;
       const sizeBytes = typeof p?.sizeBytes === 'number' && Number.isFinite(p.sizeBytes) ? Math.max(0, Math.floor(p.sizeBytes)) : null;
       const documentTitle = normalizeStr(p?.documentTitle, 200) ?? normalizeStr(p?.documentName, 200);
       const issueDate = normalizeDate(p?.issueDate);
@@ -6995,6 +7081,16 @@ export async function POST(request: Request, ctx: { params: Promise<{ id: string
       complianceStatus: 'Unknown',
     };
     item.complianceStatus = complianceFor(item, Date.now());
+    const contentBase64 = typeof body.contentBase64 === 'string' ? body.contentBase64 : '';
+    if (!contentBase64.trim()) return jsonErr(400, 'Choose a file before uploading.');
+    let stored: { byteLength: number; storageUri: string };
+    try {
+      stored = await saveEmployeeDocumentBytes(rec.profile.employeeId, item.fileName, contentBase64);
+    } catch (error) {
+      return jsonErr(400, error instanceof Error ? error.message : 'Unable to store the document.');
+    }
+    item.sizeBytes = stored.byteLength || item.sizeBytes;
+    const dbStatus = item.status === 'Pending Verification' || item.status === 'Not Required' ? 'Uploaded' : item.status;
     const persisted = await insertEmployeeProfileDocumentInDb({
       employeeCode: rec.profile.employeeId,
       category: item.category,
@@ -7002,15 +7098,18 @@ export async function POST(request: Request, ctx: { params: Promise<{ id: string
       mimeType: item.mimeType,
       sizeBytes: item.sizeBytes,
       expiresAt: item.expiresAt,
-      documentStatus: item.status === 'Pending Verification' ? 'Uploaded' : item.status,
+      documentStatus: dbStatus,
       createdBy: role,
+      storageUri: stored.storageUri,
     });
-    if (persisted) {
-      item.id = persisted.id;
-      item.uploadedAt = persisted.uploadedAt;
-      item.status = persisted.status;
-      item.verifiedBy = persisted.verifiedBy;
+    if (!persisted) {
+      await unlink(path.resolve(hrisDataDir(), stored.storageUri)).catch(() => undefined);
+      return jsonErr(500, 'The document was not saved because this employee could not be matched in HR records.');
     }
+    item.id = persisted.id;
+    item.uploadedAt = persisted.uploadedAt;
+    item.status = persisted.status;
+    item.verifiedBy = persisted.verifiedBy;
     rec.documents = [item, ...rec.documents];
     seedAuditAndVersion(item);
     rec.audit.unshift(auditEntry('Uploaded document', role, { reason: item.category }));

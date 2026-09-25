@@ -422,6 +422,28 @@ export const buildTimesheetApprovalRequestEmail = (input: {
   actions: [{ href: input.workspaceLink, label: 'Open Timesheet Approval', tone: 'primary' }],
 }, input.baseUrl);
 
+export const buildTelephoneAllowanceWorkflowEmail = (input: {
+  recipientName: string;
+  title: string;
+  body: string;
+  actorName?: string;
+  workspaceLink: string;
+  baseUrl?: string | null;
+}) => withBrand({
+  recipientName: input.recipientName,
+  subject: input.title,
+  module: 'Telephone Allowance',
+  headline: 'Telephone allowance action required',
+  intro: input.body,
+  tone: 'warning',
+  details: [
+    ...(input.actorName ? [{ label: 'From', value: input.actorName }] : []),
+  ],
+  note: 'Sign in with your DLE Connect account to open the cycle and complete your step.',
+  actions: [{ href: input.workspaceLink, label: 'Open Telephone Allowance', tone: 'primary' }],
+  footerNote: 'This message was sent because your role owns the next telephone allowance step.',
+}, input.baseUrl);
+
 export const buildFinalSettlementApprovalEmail = (input: {
   recipientName: string;
   employeeName: string;

@@ -6,9 +6,12 @@ import { randomUUID } from 'node:crypto';
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import sql from 'mssql';
+import { readUsers, type UserAccount } from '@/lib/auth/auth-store';
 import type { SessionPayload } from '@/lib/auth/session';
 import { getDleEnterpriseDbPool } from '@/lib/dle-enterprise-db';
 import { createEnterpriseNotification } from '@/lib/enterprise-notifications-store';
+import { resolveEmployeeMailbox, sendTelephoneAllowanceWorkflowEmail } from '@/lib/mail-service';
+import { toAbsoluteWorkflowHref } from '@/lib/public-app-url';
 import { readDirectoryEmployees, readPayrollEmployees } from '@/lib/payroll-employee-source';
 import { payslipIdentityMap } from '@/lib/payroll-payslip-identity-store';
 import { normalizePayrollMatchKey } from '@/lib/sage-people-payroll-store';
@@ -354,28 +357,190 @@ const bumpRowVersion = (cycle: TelephoneCycle): TelephoneCycle => ({
   updatedAt: nowIso(),
 });
 
+const roleMatches = (userRoles: string[], needed: string[]) => {
+  const haystack = userRoles.map((role) => role.toLowerCase().trim());
+  return needed.some((need) => haystack.includes(need.toLowerCase().trim()));
+};
+
+const accountCanReceiveNotice = (user: UserAccount) => {
+  const status = `${user.status || ''} ${user.employmentStatus || ''}`;
+  return !/inactive|terminated|resigned|disabled|locked/i.test(status);
+};
+
+export type TelephoneNoticeDelivery = {
+  employeeCode: string;
+  fullName: string;
+  email: string;
+  sent: boolean;
+  reason?: string;
+};
+
+const resolveRoleRecipients = async (roles: string[]) => {
+  const users = await readUsers().catch(() => [] as UserAccount[]);
+  const seen = new Set<string>();
+  const recipients: Array<{ employeeCode: string; fullName: string; email: string }> = [];
+  for (const user of users) {
+    if (!accountCanReceiveNotice(user)) continue;
+    if (!roleMatches(user.roles || [], roles)) continue;
+    const employeeCode = compact(user.employeeCode || user.username).toUpperCase();
+    const key = employeeCode || compact(user.email).toLowerCase();
+    if (!key || seen.has(key)) continue;
+    seen.add(key);
+    const email = compact(user.email) || await resolveEmployeeMailbox({
+      employeeCode,
+      employeeId: user.employeeId || employeeCode,
+      fullName: user.fullName,
+      officialEmail: user.email,
+    } as never);
+    recipients.push({
+      employeeCode,
+      fullName: compact(user.fullName) || employeeCode,
+      email,
+    });
+  }
+  return recipients;
+};
+
+const resolveNamedRecipient = async (employeeCode: string) => {
+  const users = await readUsers().catch(() => [] as UserAccount[]);
+  const user = users.find((item) => compact(item.employeeCode || item.username).toUpperCase() === employeeCode);
+  if (!user || !accountCanReceiveNotice(user)) return [];
+  const email = compact(user.email) || await resolveEmployeeMailbox({
+    employeeCode,
+    employeeId: user.employeeId || employeeCode,
+    fullName: user.fullName,
+    officialEmail: user.email,
+  } as never);
+  return [{
+    employeeCode,
+    fullName: compact(user.fullName) || employeeCode,
+    email,
+  }];
+};
+
+/** In-app notice plus email. A named employee code is the only recipient; otherwise every active holder of the next-step role. */
+export const deliverTelephoneAllowanceNotice = async (opts: {
+  actor: string;
+  title: string;
+  body: string;
+  href?: string;
+  roles?: string[];
+  recipientEmployeeCode?: string;
+  severity?: 'info' | 'success' | 'warning' | 'critical';
+  sendEmail?: boolean;
+}): Promise<TelephoneNoticeDelivery[]> => {
+  const roles = opts.roles || [];
+  const href = opts.href || MODULE_HREF;
+  const namedCode = compact(opts.recipientEmployeeCode).toUpperCase();
+  const recipients = namedCode
+    ? await resolveNamedRecipient(namedCode)
+    : await resolveRoleRecipients(roles);
+  const workspaceLink = toAbsoluteWorkflowHref(href);
+  const deliveries: TelephoneNoticeDelivery[] = [];
+
+  if (!recipients.length) {
+    try {
+      await createEnterpriseNotification(systemSession(opts.actor), {
+        title: opts.title,
+        body: opts.body,
+        module: 'Telephone Allowance',
+        kind: 'Approval',
+        severity: opts.severity || 'info',
+        href,
+        recipientRoles: roles,
+        actor: opts.actor,
+        channels: ['In-App', 'Email'],
+      });
+    } catch (error) {
+      console.warn('[telephone-allowance] notification skipped', error instanceof Error ? error.message : error);
+    }
+    return [{ employeeCode: '', fullName: '', email: '', sent: false, reason: 'No active recipient for the next role.' }];
+  }
+
+  for (const recipient of recipients) {
+    try {
+      await createEnterpriseNotification(systemSession(opts.actor), {
+        title: opts.title,
+        body: opts.body,
+        module: 'Telephone Allowance',
+        kind: 'Approval',
+        severity: opts.severity || 'warning',
+        href,
+        recipientEmployeeCode: recipient.employeeCode,
+        recipientRoles: [],
+        actor: opts.actor,
+        channels: ['In-App', 'Email'],
+        metadata: { recipientCode: recipient.employeeCode },
+      });
+    } catch (error) {
+      console.warn('[telephone-allowance] in-app notification failed', error instanceof Error ? error.message : error);
+    }
+
+    if (!recipient.email) {
+      deliveries.push({
+        employeeCode: recipient.employeeCode,
+        fullName: recipient.fullName,
+        email: '',
+        sent: false,
+        reason: 'No mailbox on the employee record.',
+      });
+      continue;
+    }
+    if (opts.sendEmail === false) {
+      deliveries.push({
+        employeeCode: recipient.employeeCode,
+        fullName: recipient.fullName,
+        email: recipient.email,
+        sent: false,
+        reason: 'Email already issued for this handoff.',
+      });
+      continue;
+    }
+
+    try {
+      const result = await sendTelephoneAllowanceWorkflowEmail({
+        recipientName: recipient.fullName,
+        recipientEmail: recipient.email,
+        title: opts.title,
+        body: opts.body,
+        actorName: opts.actor,
+        workspaceLink,
+      });
+      deliveries.push({
+        employeeCode: recipient.employeeCode,
+        fullName: recipient.fullName,
+        email: recipient.email,
+        sent: result.sent,
+        reason: result.sent ? undefined : result.reason,
+      });
+    } catch (error) {
+      const reason = error instanceof Error ? error.message : 'Email send failed.';
+      console.warn('[telephone-allowance] email failed', reason);
+      deliveries.push({
+        employeeCode: recipient.employeeCode,
+        fullName: recipient.fullName,
+        email: recipient.email,
+        sent: false,
+        reason,
+      });
+    }
+  }
+  return deliveries;
+};
+
 const notifyHandoff = async (opts: {
   actor: string;
   title: string;
   body: string;
   href?: string;
   roles?: string[];
+  recipientEmployeeCode?: string;
   severity?: 'info' | 'success' | 'warning' | 'critical';
 }) => {
-  try {
-    await createEnterpriseNotification(systemSession(opts.actor), {
-      title: opts.title,
-      body: opts.body,
-      module: 'Telephone Allowance',
-      kind: 'Approval',
-      severity: opts.severity || 'info',
-      href: opts.href || MODULE_HREF,
-      recipientRoles: opts.roles || [],
-      actor: opts.actor,
-      channels: ['In-App'],
-    });
-  } catch (error) {
-    console.warn('[telephone-allowance] notification skipped', error instanceof Error ? error.message : error);
+  const deliveries = await deliverTelephoneAllowanceNotice(opts);
+  const failed = deliveries.filter((item) => !item.sent);
+  if (failed.length) {
+    console.warn('[telephone-allowance] notice delivery incomplete', failed.map((item) => `${item.employeeCode || item.fullName}: ${item.reason || 'not sent'}`).join('; '));
   }
 };
 
@@ -1442,7 +1607,9 @@ export const sendToHrReview = async (
     title: `Telephone allowance ready for HR review`,
     body: `${cycle.cycleCode} (${cycle.pairLabel} ${cycle.year}) was sent for HR review by ${actor}.`,
     href: `${MODULE_HREF}/manage`,
-    roles: ['HR Manager', 'HR Officer', 'HR'],
+    roles: ['HR Manager'],
+    recipientEmployeeCode: 'P0432',
+    severity: 'warning',
   });
   return cycle;
 };

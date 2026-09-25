@@ -326,6 +326,20 @@ export const listItAssets = async (filters?: { category?: string; subCategory?: 
   return (result.recordset || []).map((row) => mapAsset(row as Record<string, unknown>));
 };
 
+export const listItAssetsForEmployee = async (employeeCode: string) => {
+  const code = clean(employeeCode, 40);
+  if (!code) return [];
+  const pool = await ensureDb();
+  const result = await pool.request()
+    .input('employee_code', sql.NVarChar(40), code)
+    .query(`
+      SELECT * FROM [it].[Assets]
+      WHERE IsActive = 1 AND AssignedEmployeeId = @employee_code
+      ORDER BY AssignedOn DESC, UpdatedAt DESC
+    `);
+  return (result.recordset || []).map((row) => mapAsset(row as Record<string, unknown>));
+};
+
 export const createItAsset = async (input: Partial<ItAssetRecord>, actor: string) => {
   const pool = await ensureDb();
   const assetId = clean(input.assetId, 40) || clean(input.sourceAssetId, 40) || newId('ast');

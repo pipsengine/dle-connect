@@ -16,7 +16,8 @@ export type DleEmailModule =
   | 'Employee Self-Service'
   | 'HRIS'
   | 'Security'
-  | 'Finance Approvals';
+  | 'Finance Approvals'
+  | 'Telephone Allowance';
 
 export type DleEmailTone = 'info' | 'success' | 'warning' | 'danger' | 'neutral';
 

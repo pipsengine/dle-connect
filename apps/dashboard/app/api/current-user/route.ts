@@ -15,6 +15,36 @@ type CurrentUserContext = 'enterprise' | 'hris' | 'ess';
 const contexts = new Set<CurrentUserContext>(['enterprise', 'hris', 'ess']);
 const compact = (value: unknown) => String(value || '').trim();
 
+const leaveBadgeCache = new Map<string, { at: number; count: number }>();
+const LEAVE_BADGE_MS = 45_000;
+
+const pendingLeaveBadgeCount = async (input: {
+  employee: DleEmployeeDirectoryRow;
+  employees: DleEmployeeDirectoryRow[];
+  roles: string[];
+  isGlobalAdmin?: boolean;
+  cacheKey: string;
+  fallback: number;
+}) => {
+  const key = input.cacheKey || 'session';
+  const hit = leaveBadgeCache.get(key);
+  if (hit && Date.now() - hit.at < LEAVE_BADGE_MS) return hit.count;
+  try {
+    const allRequests = await loadWorkflowLeaveRequests({ repair: false });
+    const count = pendingLeaveApprovalsForActor(
+      input.employee,
+      allRequests,
+      input.employees,
+      input.roles,
+      input.isGlobalAdmin,
+    ).length;
+    leaveBadgeCache.set(key, { at: Date.now(), count });
+    return count;
+  } catch {
+    return hit?.count ?? input.fallback;
+  }
+};
+
 const envFirst = (...keys: string[]) => {
   for (const key of keys.filter(Boolean)) {
     const value = compact(process.env[key]);
@@ -112,6 +142,7 @@ const displayJobTitle = (employee: DleEmployeeDirectoryRow | null) => {
 };
 
 export async function GET(request: Request) {
+  const started = Date.now();
   const url = new URL(request.url);
   const contextParam = compact(url.searchParams.get('context')).toLowerCase();
   const context = contexts.has(contextParam as CurrentUserContext) ? contextParam as CurrentUserContext : 'enterprise';
@@ -178,25 +209,20 @@ export async function GET(request: Request) {
   );
   let pendingApprovals = 0;
   if (employee && session && (activeTeamSize > 0 || role !== 'Employee' || sessionIsApprover)) {
-    try {
-      const allRequests = await loadWorkflowLeaveRequests({ repair: true });
-      const leaveApprovals = pendingLeaveApprovalsForActor(
-        employee,
-        allRequests,
-        employeeSource.employees,
-        session.roles || [],
-        session.isGlobalAdmin,
-      );
-      pendingApprovals = leaveApprovals.length;
-    } catch {
-      pendingApprovals = activeTeamSize > 0 ? Math.min(24, Math.ceil(activeTeamSize / 4)) : 0;
-    }
+    pendingApprovals = await pendingLeaveBadgeCount({
+      employee,
+      employees: employeeSource.employees,
+      roles: session.roles || [],
+      isGlobalAdmin: session.isGlobalAdmin,
+      cacheKey: compact(session.employeeCode || session.employeeId || session.username),
+      fallback: activeTeamSize > 0 ? Math.min(24, Math.ceil(activeTeamSize / 4)) : 0,
+    });
   }
   const sessionCode = compact(session?.employeeCode || session?.employeeId || session?.username);
   const sessionRole = compact(session?.roles?.[0]) || 'Signed-in User';
   const sessionDepartment = compact(session?.department || session?.unit) || 'Application Access';
 
-  return NextResponse.json({
+  const response = NextResponse.json({
     status: 'success',
     data: {
       name: sanitizePersonDisplayName(employee?.fullName || session?.fullName || session?.username || 'Signed-in User') || 'Signed-in User',
@@ -224,4 +250,6 @@ export async function GET(request: Request) {
       employeeSource: payrollDataSourceInfo(employeeSource || { employees: employee ? [employee] : [], source: 'DLE_Enterprise HRIS', databaseAvailable: true, warning: null }),
     },
   });
+  console.info('[perf] GET /api/current-user', { ms: Date.now() - started });
+  return response;
 }

@@ -876,6 +876,33 @@ async function apiFetch<T>(
   return json.data;
 }
 
+const documentMimeFromFile = (file: File) => {
+  const named: Record<string, string> = {
+    pdf: 'application/pdf',
+    jpg: 'image/jpeg',
+    jpeg: 'image/jpeg',
+    png: 'image/png',
+    webp: 'image/webp',
+    docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    csv: 'text/csv',
+  };
+  const ext = file.name.split('.').pop()?.toLowerCase() || '';
+  const fromName = named[ext];
+  const browser = file.type && file.type !== 'application/octet-stream' ? file.type : '';
+  return fromName || browser || 'application/octet-stream';
+};
+
+const fileToBase64 = (file: File) => new Promise<string>((resolve, reject) => {
+  const reader = new FileReader();
+  reader.onload = () => {
+    const result = String(reader.result || '');
+    resolve(result.includes(',') ? result.split(',')[1] || '' : result);
+  };
+  reader.onerror = () => reject(new Error(`Unable to read ${file.name}`));
+  reader.readAsDataURL(file);
+});
+
 async function apiMutate<T>(
   employeeId: string,
   resource: string,
@@ -2765,13 +2792,15 @@ export default function EmployeeProfileClient({
                                   onClick={async () => {
                                     if (!docFile) return;
                                     try {
+                                      const contentBase64 = await fileToBase64(docFile);
                                       const created = await apiMutate<DocumentItem>(employeeId, 'documents', {
                                         method: 'POST',
                                         body: JSON.stringify({
                                           category: docCategory,
                                           fileName: docFile.name,
-                                          mimeType: docFile.type || 'application/octet-stream',
+                                          mimeType: documentMimeFromFile(docFile),
                                           sizeBytes: docFile.size,
+                                          contentBase64,
                                           expiresAt: docExpiry ? `${docExpiry}T00:00:00.000Z` : null,
                                         }),
                                         role,
@@ -2820,7 +2849,7 @@ export default function EmployeeProfileClient({
                                     type="button"
                                     onClick={() => {
                                       pushAudit({ id: `audit-${Math.random().toString(16).slice(2)}`, at: new Date().toISOString(), action: 'Previewed document', performedBy: role });
-                                      setToast({ title: 'Preview', detail: 'Preview is stubbed in this build. Download/secure preview will be wired to encrypted storage.', tone: 'warn' });
+                                      window.open(hrisEmployeeResourceUrl(employeeId, `documents/${encodeURIComponent(d.id)}/file`), '_blank', 'noopener,noreferrer');
                                     }}
                                     className="inline-flex items-center gap-2 px-3 py-2 rounded-xl border border-slate-200 bg-white text-xs font-extrabold text-slate-700 hover:bg-slate-50 transition-colors"
                                   >

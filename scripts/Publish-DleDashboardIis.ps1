@@ -753,6 +753,23 @@ try {
     Copy-DirectoryContents -SourcePath $ExistingNestedFinanceData -DestinationPath $NestedFinanceBackup
   }
 
+  # Auth and notifications are written on the running site during the build.
+  # Copy them back immediately before the wipe so publish does not roll them back.
+  $LiveAuth = Join-Path $ResolvedOutputPath "apps\dashboard\data\auth"
+  $RepoAuth = Join-Path $AppPath "data\auth"
+  if (Test-Path -LiteralPath $LiveAuth) {
+    Write-Host "Preserving live auth store before site wipe."
+    Copy-DirectoryContents -SourcePath $LiveAuth -DestinationPath $RepoAuth
+  }
+  $LiveNotifications = Join-Path $ResolvedOutputPath "apps\dashboard\data\enterprise\notifications.json"
+  $RepoNotifications = Join-Path $AppPath "data\enterprise\notifications.json"
+  if (Test-Path -LiteralPath $LiveNotifications) {
+    $repoEnterprise = Split-Path -Parent $RepoNotifications
+    New-Item -ItemType Directory -Path $repoEnterprise -Force | Out-Null
+    Copy-Item -LiteralPath $LiveNotifications -Destination $RepoNotifications -Force
+    Write-Host "Preserved live notifications before site wipe."
+  }
+
   if (-not $NoStop -and (Test-Path -LiteralPath $ResolvedOutputPath)) {
     Stop-PublishTargetLocks -TargetDirectory $ResolvedOutputPath
   }

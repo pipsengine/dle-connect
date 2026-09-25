@@ -1303,7 +1303,7 @@ export default function PaymentRequestsClient({
       const selectedExpense = lookups?.expenseCodes.find((item) => item.expenseCode === form.expenseCode);
       const selectedSite = lookups?.paymentSites.find((item) => item.siteCode === form.paymentSiteCode);
       const isVendorComposer = composerType === 'Supplier Invoice Payment' || composerType === 'Expense Payment';
-      const shouldUploadFiles = isVendorComposer || Boolean(editingRequestId);
+      const shouldUploadFiles = isVendorComposer || composerType === 'Cash Advance Payment' || Boolean(editingRequestId);
       const attachmentUploads = shouldUploadFiles && supportingFiles.length
         ? await Promise.all(supportingFiles.map(async (file) => ({
           fileName: file.name,
@@ -1467,7 +1467,84 @@ export default function PaymentRequestsClient({
       if (!res.ok || json.status !== 'success') {
         throw new Error(json.error || `Unable to ${rowAction.action} request.`);
       }
-      setWorkspace(json.data.workspace as PaymentRequestsWorkspace);
+      const updated = json.data?.request as { requestId?: string; status?: string; currentStage?: string; currentApproverCode?: string | null; currentApproverName?: string | null } | undefined;
+      if (json.data?.workspace) {
+        setWorkspace(json.data.workspace as PaymentRequestsWorkspace);
+      } else if (updated?.requestId) {
+        setWorkspace((current) => {
+          const rows = current.rows.map((row) => row.requestId === updated.requestId
+            ? {
+              ...row,
+              status: updated.status || row.status,
+              currentStage: updated.currentStage || row.currentStage,
+              currentApproverCode: updated.currentApproverCode ?? row.currentApproverCode,
+              currentApproverName: updated.currentApproverName ?? row.currentApproverName,
+            }
+            : row);
+          const amountOf = (row: PaymentRequestRow) => {
+            const fromPayload = Number(row.payload?.amountNgn);
+            if (Number.isFinite(fromPayload) && fromPayload > 0) return fromPayload;
+            return Number(row.netAmount || 0);
+          };
+          const sum = (list: PaymentRequestRow[]) => list.reduce((total, row) => total + amountOf(row), 0);
+          const now = new Date();
+          const pending = rows.filter((row) => /pending|submitted|finance review/i.test(row.status));
+          const returned = rows.filter((row) => /returned/i.test(row.status));
+          const approved = rows.filter((row) => /^approved$/i.test(row.status));
+          const ready = rows.filter((row) => /ready for treasury/i.test(row.status));
+          const inProgress = rows.filter((row) => /payment scheduled|payment processing|awaiting retirement|retirement submitted|treasury verification|finance verification/i.test(row.status));
+          const paidMonth = rows.filter((row) => {
+            if (!/paid|completed|retired|closed/i.test(row.status)) return false;
+            const paidAt = row.paidAt ? new Date(row.paidAt) : row.updatedAt ? new Date(row.updatedAt) : null;
+            return Boolean(paidAt && paidAt.getMonth() === now.getMonth() && paidAt.getFullYear() === now.getFullYear());
+          });
+          const rejected = rows.filter((row) => /rejected|cancelled/i.test(row.status));
+          const drafts = rows.filter((row) => /draft/i.test(row.status));
+          const awaitingRetirement = rows.filter((row) => /^awaiting retirement$/i.test(row.status));
+          const retirementSubmitted = rows.filter((row) => /retirement submitted|treasury verification|finance verification/i.test(row.status));
+          return {
+            ...current,
+            rows,
+            summary: {
+              totalRequests: rows.length,
+              totalValue: sum(rows),
+              pendingApproval: pending.length,
+              pendingValue: sum(pending),
+              returned: returned.length,
+              returnedValue: sum(returned),
+              approved: approved.length,
+              approvedValue: sum(approved),
+              readyForTreasury: ready.length,
+              readyValue: sum(ready),
+              inProgress: inProgress.length,
+              inProgressValue: sum(inProgress),
+              paidThisMonth: paidMonth.length,
+              paidValue: sum(paidMonth),
+              rejected: rejected.length,
+              rejectedValue: sum(rejected),
+            },
+            tabCounts: {
+              ...current.tabCounts,
+              all: rows.length,
+              drafts: drafts.length,
+              pending: pending.length,
+              returned: returned.length,
+              approved: approved.length,
+              ready: ready.length,
+              paid: paidMonth.length,
+              rejected: rejected.length,
+              retirement: awaitingRetirement.length + retirementSubmitted.length,
+              awaitingRetirement: awaitingRetirement.length,
+            },
+            viewer: current.viewer
+              ? {
+                ...current.viewer,
+                approvableRequestIds: current.viewer.approvableRequestIds.filter((id) => id !== updated.requestId),
+              }
+              : current.viewer,
+          };
+        });
+      }
       setToast(
         rowAction.action === 'approve'
           ? `${rowAction.requestNumber} approved.`
@@ -2501,13 +2578,12 @@ export default function PaymentRequestsClient({
                     <textarea value={form.businessJustification} onChange={(e) => setForm((prev) => ({ ...prev, businessJustification: e.target.value }))} rows={3} className="w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-[#DBEAFE]" />
                   </label>
 
-                  {editingRequestId ? (
-                    <div className="rounded-xl border border-slate-200 bg-slate-50/70 p-3">
+                  <div className="rounded-xl border border-slate-200 bg-slate-50/70 p-3">
                       <div className="flex items-start justify-between gap-3">
                         <div>
-                          <p className="text-sm font-medium text-slate-700">Supporting documents</p>
+                          <p className="text-sm font-medium text-slate-700">Supporting documents <span className="font-normal text-slate-500">(optional)</span></p>
                           <p className="mt-0.5 text-xs text-slate-500">
-                            Remove or replace attachments before resending this returned request.
+                            Attach a receipt, approval or other support if you have it. Cash advance can be submitted without a file.
                           </p>
                         </div>
                         <label className="inline-flex cursor-pointer items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50">
@@ -2562,7 +2638,6 @@ export default function PaymentRequestsClient({
                         </ul>
                       ) : null}
                     </div>
-                  ) : null}
                 </>
               ) : (
                 <>

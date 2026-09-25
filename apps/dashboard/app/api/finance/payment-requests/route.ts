@@ -270,6 +270,7 @@ export async function GET(request: Request) {
 }
 
 export async function POST(request: Request) {
+  const started = Date.now();
   try {
     const actor = await resolveActor();
     if (!actor.authenticated) return jsonErr(401, 'Sign in required.');
@@ -652,14 +653,12 @@ export async function POST(request: Request) {
       const actions = result.request
         ? await listPaymentRequestActions(result.request.requestId)
         : [];
-      // Never return an unscoped payment list to non–Finance / non–Super-Admin actors.
-      const workspaceForViewer = await buildViewerPaymentWorkspace(actor, { listScope: body.listScope });
       const message = transition === 'do-not-pay'
         ? `${result.request?.requestNumber || 'Request'} will not be paid and has been cancelled.`
         : 'Payment request updated.';
+      console.info('[perf] POST /api/finance/payment-requests transition', { transition, ms: Date.now() - started });
       return jsonOk({
         ...result,
-        workspace: workspaceForViewer,
         actions,
         message,
       });

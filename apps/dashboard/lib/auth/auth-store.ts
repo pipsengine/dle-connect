@@ -352,6 +352,17 @@ const writeUsersStore = async (users: UserAccount[]) => {
   await writeJson(USERS_PATH, users).catch(() => undefined);
 };
 
+/** One account change. Does not MERGE the rest of the user register. */
+const persistUserRecord = async (user: UserAccount) => {
+  const pool = await authDb();
+  if (pool) await upsertDbUser(pool, user);
+  const stored = await readJson<UserAccount[]>(USERS_PATH, []);
+  const next = stored.some((item) => item.id === user.id)
+    ? stored.map((item) => item.id === user.id ? user : item)
+    : [user, ...stored];
+  await writeJson(USERS_PATH, next).catch(() => undefined);
+};
+
 const surnameOf = (employee: DleEmployeeDirectoryRow) => compact(employee.lastName || employee.fullName.split(/\s+/).slice(-1)[0] || employee.employeeCode);
 
 const userFromEmployee = (employee: DleEmployeeDirectoryRow): UserAccount => {
@@ -634,6 +645,32 @@ const client = (headers: Headers) => ({
   device: compact(headers.get('user-agent')) || 'Unknown device',
 });
 
+const findLoginUserRecord = async (login: string) => {
+  const key = compact(login);
+  if (!key) return undefined;
+  const pool = await authDb();
+  if (!pool) {
+    const users = await readUsersStoreRaw();
+    return findLoginUser(users, login);
+  }
+  const result = await pool.request()
+    .input('Key', sql.NVarChar(320), key)
+    .query(`
+SELECT TOP 1 [UserJson]
+FROM [security].[AuthUsers]
+WHERE [Deleted] = 0
+  AND (
+    [Username] = @Key
+    OR [EmployeeCode] = @Key
+    OR [EmployeeId] = @Key
+    OR [Email] = @Key
+  )
+`);
+  const raw = result.recordset[0]?.UserJson;
+  if (!raw) return undefined;
+  return parseJson<UserAccount>(raw, null as unknown as UserAccount);
+};
+
 const findLoginUser = (users: UserAccount[], login: string) => {
   const key = lower(login);
   if (!key) return undefined;
@@ -708,15 +745,17 @@ export const authenticate = async (login: string, password: string, headers: Hea
     return globalSessionUser(state);
   }
 
-  let users = await readUsersStoreRaw();
   if (!username || !password) {
     await appendLogin({ userId: 'unknown', username: username || '(blank)', ipAddress: ip, device, status: 'Failed', reason: 'Missing username or password' });
     throw new Error('Invalid username or password.');
   }
-  let user = findLoginUser(users, username);
+  let user = await findLoginUserRecord(username);
   if (!user) {
-    users = (await syncUsersFromEmployeeDirectory()).users;
-    user = findLoginUser(users, username);
+    user = findLoginUser(await readUsersStoreRaw(), username);
+  }
+  if (!user) {
+    const synced = (await syncUsersFromEmployeeDirectory()).users;
+    user = findLoginUser(synced, username);
   }
   if (!user || user.deleted) {
     await appendLogin({ userId: 'unknown', username, ipAddress: ip, device, status: 'Failed', reason: 'Unknown user' });
@@ -731,25 +770,27 @@ export const authenticate = async (login: string, password: string, headers: Hea
     throw new Error('Account is locked. Contact an administrator.');
   }
   if (!passwordMatches(password, user.passwordHash, user.passwordSalt)) {
-    const nextUsers = users.map((item) => {
-      if (item.id !== user.id) return item;
-      const failedAttempts = item.failedAttempts + 1;
-      return {
-        ...item,
-        failedAttempts,
-        status: failedAttempts >= LOCKOUT_LIMIT ? 'Locked' as UserStatus : item.status,
-        lockedUntil: failedAttempts >= LOCKOUT_LIMIT ? new Date(Date.now() + LOCKOUT_MINUTES * 60000).toISOString() : item.lockedUntil,
-        updatedAt: nowIso(),
-      };
+    const failedAttempts = user.failedAttempts + 1;
+    await persistUserRecord({
+      ...user,
+      failedAttempts,
+      status: failedAttempts >= LOCKOUT_LIMIT ? 'Locked' as UserStatus : user.status,
+      lockedUntil: failedAttempts >= LOCKOUT_LIMIT ? new Date(Date.now() + LOCKOUT_MINUTES * 60000).toISOString() : user.lockedUntil,
+      updatedAt: nowIso(),
     });
-    await writeUsersStore(nextUsers);
     await appendLogin({ userId: user.id, username: user.username, ipAddress: ip, device, status: 'Failed', reason: 'Invalid password' });
     await appendAudit({ user: user.username, action: 'Failed login', ipAddress: ip, device, performedBy: 'System', newValue: `Failed attempts: ${user.failedAttempts + 1}` });
     throw new Error('Invalid username or password.');
   }
-  const nextUsers = users.map((item) => item.id === user.id ? { ...item, failedAttempts: 0, lockedUntil: null, lastLoginAt: nowIso(), status: item.status === 'Pending First Login' ? item.status : 'Active' as UserStatus, updatedAt: nowIso() } : item);
-  await writeUsersStore(nextUsers);
-  const fresh = nextUsers.find((item) => item.id === user.id) || user;
+  const fresh: UserAccount = {
+    ...user,
+    failedAttempts: 0,
+    lockedUntil: null,
+    lastLoginAt: nowIso(),
+    status: user.status === 'Pending First Login' ? user.status : 'Active' as UserStatus,
+    updatedAt: nowIso(),
+  };
+  await persistUserRecord(fresh);
   await appendLogin({ userId: user.id, username: user.username, ipAddress: ip, device, status: 'Success' });
   await appendAudit({ user: user.username, action: 'Login', ipAddress: ip, device, performedBy: user.username });
   return publicUser(fresh);
@@ -789,7 +830,8 @@ export const changePassword = async (userId: string, currentPassword: string | u
     lockedUntil: null,
     updatedAt: nowIso(),
   } : item);
-  await writeUsersStore(nextUsers);
+  const changed = nextUsers.find((item) => item.id === userId);
+  if (changed) await persistUserRecord(changed);
   await appendAudit({ user: target.username, action: 'Password change', ipAddress: ip, device, performedBy: performedBy || target.username });
   return publicUser(nextUsers.find((item) => item.id === userId) || target);
 };
@@ -904,8 +946,7 @@ export const updateUser = async (
     };
   }
 
-  const nextUsers = users.map((item) => item.id === userId ? updated : item);
-  await writeUsersStore(nextUsers);
+  await persistUserRecord(updated);
   const { ip, device } = client(headers);
   await appendAudit({ user: target.username, action: `User ${action}`, ipAddress: ip, device, oldValue, newValue: JSON.stringify({ status: updated.status, roles: updated.roles, departmentAccess: updated.departmentAccess, moduleAccess: updated.moduleAccess }), performedBy });
   return updated;

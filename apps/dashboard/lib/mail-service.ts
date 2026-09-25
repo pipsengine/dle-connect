@@ -37,6 +37,7 @@ import {
   buildPayrollStageApprovedEmail,
   buildPayrollSubmittedEmail,
   buildTimesheetApprovalRequestEmail,
+  buildTelephoneAllowanceWorkflowEmail,
   buildInternshipReviewTaskEmail,
   buildFinalSettlementApprovalEmail,
   employeeDisplayName,
@@ -559,6 +560,21 @@ export const sendTimesheetApprovalRequestEmail = async (input: {
   const to = compact(input.recipientEmail);
   if (!to) return { sent: false, reason: 'No recipient email.' };
   const email = buildTimesheetApprovalRequestEmail({ ...input, baseUrl: input.baseUrl });
+  return sendTransactionalEmail({ to, subject: email.subject, text: email.text, html: email.html });
+};
+
+export const sendTelephoneAllowanceWorkflowEmail = async (input: {
+  recipientName: string;
+  recipientEmail: string | null;
+  title: string;
+  body: string;
+  actorName?: string;
+  workspaceLink: string;
+  baseUrl?: string | null;
+}) => {
+  const to = compact(input.recipientEmail);
+  if (!to) return { sent: false, reason: 'No recipient email.' };
+  const email = buildTelephoneAllowanceWorkflowEmail({ ...input, baseUrl: input.baseUrl });
   return sendTransactionalEmail({ to, subject: email.subject, text: email.text, html: email.html });
 };
 

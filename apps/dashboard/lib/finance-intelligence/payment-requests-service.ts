@@ -2173,6 +2173,18 @@ WHERE [PaymentType] = N'Supplier Invoice Payment'
   }
 };
 
+let paymentListRepairsStartedAt = 0;
+
+const schedulePaymentListRepairs = () => {
+  if (Date.now() - paymentListRepairsStartedAt < 10 * 60 * 1000) return;
+  paymentListRepairsStartedAt = Date.now();
+  setTimeout(() => {
+    void buildPaymentRequestsWorkspace({ runRepairs: true }).catch((error) => {
+      console.error('[payment-requests] background repair failed', error);
+    });
+  }, 20_000);
+};
+
 export const buildPaymentRequestsWorkspace = async (input?: {
   paymentType?: string;
   mineFor?: string;
@@ -2183,12 +2195,18 @@ export const buildPaymentRequestsWorkspace = async (input?: {
   includeMdCeoStage?: boolean;
   /** When true, never return the unscoped enterprise queue (missing actor code → empty). */
   restrictToActor?: boolean;
+  /** Background reconciliation only. Page loads must not wait for it. */
+  runRepairs?: boolean;
 }): Promise<PaymentRequestsWorkspace> => {
-  await migrateLegacyExpensePayments();
-  try {
-    await repairPendingMissingApproverCodes({ notify: false });
-  } catch (error) {
-    console.error('[payment-requests] missing approver-code repair failed', error);
+  if (input?.runRepairs) {
+    await migrateLegacyExpensePayments();
+    try {
+      await repairPendingMissingApproverCodes({ notify: false });
+    } catch (error) {
+      console.error('[payment-requests] missing approver-code repair failed', error);
+    }
+  } else {
+    schedulePaymentListRepairs();
   }
   const mineFor = compact(input?.mineFor);
   const scopedToActorCode = compact(input?.scopedToActorCode);
@@ -2203,6 +2221,7 @@ export const buildPaymentRequestsWorkspace = async (input?: {
     requireActorScope: Boolean(input?.restrictToActor),
   });
 
+  if (input?.runRepairs) {
   // New project submissions still sitting with the PM (no approval yet) get line manager first.
   for (let index = 0; index < rows.length; index += 1) {
     const row = rows[index];
@@ -2300,6 +2319,7 @@ export const buildPaymentRequestsWorkspace = async (input?: {
     } catch (error) {
       console.error('[payment-requests] FX backfill failed', row.requestNumber, error);
     }
+  }
   }
 
   const workspace = emptyWorkspace();
@@ -3807,7 +3827,7 @@ WHERE [RequestId] = @RequestId
   }
 
   if (notifyEvent && request) {
-    await notifyPaymentDecision({
+    void notifyPaymentDecision({
       request,
       event: notifyEvent,
       actorName: input.actor,
@@ -3822,10 +3842,5 @@ WHERE [RequestId] = @RequestId
     }).catch((error) => console.error('[payment-requests] transition notification failed', error));
   }
 
-  const workspace = await buildPaymentRequestsWorkspace();
-
-  return {
-    request: workspace.rows.find((row) => row.requestId === input.requestId) || request,
-    workspace,
-  };
+  return { request };
 };

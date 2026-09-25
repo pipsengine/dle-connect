@@ -3944,6 +3944,7 @@ export const insertEmployeeProfileDocumentInDb = async (input: {
   expiresAt?: string | null;
   documentStatus?: string;
   createdBy?: string | null;
+  storageUri?: string | null;
 }) => {
   const employeeId = await resolveEmployeeDbId(input.employeeCode);
   if (!employeeId) return null;
@@ -3958,13 +3959,14 @@ export const insertEmployeeProfileDocumentInDb = async (input: {
     .input('expires_at', sql.Date, dateOrNull(input.expiresAt))
     .input('document_status', sql.VarChar(30), str(input.documentStatus) || 'Uploaded')
     .input('created_by', sql.NVarChar(128), nullable(input.createdBy))
+    .input('storage_uri', sql.NVarChar(1000), nullable(input.storageUri))
     .query(`
       INSERT [hris].[EmployeeDocuments](
-        employee_id, document_category, file_name, mime_type, size_bytes, expires_at, document_status, created_by
+        employee_id, document_category, file_name, mime_type, size_bytes, expires_at, document_status, created_by, storage_uri
       )
       OUTPUT INSERTED.document_id
       VALUES (
-        @employee_id, @document_category, @file_name, @mime_type, @size_bytes, @expires_at, @document_status, @created_by
+        @employee_id, @document_category, @file_name, @mime_type, @size_bytes, @expires_at, @document_status, @created_by, @storage_uri
       );
     `);
   const documentId = Number(rs.recordset?.[0]?.document_id || 0);
@@ -3980,6 +3982,30 @@ export const insertEmployeeProfileDocumentInDb = async (input: {
     expiresAt: input.expiresAt ? isoDate(input.expiresAt) : null,
     verifiedBy: null,
   } satisfies HrisEmployeeDocumentRow;
+};
+
+export const readEmployeeDocumentFileMeta = async (employeeCode: string, documentKey: string) => {
+  const employeeId = await resolveEmployeeDbId(employeeCode);
+  if (!employeeId) return null;
+  const documentId = Number(String(documentKey || '').replace(/^doc-/i, ''));
+  if (!Number.isFinite(documentId) || documentId <= 0) return null;
+  const p = await pool();
+  if (!p) return null;
+  const rs = await p.request()
+    .input('employee_id', sql.BigInt, employeeId)
+    .input('document_id', sql.BigInt, documentId)
+    .query(`
+      SELECT file_name, mime_type, storage_uri
+      FROM [hris].[EmployeeDocuments]
+      WHERE employee_id = @employee_id AND document_id = @document_id;
+    `);
+  const row = rs.recordset?.[0];
+  if (!row) return null;
+  return {
+    fileName: str(row.file_name) || 'document',
+    mimeType: str(row.mime_type) || 'application/octet-stream',
+    storageUri: str(row.storage_uri),
+  };
 };
 
 export const readEmployeePhotoFromDb = async (employeeCode: string): Promise<{ data: Buffer; mimeType: string; fileName: string } | null> => {
