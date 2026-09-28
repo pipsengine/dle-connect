@@ -1,6 +1,6 @@
 'use client';
 import React, { useEffect, useMemo, useState } from 'react';
-import { Badge, Button, Field, Modal } from '../components/UI';
+import { Badge, Button, Field, Modal, SearchCombo, personDetail, personLabel } from '../components/UI';
 import { formatDisplayDate, usePortalData } from '../portal-data';
 
 const TABS = ['Mobilized Crew', 'New Mobilization', 'Demobilization', 'Returning Crew', 'History', 'Exceptions'];
@@ -21,18 +21,6 @@ const post = async (payload) => {
   if (!response.ok || body.status === 'error') throw new Error(body.error || 'Request failed.');
   return body.data;
 };
-
-function Combo({ label, placeholder, value, onSelect, search, labelOf }) {
-  const [query, setQuery] = useState('');
-  const [open, setOpen] = useState(false);
-  const [items, setItems] = useState([]);
-  useEffect(() => {
-    if (!open) return undefined;
-    const handle = setTimeout(() => { search(query).then(setItems).catch(() => setItems([])); }, 250);
-    return () => clearTimeout(handle);
-  }, [query, open]);
-  return <Field label={label}><div className={open ? 'combo open' : 'combo'}><input value={open ? query : value} placeholder={placeholder} onFocus={() => { setOpen(true); setQuery(''); }} onBlur={() => setTimeout(() => setOpen(false), 180)} onChange={(event) => setQuery(event.target.value)} />{open && <div className="comboMenu">{items.map((item) => <button type="button" key={labelOf(item)} onMouseDown={(event) => event.preventDefault()} onClick={() => { onSelect(item); setOpen(false); }}>{labelOf(item)}</button>)}{!items.length && <span>No matches</span>}</div>}</div></Field>;
-}
 
 export default function OffshoreMobilization() {
   const { snapshot } = usePortalData();
@@ -126,9 +114,9 @@ export default function OffshoreMobilization() {
         <div className="filterRow offshoreFilters">
           <Field label="Timesheet Period"><select value={periodId} onChange={(event) => setPeriodId(event.target.value)}><option value="">All periods</option>{snapshot.periods.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></Field>
           <Field label="Date"><input type="date" value={date} onChange={(event) => setDate(event.target.value)} /></Field>
-          <Combo label="Project" placeholder="All projects" value={project} onSelect={(item) => setProject(item?.code || '')} search={(q) => fetch(`/api/timesheet-management/entry?mode=search&kind=project&q=${encodeURIComponent(q)}`).then((response) => response.json()).then((body) => body.data || [])} labelOf={(item) => `${item.code} — ${item.name}`} />
-          <Combo label="Offshore Location / Site" placeholder="All sites" value={site} onSelect={(item) => setSite(item?.name || '')} search={(q) => fetch(`/api/timesheet-management/mobilization?mode=search&kind=site&q=${encodeURIComponent(q)}`).then((response) => response.json()).then((body) => body.data || [])} labelOf={(item) => item.name} />
-          <Combo label="Supervisor" placeholder="All supervisors" value={supervisor} onSelect={(item) => setSupervisor(item?.name || '')} search={(q) => fetch(`/api/timesheet-management/entry?mode=search&kind=supervisor&q=${encodeURIComponent(q)}`).then((response) => response.json()).then((body) => body.data || [])} labelOf={(item) => item.code ? `${item.code} - ${item.name}` : item.name} />
+          <SearchCombo label="Project" placeholder="All projects" value={project} onSelect={(item) => setProject(item?.code || '')} search={(q) => fetch(`/api/timesheet-management/entry?mode=search&kind=project&q=${encodeURIComponent(q)}`).then((response) => response.json()).then((body) => body.data || [])} labelOf={(item) => `${item.code} — ${item.name}`} />
+          <SearchCombo label="Offshore Location / Site" placeholder="All sites" value={site} onSelect={(item) => setSite(item?.name || '')} search={(q) => fetch(`/api/timesheet-management/mobilization?mode=search&kind=site&q=${encodeURIComponent(q)}`).then((response) => response.json()).then((body) => body.data || [])} labelOf={(item) => item.name} />
+          <SearchCombo label="Supervisor" placeholder="All supervisors" value={supervisor} onSelect={(item) => setSupervisor(item?.name || '')} search={(q) => fetch(`/api/timesheet-management/entry?mode=search&kind=supervisor&q=${encodeURIComponent(q)}`).then((response) => response.json()).then((body) => body.data || [])} labelOf={personLabel} detailOf={personDetail} />
           <Field label="Mobilization Status"><select value={status} onChange={(event) => setStatus(event.target.value)}><option value="">All statuses</option>{['Planned', 'Mobilized', 'Extended', 'Demobilized', 'Returned to Base', 'Cancelled', 'Medical Return', 'Transferred'].map((item) => <option key={item}>{item}</option>)}</select></Field>
         </div>
         {tab === 'Demobilization' && <div className="toolbar"><div /><div className="actions"><Button kind="secondary" disabled={!picked.length} onClick={() => setModal({ type: 'demobilize', ids: picked })}>Demobilize selected ({picked.length})</Button></div></div>}
@@ -136,11 +124,11 @@ export default function OffshoreMobilization() {
         <div className="tableWrap"><table><thead><tr>{tab === 'Demobilization' && <th></th>}<th><button className="link" onClick={() => setSort({ key: 'employeeName', dir: sort.dir * -1 })}>Employee</button></th><th>Code</th><th>Offshore Project</th><th>Offshore Site</th><th>Offshore Supervisor</th><th><button className="link" onClick={() => setSort({ key: 'effectiveFrom', dir: sort.dir * -1 })}>Mobilized From</button></th><th><button className="link" onClick={() => setSort({ key: 'expectedReturn', dir: sort.dir * -1 })}>Expected Return</button></th><th>Actual Return</th><th>Status</th><th>Timesheet</th><th></th></tr></thead><tbody>
           {visible.map((row) => <tr key={row.id}>
             {tab === 'Demobilization' && <td><input type="checkbox" checked={picked.includes(row.id)} onChange={() => setPicked((current) => current.includes(row.id) ? current.filter((id) => id !== row.id) : [...current, row.id])} /></td>}
-            <td><b>{row.employeeName}</b></td>
+            <td className="wrapCell"><b>{row.employeeName}</b></td>
             <td>{row.employeeCode}</td>
-            <td><b>{row.projectCode}</b><small className="block">{row.projectName}</small></td>
-            <td>{row.site}</td>
-            <td>{row.offshoreSupervisor}</td>
+            <td className="wrapCell"><b>{row.projectCode}</b><small className="block">{row.projectName}</small></td>
+            <td className="wrapCell">{row.site}</td>
+            <td className="wrapCell">{row.offshoreSupervisor}</td>
             <td>{formatDisplayDate(row.effectiveFrom)}</td>
             <td>{formatDisplayDate(row.expectedReturn)}{row.revisedExpectedReturn ? <small className="block">Revised</small> : null}</td>
             <td>{row.actualReturn ? formatDisplayDate(row.actualReturn) : '—'}</td>
@@ -218,11 +206,11 @@ function CreateModal({ periods, onClose, onCreated }) {
       {step === 'edit' ? <>
         <div className="formGrid">
           <Field label="Timesheet Period"><select value={periodId} onChange={(event) => setPeriodId(event.target.value)}>{periods.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></Field>
-          <Combo label="Offshore project" placeholder="Search project code or name" value={project ? `${project.code} — ${project.name}` : ''} onSelect={setProject} search={(q) => fetch(`/api/timesheet-management/entry?mode=search&kind=project&q=${encodeURIComponent(q)}`).then((response) => response.json()).then((body) => body.data || [])} labelOf={(item) => `${item.code} — ${item.name}`} />
-          <Combo label="Offshore location / site" placeholder="Search site" value={site} onSelect={(item) => setSite(item?.name || '')} search={(q) => fetch(`/api/timesheet-management/mobilization?mode=search&kind=site&q=${encodeURIComponent(q)}`).then((response) => response.json()).then((body) => body.data || [])} labelOf={(item) => item.name} />
+          <SearchCombo label="Offshore project" placeholder="Search project code or name" value={project ? `${project.code} — ${project.name}` : ''} onSelect={setProject} search={(q) => fetch(`/api/timesheet-management/entry?mode=search&kind=project&q=${encodeURIComponent(q)}`).then((response) => response.json()).then((body) => body.data || [])} labelOf={(item) => `${item.code} — ${item.name}`} />
+          <SearchCombo label="Offshore location / site" placeholder="Search site" value={site} onSelect={(item) => setSite(item?.name || '')} search={(q) => fetch(`/api/timesheet-management/mobilization?mode=search&kind=site&q=${encodeURIComponent(q)}`).then((response) => response.json()).then((body) => body.data || [])} labelOf={(item) => item.name} />
           <Field label="Mobilization date"><input type="date" value={from} onChange={(event) => setFrom(event.target.value)} /></Field>
           <Field label="Expected return"><input type="date" value={expected} min={from} onChange={(event) => setExpected(event.target.value)} /></Field>
-          <Combo label="Offshore supervisor" placeholder="Search supervisor" value={supervisor} onSelect={(item) => setSupervisor(item?.name || '')} search={(q) => fetch(`/api/timesheet-management/entry?mode=search&kind=supervisor&q=${encodeURIComponent(q)}`).then((response) => response.json()).then((body) => body.data || [])} labelOf={(item) => item.code ? `${item.code} - ${item.name}` : item.name} />
+          <SearchCombo label="Offshore supervisor" placeholder="Search supervisor" value={supervisor} onSelect={(item) => setSupervisor(item?.name || '')} search={(q) => fetch(`/api/timesheet-management/entry?mode=search&kind=supervisor&q=${encodeURIComponent(q)}`).then((response) => response.json()).then((body) => body.data || [])} labelOf={personLabel} detailOf={personDetail} />
           <Field label="Authorization / reference"><input value={reference} onChange={(event) => setReference(event.target.value)} placeholder="MOB/OPS/2026/091" /></Field>
           <Field label="Reason"><select value={reason} onChange={(event) => setReason(event.target.value)}><option value="">Select reason</option>{['Project requirement', 'Offshore campaign', 'Maintenance shutdown', 'Client request', 'Emergency deployment'].map((item) => <option key={item}>{item}</option>)}</select></Field>
           <Field label="Transport / movement"><select value={transport} onChange={(event) => setTransport(event.target.value)}>{['Company arranged', 'Client arranged', 'Marine transfer', 'Helicopter transfer', 'Other'].map((item) => <option key={item}>{item}</option>)}</select></Field>

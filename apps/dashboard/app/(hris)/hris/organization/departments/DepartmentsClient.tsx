@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useId, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import Link from 'next/link';
 import {
   AlertTriangle,
@@ -1485,42 +1486,126 @@ function DepartmentHeadPicker({
   onChange: (value: string) => void;
 }) {
   const rootRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
   const [query, setQuery] = useState(value);
+  const [needle, setNeedle] = useState('');
+  const [narrow, setNarrow] = useState(false);
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
-  const [options, setOptions] = useState<DepartmentHeadEmployee[]>([]);
+  const [directory, setDirectory] = useState<DepartmentHeadEmployee[]>([]);
+  const [menuStyle, setMenuStyle] = useState<{ top: number; left: number; width: number; maxHeight: number } | null>(null);
 
   useEffect(() => {
     setQuery(value);
+    setNarrow(false);
+    setNeedle('');
   }, [value]);
 
   useEffect(() => {
     const onDoc = (event: MouseEvent) => {
-      if (!rootRef.current?.contains(event.target as Node)) setOpen(false);
+      const target = event.target as Node;
+      if (rootRef.current?.contains(target) || menuRef.current?.contains(target)) return;
+      setOpen(false);
     };
     document.addEventListener('mousedown', onDoc);
     return () => document.removeEventListener('mousedown', onDoc);
   }, []);
 
   useEffect(() => {
-    if (!open) return;
-    const timer = window.setTimeout(async () => {
-      setLoading(true);
-      try {
-        const response = await fetch(
-          `/api/hris/organization/departments?employees=1&q=${encodeURIComponent(query.trim())}&limit=20`,
-          { cache: 'no-store' },
-        );
+    if (!open || directory.length) return;
+    let cancelled = false;
+    setLoading(true);
+    fetch('/api/hris/organization/departments?employees=1&limit=5000', { cache: 'no-store' })
+      .then(async (response) => {
         const json = await response.json();
-        setOptions(response.ok && json?.status === 'success' ? json.data?.employees || [] : []);
-      } catch {
-        setOptions([]);
-      } finally {
-        setLoading(false);
-      }
-    }, 220);
-    return () => window.clearTimeout(timer);
-  }, [open, query]);
+        if (!cancelled) setDirectory(response.ok && json?.status === 'success' ? json.data?.employees || [] : []);
+      })
+      .catch(() => {
+        if (!cancelled) setDirectory([]);
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [open, directory.length]);
+
+  useEffect(() => {
+    if (!open) return;
+    const place = () => {
+      const rect = inputRef.current?.getBoundingClientRect();
+      if (!rect) return;
+      const spaceBelow = window.innerHeight - rect.bottom - 16;
+      const spaceAbove = rect.top - 16;
+      const maxHeight = Math.max(220, Math.min(420, Math.max(spaceBelow, spaceAbove)));
+      const openUp = spaceBelow < 220 && spaceAbove > spaceBelow;
+      setMenuStyle({
+        top: openUp ? Math.max(8, rect.top - maxHeight - 4) : rect.bottom + 4,
+        left: rect.left,
+        width: rect.width,
+        maxHeight,
+      });
+    };
+    place();
+    window.addEventListener('resize', place);
+    window.addEventListener('scroll', place, true);
+    return () => {
+      window.removeEventListener('resize', place);
+      window.removeEventListener('scroll', place, true);
+    };
+  }, [open]);
+
+  const options = useMemo(() => {
+    const q = (narrow ? needle : '').trim().toLowerCase();
+    if (!q) return directory;
+    return directory.filter((employee) =>
+      [employee.fullName, employee.employeeCode, employee.jobTitle, employee.department, employee.label]
+        .join(' ')
+        .toLowerCase()
+        .includes(q));
+  }, [directory, narrow, needle]);
+
+  const menu = open && menuStyle
+    ? createPortal(
+      <div
+        ref={menuRef}
+        className="overflow-y-auto rounded-xl border border-slate-200 bg-white shadow-xl"
+        style={{ position: 'fixed', zIndex: 80, top: menuStyle.top, left: menuStyle.left, width: menuStyle.width, maxHeight: menuStyle.maxHeight }}
+      >
+        {loading ? <div className="px-3 py-2.5 text-xs font-medium text-slate-500">Loading employees…</div> : null}
+        {!loading && !options.length ? (
+          <div className="px-3 py-2.5 text-xs font-medium text-slate-500">No matching employees</div>
+        ) : null}
+        {!loading
+          ? options.map((employee) => (
+            <button
+              key={employee.employeeCode}
+              type="button"
+              className="block w-full border-b border-slate-100 px-3 py-2 text-left last:border-0 hover:bg-slate-50"
+              onMouseDown={(event) => event.preventDefault()}
+              onClick={() => {
+                onChange(employee.label);
+                setQuery(employee.label);
+                setNarrow(false);
+                setNeedle('');
+                setOpen(false);
+              }}
+            >
+              <div className="text-sm font-semibold text-slate-900">{employee.fullName}</div>
+              <div className="text-xs text-slate-500">
+                {employee.employeeCode}
+                {employee.jobTitle ? ` · ${employee.jobTitle}` : ''}
+                {employee.department ? ` · ${employee.department}` : ''}
+              </div>
+            </button>
+          ))
+          : null}
+      </div>,
+      document.body,
+    )
+    : null;
 
   return (
     <div className="space-y-1" ref={rootRef}>
@@ -1528,16 +1613,23 @@ function DepartmentHeadPicker({
       <div className="relative">
         <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
         <input
-          value={query}
+          ref={inputRef}
+          value={narrow ? needle : query}
           autoComplete="off"
           placeholder="Search employee name or code"
           onChange={(event) => {
             const next = event.target.value;
+            setNeedle(next);
+            setNarrow(true);
             setQuery(next);
             setOpen(true);
             if (!next.trim()) onChange('');
           }}
-          onFocus={() => setOpen(true)}
+          onFocus={() => {
+            setNarrow(false);
+            setNeedle('');
+            setOpen(true);
+          }}
           className="w-full rounded-xl border border-slate-200 py-2.5 pl-9 pr-9 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-dle-blue/20"
         />
         {query ? (
@@ -1545,8 +1637,9 @@ function DepartmentHeadPicker({
             type="button"
             onClick={() => {
               setQuery('');
+              setNeedle('');
+              setNarrow(false);
               onChange('');
-              setOptions([]);
               setOpen(true);
             }}
             className="absolute right-2 top-1/2 inline-flex h-7 w-7 -translate-y-1/2 items-center justify-center rounded-lg text-slate-400 hover:bg-slate-50 hover:text-slate-600"
@@ -1556,35 +1649,7 @@ function DepartmentHeadPicker({
           </button>
         ) : null}
       </div>
-      {open ? (
-        <div className="max-h-52 overflow-y-auto rounded-xl border border-slate-200 bg-white">
-          {loading ? <div className="px-3 py-2.5 text-xs font-medium text-slate-500">Searching employees…</div> : null}
-          {!loading && !options.length ? (
-            <div className="px-3 py-2.5 text-xs font-medium text-slate-500">No matching employees</div>
-          ) : null}
-          {!loading
-            ? options.map((employee) => (
-                <button
-                  key={employee.employeeCode}
-                  type="button"
-                  className="block w-full border-b border-slate-100 px-3 py-2 text-left last:border-0 hover:bg-slate-50"
-                  onClick={() => {
-                    onChange(employee.label);
-                    setQuery(employee.label);
-                    setOpen(false);
-                  }}
-                >
-                  <div className="text-sm font-semibold text-slate-900">{employee.fullName}</div>
-                  <div className="text-xs text-slate-500">
-                    {employee.employeeCode}
-                    {employee.jobTitle ? ` · ${employee.jobTitle}` : ''}
-                    {employee.department ? ` · ${employee.department}` : ''}
-                  </div>
-                </button>
-              ))
-            : null}
-        </div>
-      ) : null}
+      {menu}
     </div>
   );
 }

@@ -134,10 +134,44 @@ CREATE TABLE [tsmgmt].[CrewRemovalRequests] (
   [DecidedBy] NVARCHAR(120) NULL,
   [DecidedAt] DATETIME2(0) NULL
 );
+IF COL_LENGTH(N'tsmgmt.CrewAssignments', N'PersonId') IS NULL
+  ALTER TABLE [tsmgmt].[CrewAssignments] ADD [PersonId] NVARCHAR(80) NULL;
 `);
     ensured = true;
   }
   return connection;
+};
+
+export const readCrewSignals = async (onDate: string) => {
+  const day = dateOnly(onDate);
+  if (!day) return { leave: [] as string[], offshore: [] as Array<{ code: string; reference: string; site: string }> };
+  const connection = await pool();
+  let leave: string[] = [];
+  try {
+    const result = await connection.request().input('Day', sql.Date, day).query(`
+      SELECT [EmployeeId] FROM [hris].[LeaveApplications]
+      WHERE [StatusName] LIKE N'%Approved%' AND [StartDate] <= @Day AND [EndDate] >= @Day
+    `);
+    leave = (result.recordset || []).map((row) => text(row.EmployeeId).toUpperCase());
+  } catch {
+    leave = [];
+  }
+  let offshore: Array<{ code: string; reference: string; site: string }> = [];
+  try {
+    const result = await connection.request().input('Day', sql.Date, day).query(`
+      SELECT e.[EmployeeCode], h.[MobilizationNo], h.[OffshoreSite]
+      FROM [tsmgmt].[MobilizationEmployees] e
+      INNER JOIN [tsmgmt].[Mobilizations] h ON h.[Id] = e.[MobilizationId]
+      WHERE e.[Status] IN (N'Planned', N'Mobilized', N'Extended')
+        AND e.[EffectiveFrom] <= @Day
+        AND (e.[ActualReturn] IS NULL OR e.[ActualReturn] >= @Day)
+        AND (e.[ActualDemobilization] IS NULL OR e.[ActualDemobilization] >= @Day)
+    `);
+    offshore = (result.recordset || []).map((row) => ({ code: text(row.EmployeeCode).toUpperCase(), reference: text(row.MobilizationNo), site: text(row.OffshoreSite) }));
+  } catch {
+    offshore = [];
+  }
+  return { leave, offshore };
 };
 
 const mapAssignment = (row: Record<string, unknown>): TimesheetCrewAssignment => ({
@@ -271,13 +305,13 @@ export const confirmedRemovalEmployeeCodes = async (supervisor: string) => {
     .map((row) => text(row.EmployeeCode).toUpperCase()));
 };
 
-type DirectoryEmployee = { code: string; name: string; employeeType: string; department: string };
+type DirectoryEmployee = { code: string; name: string; personId: string; employeeType: string; department: string };
 
 const loadEmployees = async (transaction: sql.Transaction, codes: string[]) => {
   const result = await new sql.Request(transaction)
     .input('Codes', sql.NVarChar(sql.MAX), JSON.stringify(codes))
     .query(`
-      SELECT v.employee_code, v.full_name, ISNULL(v.employment_type, N'') AS employment_type, ISNULL(v.department, N'') AS department
+      SELECT v.employee_id, v.employee_code, v.full_name, ISNULL(v.employment_type, N'') AS employment_type, ISNULL(v.department, N'') AS department
       FROM [hris].[EmployeeMasterView] v
       INNER JOIN OPENJSON(@Codes) WITH (code NVARCHAR(80) '$') selected ON selected.code = v.employee_code
       WHERE ISNULL(v.employment_status, N'') NOT LIKE N'%terminated%'
@@ -290,6 +324,7 @@ const loadEmployees = async (transaction: sql.Transaction, codes: string[]) => {
     found.set(text(row.employee_code), {
       code: text(row.employee_code),
       name: text(row.full_name),
+      personId: text(row.employee_id),
       employeeType: text(row.employment_type),
       department: text(row.department),
     });
@@ -327,7 +362,7 @@ const insertEvent = async (transaction: sql.Transaction, event: Omit<TimesheetCr
     `);
 };
 
-const insertAssignment = async (transaction: sql.Transaction, row: Omit<TimesheetCrewAssignment, 'updatedAt'>) => {
+const insertAssignment = async (transaction: sql.Transaction, row: Omit<TimesheetCrewAssignment, 'updatedAt'> & { personId?: string }) => {
   await new sql.Request(transaction)
     .input('Id', sql.NVarChar(40), row.id)
     .input('EmployeeCode', sql.NVarChar(80), row.employeeCode)
@@ -346,13 +381,14 @@ const insertAssignment = async (transaction: sql.Transaction, row: Omit<Timeshee
     .input('Notes', sql.NVarChar(500), row.notes)
     .input('Status', sql.NVarChar(20), row.status)
     .input('Actor', sql.NVarChar(120), row.createdBy)
+    .input('PersonId', sql.NVarChar(80), text(row.personId))
     .query(`
       INSERT INTO [tsmgmt].[CrewAssignments] (
         [Id],[EmployeeCode],[EmployeeName],[EmployeeType],[Department],[AssignmentType],[SupervisorName],[PreviousSupervisor],
-        [LocationName],[WorkCenterName],[OperationalStatus],[EffectiveFrom],[EffectiveTo],[Reason],[Notes],[Status],[CreatedBy],[UpdatedBy]
+        [LocationName],[WorkCenterName],[OperationalStatus],[EffectiveFrom],[EffectiveTo],[Reason],[Notes],[Status],[CreatedBy],[UpdatedBy],[PersonId]
       ) VALUES (
         @Id,@EmployeeCode,@EmployeeName,@EmployeeType,@Department,@AssignmentType,@SupervisorName,@PreviousSupervisor,
-        @LocationName,@WorkCenterName,@OperationalStatus,@EffectiveFrom,@EffectiveTo,@Reason,@Notes,@Status,@Actor,@Actor
+        @LocationName,@WorkCenterName,@OperationalStatus,@EffectiveFrom,@EffectiveTo,@Reason,@Notes,@Status,@Actor,@Actor,@PersonId
       )
     `);
 };
@@ -456,6 +492,7 @@ export const saveTimesheetCrewAssignment = async (input: {
         employeeName: employee.name,
         employeeType: employee.employeeType,
         department: employee.department,
+        personId: employee.personId,
         assignmentType,
         supervisor,
         previousSupervisor,

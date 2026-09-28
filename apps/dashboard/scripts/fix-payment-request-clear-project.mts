@@ -11,7 +11,7 @@ import { fileURLToPath } from 'node:url';
 import sql from 'mssql';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-for (const envPath of [path.join(__dirname, '..', '.env.local'), path.join(__dirname, '..', '.env')]) {
+for (const envPath of [path.join(__dirname, '..', '..', '..', '.env'), path.join(__dirname, '..', '.env.local'), path.join(__dirname, '..', '.env')]) {
   if (!fs.existsSync(envPath)) continue;
   for (const line of fs.readFileSync(envPath, 'utf8').split(/\r?\n/)) {
     const match = line.match(/^([^#=]+)=(.*)$/);

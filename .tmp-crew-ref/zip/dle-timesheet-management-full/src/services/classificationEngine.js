@@ -1,2 +1,0 @@
-export function classifyWorkDate(date,holidaySet=new Set()){const d=new Date(date+'T12:00:00');const dow=d.getDay();if(holidaySet.has(date))return'Public Holiday';if(dow===6)return'Saturday';if(dow===0)return'Sunday';return'Weekday';}
-export function classifySegments(segments,holidays){return segments.map(s=>({...s,calendarType:classifyWorkDate(s.workDate,holidays),timeType:s.ovt?'OVT':'Regular',night:!!s.night,offshore:!!s.offshore}));}

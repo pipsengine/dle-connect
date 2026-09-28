@@ -2216,6 +2216,147 @@ SET [PendingBalance] = CASE WHEN ISNULL([PendingBalance],0) - @Days < 0 THEN 0 E
   WHERE [EmployeeId]=@EmployeeId AND [LeaveType]=@LeaveType;`);
 };
 
+/** HR Manager records leave already taken without an application and deducts the balance immediately. */
+export const deductUnappliedLeave = async (input: {
+  employeeCode: string;
+  leaveType?: string;
+  startDate: string;
+  endDate: string;
+  reason: string;
+  actor: string;
+}) => {
+  const reason = compact(input.reason);
+  if (reason.length < 5) throw new Error('Enter a reason for this deduction.');
+  const code = compact(input.employeeCode);
+  if (!code) throw new Error('Select the employee whose leave is being deducted.');
+  const startDate = normalizeLeaveIsoDate(input.startDate);
+  const endDate = normalizeLeaveIsoDate(input.endDate);
+  if (!startDate || !endDate || endDate < startDate) {
+    throw new Error('Enter a start date and an end date. The end date cannot be before the start date.');
+  }
+  const leaveType = normalizeLeaveTypeName(compact(input.leaveType) || 'Annual Leave');
+  if (/casual leave|unpaid leave/i.test(leaveType)) throw new Error(`${leaveType} cannot be deducted this way.`);
+
+  const { employees } = await readPayrollEmployees();
+  const needle = code.toLowerCase();
+  const employee = employees.find((item) =>
+    compact(item.employeeCode).toLowerCase() === needle || compact(item.employeeId).toLowerCase() === needle);
+  if (!employee) throw new Error('Employee was not found in the directory.');
+
+  const calendar = await readLeaveCalendarConfig();
+  const counted = calculateLeaveDays({ startDate, endDate, holidays: calendar.holidays });
+  if (counted.days <= 0) {
+    throw new Error('No chargeable leave days remain after excluding weekends and public holidays.');
+  }
+
+  const balance = await readEmployeeLeaveBalanceForValidation(employee, leaveType);
+  const available = round2(balance?.currentBalance ?? 0);
+  if (counted.days > available) {
+    throw new Error(`Only ${available} day(s) remain on ${leaveType}. This period is ${counted.days} working day(s).`);
+  }
+
+  const pool = await getDleEnterpriseDbPool();
+  if (!pool) throw new Error('Leave balance could not be updated because HRIS database is unavailable.');
+  const keys = [...employeeLeaveLookupKeys(employee)];
+  const employeeKey = compact(employee.employeeCode || employee.employeeId);
+  const overlap = pool.request();
+  keys.forEach((key, index) => overlap.input(`Key${index}`, sql.NVarChar(80), key));
+  overlap.input('Start', sql.Date, startDate).input('End', sql.Date, endDate);
+  const keySql = keys.map((_, index) => `@Key${index}`).join(', ');
+  const clash = await overlap.query(`
+SELECT TOP 1 [Id], [LeaveType], CONVERT(varchar(10), [StartDate], 23) AS [StartDate], CONVERT(varchar(10), [EndDate], 23) AS [EndDate], [StatusName]
+FROM [hris].[LeaveApplications]
+WHERE [EmployeeId] IN (${keySql})
+  AND [StatusName] IN (N'Approved', N'Completed', N'Submitted', N'Under Review', N'Line Manager Review', N'HR Review')
+  AND [StartDate] <= @End AND [EndDate] >= @Start`);
+  const clashRow = clash.recordset?.[0] as { Id?: string; LeaveType?: string; StartDate?: string; EndDate?: string; StatusName?: string } | undefined;
+  if (clashRow) {
+    throw new Error(`This employee already has ${compact(clashRow.StatusName)} ${compact(clashRow.LeaveType)} from ${compact(clashRow.StartDate)} to ${compact(clashRow.EndDate)} (${compact(clashRow.Id)}).`);
+  }
+
+  const id = `LV-HR-${Date.now()}`;
+  const before = available;
+  const after = round2(before - counted.days);
+  const now = new Date().toISOString();
+  const actor = compact(input.actor) || 'HR Manager';
+  const transaction = new sql.Transaction(pool);
+  await transaction.begin();
+  try {
+    await new sql.Request(transaction)
+      .input('Id', sql.NVarChar(120), id)
+      .input('SourceSystem', sql.NVarChar(80), 'HR Direct Deduction')
+      .input('EmployeeId', sql.NVarChar(80), employeeKey)
+      .input('FullName', sql.NVarChar(220), employee.fullName)
+      .input('Department', sql.NVarChar(180), employee.department || 'Unassigned')
+      .input('ManagerName', sql.NVarChar(180), employee.managerName || 'Unassigned')
+      .input('Location', sql.NVarChar(180), employee.location || employee.workLocation || 'Unassigned')
+      .input('EmployeeCategory', sql.NVarChar(120), employee.employeeCategory || employee.employmentType || 'Unassigned')
+      .input('LeaveType', sql.NVarChar(120), leaveType)
+      .input('StartDate', sql.Date, startDate)
+      .input('EndDate', sql.Date, endDate)
+      .input('Days', sql.Decimal(9, 2), counted.days)
+      .input('AvailableBalance', sql.Decimal(9, 2), after)
+      .input('ExceptionsJson', sql.NVarChar(sql.MAX), encodeLeaveExceptionsPayload({
+        messages: [`Deducted by ${actor} without an employee application. ${reason}`],
+        selectedDates: counted.selectedDates,
+        excludedHolidays: counted.holidayDatesInPeriod,
+      }))
+      .input('WorkflowJson', sql.NVarChar(sql.MAX), JSON.stringify([{
+        stage: 'HR Manager',
+        owner: actor,
+        status: 'Completed',
+        actedAt: now,
+        comment: reason,
+      }]))
+      .input('CommentsJson', sql.NVarChar(sql.MAX), JSON.stringify([{ at: now, actor, comment: reason }]))
+      .query(`
+INSERT INTO [hris].[LeaveApplications]
+  ([Id],[SourceSystem],[EmployeeId],[FullName],[Department],[ManagerName],[Location],[EmployeeCategory],[LeaveType],[StartDate],[EndDate],
+   [Days],[StatusName],[WorkflowStage],[ApprovalStatus],[PolicyComplianceStatus],[BalanceImpact],[AvailableBalance],[ActingOfficer],[SupportingDocuments],[ExceptionsJson],[WorkflowJson],[CommentsJson])
+VALUES
+  (@Id,@SourceSystem,@EmployeeId,@FullName,@Department,@ManagerName,@Location,@EmployeeCategory,@LeaveType,@StartDate,@EndDate,
+   @Days,N'Approved',N'Approved',N'Approved',N'Compliant',@Days,@AvailableBalance,N'Not required',0,@ExceptionsJson,@WorkflowJson,@CommentsJson)`);
+
+    const updated = await new sql.Request(transaction)
+      .input('EmployeeId', sql.NVarChar(80), balance?.employeeId || employeeKey)
+      .input('LeaveType', sql.NVarChar(120), leaveType)
+      .input('Days', sql.Decimal(9, 2), counted.days)
+      .query(`
+UPDATE [hris].[LeaveBalances]
+SET [UsedBalance] = ISNULL([UsedBalance], 0) + @Days,
+    [CurrentBalance] = ISNULL([CurrentBalance], 0) - @Days,
+    [UpdatedAt] = SYSUTCDATETIME()
+WHERE [EmployeeId]=@EmployeeId AND [LeaveType]=@LeaveType
+  AND ISNULL([CurrentBalance], 0) - ISNULL([PendingBalance], 0) >= @Days`);
+    if (!updated.rowsAffected?.[0]) {
+      throw new Error('The remaining balance changed before this deduction was saved. Refresh and try again.');
+    }
+    await transaction.commit();
+  } catch (error) {
+    await transaction.rollback().catch(() => undefined);
+    throw error;
+  }
+
+  await syncApprovedLeaveToCCodeTimesheet({
+    request: { id, employeeId: employeeKey, leaveType, startDate, endDate },
+    requester: employee,
+    mode: 'apply',
+  });
+
+  return {
+    id,
+    employeeCode: employeeKey,
+    fullName: employee.fullName,
+    leaveType,
+    startDate,
+    endDate,
+    days: counted.days,
+    balanceBefore: before,
+    balanceAfter: after,
+    reason,
+  };
+};
+
 const ESS_PENDING_LEAVE_STATUSES = new Set(['Submitted', 'Draft', 'Line Manager Review', 'HR Review']);
 
 export const adjustLeavePolicyCardsForEssPending = (

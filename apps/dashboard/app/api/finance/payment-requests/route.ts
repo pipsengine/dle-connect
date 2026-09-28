@@ -455,7 +455,9 @@ export async function POST(request: Request) {
         department: body.department || existing.department || actor.department,
         location: body.location || existing.location,
         costCentre: body.costCentre || existing.costCentre,
-        projectCode: body.projectCode || existing.projectCode,
+        projectCode: body.projectCode === undefined || body.projectCode === null
+          ? (existing.projectCode || '')
+          : String(body.projectCode),
         priority: body.priority || existing.priority,
         requiredDate: body.requiredDate || existing.requiredDate || undefined,
         requesterCode: existing.requesterCode || actor.actorCode,

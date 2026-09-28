@@ -57,6 +57,7 @@ import {
   type SupplierInvoiceCategory,
 } from '@/lib/finance-intelligence/payment-invoice-category';
 import { applyCostCentreManagerStage, isCostCentreManagerStage } from '@/lib/finance-intelligence/payment-cost-centre';
+import { isCorporateOrPlaceholderProjectCode } from '@/lib/finance-intelligence/payment-request-departments';
 
 /** Supplier invoice (PO) or expense (no PO) — both pay a vendor/supplier. */
 export const isVendorPaymentType = (paymentType?: string | null) =>
@@ -1585,7 +1586,7 @@ export const repairMisroutedProjectPathWithoutProject = async (row: PaymentReque
   if (isProjectPaymentPath({ projectCode: row.projectCode, department: row.department })) return row;
 
   const existing = stagesFromPayload(row.payload);
-  const pathSaysProject = /project/i.test(compact(row.payload?.pathType));
+  const pathSaysProject = compact(row.payload?.pathType).toLowerCase() === 'project';
   const chainHasProjectStage = existing.some(isProjectOnlyApprovalStage);
   const sittingOnProjectStage = isProjectOnlyApprovalStage(row.currentStage);
   if (!pathSaysProject && !chainHasProjectStage && !sittingOnProjectStage) return row;
@@ -1626,9 +1627,15 @@ export const repairMisroutedProjectPathWithoutProject = async (row: PaymentReque
   if (!nextStages.length) return row;
 
   const actions = await listPaymentRequestActions(row.requestId);
+  const cycleRestarts = actions
+    .filter((action) => /resubmit|^return$|returned/i.test(action.actionType))
+    .map((action) => action.createdAt)
+    .sort();
+  const cycleRestartAt = cycleRestarts.length ? cycleRestarts[cycleRestarts.length - 1] : '';
   const approvedStages = new Set(
     actions
       .filter((action) => /approve/i.test(action.actionType))
+      .filter((action) => !cycleRestartAt || action.createdAt > cycleRestartAt)
       .map((action) => compact(action.stage).toLowerCase())
       .filter(Boolean),
   );
@@ -2857,6 +2864,12 @@ export const updateReturnedPaymentRequest = async (input: UpdateReturnedPaymentR
   if (!wasDraft && !wasReturned && !wasPending) {
     throw new Error('Only draft, returned, or not-yet-approved payment requests can be edited.');
   }
+  const submittedProjectCode = input.projectCode === undefined || input.projectCode === null
+    ? compact(existing.projectCode)
+    : compact(input.projectCode);
+  const projectCode = !submittedProjectCode || isCorporateOrPlaceholderProjectCode(submittedProjectCode)
+    ? ''
+    : submittedProjectCode;
   if (wasPending) {
     const hasApproval = await paymentRequestHasApprovalAction(requestId);
     if (hasApproval) {
@@ -2986,7 +2999,7 @@ export const updateReturnedPaymentRequest = async (input: UpdateReturnedPaymentR
     ? await resolveInitialStage(netAmount, existing.paymentType, {
       currencyCode: currency,
       department,
-      projectCode: compact(input.projectCode) || existing.projectCode,
+      projectCode,
       requesterCode: compact(input.requesterCode) || existing.requesterCode || beneficiaryCode,
       supervisorName: compact(input.supervisorName) || existing.supervisorName,
       expenseNature: (existing.paymentType === 'Expense Payment' || isExpenseNoPoPayment(existing))
@@ -3072,7 +3085,7 @@ export const updateReturnedPaymentRequest = async (input: UpdateReturnedPaymentR
     .input('Department', sql.NVarChar(150), department || null)
     .input('Location', sql.NVarChar(150), location || null)
     .input('CostCentre', sql.NVarChar(80), compact(input.costCentre) || existing.costCentre || null)
-    .input('ProjectCode', sql.NVarChar(80), compact(input.projectCode) || existing.projectCode || null)
+    .input('ProjectCode', sql.NVarChar(80), projectCode || null)
     .input('Priority', sql.NVarChar(40), compact(input.priority) || existing.priority || 'Normal')
     .input('RequiredDate', sql.Date, input.requiredDate ? new Date(input.requiredDate) : (existing.requiredDate ? new Date(existing.requiredDate) : null))
     .input('SubmittedAt', sql.DateTime2, resubmit ? new Date() : (existing.submittedAt ? new Date(existing.submittedAt) : null))
@@ -3151,7 +3164,7 @@ WHERE [RequestId] = @RequestId
       requestId,
       stage: stageInfo.stage,
       requesterCode: compact(input.requesterCode) || existing.requesterCode || beneficiaryCode,
-      projectCode: compact(input.projectCode) || existing.projectCode,
+      projectCode,
       department: compact(input.department) || existing.department,
       costCentre: compact(input.costCentre) || existing.costCentre,
       supervisorName: compact(input.supervisorName) || existing.supervisorName,

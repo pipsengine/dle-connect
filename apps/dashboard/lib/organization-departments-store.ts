@@ -532,36 +532,40 @@ export async function deleteDepartmentFromOrganizationDb(id: string): Promise<De
   return readSystemDepartmentsFromOrganizationDb();
 }
 
-export async function searchDepartmentHeadEmployees(query: string, limit = 20) {
+export async function searchDepartmentHeadEmployees(query: string, limit = 5000) {
   const pool = await ensureDb();
   const q = clean(query);
-  const take = Math.max(1, Math.min(40, Math.floor(numberValue(limit, 20))));
+  const take = Math.max(1, Math.min(5000, Math.floor(numberValue(limit, 5000))));
   const request = pool.request().input('limit', sql.Int, take);
   const searchSql = q
     ? `AND (
-      e.employee_code LIKE @q
-      OR e.full_name LIKE @q
-      OR ISNULL(j.job_title, N'') LIKE @q
-      OR ISNULL(j.department, N'') LIKE @q
+      v.employee_code LIKE @q
+      OR v.full_name LIKE @q
+      OR ISNULL(v.job_title, N'') LIKE @q
+      OR ISNULL(v.department, N'') LIKE @q
     )`
     : '';
   if (q) request.input('q', sql.NVarChar(180), `%${q}%`);
   const result = await request.query(`
 SELECT TOP (@limit)
-  e.employee_code,
-  e.full_name,
-  e.employment_status,
-  ISNULL(j.job_title, N'') AS job_title,
-  ISNULL(j.department, N'') AS department
-FROM [hris].[Employees] e
-LEFT JOIN [hris].[EmployeeJobInfo] j ON j.employee_id = e.employee_id
-WHERE e.employment_status NOT LIKE N'%Inactive%'
-  AND e.employment_status NOT LIKE N'%Terminated%'
-  AND e.employment_status NOT LIKE N'%Resigned%'
-  AND e.employment_status NOT LIKE N'%Retired%'
-  AND e.employment_status NOT LIKE N'%Deceased%'
+  v.employee_code,
+  v.full_name,
+  v.employment_status,
+  ISNULL(v.job_title, N'') AS job_title,
+  ISNULL(v.department, N'') AS department
+FROM [hris].[EmployeeMasterView] v
+WHERE (
+  v.employment_status IS NULL
+  OR (
+    v.employment_status NOT LIKE N'%Inactive%'
+    AND v.employment_status NOT LIKE N'%Terminated%'
+    AND v.employment_status NOT LIKE N'%Resigned%'
+    AND v.employment_status NOT LIKE N'%Retired%'
+    AND v.employment_status NOT LIKE N'%Deceased%'
+  )
+)
   ${searchSql}
-ORDER BY e.full_name, e.employee_code;
+ORDER BY v.full_name, v.employee_code;
 `);
   return (result.recordset || []).map((row: any) => {
     const fullName = composePersonDisplayName({ fallback: row.full_name }) || clean(row.full_name);

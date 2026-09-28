@@ -61,4 +61,75 @@
 .ts-portal .rowActions{white-space:nowrap}
 .ts-portal textarea{width:100%;min-height:72px;border:1px solid #d5deea;border-radius:8px;padding:8px}
 @media(max-width:1100px){.ts-portal .offshoreMetrics{grid-template-columns:repeat(3,minmax(0,1fr))}}
+.ts-portal .badge.purple{background:#f3e8ff;color:#6b21a8}
+.ts-portal .crewPage{padding-bottom:28px}
+.ts-portal .crewFilters{margin-top:10px;background:#fff;border:1px solid #e5eaf2;border-radius:12px;padding:14px;display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;align-items:end}
+.ts-portal .crewFilter label{display:block;font-size:11px;font-weight:700;color:#64748b;margin-bottom:6px}
+.ts-portal .crewFilter label b{color:#dc2626}
+.ts-portal .crewFilter input,.ts-portal .crewFilter select,.ts-portal .crewSearchBox input{width:100%;height:38px;border:1px solid #d5deea;border-radius:8px;padding:0 10px;background:#fff}
+.ts-portal .crewSearchBox{display:flex;align-items:end}
+.ts-portal .resetBtn{height:38px;border:1px solid #d5deea;background:#fff;border-radius:8px;padding:0 12px;cursor:pointer;font-weight:700}
+.ts-portal .crewInfo{margin-top:12px;background:#fff;border:1px solid #e5eaf2;border-radius:12px;padding:12px 14px;display:flex;gap:16px;align-items:center}
+.ts-portal .crewInfoText{display:flex;gap:10px;align-items:flex-start;flex:1}
+.ts-portal .crewInfoText small,.ts-portal .crewCardHead p{display:block;color:#64748b;margin-top:2px}
+.ts-portal .infoDot{width:22px;height:22px;border-radius:50%;background:#1769e0;color:#fff;display:grid;place-items:center;font-weight:800;flex:none}
+.ts-portal .crewStat{min-width:140px;background:#f8fafc;border-radius:10px;padding:8px 12px}
+.ts-portal .crewStat b{display:block;font-size:20px}
+.ts-portal .crewStat.orange b{color:#c2410c}
+.ts-portal .crewStat.green b{color:#15803d}
+.ts-portal .crewDual{margin-top:12px;display:grid;grid-template-columns:minmax(0,1fr) 92px minmax(0,1fr);gap:10px;align-items:stretch}
+.ts-portal .crewCard{background:#fff;border:1px solid #e5eaf2;border-radius:12px;min-width:0;display:flex;flex-direction:column}
+.ts-portal .crewCardHead{display:flex;justify-content:space-between;gap:12px;padding:12px 14px;border-bottom:1px solid #e5eaf2}
+.ts-portal .crewCardHead label{display:flex;gap:6px;align-items:center;font-weight:700}
+.ts-portal .crewTableWrap{max-height:460px;overflow:auto}
+.ts-portal .crewTable{width:100%;border-collapse:collapse}
+.ts-portal .crewTable th{position:sticky;top:0;background:#f8fafc;z-index:1;text-align:left;font-size:11px;color:#64748b}
+.ts-portal .crewTable th,.ts-portal .crewTable td{padding:8px 10px;border-bottom:1px solid #eef2f7;white-space:nowrap}
+.ts-portal .crewTransfer{display:flex;flex-direction:column;justify-content:center;gap:10px}
+.ts-portal .assignArrow,.ts-portal .removeArrow{border:0;border-radius:12px;padding:10px 8px;cursor:pointer;font-weight:800}
+.ts-portal .assignArrow{background:#1769e0;color:#fff}
+.ts-portal .assignArrow:disabled,.ts-portal .removeArrow:disabled{opacity:.45;cursor:default}
+.ts-portal .removeArrow{background:#e8eef8;color:#334155}
+.ts-portal .assignArrow span,.ts-portal .removeArrow span{display:block;font-size:16px}
+.ts-portal .assignArrow small,.ts-portal .removeArrow small{display:block;font-weight:700}
+.ts-portal .crewPager{display:flex;justify-content:space-between;gap:8px;align-items:center;padding:10px 12px;color:#64748b}
+.ts-portal .crewPager div{display:flex;gap:6px;align-items:center}
+.ts-portal .crewBottom{display:flex;justify-content:flex-end;gap:10px;margin-top:12px}
+.ts-portal .kebabCell{position:relative}
+.ts-portal .kebab{border:0;background:transparent;cursor:pointer;font-size:18px}
+.ts-portal .kebabMenu{position:absolute;right:8px;top:28px;background:#fff;border:1px solid #e5eaf2;border-radius:8px;box-shadow:0 8px 24px #17233c22;z-index:5}
+.ts-portal .kebabMenu button{display:block;width:100%;text-align:left;border:0;background:#fff;padding:8px 12px;cursor:pointer}
+@media(max-width:1100px){.ts-portal .crewDual{grid-template-columns:1fr}.ts-portal .crewTransfer{flex-direction:row}.ts-portal .crewFilters{grid-template-columns:1fr 1fr}}
+.ts-portal .approvalStats{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:12px;margin:12px 0}
+.ts-portal .approvalStat{text-align:left;border:1px solid #e5eaf2;background:#fff;border-radius:12px;padding:14px;cursor:pointer}
+.ts-portal .approvalStat b{display:block;font-size:26px}
+.ts-portal .approvalStat strong,.ts-portal .approvalStat span{display:block}
+.ts-portal .approvalStat span{color:#64748b}
+.ts-portal .approvalStat.blue b{color:#1769e0}
+.ts-portal .approvalStat.green b{color:#15803d}
+.ts-portal .approvalStat.orange b{color:#c2410c}
+.ts-portal .approvalStat.red b{color:#dc2626}
+.ts-portal .approvalStat.on{outline:2px solid #1769e0}
+.ts-portal .approvalFilterGrid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;align-items:end}
+.ts-portal .approvalFilterActions{display:flex;gap:8px;justify-content:flex-end}
+.ts-portal .approvalQueueHead,.ts-portal .approvalPager{display:flex;justify-content:space-between;gap:12px;align-items:center}
+.ts-portal .approvalBulk,.ts-portal .approvalPager div{display:flex;gap:8px;align-items:center}
+.ts-portal .dangerText{color:#dc2626;font-weight:700}
+.ts-portal .approvalDrawer{margin-left:auto;width:min(760px,100%);height:100%;background:#fff;display:flex;flex-direction:column;overflow:auto}
+@media(max-width:1100px){.ts-portal .approvalStats,.ts-portal .approvalFilterGrid{grid-template-columns:1fr 1fr}}
+.ts-portal .metricGrid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;margin:12px 0}
+.ts-portal .metric{background:#fff;border:1px solid #e5eaf2;border-radius:12px;padding:12px 14px;min-width:0}
+.ts-portal .metric span,.ts-portal .metric b,.ts-portal .metric small{display:block}
+.ts-portal .metric span{color:#64748b;font-size:12px;font-weight:700;line-height:1.3}
+.ts-portal .metric b{font-size:26px;line-height:1.1;margin:6px 0 4px;color:#17233c}
+.ts-portal .metric small{color:#64748b;font-size:11px;line-height:1.35}
+.ts-portal .approvalFiltersPanel,.ts-portal .crewFilters{overflow:visible;position:relative;z-index:4}
+.ts-portal td.wrapCell,.ts-portal .crewTable td.wrapCell{white-space:normal;min-width:160px;line-height:1.35}
+.tsMenu.comboMenu{position:fixed;z-index:4000;left:auto;right:auto;top:auto;width:max-content;min-width:260px;max-width:min(460px,calc(100vw - 16px));max-height:320px;overflow:auto;background:#fff;color:#17233c;border:1px solid #d7dee8;border-radius:8px;box-shadow:0 16px 36px #10233f33;display:flex;flex-direction:column}
+.tsMenu.comboMenu button,.tsMenu.comboMenu span{display:block;width:100%;text-align:left;background:#fff;border:0;border-bottom:1px solid #eef2f6;padding:8px 10px;color:#17233c;font-size:12px;line-height:1.35;white-space:normal;cursor:pointer;height:auto}
+.tsMenu.comboMenu button:hover{background:#f3f7fd}
+.tsMenu.comboMenu button b{display:block;font-weight:700;white-space:normal}
+.tsMenu.comboMenu button small{display:block;color:#64748b;font-size:11px;font-weight:500;margin-top:2px;white-space:normal}
+
+
 

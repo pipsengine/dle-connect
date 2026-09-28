@@ -8,6 +8,7 @@ import LeaveTransactionsCommandCenter from './LeaveTransactionsCommandCenter';
 import LeaveDrilldownModal, { type LeaveDrilldownPanel, type LeaveDrilldownRow } from './LeaveDrilldownModal';
 import { LeaveBalanceDetailModal, LeaveOperationalSection } from './LeaveOperationalSections';
 import { normalizeAnnualLeaveBalances } from '@/lib/leave-reports-engine';
+import { calculateLeaveDays } from '@/lib/leave-day-engine';
 import {
   Archive,
   BadgeCheck,
@@ -126,6 +127,7 @@ type Payload = {
   role: LeaveRole;
   section: string;
   permissions: { canApply: boolean; canApprove: boolean; canAdminister: boolean; canProcessFinancials: boolean; canConfigure: boolean; canExport: boolean; canViewAudit: boolean };
+  canDeductUnappliedLeave?: boolean;
   summary: {
     totalEmployees: number;
     employeesOnLeave: number;
@@ -364,6 +366,7 @@ export default function LeaveManagementClient({ initialNow, initialSection = 'da
   const [drilldown, setDrilldown] = useState<LeaveDrilldownPanel>(null);
   const [drilldownQuery, setDrilldownQuery] = useState('');
   const [balanceDetail, setBalanceDetail] = useState<BalanceRecord | null>(null);
+  const [deductOpen, setDeductOpen] = useState(false);
 
   const openDrilldown = (panel: LeaveDrilldownPanel) => {
     setDrilldownQuery('');
@@ -695,7 +698,42 @@ export default function LeaveManagementClient({ initialNow, initialSection = 'da
         {!isDashboard && section === 'applications' ? <ApplicationView rows={filteredApplications} /> : null}
         {!isDashboard && section === 'approvals' ? <ApprovalView rows={filteredApplications} busyAction={busyAction} onAction={(applicationId, actionId) => void runApplicationAction(applicationId, actionId)} /> : null}
         {!isDashboard && section === 'leave-calendar' ? <CalendarView payload={payload} /> : null}
+        {!isDashboard && section === 'leave-balances' && payload?.canDeductUnappliedLeave ? (
+          <div className="mb-3 flex flex-col gap-3 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+            <p className="text-sm font-semibold text-emerald-950">An employee who went on leave without applying can have those days deducted here. The record is saved as approved.</p>
+            <button type="button" onClick={() => setDeductOpen(true)} className="inline-flex h-10 shrink-0 items-center justify-center rounded-lg bg-emerald-700 px-4 text-sm font-semibold text-white hover:bg-emerald-800">Deduct leave</button>
+          </div>
+        ) : null}
         {!isDashboard && section === 'leave-balances' ? <BalanceView rows={filteredBalances} onOpenDetail={setBalanceDetail} /> : null}
+        {deductOpen && payload?.canDeductUnappliedLeave ? (
+          <DeductUnappliedLeaveModal
+            balances={payload.balances || []}
+            leaveTypes={(payload.leaveTypes || []).filter((item) => item.active && !/casual|unpaid/i.test(item.name))}
+            holidays={payload.holidays || []}
+            busy={busyAction === 'deduct-unapplied-leave'}
+            onClose={() => setDeductOpen(false)}
+            onSubmit={async (input) => {
+              setBusyAction('deduct-unapplied-leave');
+              setToast('');
+              try {
+                const res = await fetch('/api/hris/leave-management', {
+                  method: 'POST',
+                  headers: { 'content-type': 'application/json', 'x-hris-role': role },
+                  body: JSON.stringify({ action: 'deduct-unapplied-leave', section, ...input }),
+                });
+                const json = (await res.json()) as ApiResponse<{ message: string; payload: Payload }>;
+                if (!res.ok || json.status !== 'success' || !json.data) throw new Error(json.error || 'Deduction failed');
+                setToast(json.data.message);
+                setPayload(json.data.payload);
+                setDeductOpen(false);
+              } catch (event) {
+                setToast(event instanceof Error ? event.message : 'Deduction failed');
+              } finally {
+                setBusyAction('');
+              }
+            }}
+          />
+        ) : null}
         {!isDashboard && section === 'leave-types' ? <LeaveTypeView payload={payload} /> : null}
         {!isDashboard && section === 'leave-allowance-exceptions' ? <LeaveAllowanceExceptionsView rows={payload?.allowanceExceptions || []} /> : null}
         {!isDashboard && ['recalls', 'cancellations', 'encashments', 'team-leave-planner', 'holiday-calendar', 'leave-policies', 'leave-accruals', 'carry-forward-processing', 'balance-adjustments', 'leave-year-end-processing', 'leave-reports', 'leave-utilization', 'leave-liability', 'leave-trends', 'approval-reports'].includes(section) ? (
@@ -791,6 +829,120 @@ function CalendarView({ payload }: { payload: Payload | null }) {
         </section>
       </div>
     </section>
+  );
+}
+
+function DeductUnappliedLeaveModal({
+  balances,
+  leaveTypes,
+  holidays,
+  busy,
+  onClose,
+  onSubmit,
+}: {
+  balances: BalanceRecord[];
+  leaveTypes: LeaveTypeRule[];
+  holidays: Array<{ date: string; label?: string }>;
+  busy: boolean;
+  onClose: () => void;
+  onSubmit: (input: { employeeCode: string; leaveType: string; startDate: string; endDate: string; reason: string }) => Promise<void>;
+}) {
+  const people = useMemo(() => {
+    const seen = new Set<string>();
+    return balances.filter((row) => {
+      if (seen.has(row.employeeId)) return false;
+      seen.add(row.employeeId);
+      return true;
+    }).sort((a, b) => a.fullName.localeCompare(b.fullName));
+  }, [balances]);
+  const [search, setSearch] = useState('');
+  const [employeeCode, setEmployeeCode] = useState('');
+  const [leaveType, setLeaveType] = useState(leaveTypes.find((item) => /annual leave/i.test(item.name))?.name || leaveTypes[0]?.name || 'Annual Leave');
+  const [startDate, setStartDate] = useState('');
+  const [endDate, setEndDate] = useState('');
+  const [reason, setReason] = useState('');
+  const matches = people.filter((item) => {
+    const q = search.trim().toLowerCase();
+    if (!q) return true;
+    return `${item.fullName} ${item.employeeId} ${item.department}`.toLowerCase().includes(q);
+  });
+  const balance = balances.find((item) => item.employeeId === employeeCode && item.leaveType === leaveType)
+    || balances.find((item) => item.employeeId === employeeCode && /annual/i.test(item.leaveType));
+  const available = Math.max(0, Number(balance?.currentBalance || 0) - Number(balance?.pendingBalance || 0));
+  const counted = startDate && endDate && endDate >= startDate
+    ? calculateLeaveDays({ startDate, endDate, holidays })
+    : null;
+  const days = counted?.days || 0;
+  const blocked = !employeeCode || days <= 0 || days > available || reason.trim().length < 5;
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/40 px-4 py-6">
+      <div className="max-h-[92vh] w-full max-w-2xl overflow-y-auto rounded-2xl border border-slate-200 bg-white shadow-2xl">
+        <div className="flex items-start justify-between gap-3 border-b border-slate-100 px-5 py-4">
+          <div>
+            <h2 className="text-lg font-black text-slate-950">Deduct leave taken without an application</h2>
+            <p className="mt-1 text-sm font-medium text-slate-500">The days are approved immediately and taken off the remaining balance. Weekends and public holidays are not counted.</p>
+          </div>
+          <button type="button" onClick={onClose} className="inline-flex h-9 w-9 items-center justify-center rounded-xl border border-slate-200 text-slate-600 hover:bg-slate-50" aria-label="Close"><X className="h-4 w-4" /></button>
+        </div>
+        <form
+          className="space-y-4 px-5 py-4"
+          onSubmit={(event) => {
+            event.preventDefault();
+            if (blocked || busy) return;
+            void onSubmit({ employeeCode, leaveType, startDate, endDate, reason: reason.trim() });
+          }}
+        >
+          <label className="block space-y-1">
+            <span className="text-xs font-semibold text-slate-600">Employee</span>
+            <input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search name or code" className="w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm" />
+          </label>
+          <div className="max-h-40 overflow-y-auto rounded-xl border border-slate-200">
+            {matches.map((item) => (
+              <button
+                key={item.employeeId}
+                type="button"
+                onClick={() => { setEmployeeCode(item.employeeId); setSearch(`${item.employeeId} - ${item.fullName}`); }}
+                className={`block w-full border-b border-slate-100 px-3 py-2 text-left last:border-0 hover:bg-slate-50 ${employeeCode === item.employeeId ? 'bg-emerald-50' : ''}`}
+              >
+                <div className="text-sm font-semibold text-slate-900">{item.fullName}</div>
+                <div className="text-xs text-slate-500">{item.employeeId} · {item.department}</div>
+              </button>
+            ))}
+            {!matches.length ? <div className="px-3 py-2.5 text-xs font-medium text-slate-500">No matching employees</div> : null}
+          </div>
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+            <label className="space-y-1">
+              <span className="text-xs font-semibold text-slate-600">Leave type</span>
+              <select value={leaveType} onChange={(event) => setLeaveType(event.target.value)} className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm">
+                {(leaveTypes.length ? leaveTypes.map((item) => item.name) : ['Annual Leave']).map((name) => <option key={name}>{name}</option>)}
+              </select>
+            </label>
+            <label className="space-y-1">
+              <span className="text-xs font-semibold text-slate-600">Start date</span>
+              <input type="date" value={startDate} onChange={(event) => setStartDate(event.target.value)} className="w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm" />
+            </label>
+            <label className="space-y-1">
+              <span className="text-xs font-semibold text-slate-600">End date</span>
+              <input type="date" value={endDate} onChange={(event) => setEndDate(event.target.value)} className="w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm" />
+            </label>
+          </div>
+          <p className="text-sm font-semibold text-slate-700">
+            {employeeCode ? `${available} day(s) remaining on ${leaveType}. ` : ''}
+            {counted ? `${days} working day(s) will be deducted.` : 'Choose the dates the employee was away.'}
+            {counted && days > available ? ' That is more than the remaining balance.' : ''}
+          </p>
+          <label className="block space-y-1">
+            <span className="text-xs font-semibold text-slate-600">Reason</span>
+            <textarea value={reason} onChange={(event) => setReason(event.target.value)} rows={3} placeholder="Proceeded on leave without an application" className="w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm" />
+          </label>
+          <div className="flex justify-end gap-2 border-t border-slate-100 pt-4">
+            <button type="button" onClick={onClose} className="rounded-xl border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700">Cancel</button>
+            <button type="submit" disabled={blocked || busy} className="rounded-xl bg-emerald-700 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50">{busy ? 'Saving…' : 'Deduct and approve'}</button>
+          </div>
+        </form>
+      </div>
+    </div>
   );
 }
 

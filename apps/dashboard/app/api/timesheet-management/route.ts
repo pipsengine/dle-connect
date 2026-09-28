@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { hasPermission } from '@/lib/auth/permission-match';
 import { resolveAccessContext } from '@/lib/hris-access';
-import { decideCrewRemoval, requestCrewRemoval, saveTimesheetCrewAssignment, updateTimesheetCrewStatus } from '@/lib/timesheet-crew-store';
+import { decideCrewRemoval, readCrewSignals, requestCrewRemoval, saveTimesheetCrewAssignment, updateTimesheetCrewStatus } from '@/lib/timesheet-crew-store';
 import {
   createTimesheetManagementPeriod,
   createTimesheetManagementRecord,
@@ -21,6 +21,8 @@ const canUse = (request: Request) => {
 export async function GET(request: Request) {
   if (!canUse(request)) return err(403, 'You do not have permission to open Timesheet Management.');
   try {
+    const signals = new URL(request.url).searchParams.get('signals');
+    if (signals) return ok(await readCrewSignals(signals));
     return ok(await readTimesheetManagementSnapshot());
   } catch (error) {
     console.error('[timesheet-management] read', error);
@@ -80,7 +82,7 @@ export async function POST(request: Request) {
         effectiveTo: String(body.effectiveTo || ''),
         assignmentType: body.assignmentType === 'Temporary' ? 'Temporary' : 'Primary',
         reason: String(body.reason || ''),
-        notes: String(body.notes || ''),
+        notes: [String(body.notes || ''), access.role ? `Role: ${access.role}` : ''].filter(Boolean).join(' · '),
         actor: access.actor,
       });
       return ok({ ...result, snapshot: await readTimesheetManagementSnapshot() });
@@ -92,7 +94,7 @@ export async function POST(request: Request) {
         effectiveFrom: String(body.effectiveFrom || ''),
         effectiveTo: String(body.effectiveTo || ''),
         reason: String(body.reason || ''),
-        notes: String(body.notes || ''),
+        notes: [String(body.notes || ''), access.role ? `Role: ${access.role}` : ''].filter(Boolean).join(' · '),
         actor: access.actor,
       });
       return ok({ ...result, snapshot: await readTimesheetManagementSnapshot() });

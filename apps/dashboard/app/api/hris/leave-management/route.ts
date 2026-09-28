@@ -4,7 +4,7 @@ import { formatLeaveAllowanceAmount } from '@/lib/leave-allowance-policy';
 import { buildLeaveReportExcelXml, leaveReportExcelFilename, leaveReportExcelResponseHeaders } from '@/lib/leave-excel-export';
 import { auditLeaveAction, dormantLongPolicy, readLeaveManagementPayload, validateLeaveAction, type LeaveActionId, type LeaveRole } from '@/lib/leave-management-store';
 import { buildLeaveReportTable, resolveLeaveReportId } from '@/lib/leave-reports-engine';
-import { applyHrisLeaveWorkflowAction, closeLeaveYearRun, processLeaveAccrualRun, processLeaveCarryForwardRun } from '@/lib/leave-workflow-service';
+import { applyHrisLeaveWorkflowAction, closeLeaveYearRun, deductUnappliedLeave, processLeaveAccrualRun, processLeaveCarryForwardRun } from '@/lib/leave-workflow-service';
 import { activePayrollPeriod } from '@/lib/payroll-periods';
 import { readPayrollEmployees } from '@/lib/payroll-employee-source';
 import { postLeaveAllowanceOnAnnualLeaveApproval } from '@/lib/payroll-leave-allowance-store';
@@ -38,6 +38,9 @@ const leaveRoleFromSession = (
   if (/employee/.test(text)) return 'Employee';
   return fallback || 'Employee';
 };
+
+const hrManagerCanDeductLeave = (session: Awaited<ReturnType<typeof verifySessionToken>>) =>
+  /hr\s*manager|hr\s*head|hr\s*director/.test(`${session?.roles?.join(' ') || ''}`.toLowerCase());
 
 const resolveLeaveRole = async (request: NextRequest, bodyRole?: string | null) => {
   const headerRole = request.headers.get('x-hris-role');
@@ -104,7 +107,8 @@ export async function GET(request: NextRequest) {
         .join('\n');
       return new NextResponse(csv, { headers: { 'content-type': 'text/csv; charset=utf-8', 'content-disposition': 'attachment; filename="leave-management.csv"' } });
     }
-    return jsonOk(payload);
+    const session = await verifySessionToken(cookieValue(request, AUTH_COOKIE));
+    return jsonOk({ ...payload, canDeductUnappliedLeave: hrManagerCanDeductLeave(session) });
   } catch (error) {
     return jsonErr(500, error instanceof Error ? error.message : 'Unable to load Leave Management.');
   }
@@ -114,8 +118,37 @@ export async function POST(request: NextRequest) {
   try {
     const body = await request.json().catch(() => ({}));
     const role = await resolveLeaveRole(request, body.role ? String(body.role) : null);
-    const action = String(body.action || '') as LeaveActionId;
+    const action = String(body.action || '') as LeaveActionId | 'deduct-unapplied-leave';
     const section = String(body.section || 'dashboard');
+    const session = await verifySessionToken(cookieValue(request, AUTH_COOKIE));
+    if (action === 'deduct-unapplied-leave') {
+      if (!hrManagerCanDeductLeave(session)) {
+        return jsonErr(403, 'Only an HR Manager can deduct leave taken without an application.');
+      }
+      const result = await deductUnappliedLeave({
+        employeeCode: String(body.employeeCode || body.employeeId || ''),
+        leaveType: body.leaveType ? String(body.leaveType) : 'Annual Leave',
+        startDate: String(body.startDate || ''),
+        endDate: String(body.endDate || ''),
+        reason: String(body.reason || ''),
+        actor: session?.fullName || 'HR Manager',
+      });
+      await auditLeaveAction({
+        user: session?.fullName || 'HR Manager',
+        role: 'HR Manager',
+        action: 'deduct-unapplied-leave',
+        record: result.id,
+        oldValue: `${result.leaveType} balance ${result.balanceBefore}`,
+        newValue: `${result.leaveType} balance ${result.balanceAfter}; ${result.days} day(s) approved ${result.startDate} to ${result.endDate}`,
+        reason: result.reason,
+        comments: `${result.fullName} (${result.employeeCode})`,
+      });
+      const payload = await readLeaveManagementPayload(section, role, { forceSync: true });
+      return jsonOk({
+        message: `${result.days} day(s) deducted from ${result.fullName}. ${result.leaveType} balance is now ${result.balanceAfter}. Record ${result.id} is approved.`,
+        payload: { ...payload, canDeductUnappliedLeave: true },
+      });
+    }
     const payload = await readLeaveManagementPayload(section, role);
     const validation = validateLeaveAction(action, role, payload, body);
     if (!validation.ok) return jsonErr(validation.status, validation.message);
@@ -191,7 +224,13 @@ export async function POST(request: NextRequest) {
       comments: body.comments ? String(body.comments) : undefined,
       reason: body.reason ? String(body.reason) : undefined,
     });
-    return jsonOk({ message: leaveAllowanceMessage || workflowMessage || validation.message, payload: await readLeaveManagementPayload(section, role, { forceSync: true }) });
+    return jsonOk({
+      message: leaveAllowanceMessage || workflowMessage || validation.message,
+      payload: {
+        ...(await readLeaveManagementPayload(section, role, { forceSync: true })),
+        canDeductUnappliedLeave: hrManagerCanDeductLeave(session),
+      },
+    });
   } catch (error) {
     return jsonErr(500, error instanceof Error ? error.message : 'Unable to process leave action.');
   }

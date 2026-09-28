@@ -20,10 +20,11 @@ export async function GET(request: Request) {
     const url = new URL(request.url);
     if (url.searchParams.get('employees') === '1') {
       const q = url.searchParams.get('q')?.trim() || '';
-      const limit = Number(url.searchParams.get('limit') || 20);
+      const requested = Number(url.searchParams.get('limit') || 5000);
+      const limit = Number.isFinite(requested) ? requested : 5000;
       return NextResponse.json({
         status: 'success',
-        data: { employees: await searchDepartmentHeadEmployees(q, Number.isFinite(limit) ? limit : 20) },
+        data: { employees: await searchDepartmentHeadEmployees(q, limit) },
       });
     }
     return NextResponse.json({ status: 'success', data: await readSystemDepartmentsFromOrganizationDb() });

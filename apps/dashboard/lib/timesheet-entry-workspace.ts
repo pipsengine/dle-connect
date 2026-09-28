@@ -3,6 +3,7 @@ import { getDleEnterpriseDbPool } from '@/lib/dle-enterprise-db';
 import { extractSupervisorEmployeeCode, supervisorCodeLookupVariants } from '@/lib/timesheet-agege-blasting';
 import { confirmedRemovalEmployeeCodes, namesMatchSupervisor } from '@/lib/timesheet-crew-store';
 import { listActiveMobilizations } from '@/lib/timesheet-portal-mobilization-store';
+import { approvalBlocksRevision, openTimesheetApproval } from '@/lib/timesheet-approval-store';
 
 const text = (value: unknown) => String(value ?? '').trim();
 const isContractEmployee = (code: unknown) => /^C\d/i.test(text(code));
@@ -267,7 +268,7 @@ export const searchTimesheetEntry = async (kind: string, query: string, workDate
         WHERE ISNULL(src.[label], N'') <> N''
       )
       SELECT v.employee_code, v.full_name, ISNULL(v.first_name, N'') AS first_name, ISNULL(v.middle_name, N'') AS middle_name, ISNULL(v.last_name, N'') AS last_name,
-        ISNULL(v.department, N'') AS department,
+        ISNULL(v.job_title, N'') AS job_title, ISNULL(v.department, N'') AS department,
         COALESCE(NULLIF(v.work_location, N''), NULLIF(j.office_location, N''), N'') AS location,
         (
           SELECT COUNT(*) FROM (
@@ -321,11 +322,12 @@ export const searchTimesheetEntry = async (kind: string, query: string, workDate
           OR EXISTS (SELECT 1 FROM [Managers] m WHERE m.[code] = v.employee_code OR (alias.[code] <> N'' AND m.[code] = alias.[code]))
         )
         AND ${tokenSql}
-      ORDER BY v.full_name
+      ORDER BY CASE WHEN ISNULL(v.job_title, N'') LIKE N'%Supervisor%' THEN 0 ELSE 1 END, v.full_name
     `);
     return (result.recordset || []).map((row) => ({
       code: text(row.employee_code),
       name: displayName(row),
+      title: text(row.job_title),
       department: text(row.department),
       location: text(row.location),
       crew: Number(row.crew || 0),
@@ -368,16 +370,25 @@ export const searchTimesheetEntry = async (kind: string, query: string, workDate
       // A missing lookup table must not hide the other sources.
     }
   };
-  if (kind === 'location') {
-    await take(`SELECT DISTINCT TOP 30 [Name] AS name FROM [hris].[TimesheetLocations] WHERE [Name] LIKE @q`);
-    await take(`SELECT DISTINCT TOP 30 COALESCE(NULLIF(v.work_location, N''), NULLIF(j.office_location, N'')) AS name FROM [hris].[EmployeeMasterView] v LEFT JOIN [hris].[EmployeeJobInfo] j ON j.employee_id = v.employee_id WHERE COALESCE(NULLIF(v.work_location, N''), NULLIF(j.office_location, N''), N'') LIKE @q`);
-    await take(`SELECT DISTINCT TOP 30 [LocationName] AS name FROM [tsmgmt].[CrewAssignments] WHERE ISNULL([LocationName], N'') LIKE @q`);
-    return [...names].sort((a, b) => a.localeCompare(b)).slice(0, 30).map((name) => ({ name }));
+  if (kind === 'department') {
+    const result = await connection.request().input('q', sql.NVarChar(120), `%${q}%`).query(`
+      SELECT DISTINCT [department] AS name
+      FROM [hris].[EmployeeMasterView]
+      WHERE ISNULL([department], N'') <> N''
+        AND (@q = N'%%' OR [department] LIKE @q)
+      ORDER BY [department]
+    `);
+    return (result.recordset || []).map((row) => ({ name: text(row.name) })).filter((row) => row.name);
   }
-  await take(`SELECT DISTINCT TOP 30 [Name] AS name FROM [hris].[TimesheetWorkCenters] WHERE [Status] = N'Active' AND [Name] LIKE @q`);
-  await take(`SELECT DISTINCT TOP 30 [department] AS name FROM [hris].[EmployeeMasterView] WHERE ISNULL([department], N'') LIKE @q`);
-  await take(`SELECT DISTINCT TOP 30 [WorkCenterName] AS name FROM [tsmgmt].[CrewAssignments] WHERE ISNULL([WorkCenterName], N'') LIKE @q`);
-  return [...names].sort((a, b) => a.localeCompare(b)).slice(0, 30).map((name) => ({ name }));
+  if (kind === 'location') {
+    await take(`SELECT DISTINCT [Name] AS name FROM [hris].[TimesheetLocations] WHERE [Name] LIKE @q`);
+    await take(`SELECT DISTINCT COALESCE(NULLIF(v.work_location, N''), NULLIF(j.office_location, N'')) AS name FROM [hris].[EmployeeMasterView] v LEFT JOIN [hris].[EmployeeJobInfo] j ON j.employee_id = v.employee_id WHERE COALESCE(NULLIF(v.work_location, N''), NULLIF(j.office_location, N''), N'') LIKE @q`);
+    await take(`SELECT DISTINCT [LocationName] AS name FROM [tsmgmt].[CrewAssignments] WHERE ISNULL([LocationName], N'') LIKE @q`);
+    return [...names].sort((a, b) => a.localeCompare(b)).map((name) => ({ name }));
+  }
+  await take(`SELECT DISTINCT [Name] AS name FROM [hris].[TimesheetWorkCenters] WHERE [Status] = N'Active' AND [Name] LIKE @q`);
+  await take(`SELECT DISTINCT [WorkCenterName] AS name FROM [tsmgmt].[CrewAssignments] WHERE ISNULL([WorkCenterName], N'') LIKE @q`);
+  return [...names].sort((a, b) => a.localeCompare(b)).map((name) => ({ name }));
 };
 
 type LoadedTimesheet = {
@@ -537,8 +548,9 @@ const withoutLeaveNight = async (connection: sql.ConnectionPool, sheet: LoadedTi
 const REVISABLE_TIMESHEET_STATUSES = new Set(['Draft', 'Returned', 'Submitted']);
 const WAITING_APPROVAL_STATUSES = new Set(['', 'Open', 'Pending', 'Draft', 'Submitted']);
 
-const canReviseTimesheet = async (connection: sql.ConnectionPool, sheet: { reference: string; periodId: string; workDate: string; supervisor: string; status: string }) => {
+const canReviseTimesheet = async (connection: sql.ConnectionPool, sheet: { id?: string; version?: number; reference: string; periodId: string; workDate: string; supervisor: string; status: string }) => {
   if (!REVISABLE_TIMESHEET_STATUSES.has(sheet.status)) return false;
+  if (sheet.id && await approvalBlocksRevision(connection, sheet.id, sheet.version || 1)) return false;
   try {
     const rows = await connection.request()
       .input('Reference', sql.NVarChar(40), sheet.reference)
@@ -1053,6 +1065,7 @@ export const submitTimesheetEntry = async (id: string, actor: string) => {
         AND [SupervisorName]=(SELECT [SupervisorName] FROM [tsmgmt].[Timesheets] WHERE [Id]=@Id);
       INSERT INTO [tsmgmt].[TimesheetEntryAudit] ([TimesheetId],[Action],[Detail],[Actor]) VALUES (@Id, N'Submitted to supervisor', N'Classification frozen', @Actor);
     `);
+  await openTimesheetApproval(sheet.id, text(actor) || 'Timesheet User');
   return withRevision(connection, await loadTimesheet(connection, sheet.id));
 };
 

@@ -1,6 +1,7 @@
 import sql from 'mssql';
 import { getDleEnterpriseDbPool } from '@/lib/dle-enterprise-db';
 import { namesMatchSupervisor } from '@/lib/timesheet-crew-store';
+import { openMobilizationApproval } from '@/lib/timesheet-approval-store';
 
 const text = (value: unknown) => String(value ?? '').trim();
 const dateOnly = (value: unknown) => {
@@ -388,6 +389,7 @@ export const createMobilization = async (input: {
     throw error;
   }
   await audit(connection, { mobilizationId: id, action: 'Mobilization created', newValue: `${mobilizationNo} · ${validation.employees.length} employees · ${projectCode} · ${site}`, reason, actor: input.actor, role: input.role });
+  await openMobilizationApproval({ id, mobilizationNo, periodId: text(input.periodId), projectCode, projectName: text(input.projectName) || projectCode, site, supervisor, effectiveFrom: from, employees: validation.employees.length, exceptions: validation.employees.filter((item) => item.issues.some((issue) => issue.severity === 'warn')).length, actor: input.actor }).catch(() => undefined);
   return { id, mobilizationNo, employees: validation.employees.length, status };
 };
 

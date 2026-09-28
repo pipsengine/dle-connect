@@ -1,6 +1,6 @@
 'use client';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { Badge, Button, Field, Modal, Table } from '../components/UI';
+import { AnchoredMenu, Badge, Button, Field, Modal, Table } from '../components/UI';
 import { formatDisplayDate, usePortalData } from '../portal-data';
 
 const emptyLine = (employee) => ({
@@ -302,6 +302,7 @@ function Combo({ label, placeholder, selected, onSelect, search, labelOf }) {
   const [open, setOpen] = useState(false);
   const [items, setItems] = useState([]);
   const [pending, setPending] = useState(false);
+  const anchorRef = useRef(null);
   useEffect(() => {
     if (!open) return undefined;
     const handle = setTimeout(() => {
@@ -310,7 +311,7 @@ function Combo({ label, placeholder, selected, onSelect, search, labelOf }) {
     }, 250);
     return () => clearTimeout(handle);
   }, [query, open]);
-  return <Field label={label}><div className={open ? 'combo open' : 'combo'}><input value={open ? query : (selected ? labelOf(selected) : '')} placeholder={placeholder} onFocus={() => { setOpen(true); setQuery(''); }} onBlur={() => setTimeout(() => setOpen(false), 180)} onChange={(event) => setQuery(event.target.value)} />{selected && !open && <button type="button" className="link" onMouseDown={(event) => event.preventDefault()} onClick={() => onSelect(null)}>Clear</button>}{open && <div className="comboMenu">{pending && <span>Searching…</span>}{!pending && !items.length && <span>No matches</span>}{items.map((item) => <button type="button" key={item.code || item.name} onMouseDown={(event) => event.preventDefault()} onClick={() => { onSelect(item); setOpen(false); }}>{labelOf(item)}</button>)}</div>}</div></Field>;
+  return <Field label={label}><div className={open ? 'combo open' : 'combo'} ref={anchorRef}><input value={open ? query : (selected ? labelOf(selected) : '')} placeholder={placeholder} onFocus={() => { setOpen(true); setQuery(''); }} onBlur={() => setTimeout(() => setOpen(false), 180)} onChange={(event) => setQuery(event.target.value)} />{selected && !open && <button type="button" className="link" onMouseDown={(event) => event.preventDefault()} onClick={() => onSelect(null)}>Clear</button>}<AnchoredMenu open={open} anchorRef={anchorRef}>{pending && <span>Searching…</span>}{!pending && !items.length && <span>No matches</span>}{items.map((item) => <button type="button" key={item.code || item.name} onMouseDown={(event) => event.preventDefault()} onClick={() => { onSelect(item); setOpen(false); }}><b>{labelOf(item)}</b>{item.title || item.department ? <small>{[item.title, item.department].filter(Boolean).join(' · ')}</small> : null}</button>)}</AnchoredMenu></div></Field>;
 }
 
 function SearchModal({ title, kind, onClose, onPick }) {
