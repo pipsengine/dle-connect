@@ -387,23 +387,29 @@ export const hrisPayeFromEmployee = (input: {
 
   // USD monthly overrides / flat rates apply only to the USD payroll run.
   if (isUsdRun && Number.isFinite(Number(payeRules?.monthlyPayeOverride))) {
+    const paye = roundMoney(Number(payeRules?.monthlyPayeOverride));
     return {
-      paye: roundMoney(Number(payeRules?.monthlyPayeOverride)),
+      paye,
+      payeExact: paye,
       monthlyTaxable: payeTaxableFromEarningLines(earningLines, category, salaryGrade, payeRules),
     };
   }
 
   // Explicit NGN PAYE override (e.g. Sage-aligned dual-currency local package).
   if (isNgnRun && Number.isFinite(Number(payeRules?.ngnMonthlyPayeOverride))) {
+    const paye = roundMoney(Number(payeRules?.ngnMonthlyPayeOverride));
     return {
-      paye: roundMoney(Number(payeRules?.ngnMonthlyPayeOverride)),
+      paye,
+      payeExact: paye,
       monthlyTaxable: payeTaxableFromEarningLines(earningLines, category, salaryGrade, payeRules),
     };
   }
 
   if (!isNgnRun && Number.isFinite(Number(payeRules?.monthlyPayeOverride))) {
+    const paye = roundMoney(Number(payeRules?.monthlyPayeOverride));
     return {
-      paye: roundMoney(Number(payeRules?.monthlyPayeOverride)),
+      paye,
+      payeExact: paye,
       monthlyTaxable: payeTaxableFromEarningLines(earningLines, category, salaryGrade, payeRules),
     };
   }
@@ -411,8 +417,10 @@ export const hrisPayeFromEmployee = (input: {
   const grade = normalizedGrade(salaryGrade);
   if (!isNgnRun && /^EXP_USD|EXP_USDSNMGT|USD SENIOR/i.test(grade)) {
     const monthlyTaxable = payeTaxableFromEarningLines(earningLines, category, salaryGrade, payeRules);
+    const paye = calculateUsdSeniorManagementPaye(monthlyTaxable, Number(payeRules?.usdFlatRate || 0.212));
     return {
-      paye: calculateUsdSeniorManagementPaye(monthlyTaxable, Number(payeRules?.usdFlatRate || 0.212)),
+      paye,
+      payeExact: paye,
       monthlyTaxable,
     };
   }
@@ -457,6 +465,7 @@ export const hrisPayeFromEmployee = (input: {
 
   return {
     paye,
+    payeExact: paye,
     monthlyTaxable: taxable,
     fixedTaxable: taxable,
     variableTaxable: 0,

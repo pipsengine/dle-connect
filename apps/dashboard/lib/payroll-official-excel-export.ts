@@ -88,21 +88,24 @@ const lineAmount = (
     }, 0),
   );
 
+/** Workbook CONT. STAFF: L, NYSC, and IT codes. PERM.STAFF is P + digits only. */
+const isLumpsumOrStipendCode = (code: string) => /^(?:L|NYSC|IT|PNYSC|PIT)\d/i.test(compact(code));
+
 const isContractOrStipend = (record: PayrollCalculationRecord) => {
   const type = upper(record.employmentType);
   const code = employeeCodeOf(record);
   const profile = upper(record.earningProfileId || record.earningProfile);
   if (record.isDailyRate) return true;
-  if (/^L\d|^N\d|^I\d/i.test(code)) return true;
-  if (/LUMPSUM|CONTRACT|NYSC|INTERN|STIPEND/.test(type)) return true;
-  if (/contract|lumpsum|stipend|nysc|intern/.test(profile)) return true;
+  if (isLumpsumOrStipendCode(code)) return true;
+  if (/LUMPSUM|CONTRACT|NYSC|INTERN|INDUSTRIAL|STIPEND/.test(type)) return true;
+  if (/LUMPSUM|CONTRACT|NYSC|INTERN|INDUSTRIAL|STIPEND/.test(profile)) return true;
   return false;
 };
 
 const contTypeOf = (record: PayrollCalculationRecord) => {
   const code = employeeCodeOf(record);
   const type = upper(record.employmentType);
-  if (/^N\d|^NYSC|^IT\d|^I\d/i.test(code) || /NYSC|INTERN|IT\b|STIPEND/.test(type)) return 'Intern';
+  if (/^(?:P?NYSC|P?IT)\d/i.test(code) || /NYSC|INTERN|INDUSTRIAL|STIPEND/.test(type)) return 'Intern';
   if (/LUMPSUM|CONTRACT/.test(type) || /^L\d/i.test(code)) return 'Lumpsum';
   return compact(record.employmentType) || 'Lumpsum';
 };

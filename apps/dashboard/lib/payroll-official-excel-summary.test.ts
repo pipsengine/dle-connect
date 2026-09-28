@@ -263,6 +263,60 @@ const dleUtilIdx = (permDle?.columns || []).indexOf('UTILITIES (Earning)');
 assert(jnrUtilIdx >= 0 && Number(permDle?.rows?.[0]?.[jnrUtilIdx] || 0) > 0, 'DLE JNR_UTILITY fills JNR UTILITY (Earning)');
 assert(Number(permDle?.rows?.[0]?.[dleUtilIdx] || 0) === 0, 'JNR utility does not also fill UTILITIES');
 
+const dleCont = {
+  ...dlePerm,
+  employeeId: 'L0297',
+  employeeCode: 'L0297',
+  employmentType: 'Contract Lumpsum',
+  netPay: 100000,
+};
+const bothCompanies = buildOfficialSalariedDetailWorksheets(
+  [dlePerm as any, base as any, dleCont as any, dlpcCont as any],
+  { periodLabel: 'September 2026', currencyScope: 'ngn' },
+);
+const bothPerm = bothCompanies.find((sheet) => sheet.sheetName === 'PERM.STAFF');
+const bothCont = bothCompanies.find((sheet) => sheet.sheetName === 'CONT. STAFF');
+const companiesOn = (sheet: { columns: string[]; rows: unknown[][] } | undefined) => {
+  const index = (sheet?.columns || []).indexOf('Company (HA)');
+  return new Set((sheet?.rows || []).map((row) => String(row[index] ?? '')));
+};
+const permCompanies = companiesOn(bothPerm);
+const contCompanies = companiesOn(bothCont);
+assert(permCompanies.has('DLENG') && permCompanies.has('DLPCG'), 'PERM.STAFF lists DLE and DLPC together');
+assert(contCompanies.has('DLENG') && contCompanies.has('DLPCG'), 'CONT. STAFF lists DLE and DLPC together');
+assert((bothPerm?.rows || []).some((row) => String(row[0] ?? '') === '0100'), 'PERM.STAFF keeps the DLE permanent employee');
+assert((bothPerm?.rows || []).some((row) => String(row[0] ?? '') === '0013'), 'PERM.STAFF keeps the DLPC permanent employee');
+assert((bothCont?.rows || []).some((row) => String(row[0] ?? '') === 'L0297'), 'CONT.STAFF keeps the DLE contract employee');
+assert((bothCont?.rows || []).some((row) => String(row[0] ?? '') === 'L0191'), 'CONT.STAFF keeps the DLPC contract employee');
+
+const itStaff = {
+  ...dlePerm,
+  employeeId: 'IT0100',
+  employeeCode: 'IT0100',
+  fullName: 'SALAM AYOMIDE',
+  employmentType: 'Industrial Trainee',
+  jobTitle: 'IT - INDUSTRIAL TRAINING',
+  earningProfile: 'NYSC / IT Non-Taxable Stipend',
+  netPay: 100000,
+};
+const nyscStaff = {
+  ...itStaff,
+  employeeId: 'NYSC0025',
+  employeeCode: 'NYSC0025',
+  employmentType: 'NYSC',
+  jobTitle: 'NATIONAL YOUTH SERVICE CORPS',
+  netPay: 150000,
+};
+const splitSheets = buildOfficialSalariedDetailWorksheets(
+  [dlePerm as any, itStaff as any, nyscStaff as any],
+  { periodLabel: 'September 2026', currencyScope: 'ngn' },
+);
+const splitPermCodes = (splitSheets.find((sheet) => sheet.sheetName === 'PERM.STAFF')?.rows || []).map((row) => String(row[0] ?? ''));
+const splitContCodes = (splitSheets.find((sheet) => sheet.sheetName === 'CONT. STAFF')?.rows || []).map((row) => String(row[0] ?? ''));
+assert(splitPermCodes.includes('0100'), 'P-codes stay on PERM.STAFF');
+assert(!splitPermCodes.includes('IT0100') && !splitPermCodes.includes('NYSC0025'), 'IT and NYSC codes are not on PERM.STAFF');
+assert(splitContCodes.includes('IT0100') && splitContCodes.includes('NYSC0025'), 'IT and NYSC codes are on CONT. STAFF');
+
 console.log('payroll-official-excel-summary.test.ts OK');
 };
 

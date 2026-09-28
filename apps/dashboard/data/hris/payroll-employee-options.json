@@ -360,11 +360,19 @@
     "employeeId": "0413",
     "employeeCode": "P0413",
     "nhfApplicable": false,
-    "updatedAt": "2026-09-08T11:09:01.834Z",
-    "updatedBy": "Activate DLE USD MD/Nayak",
+    "updatedAt": "2026-09-28T17:04:17.393Z",
+    "updatedBy": "September 2026 MD schedule",
     "excludedFromPayrollRun": false,
     "setupAssignedToPayroll": true,
-    "payrollGroup": "DLE_USD"
+    "payrollGroup": "DLE_USD",
+    "payeCalculation": {
+      "excludedEarningCodes": [],
+      "includeRefundInTaxable": false,
+      "disablePensionPayeRelief": false,
+      "annualRentRelief": 500000,
+      "monthlyPayeOverride": 2167.64,
+      "ngnMonthlyPayeOverride": 1925583.33
+    }
   },
   {
     "employeeId": "0415",
@@ -630,6 +638,13 @@
     "updatedBy": "Sage cutover sync"
   },
   {
+    "employeeId": "0465",
+    "employeeCode": "P0465",
+    "nhfApplicable": false,
+    "updatedAt": "2026-09-28T13:06:25.055Z",
+    "updatedBy": "September 2026 salary schedule: NHF is not deducted for this employee"
+  },
+  {
     "employeeId": "C2763",
     "employeeCode": "C2763",
     "excludedFromPayrollRun": true,
@@ -768,12 +783,17 @@
     "employeeCode": "PEX001",
     "nhfApplicable": false,
     "excludedFromPayrollRun": false,
-    "updatedAt": "2026-09-08T11:09:01.858Z",
-    "updatedBy": "Activate DLE USD MD/Nayak",
+    "updatedAt": "2026-09-28T17:33:16.224Z",
+    "updatedBy": "September 2026 expatriate schedule",
     "setupAssignedToPayroll": true,
     "payrollGroup": "DLE_USD",
     "payeCalculation": {
-      "monthlyPayeOverride": 616.91
+      "excludedEarningCodes": [],
+      "includeRefundInTaxable": false,
+      "disablePensionPayeRelief": false,
+      "annualRentRelief": 500000,
+      "monthlyPayeOverride": 615.89,
+      "ngnMonthlyPayeOverride": 13477.63
     }
   },
   {
@@ -1246,13 +1266,13 @@
     "updatedBy": "Sage cutover sync"
   },
   {
-    "employeeId": "P0467",
-    "employeeCode": "P0467",
+    "employeeId": "L2770",
+    "employeeCode": "L2770",
     "nhfApplicable": false,
     "updatedAt": "2026-09-11T14:51:30.913Z",
     "updatedBy": "Archive L2770 inactive after P0467 conversion",
-    "setupAssignedToPayroll": true,
-    "excludedFromPayrollRun": false
+    "setupAssignedToPayroll": false,
+    "excludedFromPayrollRun": true
   },
   {
     "employeeId": "L2771",
@@ -1479,19 +1499,12 @@
     "updatedBy": "Payroll Officer"
   },
   {
-    "employeeId": "L2770",
-    "employeeCode": "L2770",
+    "employeeId": "P0467",
+    "employeeCode": "P0467",
     "nhfApplicable": false,
     "updatedAt": "2026-09-11T14:51:30.913Z",
     "updatedBy": "Archive L2770 inactive after P0467 conversion",
-    "setupAssignedToPayroll": false,
-    "excludedFromPayrollRun": true
-  },
-  {
-    "employeeId": "0465",
-    "employeeCode": "P0465",
-    "nhfApplicable": false,
-    "updatedAt": "2026-09-28T13:06:25.055Z",
-    "updatedBy": "September 2026 salary schedule: NHF is not deducted for this employee"
+    "setupAssignedToPayroll": true,
+    "excludedFromPayrollRun": false
   }
 ]

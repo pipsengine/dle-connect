@@ -563,11 +563,17 @@ export async function GET(request: Request) {
             await buildManagementPayload(request, period, 'daily-rate', requestedCompany),
           ]
         : [payload];
+      const salaryScheduleBothCompanies = ['payroll-register', 'payroll-detail', 'salary-analysis'].includes(report)
+        && requestedPack !== 'daily-rate'
+        && payload.pack !== 'daily-rate'
+        && !['usd', 'dle-usd', 'dle_usd'].includes(currencyScope);
       const filePack = currencyScope === 'usd' || currencyScope === 'dle-usd' || currencyScope === 'dle_usd'
         ? 'dle-usd'
-        : requestedPack === 'all'
-          ? 'both-packs'
-          : `${payload.company || exportCompany || 'DLE'}-${payload.pack || 'salaried'}`;
+        : salaryScheduleBothCompanies
+          ? `DLE-DLPC-${payload.pack || 'salaried'}`
+          : requestedPack === 'all'
+            ? 'both-packs'
+            : `${payload.company || exportCompany || 'DLE'}-${payload.pack || 'salaried'}`;
 
       if (isOfficialPayrollExcelReport(report) && report !== 'payroll-review') {
         // Official workbooks (payroll-register / payroll-detail / salary-analysis / bank-schedule / dayrate-schedule)
@@ -581,9 +587,25 @@ export async function GET(request: Request) {
         const needDayrate = requestedPack === 'daily-rate' || requestedPack === 'all' || payload.pack === 'daily-rate' || report === 'dayrate-schedule';
         const dayrateExportReport = report === 'dayrate-schedule'
           || (report === 'payroll-register' && (requestedPack === 'daily-rate' || payload.pack === 'daily-rate'));
+        // PERM.STAFF and CONT. STAFF each list DLE and DLPC together. Company (HA) is the split, as on the salary schedule.
+        const loadSalariedCompany = async (company: 'DLE' | 'DLPC') => (
+          await storedPackCalculation(livePeriod, 'salaried', company)
+          || await calculatePayrollForPeriod(livePeriod, { pack: 'salaried', company }).catch(() => null)
+        );
         const salariedRawCalc = livePeriod && needSalaried
-          ? await storedPackCalculation(livePeriod, 'salaried', exportCompanyCode)
-            || await calculatePayrollForPeriod(livePeriod, { pack: 'salaried', company: exportCompanyCode }).catch(() => null)
+          ? salaryScheduleBothCompanies
+            ? await (async () => {
+              const [dle, dlpc] = await Promise.all([loadSalariedCompany('DLE'), loadSalariedCompany('DLPC')]);
+              const seen = new Set<string>();
+              const records = [...(dle?.records || []), ...(dlpc?.records || [])].filter((record) => {
+                const key = `${record.employeeCode || record.employeeId}|${record.payCurrency || 'NGN'}|${record.payrollGroup || ''}`;
+                if (seen.has(key)) return false;
+                seen.add(key);
+                return true;
+              });
+              return { records };
+            })()
+            : await loadSalariedCompany(exportCompanyCode || 'DLE')
           : null;
         const dailyRateRawCalc = livePeriod && needDayrate
           ? await storedPackCalculation(livePeriod, 'daily-rate', dayrateExportReport ? null : exportCompanyCode)
@@ -608,7 +630,13 @@ export async function GET(request: Request) {
           ? currencyScope
           : (officialSalaryWorkbook ? 'all' : currencyScope);
 
-        const salariedRecords = filterExportRecords(salariedLiveRecords, statusFilter, 'salaried', salariedExportCurrency, exportCompany)
+        const salariedRecords = filterExportRecords(
+          salariedLiveRecords,
+          statusFilter,
+          'salaried',
+          salariedExportCurrency,
+          salaryScheduleBothCompanies ? null : exportCompany,
+        )
           .filter((record) => !record.isDailyRate);
         const dayrateRecordsForTemplate = dayrateExportReport
           ? (() => {
@@ -659,7 +687,7 @@ export async function GET(request: Request) {
           dayrateRecords,
           directoryEmployees: directory.employees,
           currencyScope: salariedExportCurrency,
-          company: exportCompanyCode,
+          company: salaryScheduleBothCompanies ? null : exportCompanyCode,
         });
         if (worksheets.length) {
           const fallbackName = `${report}-${payload.period}-${filePack}.xls`;

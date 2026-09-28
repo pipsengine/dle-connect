@@ -23,7 +23,7 @@ import { dayrateBookedHours } from '@/lib/dayrate-schedule-xlsx';
 import { findDayrateScheduleOverrideRow, readAppliedDayrateScheduleOverride } from '@/lib/dayrate-schedule-override-read';
 import { explicitPayrollDayRate, isPayrollProfileTimesheetSourcePeriod, payrollExcelAmountOverlayApplies } from '@/lib/payroll-source-of-truth';
 import { normalizeBankSortCode, withNormalizedBankCodes } from '@/lib/payroll-bank-constants';
-import { isDleUsdPayrollEmployee } from '@/lib/payroll-bank-schedule-packs';
+import { isDleUsdMdEmployee, isDleUsdPayrollEmployee } from '@/lib/payroll-bank-schedule-packs';
 import { applyLockedPayrollPackage, applyLockedPayrollPackageToRecords } from '@/lib/locked-payroll-package';
 import { resolvePayCurrency } from '@/lib/payroll-currency';
 import { payrollPeriodLabel } from '@/lib/payroll-period-store';
@@ -1075,7 +1075,9 @@ const computePayrollForPeriod = async (requestedPeriod: string): Promise<Payroll
     const paidLines = amounts.paidEarningLines || amounts.earningLines || [];
     const usdHousingPension = usdRun && paidLines.some((line) => /HOUS/i.test(`${line.code || ''} ${line.name || ''}`));
     const skipFunds = usdRun || dailyRateEmployee || !isPensionEligibleStaff(employee);
-    const skipPension = dailyRateEmployee || !isPensionEligibleStaff(employee) || (usdRun && !usdHousingPension);
+    // MD (2) deducts PAYE only. Pension stays off, the same way a USD package with no housing has no pension.
+    const mdEmployee = isDleUsdMdEmployee(employee);
+    const skipPension = dailyRateEmployee || !isPensionEligibleStaff(employee) || (usdRun && !usdHousingPension) || mdEmployee;
     const statutoryPension = skipPension ? 0 : roundMoney(pension.employeeContribution);
     const additionalPension = skipPension || usdRun ? 0 : roundMoney(pension.voluntaryContribution);
     const employeePension = roundMoney(statutoryPension + additionalPension);
@@ -1117,7 +1119,7 @@ const computePayrollForPeriod = async (requestedPeriod: string): Promise<Payroll
     const totalDaysWorked = dailyRateEmployee
       ? weekdayDays + saturdayDays + sundayDays
       : biometricDays;
-    const pensionIssues = (variant.payCurrency === 'USD'
+    const pensionIssues = (variant.payCurrency === 'USD' || mdEmployee
       ? []
       : (!dailyRateEmployee && !stipendEmployee && isPensionEligibleStaff(employee)
         ? pension.issues
