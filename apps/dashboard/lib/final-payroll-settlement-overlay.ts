@@ -65,6 +65,8 @@ const overlayFromSettlement = (
       label: line.label,
       amount: roundMoney(line.amount),
     }));
+  const employerPension = roundMoney(pension > 0 ? pension * (0.1 / 0.08) : 0);
+  const employerFunds = roundMoney(grossPay * 0.02);
 
   const stub: PayrollCalculationRecord = base || {
     recordKey: `${period}-final-settlement-${settlement.employeeCode || settlement.employeeId}`,
@@ -152,7 +154,15 @@ const overlayFromSettlement = (
     totalDeductions,
     deductions: totalDeductions,
     netPay,
-    employerCost: roundMoney(grossPay + Number(stub.pensionEmployer || 0) + Number(stub.statutoryEmployer || 0)),
+    // Employee pension on the settlement is 8% of pensionable pay. Employer pension is 10%.
+    // ITF and NSITF are each 1% of the settlement gross, including gratuity.
+    pensionEmployer: roundMoney(Number(stub.pensionEmployer || 0) || employerPension),
+    statutoryEmployer: roundMoney(Number(stub.statutoryEmployer || 0) || employerFunds),
+    employerCost: roundMoney(
+      grossPay
+      + (Number(stub.pensionEmployer || 0) || employerPension)
+      + (Number(stub.statutoryEmployer || 0) || employerFunds),
+    ),
     deductionRatio: grossPay > 0 ? roundMoney((totalDeductions / grossPay) * 100) : 0,
     status: 'Ready',
     payrollStatus: 'Ready',

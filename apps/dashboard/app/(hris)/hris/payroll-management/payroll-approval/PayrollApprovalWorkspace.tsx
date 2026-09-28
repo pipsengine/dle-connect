@@ -244,7 +244,7 @@ const money = (value: number | null | undefined, allowed = true, currency = 'NGN
   if (!allowed) return 'Restricted';
   if (value == null) return 'Not computed';
   const code = currencyCode(currency);
-  return formatPayrollMoney(value, code, { maximumFractionDigits: code === 'USD' ? 2 : 0 });
+  return formatPayrollMoney(value, code);
 };
 
 const DualMoney = ({
@@ -399,7 +399,7 @@ function MomLine({
       return number(value);
     }
     if (!canViewMoney) return 'Restricted';
-    const formatted = formatPayrollMoney(Math.abs(value), 'NGN', { maximumFractionDigits: 0 });
+    const formatted = formatPayrollMoney(Math.abs(value), 'NGN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
     if (value > 0) return `+${formatted}`;
     if (value < 0) return `-${formatted}`;
     return formatted;

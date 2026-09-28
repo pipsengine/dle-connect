@@ -1284,8 +1284,16 @@ export const calculatePayrollEarnings = (employee: DleEmployeeDirectoryRow, opti
     const fallbackProfileName = profileId === 'fallback'
       ? 'Payroll Setup Fallback'
       : profile?.name || 'Payroll Profile';
+    const periodAdjustments = periodAdjustmentLines(employee, options);
     const leaveEventLines = leavePayrollEventLines(employee, 0, paidPackageLines, options);
-    const paidLines = [...paidPackageLines, ...leaveEventLines];
+    const presentCodes = new Set(paidPackageLines.map((line) => canonicalEarningCode(line.code)));
+    const extraAdjustments = periodAdjustments.filter((line) => {
+      const key = canonicalEarningCode(line.code);
+      if (!line.amount || presentCodes.has(key)) return false;
+      presentCodes.add(key);
+      return true;
+    });
+    const paidLines = [...paidPackageLines, ...extraAdjustments, ...leaveEventLines];
     const grossPay = roundMoney(paidLines.reduce((sum, line) => sum + line.amount, 0));
     const packageTaxablePay = roundMoney(paidLines.filter((line) => line.taxable !== false).reduce((sum, line) => sum + line.amount, 0));
     const taxablePay = roundMoney(packageTaxablePay);

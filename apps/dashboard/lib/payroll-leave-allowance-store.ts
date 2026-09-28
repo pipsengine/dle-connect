@@ -74,7 +74,20 @@ const repoMirrorPath = (file: string) => {
   const repoRoot = normalizedFile.slice(0, markerIndex);
   return path.join(repoRoot, 'apps', 'dashboard', 'data', 'hris', path.basename(normalizedFile));
 };
+const durableEventsPath = () => {
+  let dir = process.cwd();
+  for (let depth = 0; depth < 6; depth += 1) {
+    if (existsSync(path.join(dir, 'apps', 'dashboard')) && existsSync(path.join(dir, 'data', 'hris'))) {
+      return path.join(dir, 'data', 'hris', EVENTS_FILE_NAME);
+    }
+    const parent = path.dirname(dir);
+    if (parent === dir) break;
+    dir = parent;
+  }
+  return null;
+};
 const EVENTS_PATHS = uniquePaths([
+  durableEventsPath(),
   PRIMARY_EVENTS_PATH,
   repoMirrorPath(PRIMARY_EVENTS_PATH),
   path.join(resolveDashboardRoot(), 'data', 'hris', EVENTS_FILE_NAME),
@@ -190,10 +203,14 @@ const mergeEventsById = (...lists: PayrollLeaveAllowanceEvent[][]) => {
 const readEventsRaw = async (): Promise<PayrollLeaveAllowanceEvent[]> => {
   const fromSql = await readEventsFromSql();
   let fromFiles: PayrollLeaveAllowanceEvent[] = [];
+  let newest = -1;
   for (const file of EVENTS_PATHS) {
     try {
+      if (!existsSync(file)) continue;
+      const stat = statSync(file) as { mtimeMs: number };
+      if (stat.mtimeMs < newest) continue;
       fromFiles = parseEvents(await readFile(file, 'utf8'));
-      break;
+      newest = stat.mtimeMs;
     } catch {
       // Try the next candidate path.
     }
@@ -237,19 +254,21 @@ export const writePayrollLeaveAllowanceEvents = async (
 
 export const readPayrollLeaveAllowanceEventsSync = () => {
   if (syncCache?.events) return syncCache.events;
+  let best: { mtime: number; events: PayrollLeaveAllowanceEvent[]; path: string } | null = null;
   for (const file of EVENTS_PATHS) {
     try {
       if (!existsSync(file)) continue;
       const stat = statSync(file) as { mtimeMs: number };
-      if (syncCache && syncCache.path === file && syncCache.mtime === stat.mtimeMs) return syncCache.events;
+      if (best && stat.mtimeMs < best.mtime) continue;
       const events = parseEvents(readFileSync(file, 'utf8'));
-      syncCache = { mtime: stat.mtimeMs, events, path: file };
-      return events;
+      best = { mtime: stat.mtimeMs, events, path: file };
     } catch {
       // Try the next candidate path.
     }
   }
-  return syncCache?.events || [];
+  if (!best) return syncCache?.events || [];
+  syncCache = best;
+  return best.events;
 };
 
 export const leaveAllowanceEventsForEmployeePeriod = (employee: DleEmployeeDirectoryRow, period?: string) => {

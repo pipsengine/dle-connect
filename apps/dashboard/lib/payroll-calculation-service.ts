@@ -1071,23 +1071,36 @@ const computePayrollForPeriod = async (requestedPeriod: string): Promise<Payroll
     const paye = variant.payCurrency === 'USD'
       ? (Number.isFinite(usdPayeOverride) ? roundMoney(usdPayeOverride) : roundMoney(tax.monthlyPaye))
       : (Number.isFinite(ngnPayeOverride) ? roundMoney(ngnPayeOverride) : tax.monthlyPaye);
-    const skipStatutory = variant.payCurrency === 'USD' || dailyRateEmployee || !isPensionEligibleStaff(employee);
-    const statutoryPension = skipStatutory ? 0 : roundMoney(pension.employeeContribution);
-    const additionalPension = skipStatutory ? 0 : roundMoney(pension.voluntaryContribution);
+    const usdRun = variant.payCurrency === 'USD';
+    const paidLines = amounts.paidEarningLines || amounts.earningLines || [];
+    const usdHousingPension = usdRun && paidLines.some((line) => /HOUS/i.test(`${line.code || ''} ${line.name || ''}`));
+    const skipFunds = usdRun || dailyRateEmployee || !isPensionEligibleStaff(employee);
+    const skipPension = dailyRateEmployee || !isPensionEligibleStaff(employee) || (usdRun && !usdHousingPension);
+    const statutoryPension = skipPension ? 0 : roundMoney(pension.employeeContribution);
+    const additionalPension = skipPension || usdRun ? 0 : roundMoney(pension.voluntaryContribution);
     const employeePension = roundMoney(statutoryPension + additionalPension);
-    const statutoryEmployee = skipStatutory ? 0 : funds.employeeDeductions;
+    const statutoryEmployee = skipFunds ? 0 : funds.employeeDeductions;
     const loanRecovery = roundMoney(loans.reduce((sum, loan) => sum + loan.payrollRecovery, 0));
     const taxComponentMonthly = (componentId: string) => (tax.statutoryItems.find((item) => item.id === componentId)?.amount || 0) / 12;
-    const nhf = skipStatutory ? 0 : taxComponentMonthly('nhf');
-    const nhfFundDeduction = skipStatutory ? 0 : roundMoney(funds.fundResults.find((item) => item.id === 'nhf')?.monthlyAmount || 0);
+    const nhf = skipFunds ? 0 : roundMoney(taxComponentMonthly('nhf'));
+    const nhfFundDeduction = skipFunds ? 0 : roundMoney(funds.fundResults.find((item) => item.id === 'nhf')?.monthlyAmount || 0);
     const statutoryEmployeeDeductions = roundMoney(Math.max(0, statutoryEmployee - (nhf > 0 && nhfFundDeduction > 0 ? nhfFundDeduction : 0)));
-    const unionDues = skipStatutory ? 0 : taxComponentMonthly('union-dues');
-    const otherStatutory = skipStatutory ? 0 : taxComponentMonthly('other-statutory');
+    const unionDues = skipFunds ? 0 : roundMoney(taxComponentMonthly('union-dues'));
+    const otherStatutory = skipFunds ? 0 : roundMoney(taxComponentMonthly('other-statutory'));
     const otherDeductions = roundMoney(unionDues + otherStatutory);
+    const pensionExact = skipPension
+      ? 0
+      : Number(pension.unroundedEmployeeContribution || 0) + additionalPension;
+    const payeExact = dailyRateEmployee || Number.isFinite(usdPayeOverride) || Number.isFinite(ngnPayeOverride)
+      ? paye
+      : Number(tax.monthlyPayeExact ?? paye);
+    const exactDeductions = payeExact + pensionExact + statutoryEmployeeDeductions + loanRecovery + nhf + otherDeductions;
     const totalDeductions = roundMoney(paye + employeePension + statutoryEmployeeDeductions + loanRecovery + nhf + otherDeductions);
-    const netPay = roundMoney(Math.max(0, amounts.grossPay - totalDeductions));
-    const employerPension = skipStatutory ? 0 : pension.employerContribution;
-    const employerStatutory = skipStatutory ? 0 : funds.employerCosts;
+    // Net is the 2-decimal result of gross minus the unrounded statutory amounts.
+    // Rounding each deduction first, then subtracting, leaves a 1 kobo gap against the salary schedule.
+    const netPay = roundMoney(Math.max(0, amounts.grossPay - exactDeductions));
+    const employerPension = skipPension ? 0 : pension.employerContribution;
+    const employerStatutory = skipFunds ? 0 : funds.employerCosts;
     const employerCost = dailyRateEmployee
       ? roundMoney(amounts.grossPay)
       : roundMoney(amounts.grossPay + employerPension + employerStatutory);

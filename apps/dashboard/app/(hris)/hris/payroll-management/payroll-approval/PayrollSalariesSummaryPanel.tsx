@@ -40,7 +40,7 @@ type DetailTab =
 const moneyFmt = new Intl.NumberFormat('en-NG', {
   style: 'currency',
   currency: 'NGN',
-  maximumFractionDigits: 0,
+  minimumFractionDigits: 2, maximumFractionDigits: 2,
 });
 const usdFmt = new Intl.NumberFormat('en-US', {
   style: 'currency',

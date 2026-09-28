@@ -15,7 +15,7 @@ import { formatPayrollMoney } from '@/lib/payroll-currency';
 
 const money = (value: number, allowed: boolean) => {
   if (!allowed) return 'Restricted';
-  return formatPayrollMoney(value, 'NGN', { maximumFractionDigits: 0 });
+  return formatPayrollMoney(value, 'NGN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 };
 
 const signedMoney = (value: number, allowed: boolean) => {

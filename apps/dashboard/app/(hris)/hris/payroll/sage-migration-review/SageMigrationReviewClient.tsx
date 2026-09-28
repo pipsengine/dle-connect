@@ -79,7 +79,7 @@ type MigrationSummary = {
 
 type ApiResponse<T> = { status: 'success' | 'error'; data?: T; error?: string };
 
-const moneyFmt = new Intl.NumberFormat('en-NG', { style: 'currency', currency: 'NGN', maximumFractionDigits: 0 });
+const moneyFmt = new Intl.NumberFormat('en-NG', { style: 'currency', currency: 'NGN', minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const numberFmt = new Intl.NumberFormat('en-GB');
 const money = (value: number | null | undefined) => moneyFmt.format(Number(value || 0));
 const number = (value: number | null | undefined) => numberFmt.format(Number(value || 0));

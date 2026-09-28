@@ -389,7 +389,7 @@ const readApiResponse = async <T,>(res: Response): Promise<ApiResponse<T>> => {
   }
 };
 
-const moneyFmt = new Intl.NumberFormat('en-NG', { style: 'currency', currency: 'NGN', maximumFractionDigits: 0 });
+const moneyFmt = new Intl.NumberFormat('en-NG', { style: 'currency', currency: 'NGN', minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const currencyFormatters = new Map<string, Intl.NumberFormat>([['NGN', moneyFmt]]);
 const numberFmt = new Intl.NumberFormat('en-GB');
 const pctFmt = new Intl.NumberFormat('en-GB', { maximumFractionDigits: 1 });
@@ -403,7 +403,7 @@ const money = (value: number | null | undefined, canView = true, currency = 'NGN
   if (value == null) return 'Not computed';
   const code = currencyCode(currency);
   if (!currencyFormatters.has(code)) {
-    currencyFormatters.set(code, new Intl.NumberFormat(code === 'USD' ? 'en-US' : 'en-NG', { style: 'currency', currency: code, maximumFractionDigits: code === 'USD' ? 2 : 0 }));
+    currencyFormatters.set(code, new Intl.NumberFormat(code === 'USD' ? 'en-US' : 'en-NG', { style: 'currency', currency: code, minimumFractionDigits: 2, maximumFractionDigits: 2 }));
   }
   return currencyFormatters.get(code)!.format(value);
 };

@@ -48,9 +48,11 @@ export default function Review() {
 
   useEffect(() => {
     const id = sessionStorage.getItem('ts-entry-focus');
+    const submittedNotice = sessionStorage.getItem('ts-entry-notice');
     if (!id) return;
     sessionStorage.removeItem('ts-entry-focus');
-    openSheet(id);
+    sessionStorage.removeItem('ts-entry-notice');
+    openSheet(id, { keepNotice: true }).then(() => { if (submittedNotice) setNotice(submittedNotice); });
   }, []);
 
   useEffect(() => {
@@ -130,7 +132,7 @@ export default function Review() {
   };
 
   return <>
-    <div className="pageTitle"><div><span className="eyebrow">QUALITY GATE</span><h1>Timesheet Booking Review</h1><p>Find a saved timesheet by work date. You can edit and resubmit it until approval has started.</p></div></div>
+    <div className="pageTitle"><div><span className="eyebrow">QUALITY GATE</span><h1>Timesheet Booking Review</h1><p>Review &amp; Validate submits the booking the first time. Resubmit is only for a later correction, and only until approval has started.</p></div></div>
     {(error || pageError) && <div className="success" style={{ background: '#fef2f2', color: '#991b1b' }}>{pageError || error}</div>}
     {notice && <div className="success">{notice} <button onClick={() => setNotice('')}>×</button></div>}
     <div className="filters six">
@@ -173,6 +175,9 @@ export default function Review() {
 
 function SheetEditor({ sheet, lines, setLines, columns, settings, setDirty, saving, setSaving, setNotice, setPageError, setSheet, onBack, onAddProject }) {
   const editable = Boolean(sheet.editable);
+  const alreadySent = sheet.status === 'Submitted' || sheet.status === 'Returned';
+  const sendLabel = alreadySent ? 'Resubmit' : 'Submit';
+  const showSend = editable && (sheet.status !== 'Submitted' || dirty);
   const onApprovedLeave = (line) => line?.operationalStatus === 'Approved Leave' || line?.attendanceStatus === 'Approved Leave';
   const expectedFor = (line) => onApprovedLeave(line) && !/^C\d/i.test(line?.employeeCode || '') ? 0 : (settings?.expectedHours || 8);
   const leaveIdleLocked = (line) => onApprovedLeave(line) && /^C\d/i.test(line?.employeeCode || '');
@@ -236,7 +241,7 @@ function SheetEditor({ sheet, lines, setLines, columns, settings, setDirty, savi
       setSheet(saved);
       setLines((saved.lines || []).map(emptyLine));
       setDirty(false);
-      setNotice(resubmit ? `${saved.reference} resubmitted · v${saved.version}` : `${saved.reference} saved as draft · v${saved.version}. Resubmit when the hours are ready.`);
+      setNotice(resubmit ? `${saved.reference} ${alreadySent ? 'resubmitted' : 'submitted'} · v${saved.version}` : `${saved.reference} saved as draft · v${saved.version}.`);
     } catch (saveError) {
       setPageError(saveError.message);
     } finally {
@@ -245,8 +250,9 @@ function SheetEditor({ sheet, lines, setLines, columns, settings, setDirty, savi
   };
 
   return <div className="panel">
-    <div className="panelHead"><div><h3>{sheet.reference} · {formatDisplayDate(sheet.workDate)}</h3><p>{sheet.supervisor} · {sheet.shift} · v{sheet.version} · {sheet.status}{sheet.dayKind ? ` · ${sheet.dayKind}` : ''}{sheet.holidayName ? ` · ${sheet.holidayName}` : ''}</p></div><div className="actions"><Button kind="secondary" onClick={onBack}>Back</Button>{editable && <Button kind="secondary" disabled={saving} onClick={() => persist(false)}>{saving ? 'Saving…' : 'Save'}</Button>}{editable && <Button disabled={saving} onClick={() => persist(true)}>Resubmit</Button>}</div></div>
+    <div className="panelHead"><div><h3>{sheet.reference} · {formatDisplayDate(sheet.workDate)}</h3><p>{sheet.supervisor} · {sheet.shift} · v{sheet.version} · {sheet.status}{sheet.dayKind ? ` · ${sheet.dayKind}` : ''}{sheet.holidayName ? ` · ${sheet.holidayName}` : ''}</p></div><div className="actions"><Button kind="secondary" onClick={onBack}>Back</Button>{editable && <Button kind="secondary" disabled={saving} onClick={() => persist(false)}>{saving ? 'Saving…' : 'Save'}</Button>}{showSend && <Button disabled={saving} onClick={() => persist(true)}>{sendLabel}</Button>}</div></div>
     {!editable && <div className="infoBox">Approval has started for this timesheet. The hours are read only.</div>}
+    {editable && sheet.status === 'Submitted' && !dirty && <div className="infoBox">This timesheet is already submitted. Change the hours only if a correction is needed, then resubmit before approval starts.</div>}
     {editable && <div className="toolbar"><div /><div className="actions"><Button kind="secondary" onClick={onAddProject}>+ Add Project</Button></div></div>}
     <div className="tableWrap"><table><thead><tr><th>Employee</th><th>Attendance</th>{columns.map((column) => <th key={column.code}><span className="hourHead">{column.code}<small>{column.name && column.name !== column.code ? column.name : 'REG · OVT'}</small></span></th>)}<th>REG</th><th>OVT</th><th>Expected</th><th>Status</th></tr></thead><tbody>
       {lines.map((line) => {

@@ -29,13 +29,13 @@ export const LOCKED_PAYROLL_NAIRA_CAPTION =
 const ODULATE_UNTIL_OCTOBER_2026: LockedPayrollPackage = {
   employeeCode: 'P0442',
   untilPeriod: '2026-10',
-  grossUsd: 4631.3,
-  grossNgn: 6171216.9,
+  grossUsd: 4631.33,
+  grossNgn: 6171216.92,
   lines: [
-    { code: 'EXP_SMGT_BASIC', name: 'Basic', usd: 926.3, ngn: 1234243.4 },
-    { code: 'EXP_SMNG_TRANSPORT', name: 'Transport', usd: 463.1, ngn: 617121.7 },
-    { code: 'EXP_SMGT_HOUSING', name: 'Housing', usd: 694.7, ngn: 925682.5 },
-    { code: 'EXP_SMGT_OTHER', name: 'Other allowance', usd: 2547.2, ngn: 3394169.3 },
+    { code: 'EXP_SMGT_BASIC', name: 'Basic', usd: 926.27, ngn: 1234243.38 },
+    { code: 'EXP_SMNG_TRANSPORT', name: 'Transport', usd: 463.13, ngn: 617121.69 },
+    { code: 'EXP_SMGT_HOUSING', name: 'Housing', usd: 694.7, ngn: 925682.54 },
+    { code: 'EXP_SMGT_OTHER', name: 'Other allowance', usd: 2547.23, ngn: 3394169.31 },
   ],
 };
 
@@ -163,6 +163,23 @@ export const applyLockedPayrollPackage = <T extends DleEmployeeDirectoryRow>(emp
   const basic = lockedBasicLine(pack);
   const hasNairaLeg = Boolean(employee.hasDualCurrencyPayroll) || (employee.sageLocalPayrollEarnings || []).length > 0;
   const nairaLines = lockedNgnEarningLines(pack);
+  // The December package locks basic, housing, transport and other allowance.
+  // A pension-refund earning already on the local package stays, at the amount saved there.
+  const refundLines = (employee.sageLocalPayrollEarnings || [])
+    .filter((line) => /PENSION[_\s-]*REFUND/i.test(`${line.code || ''} ${line.name || ''}`))
+    .map((line) => {
+      const amount = roundMoney(Number(line.amount || 0));
+      return {
+        code: 'PENSION_REFUND',
+        name: 'PENSION REFUND',
+        amount,
+        taxableAmount: roundMoney(Number(line.taxableAmount ?? amount)),
+        sourceAmount: amount,
+        runFrequency: 'monthly' as const,
+        includeInMonthlyPayroll: true,
+      };
+    })
+    .filter((line) => line.amount > 0);
   return {
     ...employee,
     payCurrency: employee.payCurrency || 'USD',
@@ -183,7 +200,7 @@ export const applyLockedPayrollPackage = <T extends DleEmployeeDirectoryRow>(emp
           localPayCurrency: 'NGN',
           localPayrollGroup: employee.localPayrollGroup || 'DLE',
           localPeriodSalary: pack.grossNgn,
-          sageLocalPayrollEarnings: nairaLines as T['sageLocalPayrollEarnings'],
+          sageLocalPayrollEarnings: [...nairaLines, ...refundLines] as T['sageLocalPayrollEarnings'],
         }
       : {}),
   };

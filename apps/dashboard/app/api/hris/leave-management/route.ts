@@ -39,8 +39,11 @@ const leaveRoleFromSession = (
   return fallback || 'Employee';
 };
 
-const hrManagerCanDeductLeave = (session: Awaited<ReturnType<typeof verifySessionToken>>) =>
-  /hr\s*manager|hr\s*head|hr\s*director/.test(`${session?.roles?.join(' ') || ''}`.toLowerCase());
+const hrManagerCanDeductLeave = (session: Awaited<ReturnType<typeof verifySessionToken>>) => {
+  if (!session) return false;
+  if (session.isGlobalAdmin) return true;
+  return /hr\s*manager|hr\s*head|hr\s*director|super\s*admin/.test(`${session.roles?.join(' ') || ''}`.toLowerCase());
+};
 
 const resolveLeaveRole = async (request: NextRequest, bodyRole?: string | null) => {
   const headerRole = request.headers.get('x-hris-role');

@@ -149,12 +149,7 @@ export const payeTaxableFromEarningLines = (
 
 const STATUTORY_ANNUAL_RENT_CAP = 500000;
 
-export const lumpsumAnnualRentRelief = (monthlyTaxable: number) => {
-  const annualTaxable = Math.max(0, Number(monthlyTaxable || 0) * 12);
-  if (annualTaxable >= 2040000) return STATUTORY_ANNUAL_RENT_CAP;
-  if (annualTaxable > 876960) return roundMoney(Math.min(STATUTORY_ANNUAL_RENT_CAP, annualTaxable - 876960));
-  return 0;
-};
+export const lumpsumAnnualRentRelief = (_monthlyTaxable: number) => STATUTORY_ANNUAL_RENT_CAP;
 
 export const resolveSageAlignedAnnualRentRelief = (input: {
   employee?: DleEmployeeDirectoryRow;
@@ -206,15 +201,15 @@ export const annualChargeableFromMonthly = (input: {
   additionalEmployeePensionMonthly?: number;
 }) => {
   const annualTaxable = Math.max(0, Number(input.monthlyTaxable || 0)) * 12;
-  const statutoryPensionMonthly = roundMoney(input.monthlyBht * 0.08);
+  const statutoryPensionMonthly = Number(input.monthlyBht || 0) * 0.08;
   const additionalPensionMonthly = Math.max(0, Number(input.additionalEmployeePensionMonthly || 0));
   const annualPension =
     input.includePensionRelief !== false
-      ? roundMoney((statutoryPensionMonthly + additionalPensionMonthly) * 12)
+      ? (statutoryPensionMonthly + additionalPensionMonthly) * 12
       : 0;
-  const annualNhf = input.nhfApplicable ? roundMoney(input.monthlyBasic * 0.025 * 12) : 0;
+  const annualNhf = input.nhfApplicable ? roundMoney(Number(input.monthlyBasic || 0) * 0.025) * 12 : 0;
   const rentRelief = Math.max(0, Number(input.rentRelief || 0));
-  return roundMoney(Math.max(0, annualTaxable - annualPension - annualNhf - rentRelief));
+  return Math.max(0, annualTaxable - annualPension - annualNhf - rentRelief);
 };
 
 /**
@@ -294,7 +289,10 @@ const calculateFixedVariableSplitPaye = (input: {
   nhfApplicable: boolean;
   additionalEmployeePensionMonthly?: number;
 }) => {
-  const payeLines = input.earningLines.filter((line) => !isSagePayeRefundEarning(line.code, line.name));
+  const includePensionRefund = input.effectiveRules?.includeRefundInTaxable === true;
+  const payeLines = includePensionRefund
+    ? input.earningLines
+    : input.earningLines.filter((line) => !isSagePayeRefundEarning(line.code, line.name));
   const { fixed, variable } = splitEarningLinesForPaye(payeLines, { category: input.category });
   const fixedTaxable = payeTaxableFromEarningLines(
     fixed,
@@ -317,18 +315,21 @@ const calculateFixedVariableSplitPaye = (input: {
   const includePensionRelief = input.category === 'permanent';
   const monthlyBht = bhtFromEarningLines(fixed);
   const monthlyBasic = basicFromEarningLines(fixed);
-  const statutoryPensionMonthly = roundMoney(monthlyBht * 0.08);
+  // Keep the 8% and 2.5% products exact until the final monthly PAYE is rounded to 2 decimals.
+  // Rounding pension to the kobo before annualizing flips some PAYE and net figures by ₦0.01.
+  const statutoryPensionMonthly = monthlyBht * 0.08;
   const additionalPensionMonthly = Math.max(0, Number(input.additionalEmployeePensionMonthly || 0));
   const annualPension = includePensionRelief
-    ? roundMoney((statutoryPensionMonthly + additionalPensionMonthly) * 12)
+    ? (statutoryPensionMonthly + additionalPensionMonthly) * 12
     : 0;
-  const annualNhf = input.nhfApplicable ? roundMoney(monthlyBasic * 0.025 * 12) : 0;
+  const annualNhf = input.nhfApplicable ? roundMoney(monthlyBasic * 0.025) * 12 : 0;
 
   // Annualize fixed package only; add variable earnings once (do not ×12 OT / other adds).
-  const annualTaxable = roundMoney(Math.max(0, fixedTaxable) * 12 + Math.max(0, variableTaxable));
-  const chargeable = roundMoney(Math.max(0, annualTaxable - annualPension - annualNhf - Math.max(0, rentRelief)));
+  const annualTaxable = Math.max(0, fixedTaxable) * 12 + Math.max(0, variableTaxable);
+  const chargeable = Math.max(0, annualTaxable - annualPension - annualNhf - Math.max(0, rentRelief));
   const annualPaye = taxChargeableAgainstBands(chargeable, clonePayeBands());
-  const paye = roundMoney(annualPaye / 12);
+  const payeExact = annualPaye / 12;
+  const paye = roundMoney(payeExact);
 
   // Reporting split: fixed-only annualized PAYE vs remainder attributable to variable adds.
   const fixedOnlyChargeable = annualChargeableFromMonthly({
@@ -345,6 +346,7 @@ const calculateFixedVariableSplitPaye = (input: {
 
   return {
     paye,
+    payeExact,
     monthlyTaxable: roundMoney(fixedTaxable + variableTaxable),
     fixedTaxable,
     variableTaxable,

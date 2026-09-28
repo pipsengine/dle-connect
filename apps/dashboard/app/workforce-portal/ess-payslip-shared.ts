@@ -51,7 +51,7 @@ export type EssPayrollEmployee = {
   hasPhoto?: boolean;
 };
 
-export const moneyFmt = new Intl.NumberFormat('en-NG', { style: 'currency', currency: 'NGN', maximumFractionDigits: 0 });
+export const moneyFmt = new Intl.NumberFormat('en-NG', { style: 'currency', currency: 'NGN', minimumFractionDigits: 2, maximumFractionDigits: 2 });
 export const money2Fmt = new Intl.NumberFormat('en-NG', { style: 'currency', currency: 'NGN', minimumFractionDigits: 2, maximumFractionDigits: 2 });
 export const money = (value: number) => moneyFmt.format(value || 0);
 export const money2 = (value: number) => money2Fmt.format(value || 0);

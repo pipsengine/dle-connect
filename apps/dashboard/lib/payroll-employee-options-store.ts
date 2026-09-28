@@ -1,4 +1,4 @@
-import { existsSync } from 'node:fs';
+import { existsSync, statSync } from 'node:fs';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import type { DleEmployeeDirectoryRow } from '@/lib/dle-enterprise-db';
@@ -50,18 +50,31 @@ const resolveRuntimeDataDirs = () => {
   return dirs;
 };
 
+const durableHrisDir = () => {
+  let dir = process.cwd();
+  for (let depth = 0; depth < 6; depth += 1) {
+    if (existsSync(path.join(dir, 'apps', 'dashboard')) && existsSync(path.join(dir, 'data', 'hris'))) {
+      return path.join(dir, 'data', 'hris');
+    }
+    const parent = path.dirname(dir);
+    if (parent === dir) break;
+    dir = parent;
+  }
+  return '';
+};
+
 const resolveOptionsPaths = () => {
+  const durable = durableHrisDir();
   const candidates = [
     process.env.DLE_PAYROLL_EMPLOYEE_OPTIONS_PATH,
     process.env.DLE_HRIS_DATA_DIR ? path.join(process.env.DLE_HRIS_DATA_DIR, 'payroll-employee-options.json') : null,
+    durable ? path.join(durable, 'payroll-employee-options.json') : null,
     ...resolveRuntimeDataDirs().map((dir) => path.join(dir, 'payroll-employee-options.json')),
     path.join(resolveDashboardRoot(), 'data', 'hris', 'payroll-employee-options.json'),
     path.join(process.cwd(), 'apps', 'dashboard', 'data', 'hris', 'payroll-employee-options.json'),
   ].filter(Boolean) as string[];
   return Array.from(new Set(candidates.map((candidate) => path.resolve(candidate))));
 };
-
-const OPTIONS_PATHS = resolveOptionsPaths();
 const compact = (value: unknown) => String(value || '').trim();
 const keyFor = (value: unknown) => compact(value).toUpperCase().replace(/[^A-Z0-9]/g, '');
 
@@ -75,17 +88,21 @@ export const invalidatePayrollEmployeeOptionsCache = () => {
 export const readPayrollEmployeeOptions = async (): Promise<PayrollEmployeeOption[]> => {
   const now = Date.now();
   if (optionsCache && optionsCache.expiresAt > now) return optionsCache.value;
-  for (const optionsPath of OPTIONS_PATHS) {
+  let best: { mtime: number; value: PayrollEmployeeOption[] } | null = null;
+  for (const optionsPath of resolveOptionsPaths()) {
     try {
+      if (!existsSync(optionsPath)) continue;
+      const stat = statSync(optionsPath);
       const parsed = JSON.parse(await readFile(optionsPath, 'utf8'));
       const value = Array.isArray(parsed) ? parsed : [];
-      optionsCache = { value, expiresAt: Date.now() + OPTIONS_CACHE_MS };
-      return value;
+      if (!best || stat.mtimeMs >= best.mtime) best = { mtime: stat.mtimeMs, value };
     } catch {
       // Try the next configured/runtime location.
     }
   }
-  return [];
+  const value = best?.value || [];
+  optionsCache = { value, expiresAt: Date.now() + OPTIONS_CACHE_MS };
+  return value;
 };
 
 export const writePayrollEmployeeOption = async (option: Omit<PayrollEmployeeOption, 'updatedAt'> & { updatedAt?: string }) => {
@@ -97,21 +114,19 @@ export const writePayrollEmployeeOption = async (option: Omit<PayrollEmployeeOpt
   next.push(nextOption);
   const payload = JSON.stringify(next.sort((a, b) => keyFor(a.employeeId).localeCompare(keyFor(b.employeeId))), null, 2);
   let lastError: unknown = null;
-  const writePaths = [
-    ...OPTIONS_PATHS.filter((optionsPath) => existsSync(optionsPath)),
-    ...OPTIONS_PATHS.filter((optionsPath) => !existsSync(optionsPath)),
-  ];
-  for (const optionsPath of writePaths) {
+  let wrote = false;
+  for (const optionsPath of resolveOptionsPaths()) {
     try {
       await mkdir(path.dirname(optionsPath), { recursive: true });
       await writeFile(optionsPath, payload, 'utf8');
-      optionsCache = { value: next, expiresAt: Date.now() + OPTIONS_CACHE_MS };
-      return nextOption;
+      wrote = true;
     } catch (error) {
       lastError = error;
     }
   }
-  throw lastError;
+  if (!wrote) throw lastError;
+  optionsCache = { value: next, expiresAt: Date.now() + OPTIONS_CACHE_MS };
+  return nextOption;
 };
 
 export const applyPayrollEmployeeOptions = async (employees: DleEmployeeDirectoryRow[]) => {

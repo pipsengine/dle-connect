@@ -17,20 +17,24 @@ export default function Reports() {
   const { snapshot } = usePortalData();
   const [tab, setTab] = useState('Booking Summary');
   const [periodId, setPeriodId] = useState('');
+  const [supervisor, setSupervisor] = useState('');
   const selected = periodId || snapshot.periods[0]?.id || '';
   const period = snapshot.periods.find((item) => item.id === selected);
-  const bookings = snapshot.bookings.filter((booking) => (!selected || booking.periodId === selected) && bookingHasHours(booking));
+  const periodBookings = snapshot.bookings.filter((booking) => (!selected || booking.periodId === selected) && bookingHasHours(booking));
+  const supervisors = [...new Set(periodBookings.map((booking) => booking.supervisor).filter(Boolean))].sort((a, b) => a.localeCompare(b));
+  const bookings = supervisor ? periodBookings.filter((booking) => booking.supervisor === supervisor) : periodBookings;
   const holidayDates = new Set(snapshot.records.filter((record) => record.area === 'configuration' && record.tab === 'Public Holidays' && record.workDate).map((record) => record.workDate));
   const rows = useMemo(() => {
     const byEmployee = new Map();
     for (const booking of bookings) {
-      const current = byEmployee.get(booking.employeeCode) || { id: booking.employeeCode, name: booking.employeeName, weekdayHours: 0, weekdayOvt: 0, saturdayHours: 0, saturdayOvt: 0, sundayHours: 0, sundayOvt: 0, phHours: 0, phOvt: 0, night: 0, nightHours: 0, days: new Set(), status: 'Balanced' };
+      const current = byEmployee.get(booking.employeeCode) || { id: booking.employeeCode, name: booking.employeeName, supervisors: new Set(), weekdayHours: 0, weekdayOvt: 0, saturdayHours: 0, saturdayOvt: 0, sundayHours: 0, sundayOvt: 0, phHours: 0, phOvt: 0, night: 0, nightHours: 0, days: new Set(), status: 'Balanced' };
       const kind = holidayDates.has(booking.workDate) ? 'ph' : dayKind(booking.workDate);
       if (kind === 'saturday') { current.saturdayHours += Number(booking.regularHours || 0); current.saturdayOvt += Number(booking.ovtHours || 0); }
       else if (kind === 'sunday') { current.sundayHours += Number(booking.regularHours || 0); current.sundayOvt += Number(booking.ovtHours || 0); }
       else if (kind === 'ph') { current.phHours += Number(booking.regularHours || 0); current.phOvt += Number(booking.ovtHours || 0); }
       else { current.weekdayHours += Number(booking.regularHours || 0); current.weekdayOvt += Number(booking.ovtHours || 0); }
       if (Number(booking.nightHours) > 0) { current.night += 1; current.nightHours += Number(booking.nightHours); }
+      if (booking.supervisor) current.supervisors.add(booking.supervisor);
       current.days.add(booking.workDate);
       if (booking.status === 'Exception') current.status = 'Exception';
       byEmployee.set(booking.employeeCode, current);
@@ -40,11 +44,12 @@ export default function Reports() {
   const sum = (pick) => rows.reduce((total, row) => total + pick(row), 0);
 
   return <>
-    <div className="pageTitle"><div><span className="eyebrow">RECONCILIATION & REPORTING</span><h1>Timesheet Reports</h1><p>The screen and the export use the same saved bookings.</p></div><Button onClick={() => exportTimesheet(rows.map((row) => ({ id: row.id, name: row.name, supervisor: '', reg: row.weekdayHours, ovt: row.weekdayOvt + row.saturdayOvt + row.sundayOvt + row.phOvt, night: row.nightHours })))}>Export</Button></div>
+    <div className="pageTitle"><div><span className="eyebrow">RECONCILIATION & REPORTING</span><h1>Timesheet Reports</h1><p>The screen and the export use the same saved bookings.</p></div><Button onClick={() => exportTimesheet(rows.map((row) => ({ id: row.id, name: row.name, supervisor: [...row.supervisors].join('; '), reg: row.weekdayHours, ovt: row.weekdayOvt + row.saturdayOvt + row.sundayOvt + row.phOvt, night: row.nightHours })))}>Export</Button></div>
     <div className="filters">
-      <Field label="Period"><select value={selected} onChange={(event) => setPeriodId(event.target.value)}>{snapshot.periods.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}{!snapshot.periods.length && <option value="">No periods</option>}</select></Field>
+      <Field label="Period"><select value={selected} onChange={(event) => { setPeriodId(event.target.value); setSupervisor(''); }}>{snapshot.periods.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}{!snapshot.periods.length && <option value="">No periods</option>}</select></Field>
       <Field label="From"><input type="date" value={period?.startDate || ''} readOnly /></Field>
       <Field label="To"><input type="date" value={period?.endDate || ''} readOnly /></Field>
+      <Field label="Supervisor"><select value={supervisor} onChange={(event) => setSupervisor(event.target.value)}><option value="">All supervisors</option>{supervisors.map((name) => <option key={name} value={name}>{name}</option>)}</select></Field>
     </div>
     <div className="kpis compact">
       <Card label="Employees" value={String(rows.length)} sub="Employees with hours" />

@@ -74,7 +74,7 @@ type Payload = {
 };
 type ApiResponse<T> = { status: 'success' | 'error'; data?: T; error?: string };
 
-const moneyFmt = new Intl.NumberFormat('en-NG', { style: 'currency', currency: 'NGN', maximumFractionDigits: 0 });
+const moneyFmt = new Intl.NumberFormat('en-NG', { style: 'currency', currency: 'NGN', minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const numberFmt = new Intl.NumberFormat('en-GB');
 const pctFmt = new Intl.NumberFormat('en-GB', { maximumFractionDigits: 1 });
 const money = (value: number | null | undefined, canView = true) => (!canView || value === null || value === undefined ? 'Restricted' : moneyFmt.format(value));

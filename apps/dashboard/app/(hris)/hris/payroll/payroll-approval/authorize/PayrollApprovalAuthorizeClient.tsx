@@ -22,7 +22,7 @@ type PreviewPayload = {
 
 type ApiResponse<T> = { status: 'success' | 'error'; data?: T; error?: string };
 
-const money = (value: number) => new Intl.NumberFormat('en-NG', { style: 'currency', currency: 'NGN', maximumFractionDigits: 0 }).format(value);
+const money = (value: number) => new Intl.NumberFormat('en-NG', { style: 'currency', currency: 'NGN', minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(value);
 
 export default function PayrollApprovalAuthorizeClient() {
   const searchParams = useSearchParams();

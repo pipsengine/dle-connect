@@ -38,7 +38,7 @@ export type EarningsRecord = {
 };
 
 const numberFmt = new Intl.NumberFormat('en-GB');
-const moneyFmt = new Intl.NumberFormat('en-NG', { style: 'currency', currency: 'NGN', maximumFractionDigits: 0 });
+const moneyFmt = new Intl.NumberFormat('en-NG', { style: 'currency', currency: 'NGN', minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const fmtNum = (value: number) => numberFmt.format(value);
 const fmtMoney = (value: number | null | undefined, canView: boolean) =>
   !canView || value === null || value === undefined ? 'Restricted' : moneyFmt.format(value);

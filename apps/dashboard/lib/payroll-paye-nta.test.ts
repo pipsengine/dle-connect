@@ -33,6 +33,9 @@ assert.equal(lumpsumAnnualRentRelief(149000), 500000, 'lumpsum rent relief must 
 assert.equal(lumpsumAnnualRentRelief(178800), 500000);
 assert.equal(isVariableEarningForPaye({ code: 'TCMTRANS', name: 'TCM TRANSPORT' }, { category: 'lumpsum' }), false);
 assert.equal(isVariableEarningForPaye({ code: 'OVERTIME', name: 'OVERTIME' }, { category: 'lumpsum' }), true);
+assert.equal(isVariableEarningForPaye({ code: 'SATPAY', name: 'SATURDAY PAY' }), true);
+assert.equal(isVariableEarningForPaye({ code: 'SATEARNING', name: 'SATURDAY EARNING' }), true);
+assert.equal(isVariableEarningForPaye({ code: 'SATEARN', name: 'SATURDAY EARNING' }), true);
 assert.equal(isVariableEarningForPaye({ code: 'MEAL', name: 'MEAL ALLOWANCE' }, { category: 'lumpsum' }), false);
 
 const reuben = hrisPayeFromEmployee({

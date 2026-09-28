@@ -80,7 +80,7 @@ type Props = {
   onNavigate: (tab: CommandCenterNavTab) => void;
 };
 
-const moneyFmt = new Intl.NumberFormat('en-NG', { style: 'currency', currency: 'NGN', maximumFractionDigits: 0 });
+const moneyFmt = new Intl.NumberFormat('en-NG', { style: 'currency', currency: 'NGN', minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const numberFmt = new Intl.NumberFormat('en-GB');
 const fmtMoney = (value: number | null | undefined, canView: boolean) => {
   if (!canView) return 'Restricted';

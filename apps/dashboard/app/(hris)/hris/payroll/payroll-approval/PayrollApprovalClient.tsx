@@ -153,7 +153,7 @@ const money = (value: number | null | undefined, allowed = true, currency = 'NGN
   if (!allowed) return 'Restricted';
   if (value == null) return 'Not computed';
   const code = currencyCode(currency);
-  return formatPayrollMoney(value, code, { maximumFractionDigits: code === 'USD' ? 2 : 0 });
+  return formatPayrollMoney(value, code);
 };
 const sumRecordPay = (records: { grossPay?: number | null; totalDeductions?: number | null; netPay?: number | null; employerCost?: number | null; payCurrency?: string | null; payrollGroup?: string | null }[] | undefined) =>
   ngnPayrollKpiRecords(records).reduce<{ grossPay: number; deductions: number; netPay: number; employerCost: number }>(

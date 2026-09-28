@@ -40,6 +40,7 @@ export default function Entry({ setPage }) {
   const [saving, setSaving] = useState(false);
   const [modal, setModal] = useState(null);
   const [sheets, setSheets] = useState([]);
+  const [employeeQuery, setEmployeeQuery] = useState('');
   const loadedKey = useRef('');
 
   const openPeriods = snapshot.periods.filter((period) => period.status === 'Open' || period.status === 'Planned');
@@ -125,6 +126,10 @@ export default function Entry({ setPage }) {
     })
     : lines.filter((line) => (!location || line.location === location) && (!workCenter || line.workCenter === workCenter))
   ).filter((line) => /^C\d/i.test(line.employeeCode || ''));
+  const employeeNeedle = employeeQuery.trim().toLowerCase();
+  const shown = employeeNeedle
+    ? visible.filter((line) => `${line.employeeName} ${line.employeeCode}`.toLowerCase().includes(employeeNeedle))
+    : visible;
   const totals = useMemo(() => visible.reduce((sum, line) => {
     const limit = onApprovedLeave(line) && !/^C\d/i.test(line?.employeeCode || '') ? 0 : (context?.settings?.expectedHours || 8);
     const regular = capAllocations(line.allocations, limit).reduce((inner, item) => inner + Number(item.regularHours || 0), 0);
@@ -151,12 +156,24 @@ export default function Entry({ setPage }) {
       });
       const body = await response.json();
       if (!response.ok || body.status === 'error') throw new Error(body.error || 'Save failed.');
-      setLines((body.data?.lines || []).map(emptyLine));
-      setContext((current) => ({ ...(current || {}), timesheet: body.data }));
-      setDirty(false);
-      setNotice(intent === 'review' ? 'Saved. Open Review & Validate to submit.' : `Draft saved · ${body.data?.reference || ''} · v${body.data?.version || 1}`);
+      let saved = body.data;
       if (intent === 'review') {
-        sessionStorage.setItem('ts-entry-focus', body.data.id);
+        const submitResponse = await fetch('/api/timesheet-management/entry', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action: 'submit', id: saved.id }),
+        });
+        const submitBody = await submitResponse.json();
+        if (!submitResponse.ok || submitBody.status === 'error') throw new Error(submitBody.error || 'Submit failed. The hours are saved as a draft.');
+        saved = submitBody.data;
+      }
+      setLines((saved?.lines || []).map(emptyLine));
+      setContext((current) => ({ ...(current || {}), timesheet: saved }));
+      setDirty(false);
+      setNotice(intent === 'review' ? `${saved?.reference || ''} submitted · v${saved?.version || 1}` : `Draft saved · ${saved?.reference || ''} · v${saved?.version || 1}`);
+      if (intent === 'review') {
+        sessionStorage.setItem('ts-entry-focus', saved.id);
+        sessionStorage.setItem('ts-entry-notice', `${saved.reference} submitted · v${saved.version}`);
         setPage('Timesheet Review');
       }
     } catch (saveError) {
@@ -221,10 +238,10 @@ export default function Entry({ setPage }) {
       {context?.message && <div className="infoBox">{context.message}</div>}
       {viewingOffshore && <div className="infoBox">These employees are mobilized to this offshore site. Hours stay empty until they are booked here. Mobilization does not create attendance or payable hours, and the Nigeria calendar classification is unchanged.</div>}
       <div className="summaryStrip"><span><b>{visible.length}</b> Crew</span><span><b>{visible.length - totals.missing}</b> With status</span><span><b>{totals.missing}</b> Missing evidence</span><span><b>{totals.leave}</b> Leave</span><span><b>{totals.offshore}</b> Offshore</span><span><b>{totals.regular}h</b> REG</span><span><b>{totals.ovt}h</b> {context?.classification?.dayKind === 'Public Holiday' ? 'PH OVT' : context?.classification?.dayKind === 'Saturday' ? 'Sat OVT' : context?.classification?.dayKind === 'Sunday' ? 'Sun OVT' : 'OVT'}</span><span><b>{totals.night}</b> Night</span><span><b>{totals.unallocated}h</b> Unallocated</span></div>
-      <div className="toolbar"><div /><div className="actions"><Button kind="secondary" onClick={() => setModal('project')}>+ Add Project</Button><Button kind="secondary" onClick={() => setModal('activity')}>+ Internal Activity</Button><Button kind="secondary" onClick={() => setModal('ovt')}>Bulk Project OVT</Button><Button kind="secondary" onClick={() => setModal('night')}>Book Night Work</Button><Button kind="secondary" onClick={() => setModal('employee')}>+ Add Employee</Button></div></div>
+      <div className="toolbar"><input className="searchInput" value={employeeQuery} onChange={(event) => setEmployeeQuery(event.target.value)} placeholder="Search employee code or name" aria-label="Search employee" /><div className="actions"><Button kind="secondary" onClick={() => setModal('project')}>+ Add Project</Button><Button kind="secondary" onClick={() => setModal('activity')}>+ Internal Activity</Button><Button kind="secondary" onClick={() => setModal('ovt')}>Bulk Project OVT</Button><Button kind="secondary" onClick={() => setModal('night')}>Book Night Work</Button><Button kind="secondary" onClick={() => setModal('employee')}>+ Add Employee</Button></div></div>
       <div className="panel matrix"><div className="tableWrap"><table><thead><tr><th>Employee</th><th>Attendance</th>{columns.map((column) => <th key={column.code}><span className="hourHead">{column.code}<small>{column.name && column.name !== column.code ? column.name : 'REG · OVT'}</small></span></th>)}<th>REG</th><th>OVT</th><th>Night</th><th>Total</th><th>Expected</th><th>Unallocated</th><th>Status</th></tr></thead><tbody>
         {loading && <tr><td colSpan={8 + columns.length}>Resolving crew for this supervisor and date…</td></tr>}
-        {!loading && visible.map((line, rowIndex) => {
+        {!loading && shown.map((line, rowIndex) => {
           const expected = regularLimit(line);
           const cappedAllocations = capAllocations(line.allocations, expected);
           const regular = cappedAllocations.reduce((sum, item) => sum + Number(item.regularHours || 0), 0);
@@ -242,14 +259,14 @@ export default function Entry({ setPage }) {
             let next = null;
             if (event.key === 'Enter') {
               const nextRow = rowIndex + (backward ? -1 : 1);
-              if (nextRow >= 0 && nextRow < visible.length) next = [visible[nextRow].employeeCode, column.code, field];
+              if (nextRow >= 0 && nextRow < shown.length) next = [shown[nextRow].employeeCode, column.code, field];
             } else if (!backward) {
               if (field === 'reg') next = [line.employeeCode, column.code, 'ovt'];
-              else if (rowIndex + 1 < visible.length) next = [visible[rowIndex + 1].employeeCode, column.code, 'reg'];
-              else if (columnIndex + 1 < columns.length) next = [visible[0].employeeCode, columns[columnIndex + 1].code, 'reg'];
+              else if (rowIndex + 1 < shown.length) next = [shown[rowIndex + 1].employeeCode, column.code, 'reg'];
+              else if (columnIndex + 1 < columns.length) next = [shown[0].employeeCode, columns[columnIndex + 1].code, 'reg'];
             } else if (field === 'ovt') next = [line.employeeCode, column.code, 'reg'];
-            else if (rowIndex > 0) next = [visible[rowIndex - 1].employeeCode, column.code, 'ovt'];
-            else if (columnIndex > 0) next = [visible[visible.length - 1].employeeCode, columns[columnIndex - 1].code, 'ovt'];
+            else if (rowIndex > 0) next = [shown[rowIndex - 1].employeeCode, column.code, 'ovt'];
+            else if (columnIndex > 0) next = [shown[shown.length - 1].employeeCode, columns[columnIndex - 1].code, 'ovt'];
             if (!next) return;
             event.preventDefault();
             focusHours(next[0], next[1], next[2]);
@@ -264,7 +281,7 @@ export default function Entry({ setPage }) {
             return <td key={column.code}><div className="hourPair"><label>REG<input className={locked ? 'locked' : undefined} data-hour={`${line.employeeCode}|${column.code}|reg`} type="number" min="0" max={regularRoom} step="0.5" inputMode="decimal" readOnly={locked} aria-label={`${column.code} regular hours for ${line.employeeName}${locked ? ', approved leave, read only' : `, maximum ${regularRoom}`}`} title={locked ? 'Approved leave hours cannot be changed' : `Regular hours cannot pass ${expected} for this day`} value={locked ? regularValue : (regularValue || '')} onChange={(event) => { if (!locked) setHours('regularHours', Number(event.target.value) || 0); }} onKeyDown={(event) => moveHours(event, columnIndex, 'reg')} /></label><label>OVT<input className={locked ? 'locked' : undefined} data-hour={`${line.employeeCode}|${column.code}|ovt`} type="number" min="0" step="0.5" inputMode="decimal" readOnly={locked} aria-label={`${column.code} overtime hours for ${line.employeeName}${locked ? ', approved leave, read only' : ''}`} title={locked ? 'Approved leave hours cannot be changed' : undefined} value={locked ? Number(allocation?.ovtHours || 0) : (allocation?.ovtHours || '')} onChange={(event) => { if (!locked) setHours('ovtHours', Number(event.target.value) || 0); }} onKeyDown={(event) => moveHours(event, columnIndex, 'ovt')} /></label></div></td>;
           })}<td>{regular}</td><td>{ovt}</td><td>{line.nightSession && line.operationalStatus !== 'Approved Leave' ? `${line.nightStart || context?.settings?.nightStart || '18:00'}–${line.nightEnd || ''}` : '—'}</td><td>{regular + ovt}</td><td>{expected}</td><td className={unallocated ? 'red' : ''}>{unallocated}</td><td><Badge tone={status === 'Balanced' ? 'green' : 'amber'}>{status}</Badge></td></tr>;
         })}
-        {!loading && !visible.length && <tr><td colSpan={8 + columns.length}>{supervisor ? 'No eligible crew for this supervisor on the selected date.' : 'Search for a supervisor to load the crew.'}</td></tr>}
+        {!loading && !shown.length && <tr><td colSpan={8 + columns.length}>{employeeNeedle ? 'No employee matches that search.' : supervisor ? 'No eligible crew for this supervisor on the selected date.' : 'Search for a supervisor to load the crew.'}</td></tr>}
       </tbody></table></div></div>
     </>}
     {modal === 'project' && <SearchModal title="Add project" kind="project" onClose={() => setModal(null)} onPick={addColumn} />}

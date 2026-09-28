@@ -275,15 +275,15 @@
     "employeeId": "0364",
     "employeeCode": "P0364",
     "nhfApplicable": false,
-    "updatedAt": "2026-08-31T17:58:17.418Z",
-    "updatedBy": "P0364 salary replicated from P0458",
+    "updatedAt": "2026-09-28T13:20:00.000Z",
+    "updatedBy": "September 2026 salary schedule: pension refund is taxable",
     "payeCalculation": {
       "excludedEarningCodes": [],
-      "includeRefundInTaxable": false,
+      "includeRefundInTaxable": true,
       "disablePensionPayeRelief": false,
       "annualRentRelief": 500000,
       "usdFlatRate": 0.22,
-      "monthlyPayeOverride": 956
+      "monthlyPayeOverride": 967.51
     }
   },
   {
@@ -451,15 +451,15 @@
     "employeeId": "0442",
     "employeeCode": "P0442",
     "nhfApplicable": false,
-    "updatedAt": "2026-08-12T12:35:00.000Z",
-    "updatedBy": "P0442 NGN PAYE: restore 500k rent relief (EE2 washed by PENSION_REFUND)",
+    "updatedAt": "2026-09-28T13:20:00.000Z",
+    "updatedBy": "September 2026 salary schedule: pension refund is taxable",
     "payeCalculation": {
       "excludedEarningCodes": [],
-      "includeRefundInTaxable": false,
+      "includeRefundInTaxable": true,
       "disablePensionPayeRelief": false,
       "annualRentRelief": 500000,
       "usdFlatRate": 0.22,
-      "monthlyPayeOverride": 982
+      "monthlyPayeOverride": 1020.55
     }
   },
   {
@@ -576,15 +576,15 @@
     "employeeId": "0458",
     "employeeCode": "P0458",
     "nhfApplicable": false,
-    "updatedAt": "2026-08-12T12:35:00.000Z",
-    "updatedBy": "P0458 NGN PAYE: restore 500k rent relief (EE2 washed by PENSION_REFUND)",
+    "updatedAt": "2026-09-28T13:20:00.000Z",
+    "updatedBy": "September 2026 salary schedule: pension refund is taxable",
     "payeCalculation": {
       "excludedEarningCodes": [],
-      "includeRefundInTaxable": false,
+      "includeRefundInTaxable": true,
       "disablePensionPayeRelief": false,
       "annualRentRelief": 500000,
       "usdFlatRate": 0.22,
-      "monthlyPayeOverride": 956
+      "monthlyPayeOverride": 967.51
     }
   },
   {
@@ -1486,5 +1486,12 @@
     "updatedBy": "Archive L2770 inactive after P0467 conversion",
     "setupAssignedToPayroll": false,
     "excludedFromPayrollRun": true
+  },
+  {
+    "employeeId": "0465",
+    "employeeCode": "P0465",
+    "nhfApplicable": false,
+    "updatedAt": "2026-09-28T13:06:25.055Z",
+    "updatedBy": "September 2026 salary schedule: NHF is not deducted for this employee"
   }
 ]

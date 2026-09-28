@@ -254,11 +254,13 @@ export const calculatePayrollTax = (input: PayrollTaxInput, version: PayrollTaxV
           earnings: input.earnings,
           nhfApplicable: defaultNhfApplicableForEmployee(input.employee),
           additionalEmployeePensionMonthly: input.additionalEmployeePensionMonthly,
-        }).paye
+        })
       : null;
-  const monthlyPaye = flatContractPaye
-    ? roundMoney(Math.max(0, monthlyGrossPay) * CONTRACT_FLAT_PAYE_RATE)
-    : enterprisePaye ?? roundMoney(annualPaye / 12);
+  const flatPaye = roundMoney(Math.max(0, monthlyGrossPay) * CONTRACT_FLAT_PAYE_RATE);
+  const monthlyPayeExact = flatContractPaye
+    ? flatPaye
+    : Number(enterprisePaye?.payeExact ?? enterprisePaye?.paye ?? annualPaye / 12);
+  const monthlyPaye = flatContractPaye ? flatPaye : roundMoney(monthlyPayeExact);
   return {
     annualGrossIncome,
     annualPreTaxDeductions,
@@ -266,6 +268,7 @@ export const calculatePayrollTax = (input: PayrollTaxInput, version: PayrollTaxV
     annualChargeableIncome,
     annualPaye: roundMoney(monthlyPaye * 12),
     monthlyPaye,
+    monthlyPayeExact,
     annualPostTaxDeductions: postTaxDeductions,
     monthlyPostTaxDeductions: roundMoney(postTaxDeductions / 12),
     statutoryItems,

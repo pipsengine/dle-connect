@@ -119,7 +119,9 @@ export const calculatePension = (input: PensionInput, version: PensionVersion) =
     !version.rules.excludedEmploymentTypes.some((item) => typeLower.includes(item.toLowerCase()));
   const pensionableEmolument = roundMoney(Math.max(0, Number(input.monthlyBasePay || 0) + Number(input.monthlyAllowances || 0)));
   const eligible = configEligible;
-  const employeeContribution = configEligible ? roundMoney(pensionableEmolument * Number(version.rules.employeeRate || 0)) : 0;
+  const employeeRate = Number(version.rules.employeeRate || 0);
+  const unroundedEmployeeContribution = configEligible ? pensionableEmolument * employeeRate : 0;
+  const employeeContribution = configEligible ? roundMoney(unroundedEmployeeContribution) : 0;
   const employerContribution = configEligible ? roundMoney(pensionableEmolument * Number(version.rules.employerRate || 0)) : 0;
   const configuredVoluntary = Number(input.voluntaryContributionMonthly || 0);
   const rateVoluntary = pensionableEmolument * Number(version.rules.voluntaryContributionRate || 0);
@@ -139,6 +141,8 @@ export const calculatePension = (input: PensionInput, version: PensionVersion) =
   return {
     eligible,
     pensionableEmolument,
+    /** 8% of pensionable pay before the kobo round. The net uses this so it matches a 2-decimal schedule. */
+    unroundedEmployeeContribution,
     employeeContribution,
     employerContribution,
     voluntaryContribution,

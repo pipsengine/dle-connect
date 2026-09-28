@@ -168,7 +168,7 @@ const recordCurrency = (record: Pick<PayrollRecord, 'payCurrency' | 'payrollGrou
 const money = (value: number | null | undefined, allowed = true, currency = 'NGN') => {
   if (!allowed || value === null || value === undefined) return 'Restricted';
   const code = currencyCode(currency);
-  return formatPayrollMoney(value, code, { maximumFractionDigits: code === 'USD' ? 2 : 0 });
+  return formatPayrollMoney(value, code);
 };
 const number = (value: number | null | undefined) => numberFmt.format(Number(value || 0));
 

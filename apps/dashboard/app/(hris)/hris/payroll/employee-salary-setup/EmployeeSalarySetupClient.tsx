@@ -265,14 +265,14 @@ type PayrollPayload = {
 
 type ApiResponse<T> = { status: 'success' | 'error'; data?: T; error?: string };
 
-const moneyFmt = new Intl.NumberFormat('en-NG', { style: 'currency', currency: 'NGN', maximumFractionDigits: 0 });
+const moneyFmt = new Intl.NumberFormat('en-NG', { style: 'currency', currency: 'NGN', minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const numberFmt = new Intl.NumberFormat('en-GB');
 const pctFmt = new Intl.NumberFormat('en-GB', { maximumFractionDigits: 1 });
 
 const money = (value: number | null | undefined, canView = true, currency = 'NGN') => {
   if (!canView || value === null || value === undefined) return 'Restricted';
   const code = currencyCode(currency);
-  return formatPayrollMoney(value, code, { maximumFractionDigits: code === 'USD' ? 2 : 0 });
+  return formatPayrollMoney(value, code);
 };
 const recordKeyOf = (record: PayrollRecord) => record.recordKey || `${record.employeeId}:${record.payrollGroup}:${record.payCurrency}`;
 const number = (value: number) => numberFmt.format(value);

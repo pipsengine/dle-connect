@@ -631,15 +631,17 @@ const resolveSettlementPay = async (
   );
   const periodSalary = Number(employee.periodSalary || 0);
   const latestAllowances = Number((employee as { latestAllowances?: number | null }).latestAllowances || 0);
-  let allowances = Math.max(0, allowancesFromLines || Number(earnings.allowances || 0));
-  if (allowances <= 0 && periodSalary > basic) allowances = roundMoney(periodSalary - basic);
-  if (allowances <= 0 && latestAllowances > 0) allowances = roundMoney(latestAllowances);
-  let gross = Math.max(
-    basic + allowances,
-    Number(earnings.grossPay || 0),
-    periodSalary,
-    basic,
-  );
+  // The signed schedule prorates the package lines. period_salary must not replace
+  // that total when it is higher than the lines (it pulls in amounts the lines do not carry).
+  const packageGross = roundMoney(basicFromLines + allowancesFromLines);
+  let allowances = packageGross > 0
+    ? allowancesFromLines
+    : Math.max(0, Number(earnings.allowances || 0));
+  if (packageGross <= 0 && allowances <= 0 && periodSalary > basic) allowances = roundMoney(periodSalary - basic);
+  if (packageGross <= 0 && allowances <= 0 && latestAllowances > 0) allowances = roundMoney(latestAllowances);
+  let gross = packageGross > 0
+    ? packageGross
+    : Math.max(basic + allowances, Number(earnings.grossPay || 0), periodSalary, basic);
   gross = roundMoney(gross);
   allowances = roundMoney(Math.max(allowances, Math.max(0, gross - basic)));
 
@@ -781,6 +783,26 @@ export const buildComputedStatutory = async (input: {
     const factor = monthDays > 0 ? Math.min(1, Math.max(0, days / monthDays)) : 1;
     const options = { period: input.period, useHrisPackageLines: true as const };
     const earnings = calculatePayrollEarnings(input.employee, options);
+    // The schedule taxes the prorated month as that month's pay. Scaling a full-month
+    // PAYE by days/30 overstates tax once the bands and the fixed rent relief apply.
+    const proratedLines = (earnings.paidEarningLines || earnings.earningLines || [])
+      .filter((line) => Number(line.amount || 0) > 0 && !/gratuity|severance/i.test(`${line.code} ${line.name}`))
+      .map((line) => ({
+        ...line,
+        amount: factor >= 0.999 ? roundMoney(line.amount) : roundMoney(Number(line.amount) * factor),
+      }))
+      .filter((line) => line.amount > 0);
+    const proratedEarnings = {
+      ...earnings,
+      earningLines: proratedLines,
+      paidEarningLines: proratedLines,
+      grossPay: roundMoney(proratedLines.reduce((sum, line) => sum + Number(line.amount || 0), 0)),
+      basicPay: roundMoney(
+        proratedLines
+          .filter((line) => /BASIC/i.test(`${line.code} ${line.name}`))
+          .reduce((sum, line) => sum + Number(line.amount || 0), 0),
+      ),
+    };
 
     const [taxConfig, pensionConfig, fundsConfig] = await Promise.all([
       readPayrollTaxConfig(),
@@ -797,7 +819,7 @@ export const buildComputedStatutory = async (input: {
     const pension = calculatePension(pensionInputFromEmployee(input.employee, options), pensionVersion);
     const tax = calculatePayrollTax(
       {
-        ...payrollInputFromEmployee(input.employee, options, earnings),
+        ...payrollInputFromEmployee(input.employee, options, proratedEarnings),
         additionalEmployeePensionMonthly: pension.voluntaryContribution,
       },
       taxVersion,
@@ -810,7 +832,9 @@ export const buildComputedStatutory = async (input: {
       input.employee.payeCalculation?.ngnMonthlyPayeOverride
         ?? input.employee.payeCalculation?.monthlyPayeOverride,
     );
-    const monthlyPaye = Number.isFinite(payeOverride) ? roundMoney(payeOverride) : roundMoney(tax.monthlyPaye);
+    const monthlyPaye = Number.isFinite(payeOverride)
+      ? roundMoney(payeOverride * factor)
+      : roundMoney(tax.monthlyPaye);
     const monthlyPension = roundMoney(pension.employeeContribution + pension.voluntaryContribution);
     const monthlyNhf = roundMoney(funds?.fundResults?.find((item) => item.id === 'nhf')?.monthlyAmount || 0);
     const prorationNote = factor < 0.999
@@ -824,8 +848,8 @@ export const buildComputedStatutory = async (input: {
         description: 'Pay-as-you-earn tax',
         policyBasis: 'Statutory',
         periodDays: `${days} days`,
-        amount: roundMoney(monthlyPaye * factor),
-        remarks: prorationNote,
+        amount: monthlyPaye,
+        remarks: Number.isFinite(payeOverride) ? prorationNote : 'PAYE on prorated earnings for the days worked',
         included: true,
       },
       {

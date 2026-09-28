@@ -62,6 +62,9 @@ const PERIOD_ONLY_PACKAGE_CODES = new Set([
   'PUBHOL',
   'PUBLICOVT',
   'SATEARN',
+  'SATEARNING',
+  'SATPAY',
+  'PUBLDPAY',
   'SUNDAYEARN',
   'PARSATOVT',
   'PERSUNOVT',
@@ -97,7 +100,7 @@ export const isPeriodOnlyPackageEarningLine = (line: {
   const code = compactPayrollCode(line.code);
   if (PERIOD_ONLY_PACKAGE_CODES.has(code)) return true;
   const name = String(line.name || '').trim().toUpperCase();
-  return /\b(OVERTIME|ARREARS|STOCK\s*COUNT|NIGHT\s*ALLOW|OTHER\s*PAY|LEAVE\s*ALLOWANCE|WEEKDAY\s*OVT|SATURDAY\s*OVERTIME|SUNDAY\s*OVERTIME|PUBLIC\s*HOLIDAY|GRATUITY|LONG\s*SERVICE)\b/.test(name);
+  return /\b(OVERTIME|ARREARS|STOCK\s*COUNT|NIGHT\s*ALLOW|OTHER\s*PAY|LEAVE\s*ALLOWANCE|WEEKDAY\s*OVT|SATURDAY\s*(?:OVERTIME|EARNING|PAY)|SUNDAY\s*OVERTIME|PUBLIC\s*HOLIDAY|GRATUITY|LONG\s*SERVICE)\b/.test(name);
 };
 
 /** Standing package pays every month. Period-only pays only when stamped to the run period. */

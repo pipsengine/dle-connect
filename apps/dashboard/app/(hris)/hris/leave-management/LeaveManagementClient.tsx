@@ -367,6 +367,7 @@ export default function LeaveManagementClient({ initialNow, initialSection = 'da
   const [drilldownQuery, setDrilldownQuery] = useState('');
   const [balanceDetail, setBalanceDetail] = useState<BalanceRecord | null>(null);
   const [deductOpen, setDeductOpen] = useState(false);
+  const [deductEmployee, setDeductEmployee] = useState('');
 
   const openDrilldown = (panel: LeaveDrilldownPanel) => {
     setDrilldownQuery('');
@@ -701,12 +702,13 @@ export default function LeaveManagementClient({ initialNow, initialSection = 'da
         {!isDashboard && section === 'leave-balances' && payload?.canDeductUnappliedLeave ? (
           <div className="mb-3 flex flex-col gap-3 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
             <p className="text-sm font-semibold text-emerald-950">An employee who went on leave without applying can have those days deducted here. The record is saved as approved.</p>
-            <button type="button" onClick={() => setDeductOpen(true)} className="inline-flex h-10 shrink-0 items-center justify-center rounded-lg bg-emerald-700 px-4 text-sm font-semibold text-white hover:bg-emerald-800">Deduct leave</button>
+            <button type="button" onClick={() => { setDeductEmployee(''); setDeductOpen(true); }} className="inline-flex h-10 shrink-0 items-center justify-center rounded-lg bg-emerald-700 px-4 text-sm font-semibold text-white hover:bg-emerald-800">Deduct leave</button>
           </div>
         ) : null}
         {!isDashboard && section === 'leave-balances' ? <BalanceView rows={filteredBalances} onOpenDetail={setBalanceDetail} /> : null}
         {deductOpen && payload?.canDeductUnappliedLeave ? (
           <DeductUnappliedLeaveModal
+            initialEmployeeCode={deductEmployee}
             balances={payload.balances || []}
             leaveTypes={(payload.leaveTypes || []).filter((item) => item.active && !/casual|unpaid/i.test(item.name))}
             holidays={payload.holidays || []}
@@ -747,7 +749,17 @@ export default function LeaveManagementClient({ initialNow, initialSection = 'da
       </div>
 
       {auditOpen ? <AuditPanel rows={payload?.auditTrail || []} onClose={() => setAuditOpen(false)} /> : null}
-      {balanceDetail ? <LeaveBalanceDetailModal row={balanceDetail} onClose={() => setBalanceDetail(null)} /> : null}
+      {balanceDetail ? (
+        <LeaveBalanceDetailModal
+          row={balanceDetail}
+          onClose={() => setBalanceDetail(null)}
+          onDeduct={payload?.canDeductUnappliedLeave ? () => {
+            setDeductEmployee(balanceDetail.employeeId);
+            setBalanceDetail(null);
+            setDeductOpen(true);
+          } : undefined}
+        />
+      ) : null}
       <LeaveDrilldownModal
         panel={drilldown}
         query={drilldownQuery}
@@ -833,6 +845,7 @@ function CalendarView({ payload }: { payload: Payload | null }) {
 }
 
 function DeductUnappliedLeaveModal({
+  initialEmployeeCode = '',
   balances,
   leaveTypes,
   holidays,
@@ -840,6 +853,7 @@ function DeductUnappliedLeaveModal({
   onClose,
   onSubmit,
 }: {
+  initialEmployeeCode?: string;
   balances: BalanceRecord[];
   leaveTypes: LeaveTypeRule[];
   holidays: Array<{ date: string; label?: string }>;
@@ -855,8 +869,9 @@ function DeductUnappliedLeaveModal({
       return true;
     }).sort((a, b) => a.fullName.localeCompare(b.fullName));
   }, [balances]);
-  const [search, setSearch] = useState('');
-  const [employeeCode, setEmployeeCode] = useState('');
+  const preset = people.find((item) => item.employeeId === initialEmployeeCode);
+  const [search, setSearch] = useState(preset ? `${preset.employeeId} - ${preset.fullName}` : '');
+  const [employeeCode, setEmployeeCode] = useState(initialEmployeeCode);
   const [leaveType, setLeaveType] = useState(leaveTypes.find((item) => /annual leave/i.test(item.name))?.name || leaveTypes[0]?.name || 'Annual Leave');
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');

@@ -472,9 +472,11 @@ export function LeaveOperationalSection({
 export function LeaveBalanceDetailModal({
   row,
   onClose,
+  onDeduct,
 }: {
   row: BalanceRecord;
   onClose: () => void;
+  onDeduct?: () => void;
 }) {
   const normalized = normalizeAnnualLeaveBalances([row])[0];
   const entitled = normalized?.entitled ?? row.accruedBalance;
@@ -518,6 +520,12 @@ export function LeaveBalanceDetailModal({
             <p className="text-xs font-black uppercase text-slate-500">Exceptions</p>
             <p className="mt-2 text-sm font-semibold text-slate-700">{row.exceptions?.length ? row.exceptions.join('; ') : 'No exceptions recorded.'}</p>
           </div>
+          {onDeduct ? (
+            <div className="mt-4 flex flex-col gap-3 rounded-xl border border-emerald-200 bg-emerald-50 p-3 sm:flex-row sm:items-center sm:justify-between">
+              <p className="text-sm font-semibold text-emerald-950">Deduct days this employee took without applying. The record is saved as approved.</p>
+              <button type="button" onClick={onDeduct} className="inline-flex h-10 shrink-0 items-center justify-center rounded-lg bg-emerald-700 px-4 text-sm font-semibold text-white hover:bg-emerald-800">Deduct leave</button>
+            </div>
+          ) : null}
         </div>
       </div>
     </div>
