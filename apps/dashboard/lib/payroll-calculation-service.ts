@@ -707,11 +707,15 @@ const snapshotSummaryFromRecords = (snapshot: PayrollRunSnapshot, records: Payro
   };
 };
 
-const buildPayrollCalculationShell = async (period: string): Promise<PayrollCalculationResult> => {
+const buildPayrollCalculationShell = async (
+  period: string,
+  options?: { fromSnapshot?: boolean; employeeCount?: number },
+): Promise<PayrollCalculationResult> => {
   const toleranceMode = payrollToleranceActive(period);
   const enterpriseSourceActive = isEnterprisePayrollPeriod(period);
+  const fromSnapshot = Boolean(options?.fromSnapshot);
   const [employeeSource, { taxConfig, pensionConfig, fundsConfig, loansConfig }] = await Promise.all([
-    readEmployeesForPayrollCalculation(period),
+    fromSnapshot ? Promise.resolve(null) : readEmployeesForPayrollCalculation(period),
     readPayrollConfigBundle(),
   ]);
   const taxVersion = activeTaxVersion(taxConfig);
@@ -723,8 +727,15 @@ const buildPayrollCalculationShell = async (period: string): Promise<PayrollCalc
   }
   return {
     generatedAt: new Date().toISOString(),
-    source: enterprisePayrollSourceLabel(period),
-    dataSource: payrollDataSourceInfo(employeeSource),
+    source: fromSnapshot ? 'Frozen payroll run snapshot' : enterprisePayrollSourceLabel(period),
+    dataSource: fromSnapshot
+      ? payrollDataSourceInfo({
+          source: enterpriseSourceActive ? 'DLE_Enterprise HRIS' : 'Local HRIS payroll cache',
+          databaseAvailable: true,
+          warning: null,
+          employees: [],
+        })
+      : payrollDataSourceInfo(employeeSource!),
     period,
     periodLabel: payrollPeriodLabel(period),
     configurations: {
@@ -742,7 +753,15 @@ const buildPayrollCalculationShell = async (period: string): Promise<PayrollCalc
       byComponent: [],
     },
     controls: [
-      { id: 'employees', label: 'Employee Source', status: employeeSource.databaseAvailable ? 'Passed' : 'Review', detail: `${employeeSource.employees.length} employees loaded from ${employeeSource.source}`, tone: employeeSource.databaseAvailable ? 'green' : 'amber' },
+      {
+        id: 'employees',
+        label: 'Employee Source',
+        status: fromSnapshot || employeeSource?.databaseAvailable ? 'Passed' : 'Review',
+        detail: fromSnapshot
+          ? `${Number(options?.employeeCount || 0)} employees from the stored payroll snapshot`
+          : `${employeeSource?.employees.length || 0} employees loaded from ${employeeSource?.source || 'payroll'}`,
+        tone: (fromSnapshot || employeeSource?.databaseAvailable ? 'green' : 'amber') as PayrollTone,
+      },
       { id: 'config', label: 'Configuration Versions', status: 'Passed', detail: 'PAYE, pension, statutory funds, and loan policies resolved by active effective versions.', tone: 'blue' },
       { id: 'timesheets', label: 'Timesheet Payroll Feed', status: 'Snapshot', detail: 'Loaded from frozen payroll run snapshot.', tone: 'green' },
       { id: 'exceptions', label: 'Exception Gate', status: 'Snapshot', detail: 'Exception counts restored from frozen payroll run snapshot.', tone: 'blue' },
@@ -755,10 +774,17 @@ const buildPayrollCalculationShell = async (period: string): Promise<PayrollCalc
   };
 };
 
+const snapshotViewCache = new Map<string, { expiresAt: number; value: PayrollCalculationResult }>();
+
 export const buildPayrollCalculationFromSnapshot = async (period: string, snapshot: PayrollRunSnapshot): Promise<PayrollCalculationResult> => {
-  const shell = await buildPayrollCalculationShell(period);
+  const cacheKey = `${normalizePayrollPeriod(period) || period}:${snapshot.capturedAt}:${snapshot.records.length}`;
+  const cachedView = snapshotViewCache.get(cacheKey);
+  if (cachedView && cachedView.expiresAt > Date.now()) return cachedView.value;
+  const shell = await buildPayrollCalculationShell(period, { fromSnapshot: true, employeeCount: snapshot.records.length });
   const toleranceMode = shell.toleranceMode;
-  await ensureSalaryScheduleOverrideLoaded(normalizePayrollPeriod(period) || period);
+  if (payrollExcelAmountOverlayApplies(period)) {
+    await ensureSalaryScheduleOverrideLoaded(normalizePayrollPeriod(period) || period);
+  }
   const records = applySalaryScheduleCompanionPay(
     reapplyPayrollValidationPolicy(
       enrichCalculationRecordsWithReadiness(snapshot.records),
@@ -783,7 +809,7 @@ export const buildPayrollCalculationFromSnapshot = async (period: string, snapsh
   );
   const component = (componentId: string, label: string, amount: number, tone: PayrollTone, payer: 'Employee' | 'Employer' | 'Both') =>
     ({ id: componentId, label, amount: roundMoney(amount), tone, payer });
-  return {
+  const result: PayrollCalculationResult = {
     ...shell,
     generatedAt: snapshot.capturedAt || shell.generatedAt,
     source: 'Frozen payroll run snapshot',
@@ -828,6 +854,13 @@ export const buildPayrollCalculationFromSnapshot = async (period: string, snapsh
       ],
     },
   };
+  snapshotViewCache.set(cacheKey, { expiresAt: Date.now() + 120_000, value: result });
+  return result;
+};
+
+export const buildUncalculatedPayrollDisplay = async (period: string): Promise<PayrollCalculationResult> => {
+  const shell = await buildPayrollCalculationShell(period, { fromSnapshot: true, employeeCount: 0 });
+  return shell;
 };
 
 export const calculatePayrollForPeriod = async (

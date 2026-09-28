@@ -63,6 +63,15 @@ export const navigationConfig: NavItem[] = [
     ]
   },
   {
+    id: 'timesheet-management',
+    label: 'Timesheet Management',
+    slug: 'timesheet-management',
+    icon: Clock,
+    group: 'main',
+    route: '/timesheet-management',
+    permissionKey: 'view_timesheet_management',
+  },
+  {
     id: 'finance',
     label: 'Finance Intelligence & Approvals',
     slug: 'finance',

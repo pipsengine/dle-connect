@@ -1,0 +1,3 @@
+export const PERIOD_STATES=['Planned','Open','Capture Closed','Approval in Progress','Payroll Locked','Closed'];
+export function canTransition(from,to){const i=PERIOD_STATES.indexOf(from),j=PERIOD_STATES.indexOf(to);return j===i+1||(from==='Capture Closed'&&to==='Open');}
+export function completeness(records){const counts={notStarted:0,draft:0,returned:0,exceptions:0,pending:0,ready:0};for(const r of records){if(r.status==='Not Started')counts.notStarted++;if(r.status==='Draft')counts.draft++;if(r.status==='Returned')counts.returned++;if(r.exceptions?.length)counts.exceptions++;if(r.approvalPending)counts.pending++;if(r.status==='Ready')counts.ready++;}return {...counts,canClose:!counts.notStarted&&!counts.draft&&!counts.returned&&!counts.exceptions&&!counts.pending};}

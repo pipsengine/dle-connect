@@ -66,6 +66,7 @@ const requiredPermission = (route?: string) => {
   if (route.startsWith('/hris/employees')) return 'employees.view';
   if (route.startsWith('/hris/leave-management')) return 'leave.view';
   if (route.startsWith('/hris')) return 'hris.view';
+  if (route.startsWith('/timesheet-management')) return 'view_timesheet_management';
   if (route.startsWith('/workforce-portal')) return '';
   if (route.startsWith('/logistics-fleet')) return 'view_logistics_fleet';
   if (route.startsWith('/security')) return 'view_security';

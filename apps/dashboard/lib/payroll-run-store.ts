@@ -73,6 +73,8 @@ export type PayrollRunSnapshot = {
   action: string;
   summary: Record<string, unknown>;
   records: PayrollCalculationRecord[];
+  /** Versions of payroll inputs at capture. Display compares this and does not recalculate. */
+  inputFingerprint?: string | null;
 };
 
 export type UnifiedPayrollRun = {
@@ -630,13 +632,41 @@ export const appendPayrollAudit = async (entry: Omit<PayrollRunAuditEntry, 'id' 
   return row;
 };
 
+export const payrollInputFingerprint = async (period: string) => {
+  const periodCode = sanitizePayrollPeriodCode(period) || String(period || '').replace(/^per-/, '').trim();
+  const periodId = periodCode ? `per-${periodCode}` : '';
+  let timesheetStamp = '';
+  let leaveStamp = '';
+  const pool = await getDleEnterpriseDbPool();
+  if (pool && periodId) {
+    const result = await pool.request()
+      .input('period_id', sql.NVarChar(40), periodId)
+      .query(`
+        SELECT
+          (SELECT CONCAT(COUNT(*), ':', CONVERT(varchar(30), MAX([TimesheetDate]), 126))
+             FROM [hris].[TimesheetHeaders] WHERE [PeriodId] = @period_id) AS timesheet_stamp,
+          (SELECT CONCAT(COUNT(*), ':', CONVERT(varchar(30), MAX([UpdatedAt]), 126))
+             FROM [hris].[LeaveApplications]) AS leave_stamp
+      `);
+    timesheetStamp = String(result.recordset[0]?.timesheet_stamp || '');
+    leaveStamp = String(result.recordset[0]?.leave_stamp || '');
+  }
+  const { adjustmentsFileMtime } = await import('@/lib/payroll-period-earning-adjustments-store');
+  return `${periodCode}|ts:${timesheetStamp}|leave:${leaveStamp}|adj:${adjustmentsFileMtime()}`;
+};
+
 export const capturePayrollSnapshot = async (runId: string, action: string, actor: string, summary: Record<string, unknown>, records: PayrollCalculationRecord[]) => {
+  const runForFingerprint = await getPayrollRun(runId);
+  const inputFingerprint = runForFingerprint
+    ? await payrollInputFingerprint(runForFingerprint.period).catch(() => null)
+    : null;
   const snapshot: PayrollRunSnapshot = {
     capturedAt: nowIso(),
     capturedBy: actor,
     action,
     summary,
     records,
+    inputFingerprint,
   };
   await persistSnapshotToSql(runId, snapshot);
   invalidateEssPortalCache();

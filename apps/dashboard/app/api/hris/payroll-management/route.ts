@@ -1,12 +1,12 @@
 import { NextResponse } from 'next/server';
 import { invalidateHrisEmployeeCaches } from '@/lib/hris-employee-cache';
 import { invalidatePayrollEmployeeCache } from '@/lib/payroll-employee-source';
-import { calculatePayrollForPeriod } from '@/lib/payroll-calculation-service';
+import { buildPayrollCalculationFromSnapshot, calculatePayrollForPeriod } from '@/lib/payroll-calculation-service';
 import { writePayrollEmployeeOption } from '@/lib/payroll-employee-options-store';
 import { getActivePayrollPeriod, closePayrollPeriodRecord } from '@/lib/payroll-period-store';
 import { runPayrollCutoverBackup } from '@/lib/payroll-cutover-backup-service';
 import { buildManagementPayload } from '@/lib/payroll-payload-service';
-import { appendPayrollAudit, capturePayrollSnapshot, getPayrollRunForPeriod, listPayrollAudit, savePayrollRun, type UnifiedPayrollRun } from '@/lib/payroll-run-store';
+import { appendPayrollAudit, capturePayrollSnapshot, getPayrollRunForPeriod, listPayrollAudit, readPayrollSnapshot, savePayrollRun, type UnifiedPayrollRun } from '@/lib/payroll-run-store';
 import { addPayrollRunComment, listPayrollRunComments, payrollCommentAccessForPeriod } from '@/lib/payroll-run-comments-store';
 import { normalizePayrollCommentPeriod } from '@/lib/payroll-run-comments';
 import { normalizePayrollApprovalAction } from '@/lib/payroll-approval-workflow';
@@ -110,13 +110,25 @@ const reportTitle = (report: string) => ({
   'statutory-exceptions': 'Statutory Exceptions',
 }[report] || 'Payroll Register');
 
+const storedPackCalculation = async (
+  period: string,
+  pack: 'salaried' | 'daily-rate',
+  company: 'DLE' | 'DLPC' | null,
+) => {
+  if (!period) return null;
+  const run = await getPayrollRunForPeriod(period, pack, company || 'DLE').catch(() => null);
+  if (!run) return null;
+  const snapshot = await readPayrollSnapshot(run.id);
+  if (!snapshot?.records?.length) return null;
+  return buildPayrollCalculationFromSnapshot(period, snapshot);
+};
+
 const loadReviewRecordsForPeriod = async (period: string) => {
   if (!period) return [];
   const snapshots = await readPayrollSnapshotsByPeriods([period]);
   const snapshot = snapshots.get(period);
   if (snapshot?.records?.length) return snapshot.records;
-  const calculation = await calculatePayrollForPeriod(period);
-  return calculation.records;
+  return [];
 };
 
 const dailyRateDaysWorked = (record: {
@@ -388,7 +400,17 @@ export async function GET(request: Request) {
     const period = url.searchParams.get('period') || undefined;
     const requestedPack = url.searchParams.get('pack') || undefined;
     const requestedCompany = url.searchParams.get('company') || undefined;
+    const startedAt = Date.now();
     const payload = await buildManagementPayload(request, period, requestedPack === 'all' ? 'salaried' : requestedPack, requestedCompany);
+    console.info('[payroll-management] display', JSON.stringify({
+      ms: Date.now() - startedAt,
+      period: payload.period,
+      pack: payload.pack,
+      company: payload.company,
+      dataMode: payload.dataMode,
+      records: Array.isArray(payload.records) ? payload.records.length : 0,
+      payrollComputed: payload.payrollComputed,
+    }));
     const report = compact(url.searchParams.get('report')) || 'payroll-register';
     const format = compact(url.searchParams.get('format')).toLowerCase();
     if (isStatutoryHubReport(report)) {
@@ -497,8 +519,12 @@ export async function GET(request: Request) {
         const livePeriod = String(payload.period || '').trim() || (await getActivePayrollPeriod().catch(() => ''));
         const exportCompanyCode = normalizePayrollCompany(requestedCompany);
         const [salariedLive, dayrateLive] = await Promise.all([
-          livePeriod ? calculatePayrollForPeriod(livePeriod, { pack: 'salaried', company: exportCompanyCode }).catch(() => null) : null,
-          livePeriod ? calculatePayrollForPeriod(livePeriod, { pack: 'daily-rate', company: exportCompanyCode }).catch(() => null) : null,
+          livePeriod
+            ? storedPackCalculation(livePeriod, 'salaried', exportCompanyCode).then((stored) => stored || calculatePayrollForPeriod(livePeriod, { pack: 'salaried', company: exportCompanyCode }).catch(() => null))
+            : null,
+          livePeriod
+            ? storedPackCalculation(livePeriod, 'daily-rate', exportCompanyCode).then((stored) => stored || calculatePayrollForPeriod(livePeriod, { pack: 'daily-rate', company: exportCompanyCode }).catch(() => null))
+            : null,
         ]);
         const statusFilter = url.searchParams.get('status');
         const salariedRecords = filterExportRecords(salariedLive?.records || payload.records, statusFilter, 'salaried', 'all', requestedCompany)
@@ -555,9 +581,13 @@ export async function GET(request: Request) {
         const needDayrate = requestedPack === 'daily-rate' || requestedPack === 'all' || payload.pack === 'daily-rate' || report === 'dayrate-schedule';
         const dayrateExportReport = report === 'dayrate-schedule'
           || (report === 'payroll-register' && (requestedPack === 'daily-rate' || payload.pack === 'daily-rate'));
-        const salariedRawCalc = livePeriod && needSalaried ? await calculatePayrollForPeriod(livePeriod, { pack: 'salaried', company: exportCompanyCode }).catch(() => null) : null;
+        const salariedRawCalc = livePeriod && needSalaried
+          ? await storedPackCalculation(livePeriod, 'salaried', exportCompanyCode)
+            || await calculatePayrollForPeriod(livePeriod, { pack: 'salaried', company: exportCompanyCode }).catch(() => null)
+          : null;
         const dailyRateRawCalc = livePeriod && needDayrate
-          ? await calculatePayrollForPeriod(livePeriod, {
+          ? await storedPackCalculation(livePeriod, 'daily-rate', dayrateExportReport ? null : exportCompanyCode)
+            || await calculatePayrollForPeriod(livePeriod, {
               pack: 'daily-rate',
               company: dayrateExportReport ? null : exportCompanyCode,
             }).catch(() => null)

@@ -1,5 +1,6 @@
 import {
   buildPayrollCalculationFromSnapshot,
+  buildUncalculatedPayrollDisplay,
   calculatePayrollForPeriod,
   filterPayrollCalculationByPack,
   maskPayrollCalculationRecords,
@@ -15,6 +16,7 @@ import {
   listPayrollAudit,
   listPayrollRuns,
   listPayrollRunsForPeriod,
+  payrollInputFingerprint,
   readPayrollSnapshot,
   payrollRunPeriodLabelForPack,
   resolvePayrollRunCompany,
@@ -181,8 +183,7 @@ const shouldUseSnapshot = (
 ) => {
   if (!run || !snapshot?.records?.length) return false;
   if (periodRecord?.status === 'Closed' || periodRecord?.status === 'Posted' || periodRecord?.status === 'Locked') return true;
-  if (run.status === 'Closed' || run.status === 'Posted' || run.status === 'Published') return true;
-  return FINALIZED_RUN_STATUSES.has(run.status);
+  return COMPUTED_RUN_STATUSES.has(run.status);
 };
 
 const refreshCalculationFromRecords = (
@@ -239,27 +240,33 @@ const resolvePeriodCalculation = async (
         calculation,
         applySalaryScheduleCompanionPay(calculation.records, period),
       );
-      return { calculation, dataMode: 'snapshot' as const, payrollComputed: true };
+      let inputsChanged = false;
+      if (snapshot.inputFingerprint) {
+        const currentFingerprint = await payrollInputFingerprint(period).catch(() => snapshot.inputFingerprint);
+        inputsChanged = currentFingerprint !== snapshot.inputFingerprint;
+      }
+      return { calculation, dataMode: 'snapshot' as const, payrollComputed: true, inputsChanged };
     }
   }
 
-  const live = await calculatePayrollForPeriod(period, pack ? { pack, company } : undefined);
-  const liveWithCompanion = refreshCalculationFromRecords(
-    live,
-    applySalaryScheduleCompanionPay(reapplyPayrollValidationPolicy(live.records, live.toleranceMode), period),
-  );
-
-  if (!payrollComputed) {
-    // Employee Salary Setup requests company=all. That has no single run, so treating it
-    // as "pending" was wiping DLE/DLPC standing packages to ₦0 ("NO" in the drawer).
-    if (options?.preserveStandingAmounts) {
-      return { calculation: liveWithCompanion, dataMode: 'live' as const, payrollComputed: false };
-    }
-    return { calculation: stripPendingPayrollAmounts(liveWithCompanion), dataMode: 'pending' as const, payrollComputed: false };
+  const stored = await buildUncalculatedPayrollDisplay(period);
+  if (run) {
+    stored.summary = {
+      ...stored.summary,
+      employees: Number(run.employeeCount || 0),
+      payrollEligible: Number(run.employeeCount || 0),
+      grossPay: Number(run.grossPay || 0),
+      deductions: Number(run.deductions || 0),
+      totalDeductions: Number(run.deductions || 0),
+      netPay: Number(run.netPay || 0),
+      employerCost: Number(run.employerCost || 0),
+    };
   }
-
-  // Always return LIVE records for any Open / mutable period status. Only snapshot for Closed/Posted/Locked/Published.
-  return { calculation: liveWithCompanion, dataMode: 'live' as const, payrollComputed: true };
+  return {
+    calculation: payrollComputed || options?.preserveStandingAmounts ? stored : stripPendingPayrollAmounts(stored),
+    dataMode: payrollComputed ? 'snapshot' as const : 'pending' as const,
+    payrollComputed,
+  };
 };
 
 const totalsFromSummaryAndRecords = (
@@ -330,12 +337,6 @@ const loadPriorMonthComparison = async (
       const totals = totalsFromCalculation(priorPeriod, calculation, true);
       if (totalsHaveFigures(totals)) return { totals, records: ngnPayrollKpiRecords(calculation.records) as PayrollCalculationRecord[] };
     }
-  }
-
-  const live = await calculatePayrollForPeriod(priorPeriod, { pack, company }).catch(() => null);
-  if (live) {
-    const totals = totalsFromCalculation(priorPeriod, live, true);
-    if (totalsHaveFigures(totals)) return { totals, records: ngnPayrollKpiRecords(live.records) as PayrollCalculationRecord[] };
   }
 
   if (run && (Number(run.grossPay || 0) || Number(run.netPay || 0) || Number(run.employerCost || 0) || Number(run.employeeCount || 0))) {
@@ -594,6 +595,11 @@ const buildPackPayload = async (
     company,
     packLabel: scope.label,
     scheduleId: scope.id,
+    generatedAt: calculation.generatedAt,
+    source: calculation.source,
+    dataSource: calculation.dataSource,
+    enterpriseSourceActive: calculation.enterpriseSourceActive,
+    configurations: calculation.configurations,
     run: mapRunForProcessing(scopedRun),
     dataMode,
     payrollComputed,
@@ -632,8 +638,7 @@ export const buildProcessingPayload = async (
   const periodState = await listPayrollPeriods();
   const periodRecord = periodState.periods.find((item) => item.period === period) || null;
 
-  const [fullCalculation, runs, periodPackRuns] = await Promise.all([
-    calculatePayrollForPeriod(period),
+  const [runs, periodPackRuns] = await Promise.all([
     listPayrollRuns(),
     listPayrollRunsForPeriod(period),
   ]);
@@ -655,14 +660,10 @@ export const buildProcessingPayload = async (
   const activePack = packPayloads.find((item) => item.scheduleId === scope.id)
     || packPayloads.find((item) => item.pack === pack && item.company === company && item.scheduleId !== 'dle-usd')
     || packPayloads[0];
-  const scopedLive = applyCurrencySliceToCalculation(
-    filterPayrollCalculationByPack(fullCalculation, pack, company),
-    scope.currencySlice,
-  );
   const currentTotals = totalsFromSummaryAndRecords(
     period,
-    scopedLive.summary,
-    scopedLive.records,
+    activePack.summary,
+    activePack.records,
     Boolean(activePack.payrollComputed),
     scope.currencySlice,
   );
@@ -673,8 +674,8 @@ export const buildProcessingPayload = async (
     company,
     currentTotals,
     (scope.currencySlice === 'usd'
-      ? scopedLive.records
-      : ngnPayrollKpiRecords(scopedLive.records)) as PayrollCalculationRecord[],
+      ? activePack.records
+      : ngnPayrollKpiRecords(activePack.records as PayrollCalculationRecord[])) as PayrollCalculationRecord[],
     perms.canViewMoney,
   );
 
@@ -696,27 +697,28 @@ export const buildProcessingPayload = async (
       rateDate: priorResolved?.rateDate || fx.rateDate,
       source: priorResolved?.source || fx.source || 'Fallback',
     };
-    const priorCalc = await calculatePayrollForPeriod(priorPeriod).catch(() => null);
-    if (priorCalc) {
-      const priorPacks = PAYROLL_SCHEDULE_SCOPES.map((item) => {
-        const sliced = applyCurrencySliceToCalculation(
-          filterPayrollCalculationByPack(priorCalc, item.pack, item.company),
-          item.currencySlice,
-        );
-        return {
-          scheduleId: item.id,
-          packLabel: item.label,
-          pack: item.pack,
-          company: item.company,
-          payrollComputed: true,
-          run: {
-            status: 'Computed',
-            employeeCount: Number(sliced.summary.employees || sliced.records.length || 0),
-          },
-          summary: sliced.summary,
-          records: sliced.records,
-        };
-      });
+    const priorRuns = await listPayrollRunsForPeriod(priorPeriod).catch(() => []);
+    const priorPeriodRecord = periodState.periods.find((item) => item.period === priorPeriod) || null;
+    const priorPacks = (await Promise.all(PAYROLL_SCHEDULE_SCOPES.map(async (item) => {
+      const priorRun = priorRuns.find((run) => runMatchesScope(run, item.pack, item.company)) || null;
+      const resolved = await resolvePeriodCalculation(priorPeriod, priorRun, priorPeriodRecord, item.pack, item.company).catch(() => null);
+      if (!resolved) return null;
+      const sliced = applyCurrencySliceToCalculation(resolved.calculation, item.currencySlice);
+      return {
+        scheduleId: item.id,
+        packLabel: item.label,
+        pack: item.pack,
+        company: item.company,
+        payrollComputed: resolved.payrollComputed,
+        run: {
+          status: priorRun?.status || 'Computed',
+          employeeCount: Number(sliced.summary.employees || sliced.records.length || 0),
+        },
+        summary: sliced.summary,
+        records: sliced.records,
+      };
+    }))).filter((item): item is NonNullable<typeof item> => Boolean(item));
+    if (priorPacks.length) {
       const priorSummary = buildPayrollSalariesSummary({
         period: priorPeriod,
         packs: priorPacks,
@@ -753,11 +755,15 @@ export const buildProcessingPayload = async (
     priorSchedules,
   });
 
+  const responsePacks = packPayloads.map((item) => (
+    item.scheduleId === activePack.scheduleId ? item : { ...item, records: [] }
+  ));
+
   return {
-    generatedAt: fullCalculation.generatedAt,
-    source: fullCalculation.source,
-    dataSource: fullCalculation.dataSource,
-    enterpriseSourceActive: fullCalculation.enterpriseSourceActive,
+    generatedAt: activePack.generatedAt,
+    source: activePack.source,
+    dataSource: activePack.dataSource,
+    enterpriseSourceActive: activePack.enterpriseSourceActive,
     period,
     periodLabel: payrollRunPeriodLabelForPack(payrollPeriodLabel(period), pack, company),
     pack: activePack.pack,
@@ -770,10 +776,10 @@ export const buildProcessingPayload = async (
     salariesSummary,
     run: activePack.run,
     runs: runs.slice(0, 24).map((item) => mapRunForProcessing(item)).filter(Boolean),
-    packRuns: packPayloads.map((item) => item.run).filter(Boolean),
-    packs: packPayloads,
+    packRuns: responsePacks.map((item) => item.run).filter(Boolean),
+    packs: responsePacks,
     availablePeriods: await knownPayrollPeriods(runs, period),
-    configurations: fullCalculation.configurations,
+    configurations: activePack.configurations,
     summary: activePack.summary,
     records: activePack.records,
     breakdowns: activePack.breakdowns,
@@ -899,18 +905,31 @@ export const buildManagementPayload = async (
       || null
     );
   const anyRunComputed = packRunsSource.some((item) => isPayrollComputed(item, periodRecord));
-  const { calculation, dataMode, payrollComputed } = await resolvePeriodCalculation(
-    period,
-    selectedRun,
-    periodRecord,
-    pack,
-    company,
-    {
-      // Pay Setup / company=all must show HRIS salary packages, not the pending-run zeros.
-      preserveStandingAmounts: allCompanies || setupView,
-      anyRunComputed: allCompanies ? anyRunComputed : undefined,
-    },
-  );
+  const resolvedParts = allCompanies
+    ? await Promise.all((['DLE', 'DLPC'] as PayrollCompany[]).map((itemCompany) => {
+      const itemRun = packRunsSource.find((item) => runMatchesScope(item, pack, itemCompany)) || null;
+      return resolvePeriodCalculation(period, itemRun, periodRecord, pack, itemCompany, {
+        preserveStandingAmounts: true,
+        anyRunComputed,
+      });
+    }))
+    : [await resolvePeriodCalculation(
+      period,
+      selectedRun,
+      periodRecord,
+      pack,
+      company,
+      {
+        preserveStandingAmounts: setupView,
+        anyRunComputed: undefined,
+      },
+    )];
+  const calculation = allCompanies
+    ? refreshCalculationFromRecords(resolvedParts[0].calculation, resolvedParts.flatMap((part) => part.calculation.records))
+    : resolvedParts[0].calculation;
+  const dataMode = resolvedParts.every((part) => part.dataMode === 'snapshot') ? 'snapshot' as const : resolvedParts[0].dataMode;
+  const payrollComputed = resolvedParts.some((part) => part.payrollComputed);
+  const payrollInputsChanged = resolvedParts.some((part) => Boolean(part.inputsChanged));
   const { packTotals, scheduleTotals, periodTotals } = await buildPackTotals(period, packRunsSource, periodRecord, {
     pack,
     company: scopeCompany,
@@ -970,6 +989,7 @@ export const buildManagementPayload = async (
     scheduleId: allCompanies ? null : scope.id,
     dataMode,
     payrollComputed,
+    payrollInputsChanged,
     monthOverMonth,
     isViewingActivePeriod: period === periodState.activePeriod,
     activePeriod: periodState.activePeriod,

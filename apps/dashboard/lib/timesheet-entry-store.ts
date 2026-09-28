@@ -2691,8 +2691,82 @@ export const aggregateEmployeeAttendanceForHeaders = (
   return totals;
 };
 
+/** Payroll hour synthesis only. Period-scoped headers and lines; leave/project flags without full history. */
+async function readPayrollTimesheetSlice(periodId: string) {
+  const pool = await db();
+  const requestHeaders = pool.request().input('periodId', sql.NVarChar(40), periodId);
+  const headersResult = await requestHeaders.query(`
+    SELECT [Id], [PeriodId], [TimesheetDate], [Status], [ShiftLabel], [LocationName], [WorkCenterName]
+    FROM [hris].[TimesheetHeaders]
+    WHERE [PeriodId] = @periodId
+  `);
+  const linesResult = await pool.request().input('periodId', sql.NVarChar(40), periodId).query(`
+    SELECT l.[Id], l.[HeaderId], l.[EmployeeId], l.[EmployeeNo], l.[EmployeeName], l.[ClockIn],
+           l.[AttendanceDuration], l.[UsedHours], l.[IdleHours], l.[TotalHours], l.[Remarks],
+           l.[AttendanceMode], l.[OffshoreAllowanceHours],
+           CASE WHEN EXISTS (
+             SELECT 1 FROM [hris].[TimesheetProjectAllocations] a
+             WHERE a.[LineId] = l.[Id] AND a.[Hours] > 0.001
+               AND UPPER(LTRIM(RTRIM(a.[ProjectCode]))) = 'LEAVE'
+           ) THEN 1 ELSE 0 END AS PaidLeave,
+           CASE WHEN EXISTS (
+             SELECT 1 FROM [hris].[TimesheetProjectAllocations] a
+             WHERE a.[LineId] = l.[Id] AND a.[Hours] > 0.001
+           ) THEN 1 ELSE 0 END AS HasProjectHours,
+           CASE WHEN EXISTS (
+             SELECT 1 FROM [hris].[TimesheetIdleAllocations] i
+             WHERE i.[LineId] = l.[Id] AND i.[Hours] > 0.001
+               AND LOWER(ISNULL(i.[ReasonName], '')) LIKE '%leave%'
+           ) THEN 1 ELSE 0 END AS IdleLeave
+    FROM [hris].[TimesheetLines] l
+    INNER JOIN [hris].[TimesheetHeaders] h ON h.[Id] = l.[HeaderId]
+    WHERE h.[PeriodId] = @periodId
+  `);
+  const headers = headersResult.recordset.map((row) => ({
+    id: row.Id,
+    periodId: row.PeriodId,
+    timesheetDate: toDateOnly(row.TimesheetDate),
+    status: row.Status,
+    shiftLabel: row.ShiftLabel || null,
+    locationName: row.LocationName || null,
+    workCenterName: row.WorkCenterName || null,
+    workflowHistory: [],
+  })) as unknown as TimesheetHeader[];
+  const lines = linesResult.recordset.map((row) => {
+    const paidLeave = Number(row.PaidLeave || 0) === 1;
+    const hasProjectHours = Number(row.HasProjectHours || 0) === 1;
+    const idleLeave = Number(row.IdleLeave || 0) === 1;
+    const projectAllocations = paidLeave
+      ? [{ projectId: '', projectCode: 'LEAVE', projectName: 'LEAVE', hours: 1, remarks: null }]
+      : hasProjectHours
+        ? [{ projectId: '', projectCode: 'WORK', projectName: '', hours: 1, remarks: null }]
+        : [];
+    const idleAllocations = idleLeave
+      ? [{ reasonId: '', reasonName: 'leave', hours: 1, remarks: null }]
+      : [];
+    return {
+      id: row.Id,
+      headerId: row.HeaderId,
+      employeeId: row.EmployeeId,
+      employeeNo: row.EmployeeNo,
+      employeeName: row.EmployeeName,
+      clockIn: row.ClockIn,
+      attendanceDuration: Number(row.AttendanceDuration || 0),
+      projectAllocations,
+      idleAllocations,
+      usedHours: Number(row.UsedHours || 0),
+      idleHours: Number(row.IdleHours || 0),
+      totalHours: Number(row.TotalHours || 0),
+      remarks: row.Remarks,
+      attendanceMode: row.AttendanceMode === 'Manual' || String(row.Remarks || '').includes('OFFSHORE_MANUAL') ? 'Manual' as const : 'Biometric' as const,
+      offshoreAllowanceHours: Number(row.OffshoreAllowanceHours || 0),
+    };
+  }) as TimesheetLine[];
+  return { headers, lines };
+}
+
 export const synthesizeTimesheetHoursForPeriod = async (periodId: string) => {
-  const { headers, lines } = await readTimesheetData();
+  const { headers, lines } = await readPayrollTimesheetSlice(periodId);
   const holidayDates = await getPayrollPublicHolidayDates().catch(() => [] as string[]);
   const periodHeaders = headers.filter((header) => header.periodId === periodId && isTimesheetCountableForPayroll(header.status));
   const totals = aggregateEmployeeAttendanceForHeaders(headers, lines, {

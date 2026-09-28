@@ -1,0 +1,39 @@
+{
+  "schemaVersion": 1,
+  "wishes": [
+    {
+      "wishId": "wish-1790443096375-9gvq9y",
+      "celebrationDate": "2026-09-26",
+      "honoreeCode": "P0392",
+      "honoreeKind": "birthday",
+      "honoreeName": "Mr. Umukoro Jude",
+      "authorCode": "IT0130",
+      "authorName": "Mr. VICTOR SAMUEL",
+      "message": "Happy birthday, sir! 🎉 I wish you a wonderful birthday filled with happiness, good health, and greater achievements. Thank you for your guidance, professionalism, and the important work you do in keeping everyone safe. May this new year of your life bring you more wisdom, success, and countless reasons to celebrate. Have a blessed and enjoyable birthday, sir. 🎂🎉",
+      "createdAt": "2026-09-26T17:18:16.375Z"
+    },
+    {
+      "wishId": "wish-1790500231580-mp1vb6",
+      "celebrationDate": "2026-09-27",
+      "honoreeCode": "C1783",
+      "honoreeKind": "birthday",
+      "honoreeName": "Daramola Olugbenga",
+      "authorCode": "IT0130",
+      "authorName": "Mr. VICTOR SAMUEL",
+      "message": "Happy Birthday to our Production Officer! 🎉 Wishing you a wonderful birthday filled with happiness, good health, and success. Thank you for your dedication, hard work, and commitment to ensuring smooth production operations. May this new year bring you greater achievements, more opportunities, and continued growth in your career. Have a fantastic birthday and a truly blessed year ahead. 🎂🎊",
+      "createdAt": "2026-09-27T09:10:31.580Z"
+    },
+    {
+      "wishId": "wish-1790506046477-78vfif",
+      "celebrationDate": "2026-09-27",
+      "honoreeCode": "C1783",
+      "honoreeKind": "birthday",
+      "honoreeName": "Daramola Olugbenga",
+      "authorCode": "C2221",
+      "authorName": "YUNUS KAMORUDEEN",
+      "message": "Oga wa happy birthday to you long life in good health and wealthy inshalla you we live long inshalla Allihamudullilah congratulations",
+      "createdAt": "2026-09-27T10:47:26.477Z"
+    }
+  ],
+  "sendLedger": []
+}

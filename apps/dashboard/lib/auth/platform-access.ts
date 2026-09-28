@@ -51,6 +51,7 @@ export const PLATFORM_WITHOUT_HRIS_PERMISSIONS = [
   'enterprise.view',
   'dashboard.view',
   'view_dashboard',
+  'view_timesheet_management',
   'view_ai_copilot',
   'admin.*',
   'admin.roles.view',

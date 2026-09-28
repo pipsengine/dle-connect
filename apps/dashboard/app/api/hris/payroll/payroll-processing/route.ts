@@ -142,7 +142,15 @@ export async function GET(request: Request) {
     const company = url.searchParams.get('company');
     const schedule = url.searchParams.get('schedule');
     const format = compact(url.searchParams.get('format')).toLowerCase();
+    const startedAt = Date.now();
     const payload = await buildProcessingPayload(request, period, pack, company, schedule);
+    console.info('[payroll-processing] display', JSON.stringify({
+      ms: Date.now() - startedAt,
+      period: payload.period,
+      pack: payload.pack,
+      schedule: payload.scheduleId,
+      records: Array.isArray(payload.records) ? payload.records.length : 0,
+    }));
     if (format === 'csv') {
       if (!payload.permissions.canExport) return err(403, 'Permission denied');
       return new Response(csv(payload.records), {

@@ -1,0 +1,429 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "DLE Timesheet Management API",
+    "version": "1.0.0"
+  },
+  "paths": {
+    "/dashboard": {
+      "get": {
+        "summary": "Retrieve /dashboard",
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        }
+      },
+      "post": {
+        "summary": "Execute /dashboard",
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "422": {
+            "description": "Validation failure"
+          }
+        }
+      }
+    },
+    "/periods": {
+      "get": {
+        "summary": "Retrieve /periods",
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        }
+      },
+      "post": {
+        "summary": "Execute /periods",
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "422": {
+            "description": "Validation failure"
+          }
+        }
+      }
+    },
+    "/periods/{id}/open": {
+      "get": {
+        "summary": "Retrieve /periods/{id}/open",
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        }
+      },
+      "post": {
+        "summary": "Execute /periods/{id}/open",
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "422": {
+            "description": "Validation failure"
+          }
+        }
+      }
+    },
+    "/periods/{id}/close-capture": {
+      "get": {
+        "summary": "Retrieve /periods/{id}/close-capture",
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        }
+      },
+      "post": {
+        "summary": "Execute /periods/{id}/close-capture",
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "422": {
+            "description": "Validation failure"
+          }
+        }
+      }
+    },
+    "/periods/{id}/lock-payroll": {
+      "get": {
+        "summary": "Retrieve /periods/{id}/lock-payroll",
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        }
+      },
+      "post": {
+        "summary": "Execute /periods/{id}/lock-payroll",
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "422": {
+            "description": "Validation failure"
+          }
+        }
+      }
+    },
+    "/timesheets": {
+      "get": {
+        "summary": "Retrieve /timesheets",
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        }
+      },
+      "post": {
+        "summary": "Execute /timesheets",
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "422": {
+            "description": "Validation failure"
+          }
+        }
+      }
+    },
+    "/timesheets/{id}": {
+      "get": {
+        "summary": "Retrieve /timesheets/{id}",
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        }
+      },
+      "post": {
+        "summary": "Execute /timesheets/{id}",
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "422": {
+            "description": "Validation failure"
+          }
+        }
+      }
+    },
+    "/timesheets/{id}/review": {
+      "get": {
+        "summary": "Retrieve /timesheets/{id}/review",
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        }
+      },
+      "post": {
+        "summary": "Execute /timesheets/{id}/review",
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "422": {
+            "description": "Validation failure"
+          }
+        }
+      }
+    },
+    "/timesheets/{id}/submit": {
+      "get": {
+        "summary": "Retrieve /timesheets/{id}/submit",
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        }
+      },
+      "post": {
+        "summary": "Execute /timesheets/{id}/submit",
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "422": {
+            "description": "Validation failure"
+          }
+        }
+      }
+    },
+    "/attendance/reconcile": {
+      "get": {
+        "summary": "Retrieve /attendance/reconcile",
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        }
+      },
+      "post": {
+        "summary": "Execute /attendance/reconcile",
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "422": {
+            "description": "Validation failure"
+          }
+        }
+      }
+    },
+    "/attendance/identity-mappings": {
+      "get": {
+        "summary": "Retrieve /attendance/identity-mappings",
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        }
+      },
+      "post": {
+        "summary": "Execute /attendance/identity-mappings",
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "422": {
+            "description": "Validation failure"
+          }
+        }
+      }
+    },
+    "/crew/assignments": {
+      "get": {
+        "summary": "Retrieve /crew/assignments",
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        }
+      },
+      "post": {
+        "summary": "Execute /crew/assignments",
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "422": {
+            "description": "Validation failure"
+          }
+        }
+      }
+    },
+    "/mobilizations": {
+      "get": {
+        "summary": "Retrieve /mobilizations",
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        }
+      },
+      "post": {
+        "summary": "Execute /mobilizations",
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "422": {
+            "description": "Validation failure"
+          }
+        }
+      }
+    },
+    "/ovt": {
+      "get": {
+        "summary": "Retrieve /ovt",
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        }
+      },
+      "post": {
+        "summary": "Execute /ovt",
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "422": {
+            "description": "Validation failure"
+          }
+        }
+      }
+    },
+    "/night-work": {
+      "get": {
+        "summary": "Retrieve /night-work",
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        }
+      },
+      "post": {
+        "summary": "Execute /night-work",
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "422": {
+            "description": "Validation failure"
+          }
+        }
+      }
+    },
+    "/approvals": {
+      "get": {
+        "summary": "Retrieve /approvals",
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        }
+      },
+      "post": {
+        "summary": "Execute /approvals",
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "422": {
+            "description": "Validation failure"
+          }
+        }
+      }
+    },
+    "/corrections": {
+      "get": {
+        "summary": "Retrieve /corrections",
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        }
+      },
+      "post": {
+        "summary": "Execute /corrections",
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "422": {
+            "description": "Validation failure"
+          }
+        }
+      }
+    },
+    "/reports/booking-summary": {
+      "get": {
+        "summary": "Retrieve /reports/booking-summary",
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        }
+      },
+      "post": {
+        "summary": "Execute /reports/booking-summary",
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "422": {
+            "description": "Validation failure"
+          }
+        }
+      }
+    },
+    "/reports/daily-detail": {
+      "get": {
+        "summary": "Retrieve /reports/daily-detail",
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        }
+      },
+      "post": {
+        "summary": "Execute /reports/daily-detail",
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "422": {
+            "description": "Validation failure"
+          }
+        }
+      }
+    },
+    "/reports/export": {
+      "get": {
+        "summary": "Retrieve /reports/export",
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        }
+      },
+      "post": {
+        "summary": "Execute /reports/export",
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "422": {
+            "description": "Validation failure"
+          }
+        }
+      }
+    }
+  }
+}

@@ -61,6 +61,13 @@ const PERMISSION_ALIASES: Record<string, string[]> = {
   'page.hris.time-and-logs.crew-mobilization.view': [
     'page.hris.time-and-logs.crew-mobilization',
   ],
+  'view_timesheet_management': [
+    'enterprise.view',
+    'operations.timesheets.view',
+    'operations.timesheets.submit',
+    'operations.timesheets.approve',
+    'timesheet.view',
+  ],
   'recruitment.view': [
     'page.hris.recruitment.view',
     'page.hris.recruitment.dashboard.view',
