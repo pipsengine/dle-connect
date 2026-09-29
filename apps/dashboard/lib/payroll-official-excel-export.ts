@@ -1836,8 +1836,9 @@ export const buildOfficialDayrateScheduleWorksheets = async (
     .map((record) => enrich(record, dirMap.get(upper(record.employeeCode)) || dirMap.get(upper(record.employeeId))));
   const attendance = period ? await loadDayrateAttendanceByEmpCode(period) : new Map<string, PayrollAttendanceSheetRow>();
 
-  const dle = dayrate.filter((record) => record._companyBucket === 'DLE');
-  const dlpc = dayrate.filter((record) => record._companyBucket === 'DLPC');
+  const company = options?.company || null;
+  const dle = dayrate.filter((record) => record._companyBucket === 'DLE' && company !== 'DLPC');
+  const dlpc = dayrate.filter((record) => record._companyBucket === 'DLPC' && company !== 'DLE');
 
   const summaryPeriodLabel = /^([A-Z]+)\s+(\d{4})$/i.test(periodLabel.trim())
     ? periodLabel.trim()
@@ -1876,7 +1877,7 @@ export const buildOfficialDayrateScheduleWorksheets = async (
     titlePrefix: 'Dayrate Bank Schedule',
     mode: 'company',
     appendCompanyTotalRow: true,
-    company: null,
+    company,
     enforceCompanyBucketsFrom: [
       ...(dle.length ? [{ bucket: 'DLE' as const, records: dle }] : []),
       ...(dlpc.length ? [{ bucket: 'DLPC' as const, records: dlpc }] : []),

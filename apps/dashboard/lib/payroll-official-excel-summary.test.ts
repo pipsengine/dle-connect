@@ -1,3 +1,6 @@
+import { dayrateScheduleNightPay } from './dayrate-schedule-template-export';
+import { buildDayrateExportRoster } from './dayrate-export-roster';
+import { clearPrimedDayrateScheduleOverrideCache, primeDayrateScheduleOverrideCache } from './dayrate-schedule-override-read';
 import {
   buildOfficialDayrateScheduleWorksheets,
   buildOfficialSalariedDetailWorksheets,
@@ -241,6 +244,15 @@ const dlpcDayLabels = labelsOf(dlpcDaySheets.find((sheet) => sheet.sheetName ===
 assert(dlpcDayLabels.includes('DLPC'), 'DLPC dayrate Summary keeps DLPC when it has a figure');
 assert(!dlpcDayLabels.includes('DLE'), 'DLPC dayrate Summary drops empty DLE');
 
+const mixedDaySheets = await buildOfficialDayrateScheduleWorksheets([dleDay as any, dlpcDay as any], {
+  period: '',
+  periodLabel: 'August 2026',
+  company: 'DLE',
+});
+assert(mixedDaySheets.some((sheet) => sheet.sheetName === 'DLE'), 'DLE day-rate export keeps the DLE sheet');
+assert(!mixedDaySheets.some((sheet) => sheet.sheetName === 'DLPC'), 'DLE day-rate export omits the DLPC sheet');
+assert(!mixedDaySheets.some((sheet) => /DLPC/i.test(sheet.sheetName || '')), 'DLE day-rate export omits DLPC bank sheets');
+
 const permDlpc = buildOfficialSalariedDetailWorksheets([dlpcSnr as any], {
   periodLabel: 'September 2026',
   currencyScope: 'ngn',
@@ -289,6 +301,44 @@ assert((bothPerm?.rows || []).some((row) => String(row[0] ?? '') === '0013'), 'P
 assert((bothCont?.rows || []).some((row) => String(row[0] ?? '') === 'L0297'), 'CONT.STAFF keeps the DLE contract employee');
 assert((bothCont?.rows || []).some((row) => String(row[0] ?? '') === 'L0191'), 'CONT.STAFF keeps the DLPC contract employee');
 
+const dlePack = buildOfficialSalariedDetailWorksheets(
+  [dlePerm as any, base as any, dleCont as any, dlpcCont as any],
+  { periodLabel: 'September 2026', currencyScope: 'ngn', company: 'DLE' },
+);
+const dlpcPack = buildOfficialSalariedDetailWorksheets(
+  [dlePerm as any, base as any, dleCont as any, dlpcCont as any],
+  { periodLabel: 'September 2026', currencyScope: 'ngn', company: 'DLPC' },
+);
+const dlePackPerm = companiesOn(dlePack.find((sheet) => sheet.sheetName === 'PERM.STAFF'));
+const dlePackCont = companiesOn(dlePack.find((sheet) => sheet.sheetName === 'CONT. STAFF'));
+const dlpcPackPerm = companiesOn(dlpcPack.find((sheet) => sheet.sheetName === 'PERM.STAFF'));
+const dlpcPackCont = companiesOn(dlpcPack.find((sheet) => sheet.sheetName === 'CONT. STAFF'));
+assert(dlePackPerm.has('DLENG') && !dlePackPerm.has('DLPCG'), 'DLE Salaries PERM.STAFF is DLE only');
+assert(dlePackCont.has('DLENG') && !dlePackCont.has('DLPCG'), 'DLE Salaries CONT. STAFF is DLE only');
+assert(dlpcPackPerm.has('DLPCG') && !dlpcPackPerm.has('DLENG'), 'DLPC Salaries PERM.STAFF is DLPC only');
+assert(dlpcPackCont.has('DLPCG') && !dlpcPackCont.has('DLENG'), 'DLPC Salaries CONT. STAFF is DLPC only');
+assert(!dlePack.some((sheet) => /DLPC/i.test(sheet.sheetName || '')), 'DLE Salaries export has no DLPC sheets');
+assert(!dlpcPack.some((sheet) => /DLE/i.test(sheet.sheetName || '')), 'DLPC Salaries export has no DLE sheets');
+
+primeDayrateScheduleOverrideCache('2026-09', {
+  period: '2026-09',
+  fileName: 'dayrate.xlsx',
+  title: 'Dayrate',
+  appliedAt: '2026-09-01',
+  appliedBy: 'test',
+  rows: [
+    { employeeCode: 'C1000', employeeName: 'DLE CREW', firstName: 'DLE', lastName: 'CREW', company: 'DLE' } as any,
+    { employeeCode: 'C2000', employeeName: 'DLPC CREW', firstName: 'DLPC', lastName: 'CREW', company: 'DLPC' } as any,
+  ],
+  skipped: [],
+  sheets: [],
+});
+const dleRoster = buildDayrateExportRoster({ period: '2026-09', calculatedRecords: [], company: 'DLE' });
+const dlpcRoster = buildDayrateExportRoster({ period: '2026-09', calculatedRecords: [], company: 'DLPC' });
+assert(dleRoster.length === 1 && dleRoster[0]?.company === 'DLE', 'DLE day-rate roster keeps the DLE schedule only');
+assert(dlpcRoster.length === 1 && dlpcRoster[0]?.company === 'DLPC', 'DLPC day-rate roster keeps the DLPC schedule only');
+clearPrimedDayrateScheduleOverrideCache('2026-09');
+
 const itStaff = {
   ...dlePerm,
   employeeId: 'IT0100',
@@ -316,6 +366,10 @@ const splitContCodes = (splitSheets.find((sheet) => sheet.sheetName === 'CONT. S
 assert(splitPermCodes.includes('0100'), 'P-codes stay on PERM.STAFF');
 assert(!splitPermCodes.includes('IT0100') && !splitPermCodes.includes('NYSC0025'), 'IT and NYSC codes are not on PERM.STAFF');
 assert(splitContCodes.includes('IT0100') && splitContCodes.includes('NYSC0025'), 'IT and NYSC codes are on CONT. STAFF');
+assert(dayrateScheduleNightPay(0, 5) === 7500, 'blank Night Amt still pays ₦1,500 per night day');
+assert(dayrateScheduleNightPay(0, 17) === 25500, 'seventeen nights pay ₦25,500');
+assert(dayrateScheduleNightPay(4000, 2) === 4000, 'a stated Night Amt is kept');
+assert(dayrateScheduleNightPay(0, 0) === 0, 'no nights and a blank Night Amt stay at zero');
 
 console.log('payroll-official-excel-summary.test.ts OK');
 };

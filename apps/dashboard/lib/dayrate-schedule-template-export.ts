@@ -11,6 +11,7 @@ import { canonicalContractEmployeeCode } from '@/lib/dayrate-schedule-xlsx';
 import type { PayrollCalculationRecord } from '@/lib/payroll-calculation-service';
 import { loadDayrateAttendanceByEmpCode } from '@/lib/payroll-official-excel-export';
 import type { PayrollCompany } from '@/lib/payroll-schedule-scope';
+import { NIGHT_INCONVENIENCE_ALLOWANCE_AMOUNT } from '@/lib/timesheet-entry-shared';
 
 const roundMoney = (value: number) => Math.round((Number.isFinite(value) ? value : 0) * 100) / 100;
 const compact = (value: unknown) => String(value || '').trim();
@@ -549,6 +550,16 @@ const WHT_RATE = 0.05;
 const scheduleAmount = (value: number | null | undefined) =>
   (value === null || value === undefined ? null : roundMoney(Number(value) || 0));
 
+/**
+ * HR often leaves Night Amt blank while the gross still includes ₦1,500 per night day.
+ * A stated Night Amt is used as written. Payroll uses the same ₦1,500 rate.
+ */
+export const dayrateScheduleNightPay = (nightAmt: number | null | undefined, nightDays: number) => {
+  const stated = scheduleAmount(nightAmt);
+  if (stated != null && stated > 0) return stated;
+  return roundMoney(Math.max(0, Number(nightDays) || 0) * NIGHT_INCONVENIENCE_ALLOWANCE_AMOUNT);
+};
+
 const firstAmount = (...values: Array<number | null | undefined>) => {
   for (const value of values) {
     if (value === null || value === undefined) continue;
@@ -707,8 +718,9 @@ const detailRowFromEntry = (
       att?.publicHolidayTotal,
       hourlyRate * PUBLIC_HOLIDAY_MULTIPLIER * phHrs,
     );
-  const nightAmt = scheduleAmount(schedule?.nightAmt)
-    ?? firstAmount(
+  const nightAmt = schedule
+    ? dayrateScheduleNightPay(schedule.nightAmt, nightDays)
+    : firstAmount(
       lineAmount(record?.earningLines, /NIGHT/i),
       att?.nightWorkedTotal,
       NIGHT_PER_NIGHT_DAY * nightDays,
@@ -779,13 +791,14 @@ const buildDetailRows = async (
   records: PayrollCalculationRecord[],
   period: string,
   directoryEmployees: DleEmployeeDirectoryRow[],
+  company?: PayrollCompany | null,
 ) => {
   const dirMap = new Map<string, DleEmployeeDirectoryRow>();
   for (const employee of directoryEmployees) {
     [employee.employeeCode, employee.employeeId].map(upper).filter(Boolean).forEach((key) => dirMap.set(key, employee));
   }
   const attendance = period ? await loadDayrateAttendanceByEmpCode(period) : new Map();
-  const roster = buildDayrateExportRoster({ period, calculatedRecords: records, directoryEmployees });
+  const roster = buildDayrateExportRoster({ period, calculatedRecords: records, directoryEmployees, company });
   const asOf = periodAsOfDate(period);
   const dle = roster.filter((entry) => entry.company === 'DLE').map((entry) => detailRowFromEntry(entry, dirMap, attendance, asOf));
   const dlpc = roster.filter((entry) => entry.company === 'DLPC').map((entry) => detailRowFromEntry(entry, dirMap, attendance, asOf));
@@ -802,7 +815,7 @@ export const buildDayratePaymentScheduleXlsx = async (input: {
   const templatePath = resolveDayratePaymentScheduleTemplatePath();
   if (!templatePath) throw new Error('Dayrate Payment Schedule template was not found.');
   const entries = readZipEntries(readFileSync(templatePath));
-  const { dle, dlpc } = await buildDetailRows(input.records, input.period, input.directoryEmployees || []);
+  const { dle, dlpc } = await buildDetailRows(input.records, input.period, input.directoryEmployees || [], input.company);
   assertRowsFoot('DLE', dle);
   assertRowsFoot('DLPC', dlpc);
   const title = scheduleTitleForSheet(input.period, input.periodLabel);

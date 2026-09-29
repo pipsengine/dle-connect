@@ -339,12 +339,12 @@ const applyDailyRateFromTimesheets = (
 
   const rates = dailyRateValues(employee, true);
   const timesheet = resolveTimesheetHoursForEmployee(employee, timesheetHours);
-  const excel = payrollExcelAmountOverlayApplies(period) ? findDayrateScheduleOverrideRow(period, employee) : null;
-  const appliedSchedule = payrollExcelAmountOverlayApplies(period) ? readAppliedDayrateScheduleOverride(period) : null;
-  // Once HR applies a dayrate schedule it defines the payable roster as well as the
+  const excel = findDayrateScheduleOverrideRow(period, employee);
+  const appliedSchedule = readAppliedDayrateScheduleOverride(period);
+  // Once HR stores a dayrate schedule it defines the payable roster as well as the
   // amounts, so anyone absent from the sheet is out of this run. The Excel export
   // already builds its roster from the sheet; the run has to agree with it.
-  // From 2026-09 the timesheet is the roster — Excel no longer excludes staff.
+  // With no stored schedule, the timesheet remains the roster.
   if (appliedSchedule?.rows?.length && !excel) {
     return {
       ...amounts,
@@ -375,8 +375,8 @@ const applyDailyRateFromTimesheets = (
   const publicHolidayHours = excel ? Number(excel.publicHolidayHours || 0) : Number(timesheet?.publicHolidayHours || 0);
   const nightDays = excel && Number(excel.nightAmt || 0) > 0 ? 0 : Number(excel?.nightDays || timesheet?.nightDays || 0);
   const weekendHours = saturdayHours + sundayHours + publicHolidayHours;
-  // Daily-rate staff are timesheet-driven only — no hoursPerPeriod / package fallback.
-  // An HR Excel overlay can still pay OT/weekend hours when weekday days are zero (pre-2026-09).
+  // Daily-rate staff are timesheet-driven only when no dayrate schedule is stored.
+  // A stored schedule can still pay OT/weekend hours when weekday days are zero.
   if (weekdayDays <= 0 && weekendHours <= 0 && nightDays <= 0 && !(excel && dayrateBookedHours(excel) > 0)) {
     return {
       ...amounts,
@@ -393,7 +393,8 @@ const applyDailyRateFromTimesheets = (
     };
   }
 
-  const ratePerDay = rates.ratePerDay || (rates.ratePerHour > 0 ? rates.ratePerHour * rates.hoursPerDay : 0);
+  const sheetRate = excel && Number(excel.excelDailyRate || 0) > 0 ? Number(excel.excelDailyRate) : 0;
+  const ratePerDay = sheetRate || rates.ratePerDay || (rates.ratePerHour > 0 ? rates.ratePerHour * rates.hoursPerDay : 0);
   if (ratePerDay <= 0) {
     return {
       ...amounts,

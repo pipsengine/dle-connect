@@ -16,7 +16,6 @@ import {
   findDayrateScheduleOverrideRow,
   isHrDayrateScheduleOverrideSource,
 } from '@/lib/dayrate-schedule-override-read';
-import { payrollExcelAmountOverlayApplies } from '@/lib/payroll-source-of-truth';
 import { NIGHT_INCONVENIENCE_ALLOWANCE_AMOUNT } from '@/lib/timesheet-entry-shared';
 import {
   hrisDataFileCandidates,
@@ -553,9 +552,10 @@ export const buildDailyRateSupplementalEarnings = (
   // the HRIS salary package must not add to it. Codes such as SATURDAY_OVT or
   // NNDMEAL do not canonicalise onto the schedule's SATEARN / MEAL, so leaving
   // them in paid the same weekend, holiday and allowance amounts twice.
-  const scheduleIsAuthority = payrollExcelAmountOverlayApplies(options?.period)
-    && (Boolean(options?.excelDayrateOverride)
-      || employeeHasAppliedDayrateScheduleOverride(normalizedPeriod(options?.period), employee));
+  // This stays on for a stored day-rate upload from 2026-09. Salary Excel overlay
+  // remains off; only a primed day-rate schedule replaces the package.
+  const scheduleIsAuthority = Boolean(options?.excelDayrateOverride)
+    || employeeHasAppliedDayrateScheduleOverride(normalizedPeriod(options?.period), employee);
   const paidEarningLines = scheduleIsAuthority
     ? adjustmentLines
     : mergeConfiguredPackageSupplements(employee, adjustmentLines, { includeOneOff: true, period: options?.period });
@@ -704,10 +704,11 @@ export const mergeTimesheetDayRateEarnings = (
     period?: string;
   },
 ): PayrollEarningsResult => {
-  const excel = payrollExcelAmountOverlayApplies(input.period) ? findDayrateScheduleOverrideRow(input.period, employee) : null;
-  // When HR has applied a dayrate schedule (2026-08 and earlier), the sheet is the
-  // authority for the day rate and meal allowance too — not just the hours.
-  // From 2026-09, approved weekday days × profile ratePerDay are the authority.
+  const excel = findDayrateScheduleOverrideRow(input.period, employee);
+  // A stored day-rate schedule is the pay authority for rate, weekday days (including
+  // counts above the 21 weekdays in the payroll window), overtime, weekend, holiday,
+  // night, meal, and the schedule allowance columns. Salary Excel overlay stays off.
+  // With no stored schedule, weekday days × profile ratePerDay are the authority.
   // Saturday/Sunday hours pay SATEARN/SUNDAYEARN — they must not inflate weekday meal (₦500 × days).
   const timesheetBase = excel
     ? contractDayRatePayrollResult({
@@ -744,10 +745,20 @@ export const mergeTimesheetDayRateEarnings = (
     ? mergeDailySupplementalEarnings(base, supplemental)
     : base;
   if (!excel) return merged;
-  const withScheduleAllowances = mergeDailySupplementalEarnings(merged, {
-    ...merged,
-    paidEarningLines: scheduleAllowanceLines(excel),
-  });
+  // Sheet meal and TCM meal are separate columns. The package merger treats MEAL and
+  // TCMMEAL as one code, which would drop the meal allowance whenever TCM meal is set.
+  const scheduleAllowances = scheduleAllowanceLines(excel);
+  const allowanceCodes = new Set(scheduleAllowances.map((line) => compact(line.code).toUpperCase()));
+  const withScheduleAllowances = scheduleAllowances.length
+    ? rebuildEarningsFromPaidLines(
+        merged,
+        [
+          ...merged.paidEarningLines.filter((line) => !allowanceCodes.has(compact(line.code).toUpperCase())),
+          ...scheduleAllowances,
+        ],
+        merged.profileName,
+      )
+    : merged;
   return {
     ...withScheduleAllowances,
     profileName: merged.profileName.includes('Dayrate Schedule')
@@ -1156,8 +1167,8 @@ const periodAdjustmentLines = (employee: DleEmployeeDirectoryRow, options?: Payr
   const salaryGrade = normalizedTextKey(employee.salaryGrade || employee.jobGrade);
   const profileId = resolvePayrollEarningProfile(employee);
   const structuralFamily = sageStructuralGradeFamily(employee, period);
-  const excelOverride = payrollExcelAmountOverlayApplies(period)
-    && (Boolean(options?.excelDayrateOverride) || employeeHasAppliedDayrateScheduleOverride(period, employee));
+  const excelOverride = Boolean(options?.excelDayrateOverride)
+    || employeeHasAppliedDayrateScheduleOverride(period, employee);
   const matchedRows = periodAdjustmentRowsForPeriod(period)
     .filter((row) => {
       if (isSageDayrateScheduleSource(row.source)) return false;

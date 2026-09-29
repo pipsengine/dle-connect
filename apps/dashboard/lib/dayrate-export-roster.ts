@@ -81,6 +81,8 @@ export const buildDayrateExportRoster = (input: {
   period: string;
   calculatedRecords: PayrollCalculationRecord[];
   directoryEmployees?: DleEmployeeDirectoryRow[];
+  /** When set, the other company's schedule rows stay out of this pack's export. */
+  company?: 'DLE' | 'DLPC' | null;
 }): DayrateExportRosterEntry[] => {
   const applied = readAppliedDayrateScheduleOverride(input.period);
   const calcIndex = indexCalculationRecords(input.calculatedRecords.filter(isDailyRateRecord));
@@ -116,16 +118,17 @@ export const buildDayrateExportRoster = (input: {
         company: resolveOfficialCompanyBucket(record),
       });
     }
-    return entries;
+    return input.company ? entries.filter((entry) => entry.company === input.company) : entries;
   }
 
-  return input.calculatedRecords
+  const fromRecords = input.calculatedRecords
     .filter(isDailyRateRecord)
     .map((record) => ({
       scheduleRow: null,
       record,
       company: resolveOfficialCompanyBucket(record),
     }));
+  return input.company ? fromRecords.filter((entry) => entry.company === input.company) : fromRecords;
 };
 
 export const dayrateExportRosterCount = (roster: DayrateExportRosterEntry[]) => ({

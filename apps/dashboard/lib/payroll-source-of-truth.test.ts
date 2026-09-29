@@ -1,5 +1,6 @@
 /**
- * September 2026 source-of-truth: salaried from profiles, day-rate from timesheets.
+ * September 2026 source-of-truth: salaried from profiles. Day-rate follows a stored
+ * payment schedule when one is loaded, and timesheets when it is not.
  * Run: npx tsx --tsconfig apps/dashboard/tsconfig.json apps/dashboard/lib/payroll-source-of-truth.test.ts
  */
 import assert from 'node:assert/strict';
@@ -239,8 +240,9 @@ assert.equal(augustExcel.grossPay, 440000, 'August still uses Excel days × Exce
 assert.equal(payrollRecordUsesExcelOverlay(augustExcel), true);
 
 const septemberTimesheet = mergeTimesheetDayRateEarnings(dayRate, { ratePerDay: 10000, daysWorked: 10, period: '2026-09' });
-assert.equal(septemberTimesheet.grossPay, 105000, 'September ignores Excel days and uses timesheet × profile rate');
-assert.equal(payrollRecordUsesExcelOverlay(septemberTimesheet), false);
+assert.equal(septemberTimesheet.grossPay, 440000, 'A stored day-rate schedule is the September pay authority');
+assert.equal(payrollRecordUsesExcelOverlay(septemberTimesheet), true);
+assert.equal(payrollExcelAmountOverlayApplies('2026-09'), false, 'Salary Excel overlay stays off from September');
 
 const dayRateWithSnapshot = employee({
   employeeCode: 'C0100',
@@ -264,8 +266,8 @@ const septemberIgnoresPackageSnapshot = mergeTimesheetDayRateEarnings(dayRateWit
 });
 assert.equal(
   septemberIgnoresPackageSnapshot.grossPay,
-  105000,
-  'leftover C-code package OT/refund/weekday/meal must not pay again after timesheet cutover',
+  440000,
+  'A stored day-rate schedule replaces leftover C-code package OT/refund/weekday/meal',
 );
 assert.equal(
   septemberIgnoresPackageSnapshot.paidEarningLines.some((line) => line.code === 'REFUND'),
@@ -277,8 +279,8 @@ assert.equal(
 );
 
 const dayRateWithSavedVariableLines = employee({
-  employeeCode: 'C0100',
-  employeeId: 'C0100',
+  employeeCode: 'C0199',
+  employeeId: 'C0199',
   employmentType: 'Daily Rate',
   ratePerDay: 10000,
   hoursPerDay: 8,
@@ -615,12 +617,49 @@ assert.equal(
   null,
 );
 
-const septemberLabels = [permanentPay, lumpsumPay, nyscPay, internPay, septemberTimesheet];
+const septemberSalaryLabels = [permanentPay, lumpsumPay, nyscPay, internPay];
 assert.equal(
-  septemberLabels.filter((row) => payrollRecordUsesExcelOverlay(row)).length,
+  septemberSalaryLabels.filter((row) => payrollRecordUsesExcelOverlay(row)).length,
   0,
-  'September live labels must not show HR schedule overlay',
+  'September salary labels must not show HR salary schedule overlay',
 );
+
+primeDayrateScheduleOverrideCache('2026-09', {
+  period: '2026-09',
+  fileName: 'dayrate.xlsx',
+  title: 'Dayrate',
+  appliedAt: '2026-09-01',
+  appliedBy: 'test',
+  rows: [{
+    ...excelRow,
+    employeeCode: 'C1924',
+    excelDailyRate: 8600,
+    weekdayDays: 10,
+    saturdayHours: 16,
+    publicHolidayHours: 8,
+    mealAllowance: 5000,
+    siteAllowance: 50000,
+    tcmMeal: 50000,
+    tcmTransport: 50000,
+    excelGross: 284000,
+  }],
+  skipped: [],
+  sheets: [],
+});
+const sheetMealAndTcm = mergeTimesheetDayRateEarnings(employee({
+  employeeCode: 'C1924',
+  employeeId: 'C1924',
+  employmentType: 'Daily Rate',
+  ratePerDay: 8600,
+  hoursPerDay: 8,
+}), {
+  ratePerDay: 8600,
+  daysWorked: 10,
+  period: '2026-09',
+});
+assert.equal(sheetMealAndTcm.paidEarningLines.find((line) => line.code === 'MEAL')?.amount, 5000, 'sheet meal stays beside TCM meal');
+assert.equal(sheetMealAndTcm.paidEarningLines.find((line) => line.code === 'TCMMEAL')?.amount, 50000, 'sheet TCM meal stays beside meal allowance');
+assert.equal(sheetMealAndTcm.grossPay, 284000, 'sheet meal and TCM meal both count in gross');
 
 clearPrimedDayrateScheduleOverrideCache('2026-08');
 clearPrimedDayrateScheduleOverrideCache('2026-09');

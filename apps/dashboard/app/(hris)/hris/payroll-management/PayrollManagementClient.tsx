@@ -5005,7 +5005,7 @@ export default function PayrollManagementClient({
 
   const exportDleUsdExcel = (report = 'payroll-register') => {
     if (!ensureCanExport()) return;
-    window.location.href = reportExportUrl('xls', report, 'All', 'salaried', 'usd');
+    window.location.href = reportExportUrl('xls', report, 'All', 'salaried', 'usd', 'DLE');
   };
 
   const exportReportPdf = (report = 'payroll-register') => {

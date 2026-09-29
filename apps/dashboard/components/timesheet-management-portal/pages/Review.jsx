@@ -155,6 +155,7 @@ export default function Review() {
       setLines={setLines}
       columns={columns}
       settings={settings}
+      dirty={dirty}
       setDirty={setDirty}
       saving={saving}
       setSaving={setSaving}
@@ -181,7 +182,7 @@ export default function Review() {
   </>;
 }
 
-function SheetEditor({ sheet, lines, setLines, columns, settings, setDirty, saving, setSaving, setNotice, setPageError, setSheet, onBack, onAddProject }) {
+function SheetEditor({ sheet, lines, setLines, columns, settings, dirty, setDirty, saving, setSaving, setNotice, setPageError, setSheet, onBack, onAddProject }) {
   const editable = Boolean(sheet.editable);
   const alreadySent = sheet.status === 'Submitted' || sheet.status === 'Returned';
   const sendLabel = alreadySent ? 'Resubmit' : 'Submit';
