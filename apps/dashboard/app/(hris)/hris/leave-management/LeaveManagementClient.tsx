@@ -83,6 +83,20 @@ type BalanceRecord = {
   liabilityValue: number;
   status: string;
   exceptions: string[];
+  convertedFromContract?: boolean;
+  priorEmployeeCode?: string | null;
+  manualAnnualEntitlement?: number | null;
+};
+type ConvertedLeaveBalance = {
+  employeeId: string;
+  fullName: string;
+  department: string;
+  priorEmployeeCode: string;
+  entitled: number;
+  used: number;
+  balance: number;
+  carryForward: number;
+  manualAnnualEntitlement: number | null;
 };
 type LeaveTypeRule = {
   id: string;
@@ -128,6 +142,8 @@ type Payload = {
   section: string;
   permissions: { canApply: boolean; canApprove: boolean; canAdminister: boolean; canProcessFinancials: boolean; canConfigure: boolean; canExport: boolean; canViewAudit: boolean };
   canDeductUnappliedLeave?: boolean;
+  canEditConvertedLeaveBalance?: boolean;
+  convertedLeaveBalances?: ConvertedLeaveBalance[];
   summary: {
     totalEmployees: number;
     employeesOnLeave: number;
@@ -368,6 +384,8 @@ export default function LeaveManagementClient({ initialNow, initialSection = 'da
   const [balanceDetail, setBalanceDetail] = useState<BalanceRecord | null>(null);
   const [deductOpen, setDeductOpen] = useState(false);
   const [deductEmployee, setDeductEmployee] = useState('');
+  const [convertOpen, setConvertOpen] = useState(false);
+  const [convertEmployee, setConvertEmployee] = useState('');
 
   const openDrilldown = (panel: LeaveDrilldownPanel) => {
     setDrilldownQuery('');
@@ -705,6 +723,12 @@ export default function LeaveManagementClient({ initialNow, initialSection = 'da
             <button type="button" onClick={() => { setDeductEmployee(''); setDeductOpen(true); }} className="inline-flex h-10 shrink-0 items-center justify-center rounded-lg bg-emerald-700 px-4 text-sm font-semibold text-white hover:bg-emerald-800">Deduct leave</button>
           </div>
         ) : null}
+        {!isDashboard && section === 'leave-balances' && payload?.canEditConvertedLeaveBalance ? (
+          <div className="mb-3 flex flex-col gap-3 rounded-2xl border border-blue-200 bg-blue-50 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+            <p className="text-sm font-semibold text-blue-950">Staff converted from contract to permanent can have their annual leave balance set here. Later approved leave still reduces that balance.</p>
+            <button type="button" onClick={() => { setConvertEmployee(''); setConvertOpen(true); }} className="inline-flex h-10 shrink-0 items-center justify-center rounded-lg bg-blue-700 px-4 text-sm font-semibold text-white hover:bg-blue-800">Edit leave balance</button>
+          </div>
+        ) : null}
         {!isDashboard && section === 'leave-balances' ? <BalanceView rows={filteredBalances} onOpenDetail={setBalanceDetail} /> : null}
         {deductOpen && payload?.canDeductUnappliedLeave ? (
           <DeductUnappliedLeaveModal
@@ -736,6 +760,35 @@ export default function LeaveManagementClient({ initialNow, initialSection = 'da
             }}
           />
         ) : null}
+        {convertOpen && payload?.canEditConvertedLeaveBalance ? (
+          <EditConvertedLeaveBalanceModal
+            initialEmployeeCode={convertEmployee}
+            balances={payload.balances || []}
+            priorCodes={payload.convertedLeaveBalances || []}
+            busy={busyAction === 'adjust-converted-leave-balance'}
+            onClose={() => setConvertOpen(false)}
+            onSubmit={async (input) => {
+              setBusyAction('adjust-converted-leave-balance');
+              setToast('');
+              try {
+                const res = await fetch('/api/hris/leave-management', {
+                  method: 'POST',
+                  headers: { 'content-type': 'application/json', 'x-hris-role': role },
+                  body: JSON.stringify({ action: 'adjust-converted-leave-balance', section, ...input }),
+                });
+                const json = (await res.json()) as ApiResponse<{ message: string; payload: Payload }>;
+                if (!res.ok || json.status !== 'success' || !json.data) throw new Error(json.error || 'Update failed');
+                setToast(json.data.message);
+                setPayload(json.data.payload);
+                setConvertOpen(false);
+              } catch (event) {
+                setToast(event instanceof Error ? event.message : 'Update failed');
+              } finally {
+                setBusyAction('');
+              }
+            }}
+          />
+        ) : null}
         {!isDashboard && section === 'leave-types' ? <LeaveTypeView payload={payload} /> : null}
         {!isDashboard && section === 'leave-allowance-exceptions' ? <LeaveAllowanceExceptionsView rows={payload?.allowanceExceptions || []} /> : null}
         {!isDashboard && ['recalls', 'cancellations', 'encashments', 'team-leave-planner', 'holiday-calendar', 'leave-policies', 'leave-accruals', 'carry-forward-processing', 'balance-adjustments', 'leave-year-end-processing', 'leave-reports', 'leave-utilization', 'leave-liability', 'leave-trends', 'approval-reports'].includes(section) ? (
@@ -757,6 +810,11 @@ export default function LeaveManagementClient({ initialNow, initialSection = 'da
             setDeductEmployee(balanceDetail.employeeId);
             setBalanceDetail(null);
             setDeductOpen(true);
+          } : undefined}
+          onEditBalance={payload?.canEditConvertedLeaveBalance ? () => {
+            setConvertEmployee(balanceDetail.employeeId);
+            setBalanceDetail(null);
+            setConvertOpen(true);
           } : undefined}
         />
       ) : null}
@@ -841,6 +899,128 @@ function CalendarView({ payload }: { payload: Payload | null }) {
         </section>
       </div>
     </section>
+  );
+}
+
+function EditConvertedLeaveBalanceModal({
+  initialEmployeeCode = '',
+  balances,
+  priorCodes,
+  busy,
+  onClose,
+  onSubmit,
+}: {
+  initialEmployeeCode?: string;
+  balances: BalanceRecord[];
+  priorCodes: ConvertedLeaveBalance[];
+  busy: boolean;
+  onClose: () => void;
+  onSubmit: (input: { employeeCode: string; balanceDays: number; reason: string }) => Promise<void>;
+}) {
+  const people = useMemo(() => {
+    const seen = new Set<string>();
+    return balances.filter((row) => {
+      if (!/annual/i.test(row.leaveType) || seen.has(row.employeeId)) return false;
+      seen.add(row.employeeId);
+      return true;
+    }).sort((a, b) => a.fullName.localeCompare(b.fullName));
+  }, [balances]);
+  const preset = people.find((item) => item.employeeId === initialEmployeeCode);
+  const [search, setSearch] = useState(preset ? `${preset.employeeId} - ${preset.fullName}` : '');
+  const [employeeCode, setEmployeeCode] = useState(preset?.employeeId || '');
+  const selected = people.find((item) => item.employeeId === employeeCode);
+  const prior = priorCodes.find((item) => item.employeeId === employeeCode);
+  const [balanceDays, setBalanceDays] = useState(selected ? String(selected.currentBalance) : '');
+  const [reason, setReason] = useState('');
+  const query = search.trim().toLowerCase();
+  const matches = people.filter((item) => {
+    if (!query) return false;
+    return `${item.fullName} ${item.employeeId} ${item.department}`.toLowerCase().includes(query);
+  }).slice(0, 40);
+  const entitled = Number(selected?.accruedBalance || 0);
+  const used = Number(selected?.usedBalance || 0);
+  const carry = Number(selected?.carryForwardBalance || 0);
+  const maxBalance = selected ? Math.max(0, Math.round((30 + carry - used) * 100) / 100) : 30;
+  const nextBalance = Number(balanceDays);
+  const blocked = !selected || !Number.isFinite(nextBalance) || nextBalance < 0 || nextBalance > maxBalance || reason.trim().length < 5;
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/40 px-4 py-6">
+      <div className="max-h-[92vh] w-full max-w-xl overflow-y-auto rounded-2xl border border-slate-200 bg-white shadow-2xl">
+        <div className="flex items-start justify-between gap-3 border-b border-slate-100 px-5 py-4">
+          <div>
+            <h2 className="text-lg font-black text-slate-950">Edit leave balance</h2>
+            <p className="mt-1 text-sm font-medium text-slate-500">Search the employee directory and select the person converted from contract to permanent. The balance you set is the annual leave still available. Days already used stay on the record, and later approved leave reduces this balance.</p>
+          </div>
+          <button type="button" onClick={onClose} className="inline-flex h-9 w-9 items-center justify-center rounded-xl border border-slate-200 text-slate-600 hover:bg-slate-50" aria-label="Close"><X className="h-4 w-4" /></button>
+        </div>
+        <form
+          className="space-y-4 px-5 py-4"
+          onSubmit={(event) => {
+            event.preventDefault();
+            if (blocked || busy || !selected) return;
+            void onSubmit({ employeeCode: selected.employeeId, balanceDays: nextBalance, reason: reason.trim() });
+          }}
+        >
+          <label className="block space-y-1">
+            <span className="text-xs font-semibold text-slate-600">Employee</span>
+            <input
+              value={search}
+              onChange={(event) => setSearch(event.target.value)}
+              placeholder="Search name or employee code"
+              className="w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm"
+            />
+          </label>
+          <div className="max-h-40 overflow-y-auto rounded-xl border border-slate-200">
+            {matches.map((item) => (
+              <button
+                key={item.employeeId}
+                type="button"
+                onClick={() => {
+                  setEmployeeCode(item.employeeId);
+                  setSearch(`${item.employeeId} - ${item.fullName}`);
+                  setBalanceDays(String(item.currentBalance));
+                }}
+                className={`block w-full border-b border-slate-100 px-3 py-2 text-left last:border-0 hover:bg-slate-50 ${employeeCode === item.employeeId ? 'bg-blue-50' : ''}`}
+              >
+                <div className="text-sm font-semibold text-slate-900">{item.fullName}</div>
+                <div className="text-xs text-slate-500">{item.employeeId} · {item.department}</div>
+              </button>
+            ))}
+            {!query ? <div className="px-3 py-2.5 text-xs font-medium text-slate-500">Type a name or employee code to search the directory.</div> : null}
+            {query && !matches.length ? <div className="px-3 py-2.5 text-xs font-medium text-slate-500">No matching employees</div> : null}
+          </div>
+          {selected ? (
+            <p className="text-sm font-semibold text-slate-700">
+              {prior?.priorEmployeeCode ? `Converted from ${prior.priorEmployeeCode}. ` : ''}
+              Leave entitled {entitled} day(s), used {used}, balance {selected.currentBalance}. The highest balance you can set is {maxBalance} day(s).
+            </p>
+          ) : (
+            <p className="text-sm font-semibold text-slate-500">Select an employee from the directory.</p>
+          )}
+          <label className="block space-y-1">
+            <span className="text-xs font-semibold text-slate-600">Annual leave balance (days)</span>
+            <input
+              type="number"
+              min={0}
+              max={maxBalance}
+              step="0.5"
+              value={balanceDays}
+              onChange={(event) => setBalanceDays(event.target.value)}
+              className="w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm"
+            />
+          </label>
+          <label className="block space-y-1">
+            <span className="text-xs font-semibold text-slate-600">Reason</span>
+            <textarea value={reason} onChange={(event) => setReason(event.target.value)} rows={3} placeholder="Converted from contract to permanent" className="w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm" />
+          </label>
+          <div className="flex justify-end gap-2 border-t border-slate-100 pt-4">
+            <button type="button" onClick={onClose} className="rounded-xl border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700">Cancel</button>
+            <button type="submit" disabled={blocked || busy} className="rounded-xl bg-blue-700 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50">{busy ? 'Saving…' : 'Save balance'}</button>
+          </div>
+        </form>
+      </div>
+    </div>
   );
 }
 
@@ -987,7 +1167,7 @@ function BalanceView({ rows, onOpenDetail }: { rows: BalanceRecord[]; onOpenDeta
               >
                 <td className="px-4 py-3">
                   <div className="font-black text-slate-950">{item.fullName}</div>
-                  <div className="text-xs font-semibold text-slate-500">{item.employeeId} · {item.department}</div>
+                  <div className="text-xs font-semibold text-slate-500">{item.employeeId} · {item.department}{source?.priorEmployeeCode ? ` · converted from ${source.priorEmployeeCode}` : ''}</div>
                 </td>
                 <td className="px-4 py-3 text-sm font-black text-slate-900">{item.entitled}</td>
                 <td className="px-4 py-3 text-sm font-bold text-slate-700">{item.used}</td>

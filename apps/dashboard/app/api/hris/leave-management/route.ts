@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { AUTH_COOKIE, verifySessionToken } from '@/lib/auth/session';
 import { formatLeaveAllowanceAmount } from '@/lib/leave-allowance-policy';
 import { buildLeaveReportExcelXml, leaveReportExcelFilename, leaveReportExcelResponseHeaders } from '@/lib/leave-excel-export';
-import { auditLeaveAction, dormantLongPolicy, readLeaveManagementPayload, validateLeaveAction, type LeaveActionId, type LeaveRole } from '@/lib/leave-management-store';
+import { auditLeaveAction, dormantLongPolicy, readLeaveManagementPayload, setConvertedAnnualLeaveBalance, validateLeaveAction, type LeaveActionId, type LeaveRole } from '@/lib/leave-management-store';
 import { buildLeaveReportTable, resolveLeaveReportId } from '@/lib/leave-reports-engine';
 import { applyHrisLeaveWorkflowAction, closeLeaveYearRun, deductUnappliedLeave, processLeaveAccrualRun, processLeaveCarryForwardRun } from '@/lib/leave-workflow-service';
 import { activePayrollPeriod } from '@/lib/payroll-periods';
@@ -43,6 +43,12 @@ const hrManagerCanDeductLeave = (session: Awaited<ReturnType<typeof verifySessio
   if (!session) return false;
   if (session.isGlobalAdmin) return true;
   return /hr\s*manager|hr\s*head|hr\s*director|super\s*admin/.test(`${session.roles?.join(' ') || ''}`.toLowerCase());
+};
+
+const hrCanEditConvertedLeaveBalance = (session: Awaited<ReturnType<typeof verifySessionToken>>) => {
+  if (!session) return false;
+  if (session.isGlobalAdmin) return true;
+  return /hr\s*manager|hr\s*head|hr\s*director|hr\s*officer|leave\s*admin|system\s*admin|super\s*admin/.test(`${session.roles?.join(' ') || ''}`.toLowerCase());
 };
 
 const resolveLeaveRole = async (request: NextRequest, bodyRole?: string | null) => {
@@ -111,7 +117,11 @@ export async function GET(request: NextRequest) {
       return new NextResponse(csv, { headers: { 'content-type': 'text/csv; charset=utf-8', 'content-disposition': 'attachment; filename="leave-management.csv"' } });
     }
     const session = await verifySessionToken(cookieValue(request, AUTH_COOKIE));
-    return jsonOk({ ...payload, canDeductUnappliedLeave: hrManagerCanDeductLeave(session) });
+    return jsonOk({
+      ...payload,
+      canDeductUnappliedLeave: hrManagerCanDeductLeave(session),
+      canEditConvertedLeaveBalance: hrCanEditConvertedLeaveBalance(session),
+    });
   } catch (error) {
     return jsonErr(500, error instanceof Error ? error.message : 'Unable to load Leave Management.');
   }
@@ -121,9 +131,46 @@ export async function POST(request: NextRequest) {
   try {
     const body = await request.json().catch(() => ({}));
     const role = await resolveLeaveRole(request, body.role ? String(body.role) : null);
-    const action = String(body.action || '') as LeaveActionId | 'deduct-unapplied-leave';
+    const action = String(body.action || '') as LeaveActionId | 'deduct-unapplied-leave' | 'adjust-converted-leave-balance';
     const section = String(body.section || 'dashboard');
     const session = await verifySessionToken(cookieValue(request, AUTH_COOKIE));
+    if (action === 'adjust-converted-leave-balance') {
+      if (!hrCanEditConvertedLeaveBalance(session)) {
+        return jsonErr(403, 'Only HR can edit the leave balance of staff converted from contract to permanent.');
+      }
+      try {
+        const result = await setConvertedAnnualLeaveBalance({
+          employeeCode: String(body.employeeCode || body.employeeId || ''),
+          balanceDays: Number(body.balanceDays),
+          reason: String(body.reason || ''),
+          actor: session?.fullName || 'HR',
+        });
+        await auditLeaveAction({
+          user: session?.fullName || 'HR',
+          role: 'HR Manager',
+          action: 'adjust-balance',
+          record: result.employeeCode,
+          oldValue: `Annual Leave balance ${result.balanceBefore}`,
+          newValue: `Annual Leave balance ${result.balanceAfter}; entitlement ${result.entitlement}`,
+          reason: result.reason,
+          comments: result.priorEmployeeCode
+            ? `${result.fullName} converted from ${result.priorEmployeeCode}`
+            : result.fullName,
+        });
+        const payload = await readLeaveManagementPayload(section, role, { forceSync: true });
+        return jsonOk({
+          message: `${result.fullName} annual leave balance is now ${result.balanceAfter} day(s).`,
+          payload: {
+            ...payload,
+            canDeductUnappliedLeave: hrManagerCanDeductLeave(session),
+            canEditConvertedLeaveBalance: true,
+          },
+        });
+      } catch (error) {
+        const status = Number((error as { status?: number })?.status || 500);
+        return jsonErr(status >= 400 && status < 600 ? status : 500, error instanceof Error ? error.message : 'Unable to update the leave balance.');
+      }
+    }
     if (action === 'deduct-unapplied-leave') {
       if (!hrManagerCanDeductLeave(session)) {
         return jsonErr(403, 'Only an HR Manager can deduct leave taken without an application.');
@@ -149,7 +196,11 @@ export async function POST(request: NextRequest) {
       const payload = await readLeaveManagementPayload(section, role, { forceSync: true });
       return jsonOk({
         message: `${result.days} day(s) deducted from ${result.fullName}. ${result.leaveType} balance is now ${result.balanceAfter}. Record ${result.id} is approved.`,
-        payload: { ...payload, canDeductUnappliedLeave: true },
+        payload: {
+          ...payload,
+          canDeductUnappliedLeave: true,
+          canEditConvertedLeaveBalance: hrCanEditConvertedLeaveBalance(session),
+        },
       });
     }
     const payload = await readLeaveManagementPayload(section, role);
@@ -232,6 +283,7 @@ export async function POST(request: NextRequest) {
       payload: {
         ...(await readLeaveManagementPayload(section, role, { forceSync: true })),
         canDeductUnappliedLeave: hrManagerCanDeductLeave(session),
+        canEditConvertedLeaveBalance: hrCanEditConvertedLeaveBalance(session),
       },
     });
   } catch (error) {

@@ -12,6 +12,11 @@ import { getDleEnterpriseDbPool } from '@/lib/dle-enterprise-db';
 import { createEnterpriseNotification } from '@/lib/enterprise-notifications-store';
 import { resolveEmployeeMailbox, sendTelephoneAllowanceWorkflowEmail } from '@/lib/mail-service';
 import { toAbsoluteWorkflowHref } from '@/lib/public-app-url';
+import {
+  accountCanReceiveTelephoneNotice,
+  accountMatchesTelephoneIdentity,
+  accountMatchesTelephoneRoles,
+} from '@/lib/telephone-allowance-recipients';
 import { readDirectoryEmployees, readPayrollEmployees } from '@/lib/payroll-employee-source';
 import { payslipIdentityMap } from '@/lib/payroll-payslip-identity-store';
 import { normalizePayrollMatchKey } from '@/lib/sage-people-payroll-store';
@@ -357,16 +362,6 @@ const bumpRowVersion = (cycle: TelephoneCycle): TelephoneCycle => ({
   updatedAt: nowIso(),
 });
 
-const roleMatches = (userRoles: string[], needed: string[]) => {
-  const haystack = userRoles.map((role) => role.toLowerCase().trim());
-  return needed.some((need) => haystack.includes(need.toLowerCase().trim()));
-};
-
-const accountCanReceiveNotice = (user: UserAccount) => {
-  const status = `${user.status || ''} ${user.employmentStatus || ''}`;
-  return !/inactive|terminated|resigned|disabled|locked/i.test(status);
-};
-
 export type TelephoneNoticeDelivery = {
   employeeCode: string;
   fullName: string;
@@ -375,50 +370,49 @@ export type TelephoneNoticeDelivery = {
   reason?: string;
 };
 
-const resolveRoleRecipients = async (roles: string[]) => {
-  const users = await readUsers().catch(() => [] as UserAccount[]);
-  const seen = new Set<string>();
-  const recipients: Array<{ employeeCode: string; fullName: string; email: string }> = [];
-  for (const user of users) {
-    if (!accountCanReceiveNotice(user)) continue;
-    if (!roleMatches(user.roles || [], roles)) continue;
-    const employeeCode = compact(user.employeeCode || user.username).toUpperCase();
-    const key = employeeCode || compact(user.email).toLowerCase();
-    if (!key || seen.has(key)) continue;
-    seen.add(key);
-    const email = compact(user.email) || await resolveEmployeeMailbox({
-      employeeCode,
-      employeeId: user.employeeId || employeeCode,
-      fullName: user.fullName,
-      officialEmail: user.email,
-    } as never);
-    recipients.push({
-      employeeCode,
-      fullName: compact(user.fullName) || employeeCode,
-      email,
-    });
-  }
-  return recipients;
-};
-
-const resolveNamedRecipient = async (employeeCode: string) => {
-  const users = await readUsers().catch(() => [] as UserAccount[]);
-  const user = users.find((item) => compact(item.employeeCode || item.username).toUpperCase() === employeeCode);
-  if (!user || !accountCanReceiveNotice(user)) return [];
+const noticeRecipientFromUser = async (user: UserAccount) => {
+  const employeeCode = compact(user.employeeCode || user.username).toUpperCase();
   const email = compact(user.email) || await resolveEmployeeMailbox({
     employeeCode,
     employeeId: user.employeeId || employeeCode,
     fullName: user.fullName,
     officialEmail: user.email,
   } as never);
-  return [{
+  return {
     employeeCode,
     fullName: compact(user.fullName) || employeeCode,
     email,
-  }];
+  };
 };
 
-/** In-app notice plus email. A named employee code is the only recipient; otherwise every active holder of the next-step role. */
+const resolveNoticeRecipients = async (opts: {
+  roles?: string[];
+  recipientEmployeeCode?: string;
+  preparedBy?: string;
+}) => {
+  const users = await readUsers().catch(() => [] as UserAccount[]);
+  const active = users.filter((user) => accountCanReceiveTelephoneNotice(user));
+  const namedCode = compact(opts.recipientEmployeeCode);
+  const pinned = namedCode ? active.filter((user) => accountMatchesTelephoneIdentity(user, namedCode)) : [];
+  if (namedCode && pinned.length && !compact(opts.preparedBy)) {
+    return Promise.all(pinned.map((user) => noticeRecipientFromUser(user)));
+  }
+  const prepared = compact(opts.preparedBy)
+    ? active.filter((user) => accountMatchesTelephoneIdentity(user, opts.preparedBy || ''))
+    : [];
+  const fromRoles = active.filter((user) => accountMatchesTelephoneRoles(user, opts.roles || []));
+  const seen = new Set<string>();
+  const chosen: UserAccount[] = [];
+  for (const user of [...pinned, ...prepared, ...fromRoles]) {
+    const key = compact(user.employeeCode || user.username).toUpperCase() || compact(user.email).toLowerCase();
+    if (!key || seen.has(key)) continue;
+    seen.add(key);
+    chosen.push(user);
+  }
+  return Promise.all(chosen.map((user) => noticeRecipientFromUser(user)));
+};
+
+/** In-app notice plus email. A pinned employee code is the only recipient when that account exists. Otherwise the preparer and the active holders of the next-step role are notified. */
 export const deliverTelephoneAllowanceNotice = async (opts: {
   actor: string;
   title: string;
@@ -426,15 +420,13 @@ export const deliverTelephoneAllowanceNotice = async (opts: {
   href?: string;
   roles?: string[];
   recipientEmployeeCode?: string;
+  preparedBy?: string;
   severity?: 'info' | 'success' | 'warning' | 'critical';
   sendEmail?: boolean;
 }): Promise<TelephoneNoticeDelivery[]> => {
   const roles = opts.roles || [];
   const href = opts.href || MODULE_HREF;
-  const namedCode = compact(opts.recipientEmployeeCode).toUpperCase();
-  const recipients = namedCode
-    ? await resolveNamedRecipient(namedCode)
-    : await resolveRoleRecipients(roles);
+  const recipients = await resolveNoticeRecipients(opts);
   const workspaceLink = toAbsoluteWorkflowHref(href);
   const deliveries: TelephoneNoticeDelivery[] = [];
 
@@ -535,6 +527,7 @@ const notifyHandoff = async (opts: {
   href?: string;
   roles?: string[];
   recipientEmployeeCode?: string;
+  preparedBy?: string;
   severity?: 'info' | 'success' | 'warning' | 'critical';
 }) => {
   const deliveries = await deliverTelephoneAllowanceNotice(opts);
@@ -1886,7 +1879,8 @@ export const completeHrReview = async (
     title: `HR review completed — ${cycle.cycleCode}`,
     body: `${actor} completed HR review${comment ? `: ${comment}` : ''}. IT validation can proceed.`,
     href: `${MODULE_HREF}/manage`,
-    roles: ['IT', 'IT Admin', 'IT Support'],
+    roles: ['Super Administrator'],
+    preparedBy: cycle.preparedBy,
     severity: 'success',
   });
   return cycle;
@@ -2129,7 +2123,8 @@ export const returnForCorrection = async (
     title: `Returned for correction — ${cycle.cycleCode}`,
     body: reason,
     href: `${MODULE_HREF}/manage`,
-    roles: ['IT', 'IT Admin', 'IT Support'],
+    roles: ['Super Administrator'],
+    preparedBy: cycle.preparedBy,
     severity: 'warning',
   });
   return cycle;

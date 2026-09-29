@@ -43,6 +43,8 @@ type BalanceRecord = {
   liabilityValue: number;
   status: string;
   exceptions: string[];
+  convertedFromContract?: boolean;
+  priorEmployeeCode?: string | null;
 };
 
 type LeaveTypeRule = {
@@ -473,10 +475,12 @@ export function LeaveBalanceDetailModal({
   row,
   onClose,
   onDeduct,
+  onEditBalance,
 }: {
   row: BalanceRecord;
   onClose: () => void;
   onDeduct?: () => void;
+  onEditBalance?: () => void;
 }) {
   const normalized = normalizeAnnualLeaveBalances([row])[0];
   const entitled = normalized?.entitled ?? row.accruedBalance;
@@ -520,6 +524,12 @@ export function LeaveBalanceDetailModal({
             <p className="text-xs font-black uppercase text-slate-500">Exceptions</p>
             <p className="mt-2 text-sm font-semibold text-slate-700">{row.exceptions?.length ? row.exceptions.join('; ') : 'No exceptions recorded.'}</p>
           </div>
+          {onEditBalance ? (
+            <div className="mt-4 flex flex-col gap-3 rounded-xl border border-blue-200 bg-blue-50 p-3 sm:flex-row sm:items-center sm:justify-between">
+              <p className="text-sm font-semibold text-blue-950">{row.priorEmployeeCode ? `Converted from ${row.priorEmployeeCode}. ` : ''}Set the annual leave balance that should apply now.</p>
+              <button type="button" onClick={onEditBalance} className="inline-flex h-10 shrink-0 items-center justify-center rounded-lg bg-blue-700 px-4 text-sm font-semibold text-white hover:bg-blue-800">Edit leave balance</button>
+            </div>
+          ) : null}
           {onDeduct ? (
             <div className="mt-4 flex flex-col gap-3 rounded-xl border border-emerald-200 bg-emerald-50 p-3 sm:flex-row sm:items-center sm:justify-between">
               <p className="text-sm font-semibold text-emerald-950">Deduct days this employee took without applying. The record is saved as approved.</p>

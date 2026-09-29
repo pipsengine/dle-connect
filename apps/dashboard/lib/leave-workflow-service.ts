@@ -36,6 +36,7 @@ import {
 import { invalidatePayrollEmployeeCache, readPayrollEmployees } from '@/lib/payroll-employee-source';
 import { sendLeaveApprovalRequestEmail, sendLeaveRelieverAssignmentEmail, sendLeaveWorkflowEmail, resolveEmployeeMailbox, resolveMailProvider, type MailSendResult } from '@/lib/mail-service';
 import { buildEssEmployeeLookupKeys } from '@/lib/ess-dashboard-store';
+import { personNamesLooselyMatch } from '@/lib/person-name-match';
 import { normalizePayrollMatchKey } from '@/lib/sage-people-payroll-store';
 import { supervisorCodesMatch } from '@/lib/timesheet-agege-blasting';
 import { employeeReportsToManager } from '@/lib/reporting-manager-match';
@@ -724,6 +725,10 @@ const namesMatch = (left: string, right: string) => {
   return a === b;
 };
 
+/** Reliever names are stored in a different order from the directory. Approver routing stays exact. */
+const relieverNamesMatch = (left: string, right: string) =>
+  namesMatch(left, right) || personNamesLooselyMatch(left, right);
+
 const employeeCodeFromReference = (reference: string) => {
   const value = clean(reference);
   if (!value) return '';
@@ -771,19 +776,21 @@ const leaveSystemSession = (actor: string): SessionPayload => ({
 });
 
 const resolveReliever = (request: EssLeaveRequest, employees: DleEmployeeDirectoryRow[]) => {
-  if (request.relieverEmployeeId) {
-    return resolveEmployeeReference(employees, request.relieverEmployeeId);
-  }
   const relieverName = compact(request.relieverName);
+  if (request.relieverEmployeeId) {
+    const byId = resolveEmployeeReference(employees, request.relieverEmployeeId);
+    if (byId) return byId;
+  }
   if (!relieverName) return null;
-  return employees.find((employee) => namesMatch(employee.fullName, relieverName)) || null;
+  return employees.find((employee) => relieverNamesMatch(employee.fullName, relieverName)) || null;
 };
 
-const safeLeaveNotification = async (label: string, task: () => Promise<unknown>) => {
+const safeLeaveNotification = async <T>(label: string, task: () => Promise<T>): Promise<T | null> => {
   try {
-    await task();
+    return await task();
   } catch (error) {
     console.error(`[leave-workflow] ${label} failed`, error);
+    return null;
   }
 };
 
@@ -907,7 +914,7 @@ export const notifyLeaveFinalApproval = async (input: {
   const requestLabel = input.request.title || `${input.request.leaveType} leave`;
   const requesterBody = `${requestLabel} (${input.request.startDate} to ${input.request.endDate}) has received final HR approval.`;
 
-  await safeLeaveNotification('requester final-approval notification', () =>
+  const requesterDelivery = await safeLeaveNotification('requester final-approval notification', () =>
     deliverLeaveEmployeeNotification({
       session,
       employee: input.requester,
@@ -927,10 +934,10 @@ export const notifyLeaveFinalApproval = async (input: {
     }));
 
   const reliever = resolveReliever(input.request, employees);
-  if (!reliever) return;
+  if (!reliever) return { requester: requesterDelivery, reliever: null, relieverCode: '' };
 
   const relieverBody = `You have been assigned as reliever for ${input.requester.fullName}: ${requestLabel} (${input.request.startDate} to ${input.request.endDate}).`;
-  await safeLeaveNotification('reliever final-approval notification', () =>
+  const relieverDelivery = await safeLeaveNotification('reliever final-approval notification', () =>
     deliverLeaveEmployeeNotification({
       session,
       employee: reliever,
@@ -946,6 +953,43 @@ export const notifyLeaveFinalApproval = async (input: {
         baseUrl: input.baseUrl,
       }),
     }));
+  return { requester: requesterDelivery, reliever: relieverDelivery, relieverCode: employeeNotificationCode(reliever) };
+};
+
+/** Send the final-approval emails again for one approved request. Reads the SQL application, not a stale JSON copy. */
+export const deliverLeaveFinalApprovalNotice = async (requestId: string, baseUrl?: string | null) => {
+  invalidatePayrollEmployeeCache();
+  const { employees } = await readPayrollEmployees();
+  const pool = await getDleEnterpriseDbPool();
+  if (!pool) throw new Error('DLE_Enterprise database is not available.');
+  const result = await pool.request()
+    .input('Id', sql.NVarChar(120), requestId)
+    .query(`
+SELECT TOP 1 [Id],[EmployeeId],[FullName],[LeaveType],[StartDate],[EndDate],[Days],[StatusName],[WorkflowStage],[ActingOfficer],[ManagerName],[CreatedAt],[UpdatedAt]
+FROM [hris].[LeaveApplications]
+WHERE [Id]=@Id;`);
+  const row = result.recordset?.[0] as Record<string, unknown> | undefined;
+  const request = row ? essLeaveRequestFromDbRow(row, employees) : null;
+  if (!request) throw new Error(`Leave request ${requestId} was not found.`);
+  if (request.status !== 'Approved') throw new Error(`Leave request ${requestId} is ${request.status}, not Approved.`);
+  const requester = resolveEmployeeReference(employees, request.employeeId);
+  if (!requester) throw new Error(`Requester ${request.employeeId} could not be resolved.`);
+  const delivery = await notifyLeaveFinalApproval({
+    request,
+    requester,
+    actorName: 'Leave Workflow',
+    baseUrl: baseUrl || 'https://dleconnect.dormanlongeng.com:1432',
+  });
+  return {
+    requestId,
+    requesterCode: employeeNotificationCode(requester),
+    relieverCode: delivery?.relieverCode || request.relieverEmployeeId || '',
+    relieverName: request.relieverName || '',
+    requesterEmailSent: Boolean(delivery?.requester?.email?.ok),
+    relieverEmailSent: Boolean(delivery?.reliever?.email?.ok),
+    requesterEmailReason: delivery?.requester?.email?.reason || '',
+    relieverEmailReason: delivery?.reliever?.email?.reason || '',
+  };
 };
 
 export const notifyLeaveRejected = async (input: {
@@ -1106,7 +1150,7 @@ const essLeaveRequestFromDbRow = (row: Record<string, unknown>, employees: DleEm
   const employeeId = compact(matchedEmployee?.employeeCode || matchedEmployee?.employeeId || rawEmployeeId);
   const actingOfficer = compact(row.ActingOfficer);
   const reliever = actingOfficer
-    ? employees.find((employee) => namesMatch(employee.fullName, actingOfficer) || employeeRequestMatches(employee, actingOfficer))
+    ? employees.find((employee) => relieverNamesMatch(employee.fullName, actingOfficer) || employeeRequestMatches(employee, actingOfficer))
     : null;
   const startDate = dateOnly(row.StartDate);
   const endDate = dateOnly(row.EndDate);
@@ -2728,17 +2772,19 @@ export const transitionEssLeaveRequest = async (input: {
   }
 
   const result = { request: updated, allowanceMessage };
-  void runLeaveApprovalFollowUp({
-    approved,
-    nextStatus,
-    updated,
-    requester,
-    actorName: input.actorName,
-    reason: input.comment,
-    baseUrl: input.baseUrl,
-  }).catch((error) => {
+  try {
+    await runLeaveApprovalFollowUp({
+      approved,
+      nextStatus,
+      updated,
+      requester,
+      actorName: input.actorName,
+      reason: input.comment,
+      baseUrl: input.baseUrl,
+    });
+  } catch (error) {
     console.error('[leave-workflow] post-approval follow-up failed', error);
-  });
+  }
 
   return result;
 };

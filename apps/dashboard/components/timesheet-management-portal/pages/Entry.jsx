@@ -17,7 +17,7 @@ const emptyLine = (employee) => ({
   nightStart: (employee.operationalStatus || '') === 'Approved Leave' ? '' : (employee.nightStart || ''),
   nightEnd: (employee.operationalStatus || '') === 'Approved Leave' ? '' : (employee.nightEnd || ''),
   nightNote: (employee.operationalStatus || '') === 'Approved Leave' ? '' : (employee.nightNote || ''),
-  allocations: employee.allocations || [],
+  allocations: Array.isArray(employee.allocations) ? employee.allocations : [],
 });
 
 export default function Entry({ setPage }) {
@@ -43,12 +43,14 @@ export default function Entry({ setPage }) {
   const [employeeQuery, setEmployeeQuery] = useState('');
   const loadedKey = useRef('');
 
-  const openPeriods = snapshot.periods.filter((period) => period.status === 'Open' || period.status === 'Planned');
-  const period = snapshot.periods.find((item) => item.id === periodId) || context?.period;
+  const periods = Array.isArray(snapshot?.periods) ? snapshot.periods : [];
+  const openPeriods = periods.filter((period) => period.status === 'Open' || period.status === 'Planned');
+  const period = periods.find((item) => item.id === periodId) || context?.period;
+  const defaultPeriodId = openPeriods[0]?.id || '';
 
   useEffect(() => {
-    if (!periodId && openPeriods[0]) setPeriodId(openPeriods[0].id);
-  }, [periodId, openPeriods]);
+    if (!periodId && defaultPeriodId) setPeriodId(defaultPeriodId);
+  }, [periodId, defaultPeriodId]);
 
   useEffect(() => {
     if (!periodId || !workDate || !supervisor?.name) return;
@@ -70,7 +72,10 @@ export default function Entry({ setPage }) {
         setLines(nextLines);
         setOffshoreCrew(Array.isArray(data.offshoreCrew) ? data.offshoreCrew : []);
         const codes = new Map();
-        nextLines.forEach((line) => line.allocations.forEach((item) => codes.set(item.projectCode, { code: item.projectCode, name: item.projectName || item.projectCode, kind: item.kind || 'Project' })));
+        nextLines.forEach((line) => (Array.isArray(line.allocations) ? line.allocations : []).forEach((item) => {
+          const code = item && typeof item === 'object' ? String(item.projectCode || '') : '';
+          if (code) codes.set(code, { code, name: String(item.projectName || code), kind: String(item.kind || 'Project') });
+        }));
         setColumns([...codes.values()]);
         setDirty(false);
         loadedKey.current = key;
@@ -227,7 +232,7 @@ export default function Entry({ setPage }) {
       setDirty(false);
     }} /> : <>
       <div className="filters six">
-        <Field label="Timesheet Period"><select value={periodId} onChange={(event) => { loadedKey.current = ''; setPeriodId(event.target.value); }}><option value="">Open periods</option>{openPeriods.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}{openPeriods.length === 0 && snapshot.periods.map((item) => <option key={item.id} value={item.id}>{item.name} · {item.status}</option>)}</select></Field>
+        <Field label="Timesheet Period"><select value={periodId} onChange={(event) => { loadedKey.current = ''; setPeriodId(event.target.value); }}><option value="">Open periods</option>{openPeriods.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}{openPeriods.length === 0 && periods.map((item) => <option key={item.id} value={item.id}>{item.name} · {item.status}</option>)}</select></Field>
         <Field label="Work Date"><input type="date" value={workDate} onChange={(event) => { loadedKey.current = ''; setWorkDate(event.target.value); }} /></Field>
         <Combo label="Supervisor" placeholder="Search supervisor code or name" selected={supervisor} onSelect={(value) => { loadedKey.current = ''; setSupervisor(value); }} search={(q) => fetch(`/api/timesheet-management/entry?mode=search&kind=supervisor&q=${encodeURIComponent(q)}`).then((response) => response.json()).then((body) => body.data || [])} labelOf={(item) => item.code ? `${item.code} - ${item.name}${item.crew ? ` (${item.crew})` : ''}` : item.name} />
         <Combo label="Location / Site" placeholder="Search location" selected={location ? { name: location } : null} onSelect={(value) => setLocation(value?.name || '')} search={(q) => fetch(`/api/timesheet-management/entry?mode=search&kind=location&workDate=${workDate}&q=${encodeURIComponent(q)}`).then((response) => response.json()).then((body) => body.data || [])} labelOf={(item) => item.name} />

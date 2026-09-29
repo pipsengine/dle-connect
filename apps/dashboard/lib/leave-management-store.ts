@@ -119,6 +119,21 @@ export type LeaveBalanceRecord = {
   liabilityValue: number;
   status: 'Healthy' | 'Review' | 'Blocked';
   exceptions: string[];
+  convertedFromContract?: boolean;
+  priorEmployeeCode?: string | null;
+  manualAnnualEntitlement?: number | null;
+};
+
+export type ConvertedLeaveBalance = {
+  employeeId: string;
+  fullName: string;
+  department: string;
+  priorEmployeeCode: string;
+  entitled: number;
+  used: number;
+  balance: number;
+  carryForward: number;
+  manualAnnualEntitlement: number | null;
 };
 
 export type LeaveTypeRule = {
@@ -204,6 +219,7 @@ export type LeavePayload = {
   actions: LeaveAction[];
   applications: LeaveApplicationRecord[];
   balances: LeaveBalanceRecord[];
+  convertedLeaveBalances: ConvertedLeaveBalance[];
   allowanceExceptions: LeaveAllowanceExceptionRow[];
   leaveTypes: LeaveTypeRule[];
   calendar: Array<Record<string, string | number>>;
@@ -639,6 +655,7 @@ type DbLeaveBalanceRow = {
   LiabilityValue: number;
   StatusName: LeaveBalanceRecord['status'];
   ExceptionsJson: string;
+  ManualAnnualEntitlement?: number | null;
 };
 
 type DbLeaveAuditRow = {
@@ -816,7 +833,11 @@ CREATE TABLE [hris].[LeaveAuditTrail] (
 IF COL_LENGTH('[hris].[LeaveApplications]', 'WorkflowJson') IS NULL
   ALTER TABLE [hris].[LeaveApplications] ADD [WorkflowJson] NVARCHAR(MAX) NULL;
 IF COL_LENGTH('[hris].[LeaveApplications]', 'CommentsJson') IS NULL
-  ALTER TABLE [hris].[LeaveApplications] ADD [CommentsJson] NVARCHAR(MAX) NULL;`);
+  ALTER TABLE [hris].[LeaveApplications] ADD [CommentsJson] NVARCHAR(MAX) NULL;
+IF COL_LENGTH('[hris].[LeaveBalances]', 'ManualAnnualEntitlement') IS NULL
+  ALTER TABLE [hris].[LeaveBalances] ADD [ManualAnnualEntitlement] DECIMAL(9,2) NULL;
+IF COL_LENGTH('[hris].[LeaveBalances]', 'ManualBalanceReason') IS NULL
+  ALTER TABLE [hris].[LeaveBalances] ADD [ManualBalanceReason] NVARCHAR(700) NULL;`);
     dbReady.value = true;
   }
   return pool;
@@ -941,6 +962,7 @@ const rowToBalance = (row: DbLeaveBalanceRow): LeaveBalanceRecord => ({
   liabilityValue: Number(row.LiabilityValue || 0),
   status: row.StatusName,
   exceptions: parseJsonArray(row.ExceptionsJson),
+  manualAnnualEntitlement: row.ManualAnnualEntitlement == null ? null : Number(row.ManualAnnualEntitlement),
 });
 
 const rowToAudit = (row: DbLeaveAuditRow): LeaveAuditEntry => ({
@@ -971,7 +993,7 @@ ORDER BY a.[StartDate] DESC, a.[UpdatedAt] DESC;`);
 const readLeaveBalances = async (pool: sql.ConnectionPool) => {
   const result = await pool.request().query(`
 SELECT [EmployeeId],[FullName],[Department],[LeaveType],[CurrentBalance],[AccruedBalance],[UsedBalance],[PendingBalance],
-  [ForfeitedBalance],[CarryForwardBalance],[LiabilityValue],[StatusName],[ExceptionsJson]
+  [ForfeitedBalance],[CarryForwardBalance],[LiabilityValue],[StatusName],[ExceptionsJson],[ManualAnnualEntitlement]
 FROM [hris].[LeaveBalances]
 ORDER BY [Department], [FullName], [LeaveType];`);
   return (result.recordset as DbLeaveBalanceRow[]).map(rowToBalance);
@@ -1082,14 +1104,15 @@ const syncLeaveBalances = async (pool: sql.ConnectionPool, employees: DleEmploye
   const carryForwardExpired = today > carryForwardExpiry;
 
   const existingRows = await pool.request().query(`
-SELECT [EmployeeId],[LeaveType],[CurrentBalance],[CarryForwardBalance],[ForfeitedBalance]
+SELECT [EmployeeId],[LeaveType],[CurrentBalance],[CarryForwardBalance],[ForfeitedBalance],[ManualAnnualEntitlement]
 FROM [hris].[LeaveBalances];`);
-  const existing = new Map<string, { current: number; carry: number; forfeited: number }>();
-  for (const row of existingRows.recordset as Array<{ EmployeeId: string; LeaveType: string; CurrentBalance: number; CarryForwardBalance: number; ForfeitedBalance: number }>) {
+  const existing = new Map<string, { current: number; carry: number; forfeited: number; manual: number | null }>();
+  for (const row of existingRows.recordset as Array<{ EmployeeId: string; LeaveType: string; CurrentBalance: number; CarryForwardBalance: number; ForfeitedBalance: number; ManualAnnualEntitlement: number | null }>) {
     existing.set(`${row.EmployeeId}::${row.LeaveType}`, {
       current: Number(row.CurrentBalance || 0),
       carry: Number(row.CarryForwardBalance || 0),
       forfeited: Number(row.ForfeitedBalance || 0),
+      manual: row.ManualAnnualEntitlement == null ? null : Number(row.ManualAnnualEntitlement),
     });
   }
 
@@ -1150,7 +1173,7 @@ GROUP BY [EmployeeId],[LeaveType];`);
 
   for (const employee of employees.filter((row) => activeStatus(row.status))) {
     const leaveType = 'Annual Leave';
-    const entitlement = entitlementFor(employee, leaveType);
+    const calculatedEntitlement = entitlementFor(employee, leaveType);
     const matchKeys = [...new Set(
       [employee.employeeId, employee.employeeCode, employee.sourceEmployeeId]
         .map((value) => String(value || '').trim())
@@ -1159,6 +1182,10 @@ GROUP BY [EmployeeId],[LeaveType];`);
     const currentExisting = matchKeys
       .map((id) => existing.get(`${id}::${leaveType}`))
       .find((row) => row != null);
+    const manualEntitlement = currentExisting?.manual == null || !Number.isFinite(currentExisting.manual)
+      ? null
+      : round2(currentExisting.manual);
+    const entitlement = manualEntitlement == null ? calculatedEntitlement : manualEntitlement;
     const rawCarry = Math.max(0, Number(currentExisting?.carry || 0));
     const storedCurrent = Math.max(0, Number(currentExisting?.current || 0));
     // Heal corrupt rows where available days were parked in Carry Forward (often CF == Entitled-Used and Balance == 0).
@@ -1198,7 +1225,7 @@ GROUP BY [EmployeeId],[LeaveType];`);
       ...(used > accrued && accrued > 0 ? [`Used days (${used}) exceed ${leaveYear} available entitlement (${accrued})`] : []),
       ...(carryConsumed > 0 ? [`Carry-forward consumed: ${carryConsumed} day(s)`] : []),
       ...(carryForwardExpired && openingCarry > carryConsumed ? [`Unused carry-forward forfeited after ${carryForwardExpiry}`] : []),
-      ...(!isFourteenDayPaidLeaveEmployee(employee) && !isConfirmedPermanent(employee) ? ['Annual Leave locked pending confirmation of appointment'] : []),
+      ...(manualEntitlement == null && !isFourteenDayPaidLeaveEmployee(employee) && !isConfirmedPermanent(employee) ? ['Annual Leave locked pending confirmation of appointment'] : []),
       ...(employee.hasManagerAssigned === false ? ['Reporting manager missing'] : []),
     ];
     const status: LeaveBalanceRecord['status'] = entitlement <= 0 || exceptions.some((item) => item.includes('locked')) ? 'Blocked' : exceptions.length ? 'Review' : 'Healthy';
@@ -1418,6 +1445,162 @@ export async function readLeaveApplicationsForReconciliation(options?: { syncEss
   }));
 }
 
+const contractStaffCode = /^(?:NYSC|IT|L|C|N|I)\d+$/i;
+const permanentStaffCode = /^P\d+$/i;
+
+/** Pair a contract/lumpsum code with the permanent code created when that person was converted. */
+export const contractToPermanentPair = (employeeCode: string, action: string, reason: string) => {
+  const code = String(employeeCode || '').trim().toUpperCase();
+  const actionText = String(action || '');
+  const text = `${actionText} ${reason || ''}`;
+  const liveIdentity = text.match(/live identity is\s+(P\d+)/i);
+  if (liveIdentity && contractStaffCode.test(code)) {
+    return { permanentCode: liveIdentity[1].toUpperCase(), priorCode: code };
+  }
+  const archivedPrior = actionText.match(/after\s+((?:NYSC|IT|L|C|N|I)\d+)\s+archive/i);
+  if (archivedPrior && permanentStaffCode.test(code)) {
+    return { permanentCode: code, priorCode: archivedPrior[1].toUpperCase() };
+  }
+  const convertedTo = text.match(/conversion to\s+(P\d+)/i);
+  const priorCode = text.match(/\b((?:NYSC|IT|L|C)\d+)\b/i);
+  if (convertedTo && priorCode) {
+    return { permanentCode: convertedTo[1].toUpperCase(), priorCode: priorCode[1].toUpperCase() };
+  }
+  return null;
+};
+
+const readContractToPermanentConversions = async (pool: sql.ConnectionPool) => {
+  const pairs = new Map<string, string>();
+  try {
+    const result = await pool.request().query(`
+SELECT e.employee_code AS employeeCode, a.audit_action AS actionName, ISNULL(a.reason, N'') AS reason
+FROM [hris].[EmployeeAuditLog] a
+INNER JOIN [hris].[Employees] e ON e.employee_id = a.employee_id
+WHERE a.audit_action LIKE N'%permanent conversion%'
+   OR a.audit_action LIKE N'%permanent payroll identity%'
+   OR ISNULL(a.reason, N'') LIKE N'%live identity is P%'
+   OR ISNULL(a.reason, N'') LIKE N'%conversion to P%';`);
+    for (const row of result.recordset as Array<{ employeeCode: string; actionName: string; reason: string }>) {
+      const pair = contractToPermanentPair(row.employeeCode, row.actionName, row.reason);
+      if (pair) pairs.set(pair.permanentCode, pair.priorCode);
+    }
+  } catch (error) {
+    console.error('[leave] contract-to-permanent lookup failed', error);
+  }
+  return pairs;
+};
+
+const buildConvertedLeaveBalances = (
+  employees: DleEmployeeDirectoryRow[],
+  balances: LeaveBalanceRecord[],
+  conversions: Map<string, string>,
+) => {
+  const employeesByCode = new Map<string, DleEmployeeDirectoryRow>();
+  for (const employee of employees) {
+    for (const value of [employee.employeeId, employee.employeeCode]) {
+      const code = String(value || '').trim().toUpperCase();
+      if (code) employeesByCode.set(code, employee);
+    }
+  }
+  const converted: ConvertedLeaveBalance[] = [];
+  for (const [permanentCode, priorCode] of conversions) {
+    const employee = employeesByCode.get(permanentCode);
+    if (!employee || !activeStatus(employee.status) || isFourteenDayPaidLeaveEmployee(employee)) continue;
+    const keys = new Set(
+      [employee.employeeId, employee.employeeCode].map((value) => String(value || '').trim().toUpperCase()).filter(Boolean),
+    );
+    const balance = balances.find((item) => /annual/i.test(item.leaveType) && keys.has(String(item.employeeId || '').trim().toUpperCase()));
+    if (balance) {
+      balance.convertedFromContract = true;
+      balance.priorEmployeeCode = priorCode;
+    }
+    converted.push({
+      employeeId: employee.employeeId,
+      fullName: employee.fullName,
+      department: employee.department || '',
+      priorEmployeeCode: priorCode,
+      entitled: round2(Number(balance?.accruedBalance || annualLeaveEntitlementForEmployee(employee))),
+      used: round2(Number(balance?.usedBalance || 0)),
+      balance: round2(Number(balance?.currentBalance || 0)),
+      carryForward: round2(Number(balance?.carryForwardBalance || 0)),
+      manualAnnualEntitlement: balance?.manualAnnualEntitlement ?? null,
+    });
+  }
+  return converted.sort((a, b) => a.fullName.localeCompare(b.fullName));
+};
+
+export async function setConvertedAnnualLeaveBalance(input: {
+  employeeCode: string;
+  balanceDays: number;
+  reason: string;
+  actor: string;
+}) {
+  const reason = String(input.reason || '').trim();
+  if (reason.length < 5) throw Object.assign(new Error('A reason is required.'), { status: 400 });
+  const balanceDays = round2(Number(input.balanceDays));
+  if (!Number.isFinite(balanceDays) || balanceDays < 0) {
+    throw Object.assign(new Error('Enter the annual leave balance in days.'), { status: 400 });
+  }
+  const pool = await ensureDb();
+  const employeeSource = await readPayrollEmployees();
+  await maybeSyncLeaveBalances(pool, employeeSource.employees, true);
+  const conversions = await readContractToPermanentConversions(pool);
+  const requested = String(input.employeeCode || '').trim().toUpperCase();
+  const employee = employeeSource.employees.find((item) =>
+    [item.employeeId, item.employeeCode].some((value) => String(value || '').trim().toUpperCase() === requested),
+  );
+  if (!employee) throw Object.assign(new Error('Employee was not found in the directory.'), { status: 404 });
+  if (!activeStatus(employee.status)) {
+    throw Object.assign(new Error('This employee is not active, so the leave balance cannot be edited.'), { status: 409 });
+  }
+  const permanentCode = String(employee.employeeCode || employee.employeeId || '').trim().toUpperCase();
+  const priorCode = conversions.get(permanentCode) || conversions.get(requested) || '';
+  const currentBalances = await readLeaveBalances(pool);
+  const keys = new Set([employee.employeeId, employee.employeeCode].map((value) => String(value || '').trim().toUpperCase()));
+  const current = currentBalances.find((item) => /annual/i.test(item.leaveType) && keys.has(String(item.employeeId || '').trim().toUpperCase()));
+  const used = round2(Number(current?.usedBalance || 0));
+  const carry = round2(Number(current?.carryForwardBalance || 0));
+  const entitlement = round2(balanceDays - carry + used);
+  const maxBalance = round2(Math.max(0, dormantLongPolicy.annualPermanentDays + carry - used));
+  if (entitlement < 0 || entitlement > dormantLongPolicy.annualPermanentDays) {
+    throw Object.assign(new Error(`Annual leave balance must stay within the permanent grant of ${dormantLongPolicy.annualPermanentDays} working days. The highest balance for this employee is ${maxBalance} day(s).`), { status: 400 });
+  }
+  const balanceBefore = round2(Number(current?.currentBalance || 0));
+  await pool.request()
+    .input('EmployeeId', sql.NVarChar(80), employee.employeeId)
+    .input('LeaveType', sql.NVarChar(120), 'Annual Leave')
+    .input('FullName', sql.NVarChar(220), employee.fullName)
+    .input('Department', sql.NVarChar(180), employee.department || 'Unassigned')
+    .input('ManualAnnualEntitlement', sql.Decimal(9, 2), entitlement)
+    .input('ManualBalanceReason', sql.NVarChar(700), reason)
+    .input('SourceSystem', sql.NVarChar(80), HRIS_LEAVE_SOURCE)
+    .query(`
+MERGE [hris].[LeaveBalances] AS target
+USING (SELECT @EmployeeId AS [EmployeeId], @LeaveType AS [LeaveType]) AS source
+ON target.[EmployeeId] = source.[EmployeeId] AND target.[LeaveType] = source.[LeaveType]
+WHEN MATCHED THEN UPDATE SET
+  [ManualAnnualEntitlement]=@ManualAnnualEntitlement,
+  [ManualBalanceReason]=@ManualBalanceReason,
+  [UpdatedAt]=SYSUTCDATETIME()
+WHEN NOT MATCHED THEN INSERT
+  ([EmployeeId],[LeaveType],[FullName],[Department],[CurrentBalance],[AccruedBalance],[UsedBalance],[PendingBalance],[ForfeitedBalance],[CarryForwardBalance],[LiabilityValue],[StatusName],[ExceptionsJson],[SourceSystem],[ManualAnnualEntitlement],[ManualBalanceReason])
+VALUES
+  (@EmployeeId,@LeaveType,@FullName,@Department,0,0,0,0,0,0,0,N'Review',N'[]',@SourceSystem,@ManualAnnualEntitlement,@ManualBalanceReason);`);
+  await maybeSyncLeaveBalances(pool, employeeSource.employees, true);
+  const refreshed = await readLeaveBalances(pool);
+  const next = refreshed.find((item) => /annual/i.test(item.leaveType) && keys.has(String(item.employeeId || '').trim().toUpperCase()));
+  return {
+    employeeCode: employee.employeeId,
+    fullName: employee.fullName,
+    priorEmployeeCode: priorCode || null,
+    balanceBefore,
+    balanceAfter: round2(Number(next?.currentBalance ?? balanceDays)),
+    entitlement,
+    reason,
+    actor: input.actor,
+  };
+}
+
 export async function readLeaveManagementPayload(
   section = 'dashboard',
   roleInput?: string | null,
@@ -1481,6 +1664,8 @@ export async function readLeaveManagementPayload(
     .forEach((employee) => onLeaveTodayKeys.add(String(employee.employeeId || employee.employeeCode).toUpperCase()));
   const employeesOnLeave = onLeaveTodayKeys.size;
   const exceptionCount = applications.reduce((sum, item) => sum + item.exceptions.length, 0) + balances.reduce((sum, item) => sum + item.exceptions.length, 0);
+  const conversions = await readContractToPermanentConversions(pool);
+  const convertedLeaveBalances = buildConvertedLeaveBalances(employees, balances, conversions);
   const normalizedAnnualBalances = normalizeAnnualLeaveBalances(balances);
   const leaveLiability = normalizedAnnualBalances.reduce((sum, item) => sum + item.liabilityValue, 0);
   const drilldowns = {
@@ -1551,6 +1736,7 @@ export async function readLeaveManagementPayload(
     actions: availableActions,
     applications,
     balances,
+    convertedLeaveBalances,
     allowanceExceptions,
     leaveTypes: leaveTypes.filter((type) => type.active && !/^(casual leave|unpaid leave)$/i.test(type.name)),
     calendar: applications.slice(0, 10).map((item) => ({ id: item.id, label: `${item.fullName} - ${item.leaveType}`, from: item.startDate, to: item.endDate, status: item.status, department: item.department, location: item.location })),

@@ -1,12 +1,18 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 export const Badge=({children,tone='blue'})=><span className={'badge '+tone}>{children}</span>;
-export const Button=({children,kind='primary',onClick,disabled})=><button disabled={disabled} onClick={onClick} className={'btn '+kind}>{children}</button>;
+export const Button=({children,kind='primary',onClick,disabled})=><button type="button" disabled={disabled} onClick={onClick} className={'btn '+kind}>{children}</button>;
 export const Card=({label,value,sub,tone=''})=><div className={'kpi '+tone}><span>{label}</span><strong>{value}</strong><small>{sub}</small></div>;
-export const Tabs=({items,active,setActive})=><div className="tabs">{items.map(x=><button key={x} onClick={()=>setActive(x)} className={active===x?'active':''}>{x}</button>)}</div>;
-export const Modal=({title,children,onClose,footer,wide=false})=><div className="overlay"><div className={wide?'modal wide':'modal'}><div className="modalHead"><h3>{title}</h3><button onClick={onClose}>×</button></div><div className="modalBody">{children}</div><div className="modalFoot">{footer}</div></div></div>;
+export const Tabs=({items,active,setActive})=><div className="tabs">{items.map(x=><button type="button" key={x} onClick={()=>setActive(x)} className={active===x?'active':''}>{x}</button>)}</div>;
+export const Modal=({title,children,onClose,footer,wide=false})=><div className="overlay"><div className={wide?'modal wide':'modal'}><div className="modalHead"><h3>{title}</h3><button type="button" onClick={onClose}>×</button></div><div className="modalBody">{children}</div><div className="modalFoot">{footer}</div></div></div>;
 export const Field=({label,children})=><label className="field"><span>{label}</span>{children}</label>;
-export const Table=({headers,rows,empty='No records yet.'})=><div className="tableWrap"><table><thead><tr>{headers.map(h=><th key={h}>{h}</th>)}</tr></thead><tbody>{rows.length?rows.map((r,i)=><tr key={i}>{r.map((v,j)=><td key={j}>{v}</td>)}</tr>):<tr><td colSpan={headers.length} style={{padding:'28px 16px',color:'#64748b'}}>{empty}</td></tr>}</tbody></table></div>;
+const tableCell = (value) => {
+  if (value == null || value === false) return '';
+  if (typeof value === 'string' || typeof value === 'number') return value;
+  if (React.isValidElement(value)) return value;
+  return '';
+};
+export const Table=({headers,rows,empty='No records yet.'})=><div className="tableWrap"><table><thead><tr>{(headers || []).map((h,i)=><th key={i}>{tableCell(h)}</th>)}</tr></thead><tbody>{Array.isArray(rows) && rows.length?rows.map((r,i)=><tr key={i}>{(Array.isArray(r) ? r : []).map((v,j)=><td key={j}>{tableCell(v)}</td>)}</tr>):<tr><td colSpan={(headers || []).length || 1} style={{padding:'28px 16px',color:'#64748b'}}>{empty}</td></tr>}</tbody></table></div>;
 export const Empty=({text})=><div className="empty">{text}</div>;
 
 const placeMenu = (node) => {

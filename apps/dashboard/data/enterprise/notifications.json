@@ -2,6 +2,75 @@
   "schemaVersion": 1,
   "notifications": [
     {
+      "id": "ntf-1790668841086-x7q7t2",
+      "recipientUserId": "P0146",
+      "recipientUsername": "P0146",
+      "recipientEmployeeCode": "P0146",
+      "recipientRoles": [],
+      "kind": "Approval",
+      "module": "Telephone Allowance",
+      "title": "HR review completed — CALL-2026-SEP-OCT-001",
+      "body": "Ms. BADETAN VICTORIA OLAMIDE completed HR review and returned CALL-2026-SEP-OCT-001 to IT for validation.",
+      "severity": "success",
+      "status": "Unread",
+      "href": "/it-support/telephone-allowance/manage",
+      "createdAt": "2026-09-29T08:00:41.086Z",
+      "actor": "Ms. BADETAN VICTORIA OLAMIDE",
+      "channels": [
+        "In-App",
+        "Email"
+      ],
+      "metadata": {
+        "recipientCode": "P0146"
+      }
+    },
+    {
+      "id": "ntf-1790668838601-r72k38",
+      "recipientUserId": "P0194",
+      "recipientUsername": "P0194",
+      "recipientEmployeeCode": "P0194",
+      "recipientRoles": [],
+      "kind": "Workflow",
+      "module": "Leave Management",
+      "title": "Leave reliever assignment confirmed",
+      "body": "You have been assigned as reliever for Mr. ALEX SOLOMON OSIREGBEMHE: Exam Leave — Mr. ALEX SOLOMON OSIREGBEMHE (2026-10-06 to 2026-10-12).",
+      "severity": "info",
+      "status": "Unread",
+      "href": "/workforce-portal?tab=leave",
+      "createdAt": "2026-09-29T08:00:38.601Z",
+      "actor": "Leave Workflow",
+      "channels": [
+        "In-App",
+        "Email"
+      ],
+      "metadata": {
+        "requestId": "ess-1790326009041-qh642b"
+      }
+    },
+    {
+      "id": "ntf-1790668836372-6jvd8v",
+      "recipientUserId": "P0443",
+      "recipientUsername": "P0443",
+      "recipientEmployeeCode": "P0443",
+      "recipientRoles": [],
+      "kind": "Workflow",
+      "module": "Leave Management",
+      "title": "Leave request approved",
+      "body": "Exam Leave — Mr. ALEX SOLOMON OSIREGBEMHE (2026-10-06 to 2026-10-12) has received final HR approval.",
+      "severity": "success",
+      "status": "Unread",
+      "href": "/workforce-portal?tab=leave&leaveSection=applications",
+      "createdAt": "2026-09-29T08:00:36.372Z",
+      "actor": "Leave Workflow",
+      "channels": [
+        "In-App",
+        "Email"
+      ],
+      "metadata": {
+        "requestId": "ess-1790326009041-qh642b"
+      }
+    },
+    {
       "id": "ntf-1790325571701-zmbktv",
       "recipientUserId": "P0432",
       "recipientUsername": "P0432",

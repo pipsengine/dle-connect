@@ -17,7 +17,7 @@ const emptyLine = (employee) => ({
   nightStart: employee.nightStart || '',
   nightEnd: employee.nightEnd || '',
   nightNote: employee.nightNote || '',
-  allocations: employee.allocations || [],
+  allocations: Array.isArray(employee.allocations) ? employee.allocations : [],
 });
 
 export default function Review() {
@@ -39,12 +39,14 @@ export default function Review() {
   const [addingProject, setAddingProject] = useState(false);
   const [supervisors, setSupervisors] = useState([]);
 
-  const openPeriods = snapshot.periods.filter((period) => period.status === 'Open' || period.status === 'Planned');
-  const period = snapshot.periods.find((item) => item.id === periodId) || openPeriods[0] || snapshot.periods[0];
+  const periods = Array.isArray(snapshot?.periods) ? snapshot.periods : [];
+  const openPeriods = periods.filter((period) => period.status === 'Open' || period.status === 'Planned');
+  const period = periods.find((item) => item.id === periodId) || openPeriods[0] || periods[0];
+  const defaultPeriodId = period?.id || '';
 
   useEffect(() => {
-    if (!periodId && period) setPeriodId(period.id);
-  }, [periodId, period]);
+    if (!periodId && defaultPeriodId) setPeriodId(defaultPeriodId);
+  }, [periodId, defaultPeriodId]);
 
   useEffect(() => {
     const id = sessionStorage.getItem('ts-entry-focus');
@@ -52,7 +54,9 @@ export default function Review() {
     if (!id) return;
     sessionStorage.removeItem('ts-entry-focus');
     sessionStorage.removeItem('ts-entry-notice');
-    openSheet(id, { keepNotice: true }).then(() => { if (submittedNotice) setNotice(submittedNotice); });
+    openSheet(id, { keepNotice: true })
+      .then(() => { if (submittedNotice) setNotice(submittedNotice); })
+      .catch((openError) => setPageError(openError?.message || 'Unable to open the submitted timesheet.'));
   }, []);
 
   useEffect(() => {
@@ -64,7 +68,7 @@ export default function Review() {
       .then((response) => response.json())
       .then((body) => {
         if (cancelled) return;
-        const names = Array.isArray(body.data) ? body.data : [];
+        const names = Array.isArray(body.data) ? body.data.filter((name) => typeof name === 'string' && name) : [];
         setSupervisors(names);
         setSupervisor((current) => names.includes(current) ? current : '');
       })
@@ -79,7 +83,7 @@ export default function Review() {
     const response = await fetch(`/api/timesheet-management/entry?${params}`, { cache: 'no-store' });
     const body = await response.json();
     if (!response.ok || body.status === 'error') throw new Error(body.error || 'Search failed.');
-    setResults(body.data?.timesheets || []);
+    setResults(Array.isArray(body.data?.timesheets) ? body.data.timesheets : []);
     setSettings(body.data?.settings || null);
     setSearched(true);
     return body.data?.timesheets || [];
@@ -123,10 +127,14 @@ export default function Review() {
     setSheet(next);
     setSettings(next.settings || settings);
     if (next.periodId && next.workDate) loadResults(next.periodId, next.workDate).catch(() => {});
-    const nextLines = (next.lines || []).map(emptyLine);
+    const nextLines = (Array.isArray(next.lines) ? next.lines : []).map(emptyLine);
     setLines(nextLines);
     const codes = new Map();
-    nextLines.forEach((line) => line.allocations.forEach((item) => codes.set(item.projectCode, { code: item.projectCode, name: item.projectName || item.projectCode, kind: item.kind || 'Project' })));
+    nextLines.forEach((line) => (Array.isArray(line.allocations) ? line.allocations : []).forEach((item) => {
+      const code = item && typeof item === 'object' ? String(item.projectCode || '') : '';
+      if (!code) return;
+      codes.set(code, { code, name: String(item.projectName || code), kind: String(item.kind || 'Project') });
+    }));
     setColumns([...codes.values()]);
     setDirty(false);
   };
@@ -134,9 +142,9 @@ export default function Review() {
   return <>
     <div className="pageTitle"><div><span className="eyebrow">QUALITY GATE</span><h1>Timesheet Booking Review</h1><p>Review &amp; Validate submits the booking the first time. Resubmit is only for a later correction, and only until approval has started.</p></div></div>
     {(error || pageError) && <div className="success" style={{ background: '#fef2f2', color: '#991b1b' }}>{pageError || error}</div>}
-    {notice && <div className="success">{notice} <button onClick={() => setNotice('')}>×</button></div>}
+    {notice && <div className="success">{notice} <button type="button" onClick={() => setNotice('')}>×</button></div>}
     <div className="filters six">
-      <Field label="Timesheet Period"><select value={periodId} onChange={(event) => { setPeriodId(event.target.value); setSearched(false); }}><option value="">Select a period</option>{snapshot.periods.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></Field>
+      <Field label="Timesheet Period"><select value={periodId} onChange={(event) => { setPeriodId(event.target.value); setSearched(false); }}><option value="">Select a period</option>{periods.map((item) => <option key={item.id} value={item.id}>{typeof item.name === 'string' ? item.name : item.id}</option>)}</select></Field>
       <Field label="Work Date"><input type="date" value={workDate} onChange={(event) => setWorkDate(event.target.value)} /></Field>
       <Field label="Supervisor"><select value={supervisor} onChange={(event) => setSupervisor(event.target.value)}><option value="">All supervisors</option>{supervisors.map((name) => <option key={name}>{name}</option>)}</select></Field>
       <div className="actions" style={{ alignSelf: 'end' }}><Button disabled={searching} onClick={() => search()}>{searching ? 'Searching…' : 'Find timesheet'}</Button></div>
@@ -157,15 +165,15 @@ export default function Review() {
       onAddProject={() => setAddingProject(true)}
     /> : <div className="panel">
       <div className="panelHead"><div><h3>{workDate ? formatDisplayDate(workDate) : 'Saved timesheets'}</h3><p>{searched ? `${visible.length} timesheet${visible.length === 1 ? '' : 's'} for this date.` : 'Choose a work date and find the timesheet.'}</p></div></div>
-      <Table headers={['Reference', 'Supervisor', 'Shift', 'Crew', 'REG', 'OVT', 'Version', 'Status', '']} rows={visible.map((item) => [
+      <Table headers={['Reference', 'Supervisor', 'Shift', 'Crew', 'REG', 'OVT', 'Version', 'Status', '']} rows={visible.filter(Boolean).map((item) => [
         item.reference,
         item.supervisor,
         item.shift,
         item.crew,
         item.regularHours,
         item.ovtHours,
-        `v${item.version}`,
-        <Badge tone={item.editable ? 'green' : 'slate'}>{item.status}</Badge>,
+        `v${item.version ?? ''}`,
+        <Badge tone={item.editable ? 'green' : 'slate'}>{typeof item.status === 'string' ? item.status : ''}</Badge>,
         <Button kind="secondary" onClick={() => openSheet(item.id)}>{item.editable ? 'Edit' : 'View'}</Button>,
       ])} empty={searched ? 'No timesheet was saved for this date.' : 'Search by work date to open a timesheet.'} />
     </div>}
@@ -179,7 +187,11 @@ function SheetEditor({ sheet, lines, setLines, columns, settings, setDirty, savi
   const sendLabel = alreadySent ? 'Resubmit' : 'Submit';
   const showSend = editable && (sheet.status !== 'Submitted' || dirty);
   const onApprovedLeave = (line) => line?.operationalStatus === 'Approved Leave' || line?.attendanceStatus === 'Approved Leave';
-  const expectedFor = (line) => onApprovedLeave(line) && !/^C\d/i.test(line?.employeeCode || '') ? 0 : (settings?.expectedHours || 8);
+  const expectedFor = (line) => {
+    if (onApprovedLeave(line) && !/^C\d/i.test(line?.employeeCode || '')) return 0;
+    const hours = Number(settings?.expectedHours);
+    return Number.isFinite(hours) && hours > 0 ? hours : 8;
+  };
   const leaveIdleLocked = (line) => onApprovedLeave(line) && /^C\d/i.test(line?.employeeCode || '');
   const capAllocations = (allocations, limit) => {
     let remaining = limit;
@@ -198,10 +210,11 @@ function SheetEditor({ sheet, lines, setLines, columns, settings, setDirty, savi
       const nextPatch = Object.prototype.hasOwnProperty.call(patch, 'regularHours')
         ? { ...patch, regularHours: Math.min(Math.max(0, Number(patch.regularHours) || 0), expectedFor(line)) }
         : patch;
-      const existing = line.allocations.find((item) => item.projectCode === projectCode);
+      const currentAllocations = Array.isArray(line.allocations) ? line.allocations : [];
+      const existing = currentAllocations.find((item) => item.projectCode === projectCode);
       const allocations = existing
-        ? line.allocations.map((item) => item.projectCode === projectCode ? { ...item, ...nextPatch } : item)
-        : [...line.allocations, { projectCode, projectName: projectCode, kind: 'Project', regularHours: 0, ovtHours: 0, ...nextPatch }];
+        ? currentAllocations.map((item) => item.projectCode === projectCode ? { ...item, ...nextPatch } : item)
+        : [...currentAllocations, { projectCode, projectName: projectCode, kind: 'Project', regularHours: 0, ovtHours: 0, ...nextPatch }];
       return { ...line, allocations: Object.prototype.hasOwnProperty.call(patch, 'regularHours') ? capAllocations(allocations, expectedFor(line)) : allocations };
     }));
   };
@@ -249,21 +262,27 @@ function SheetEditor({ sheet, lines, setLines, columns, settings, setDirty, savi
     }
   };
 
+  const show = (value) => (value == null || typeof value === 'object' ? '' : value);
+  const hourColumns = Array.isArray(columns) ? columns.filter((column) => column && column.code) : [];
   return <div className="panel">
-    <div className="panelHead"><div><h3>{sheet.reference} · {formatDisplayDate(sheet.workDate)}</h3><p>{sheet.supervisor} · {sheet.shift} · v{sheet.version} · {sheet.status}{sheet.dayKind ? ` · ${sheet.dayKind}` : ''}{sheet.holidayName ? ` · ${sheet.holidayName}` : ''}</p></div><div className="actions"><Button kind="secondary" onClick={onBack}>Back</Button>{editable && <Button kind="secondary" disabled={saving} onClick={() => persist(false)}>{saving ? 'Saving…' : 'Save'}</Button>}{showSend && <Button disabled={saving} onClick={() => persist(true)}>{sendLabel}</Button>}</div></div>
+    <div className="panelHead"><div><h3>{show(sheet.reference)} · {formatDisplayDate(sheet.workDate)}</h3><p>{show(sheet.supervisor)} · {show(sheet.shift)} · v{show(sheet.version)} · {show(sheet.status)}{sheet.dayKind ? ` · ${show(sheet.dayKind)}` : ''}{sheet.holidayName ? ` · ${show(sheet.holidayName)}` : ''}</p></div><div className="actions"><Button kind="secondary" onClick={onBack}>Back</Button>{editable && <Button kind="secondary" disabled={saving} onClick={() => persist(false)}>{saving ? 'Saving…' : 'Save'}</Button>}{showSend && <Button disabled={saving} onClick={() => persist(true)}>{sendLabel}</Button>}</div></div>
     {!editable && <div className="infoBox">Approval has started for this timesheet. The hours are read only.</div>}
     {editable && sheet.status === 'Submitted' && !dirty && <div className="infoBox">This timesheet is already submitted. Change the hours only if a correction is needed, then resubmit before approval starts.</div>}
     {editable && <div className="toolbar"><div /><div className="actions"><Button kind="secondary" onClick={onAddProject}>+ Add Project</Button></div></div>}
-    <div className="tableWrap"><table><thead><tr><th>Employee</th><th>Attendance</th>{columns.map((column) => <th key={column.code}><span className="hourHead">{column.code}<small>{column.name && column.name !== column.code ? column.name : 'REG · OVT'}</small></span></th>)}<th>REG</th><th>OVT</th><th>Expected</th><th>Status</th></tr></thead><tbody>
-      {lines.map((line) => {
+    <div className="tableWrap"><table><thead><tr><th>Employee</th><th>Attendance</th>{hourColumns.map((column) => <th key={column.code}><span className="hourHead">{show(column.code)}<small>{column.name && column.name !== column.code ? show(column.name) : 'REG · OVT'}</small></span></th>)}<th>REG</th><th>OVT</th><th>Expected</th><th>Status</th></tr></thead><tbody>
+      {(Array.isArray(lines) ? lines : []).map((line) => {
+        const allocations = Array.isArray(line?.allocations) ? line.allocations : [];
         const expected = expectedFor(line);
-        const capped = capAllocations(line.allocations, expected);
+        const capped = capAllocations(allocations, expected);
         const regular = capped.reduce((sum, item) => sum + Number(item.regularHours || 0), 0);
-        const ovt = line.allocations.reduce((sum, item) => sum + Number(item.ovtHours || 0), 0);
+        const ovt = allocations.reduce((sum, item) => sum + Number(item.ovtHours || 0), 0);
         const unallocated = Math.max(0, expected - regular);
         const status = line.operationalStatus === 'Approved Leave' && regular > 0 && !/^C\d/i.test(line.employeeCode || '') ? 'Leave Conflict' : regular > expected ? 'Overbooked' : unallocated > 0 && expected > 0 ? 'Underbooked' : 'Balanced';
-        return <tr key={line.employeeCode}><td><b>{line.employeeName}</b><small className="block">{line.employeeCode}</small></td><td><Badge tone={line.attendanceStatus ? 'green' : 'amber'}>{line.attendanceStatus || line.operationalStatus || '—'}</Badge></td>{columns.map((column) => {
-          const allocation = line.allocations.find((item) => item.projectCode === column.code);
+        const employeeName = typeof line.employeeName === 'string' || typeof line.employeeName === 'number' ? line.employeeName : '';
+        const employeeCode = typeof line.employeeCode === 'string' || typeof line.employeeCode === 'number' ? line.employeeCode : '';
+        const attendance = typeof line.attendanceStatus === 'string' && line.attendanceStatus ? line.attendanceStatus : (typeof line.operationalStatus === 'string' ? line.operationalStatus : '—');
+        return <tr key={employeeCode || employeeName}><td><b>{employeeName}</b><small className="block">{employeeCode}</small></td><td><Badge tone={line.attendanceStatus ? 'green' : 'amber'}>{attendance}</Badge></td>{hourColumns.map((column) => {
+          const allocation = allocations.find((item) => item.projectCode === column.code);
           const cappedItem = capped.find((item) => item.projectCode === column.code);
           const regularValue = Number(cappedItem?.regularHours || 0);
           const locked = !editable || leaveIdleLocked(line);
@@ -271,7 +290,7 @@ function SheetEditor({ sheet, lines, setLines, columns, settings, setDirty, savi
           return <td key={column.code}><div className="hourPair"><label>REG<input className={locked ? 'locked' : undefined} type="number" min="0" max={expected} step="0.5" inputMode="decimal" readOnly={locked} value={locked ? regularValue : (regularValue || '')} onChange={(event) => { if (!locked) setHours('regularHours', Number(event.target.value) || 0); }} /></label><label>OVT<input className={locked ? 'locked' : undefined} type="number" min="0" step="0.5" inputMode="decimal" readOnly={locked} value={locked ? Number(allocation?.ovtHours || 0) : (allocation?.ovtHours || '')} onChange={(event) => { if (!locked) setHours('ovtHours', Number(event.target.value) || 0); }} /></label></div></td>;
         })}<td>{regular}</td><td>{ovt}</td><td>{expected}</td><td><Badge tone={status === 'Balanced' ? 'green' : 'amber'}>{status}</Badge></td></tr>;
       })}
-      {!lines.length && <tr><td colSpan={6 + columns.length}>This timesheet has no employees.</td></tr>}
+      {!lines.length && <tr><td colSpan={6 + hourColumns.length}>This timesheet has no employees.</td></tr>}
     </tbody></table></div>
   </div>;
 }

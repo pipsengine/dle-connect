@@ -319,7 +319,7 @@ export const sendLeaveRelieverAssignmentEmail = async (input: {
   actorName?: string;
   baseUrl?: string | null;
 }) => {
-  const to = employeeEmailAddress(input.reliever);
+  const to = await resolveEmployeeMailbox(input.reliever);
   const email = buildLeaveRelieverEmail({
     request: input.request,
     requesterName: employeeDisplayName(input.requester),
