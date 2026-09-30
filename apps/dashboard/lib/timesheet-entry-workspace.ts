@@ -176,9 +176,37 @@ INSERT INTO [tsmgmt].[InternalActivities] ([Code],[Name],[Status]) VALUES
 (N'INT-STANDBY', N'Standby', N'Active'),
 (N'INT-OTHER', N'Other Approved Internal Work', N'Active');
 `);
+    await connection.request().query(`
+IF OBJECT_ID(N'[tsmgmt].[Timesheets]', N'U') IS NOT NULL
+AND NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'IX_TsmgmtTimesheets_SupervisorDate' AND object_id = OBJECT_ID(N'[tsmgmt].[Timesheets]'))
+CREATE INDEX [IX_TsmgmtTimesheets_SupervisorDate] ON [tsmgmt].[Timesheets]([PeriodId], [WorkDate], [SupervisorName], [ShiftLabel]);
+IF OBJECT_ID(N'[tsmgmt].[Bookings]', N'U') IS NOT NULL
+AND NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'IX_TsmgmtBookings_SupervisorDate' AND object_id = OBJECT_ID(N'[tsmgmt].[Bookings]'))
+CREATE INDEX [IX_TsmgmtBookings_SupervisorDate] ON [tsmgmt].[Bookings]([PeriodId], [WorkDate], [SupervisorName], [ShiftLabel]);
+`);
     ensured = true;
   }
   return connection;
+};
+
+const isDeadlock = (error: unknown) => {
+  const number = Number((error as { number?: number })?.number);
+  const message = error instanceof Error ? error.message : String(error || '');
+  return number === 1205 || /deadlock/i.test(message);
+};
+
+const withDeadlockRetry = async <T,>(work: () => Promise<T>) => {
+  let last: unknown;
+  for (let attempt = 0; attempt < 4; attempt += 1) {
+    try {
+      return await work();
+    } catch (error) {
+      last = error;
+      if (!isDeadlock(error) || attempt === 3) throw error;
+      await new Promise((resolve) => setTimeout(resolve, 50 * (attempt + 1)));
+    }
+  }
+  throw last;
 };
 
 const displayName = (row: Record<string, unknown>) => {
@@ -864,6 +892,7 @@ export const saveTimesheetEntry = async (input: {
   const classification = resolved.timesheet?.frozen
     ? { dayKind: resolved.timesheet.dayKind, holidayName: resolved.timesheet.holidayName }
     : resolved.classification;
+  return withDeadlockRetry(async () => {
   const transaction = new sql.Transaction(connection);
   await transaction.begin();
   try {
@@ -871,8 +900,7 @@ export const saveTimesheetEntry = async (input: {
     let version = resolved.timesheet?.version || 1;
     if (!timesheetId) {
       timesheetId = newId('ts');
-      const count = await new sql.Request(transaction).query(`SELECT COUNT(1) AS total FROM [tsmgmt].[Timesheets]`);
-      const reference = `TS-${input.workDate.slice(0, 7)}-${String(Number(count.recordset?.[0]?.total || 0) + 1).padStart(5, '0')}`;
+      const reference = `TS-${input.workDate.slice(0, 7)}-${timesheetId.slice(-8).toUpperCase()}`;
       await new sql.Request(transaction)
         .input('Id', sql.NVarChar(40), timesheetId)
         .input('Reference', sql.NVarChar(40), reference)
@@ -1002,9 +1030,10 @@ export const saveTimesheetEntry = async (input: {
     await transaction.commit();
     return withRevision(connection, await loadTimesheet(connection, timesheetId));
   } catch (error) {
-    await transaction.rollback();
+    await transaction.rollback().catch(() => undefined);
     throw error;
   }
+  });
 };
 
 export const listTimesheetEntrySheets = async (status: string) => {
@@ -1054,17 +1083,17 @@ export const submitTimesheetEntry = async (id: string, actor: string) => {
     return regular > 0 || ovt > 0;
   });
   if (blocking.length) throw new Error(`${blocking[0].employeeName} is on approved leave and still has booked hours.`);
-  await connection.request()
+  await withDeadlockRetry(() => connection.request()
     .input('Id', sql.NVarChar(40), sheet.id)
     .input('Actor', sql.NVarChar(120), text(actor) || 'Timesheet User')
     .query(`
-      UPDATE [tsmgmt].[Timesheets] SET [Status]=N'Submitted', [ClassificationFrozen]=1, [UpdatedAt]=SYSUTCDATETIME(), [UpdatedBy]=@Actor WHERE [Id]=@Id;
-      UPDATE [tsmgmt].[Bookings] SET [Status]=N'Submitted', [UpdatedAt]=SYSUTCDATETIME(), [UpdatedBy]=@Actor
-      WHERE [PeriodId]=(SELECT [PeriodId] FROM [tsmgmt].[Timesheets] WHERE [Id]=@Id)
-        AND [WorkDate]=(SELECT [WorkDate] FROM [tsmgmt].[Timesheets] WHERE [Id]=@Id)
-        AND [SupervisorName]=(SELECT [SupervisorName] FROM [tsmgmt].[Timesheets] WHERE [Id]=@Id);
+      UPDATE [tsmgmt].[Timesheets] WITH (ROWLOCK) SET [Status]=N'Submitted', [ClassificationFrozen]=1, [UpdatedAt]=SYSUTCDATETIME(), [UpdatedBy]=@Actor WHERE [Id]=@Id;
+      UPDATE b SET b.[Status]=N'Submitted', b.[UpdatedAt]=SYSUTCDATETIME(), b.[UpdatedBy]=@Actor
+      FROM [tsmgmt].[Bookings] b WITH (ROWLOCK)
+      INNER JOIN [tsmgmt].[Timesheets] t ON t.[Id]=@Id
+        AND b.[PeriodId]=t.[PeriodId] AND b.[WorkDate]=t.[WorkDate] AND b.[SupervisorName]=t.[SupervisorName];
       INSERT INTO [tsmgmt].[TimesheetEntryAudit] ([TimesheetId],[Action],[Detail],[Actor]) VALUES (@Id, N'Submitted to supervisor', N'Classification frozen', @Actor);
-    `);
+    `));
   await openTimesheetApproval(sheet.id, text(actor) || 'Timesheet User');
   return withRevision(connection, await loadTimesheet(connection, sheet.id));
 };

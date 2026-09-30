@@ -1080,7 +1080,8 @@ const computePayrollForPeriod = async (requestedPeriod: string): Promise<Payroll
     const mdEmployee = isDleUsdMdEmployee(employee);
     const skipPension = dailyRateEmployee || !isPensionEligibleStaff(employee) || (usdRun && !usdHousingPension) || mdEmployee;
     const statutoryPension = skipPension ? 0 : roundMoney(pension.employeeContribution);
-    const additionalPension = skipPension || usdRun ? 0 : roundMoney(pension.voluntaryContribution);
+    // Employee pension on the salary is the 8% only. Voluntary PENSION_EE2 is not deducted.
+    const additionalPension = 0;
     const employeePension = roundMoney(statutoryPension + additionalPension);
     const statutoryEmployee = skipFunds ? 0 : funds.employeeDeductions;
     const loanRecovery = roundMoney(loans.reduce((sum, loan) => sum + loan.payrollRecovery, 0));

@@ -5053,6 +5053,8 @@ export default function PayrollManagementClient({
       if (target.query) {
         for (const [key, value] of Object.entries(target.query)) params.set(key, value);
       }
+      const period = viewPeriod || payload?.period || '';
+      if (/^\d{4}-\d{2}$/.test(period)) params.set('period', period);
       window.location.href = `${target.path}?${params.toString()}`;
       return;
     }

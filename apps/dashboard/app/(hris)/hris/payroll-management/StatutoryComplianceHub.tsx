@@ -516,6 +516,7 @@ export default function StatutoryComplianceHub({
             tab={activeTab}
             payload={payload}
             lastLoaded={lastLoaded}
+            period={viewPeriod || payload?.period}
             onBack={() => onSelectTab('overview')}
             onGenerateSchedule={onGenerateSchedule}
             onSelectTab={onSelectTab}
@@ -538,6 +539,7 @@ function StatutoryTabPanel({
   tab,
   payload,
   lastLoaded,
+  period,
   onBack,
   onGenerateSchedule,
   onSelectTab,
@@ -545,6 +547,7 @@ function StatutoryTabPanel({
   tab: StatutoryTabId;
   payload: StatutoryPayload | null;
   lastLoaded: string;
+  period?: string | null;
   onBack: () => void;
   onGenerateSchedule: (category: StatutoryCategoryId) => void;
   onSelectTab: (tab: StatutoryTabId) => void;
@@ -562,7 +565,7 @@ function StatutoryTabPanel({
       </div>
 
       {tab === 'paye' ? <TaxPayeClient initialNow={now} /> : null}
-      {tab === 'pension' ? <PensionClient initialNow={now} period={viewPeriod || payload?.period} /> : null}
+      {tab === 'pension' ? <PensionClient initialNow={now} period={period} /> : null}
       {tab === 'nhf' || tab === 'nsitf' || tab === 'itf' ? <StatutoryFundsClient initialNow={now} /> : null}
       {tab === 'compliance-reports' ? (
         <ComplianceReportsPanel

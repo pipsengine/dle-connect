@@ -5,6 +5,7 @@ import { isPensionEligibleStaff } from '@/lib/payroll-employee-classification';
 import { payslipIdentityMap } from '@/lib/payroll-payslip-identity-store';
 import { normalizePayrollMatchKey } from '@/lib/sage-people-payroll-store';
 import { activePayrollPeriod } from '@/lib/payroll-periods';
+import { readPayrollPeriodState } from '@/lib/payroll-period-store';
 import { pensionableEmolumentFromLines } from '@/lib/payroll-earnings-engine';
 import { readAllPayrollSnapshotsByPeriods } from '@/lib/payroll-run-store';
 import { isDleUsdMdEmployee } from '@/lib/payroll-bank-schedule-packs';
@@ -31,9 +32,11 @@ const permissions = (role: Role) => ({
 
 const monthPeriod = activePayrollPeriod;
 
-const requestedPeriod = (request: Request) => {
+const requestedPeriod = async (request: Request) => {
   const value = compact(new URL(request.url).searchParams.get('period'));
-  return /^\d{4}-\d{2}$/.test(value) ? value : monthPeriod();
+  if (/^\d{4}-\d{2}$/.test(value)) return value;
+  const openPeriod = compact((await readPayrollPeriodState().catch(() => null))?.activePeriod);
+  return /^\d{4}-\d{2}$/.test(openPeriod) ? openPeriod : monthPeriod();
 };
 
 const pensionDeductionAmount = (lines: Array<{ code?: string; label?: string; amount?: number }>, voluntary: boolean) =>
@@ -160,7 +163,7 @@ const maskMoney = (record: any) => ({
 const buildPayload = async (request: Request) => {
   const role = getRole(request);
   const perms = permissions(role);
-  const period = requestedPeriod(request);
+  const period = await requestedPeriod(request);
   const [employeeSource, config, identities, snapshots] = await Promise.all([
     readPayrollEmployees(),
     readPayrollPensionConfig(),
@@ -176,6 +179,16 @@ const buildPayload = async (request: Request) => {
     for (const record of run.snapshot.records || []) {
       const code = compact(record.employeeCode || record.employeeId).toUpperCase();
       if (!/^P\d+$/.test(code)) continue;
+      if (isDleUsdMdEmployee({
+        employeeCode: record.employeeCode,
+        employeeId: record.employeeId,
+        fullName: record.fullName,
+        jobTitle: record.jobTitle,
+      })) continue;
+      const payrollGroup = compact(record.payrollGroup).toUpperCase();
+      const payCurrency = compact(record.payCurrency).toUpperCase();
+      const usdPayroll = payCurrency === 'USD' || payCurrency === 'US$' || /DLE_USD|(^|[^A-Z])USD([^A-Z]|$)/.test(payrollGroup);
+      if (usdPayroll && ['P0364', 'P0442', 'P0457'].includes(code)) continue;
       const existing = payrollPension.get(code);
       if (existing && existing.rank > rank) continue;
       payrollPension.set(code, {
@@ -206,8 +219,18 @@ const buildPayload = async (request: Request) => {
     const code = compact(row.employeeCode || row.employeeId).toUpperCase();
     seen.add(code);
     const paid = payrollPension.get(code);
-    return paid ? withPensionAmounts(row, paid) : row;
-  });
+    if (!paid) return row;
+    const sourceGroup = compact(paid.record?.payrollGroup);
+    const sourceCurrency = compact(paid.record?.payCurrency).toUpperCase();
+    const usdSource = sourceCurrency === 'USD' || sourceCurrency === 'US$' || /DLE_USD|(^|[^A-Z])USD([^A-Z]|$)/i.test(sourceGroup);
+    const payrollGroup = !usdSource && sourceGroup ? sourceGroup : row.payrollGroup;
+    return withPensionAmounts({ ...row, payrollGroup }, paid);
+  }).filter((record) => !isDleUsdMdEmployee({
+    employeeCode: record.employeeCode,
+    employeeId: record.employeeId,
+    fullName: record.fullName,
+    jobTitle: record.jobTitle,
+  }));
   for (const [code, paid] of payrollPension) {
     if (seen.has(code)) continue;
     const source = paid.record;
@@ -244,19 +267,21 @@ const buildPayload = async (request: Request) => {
     }),
     { pensionableEmolument: 0, employeeContribution: 0, employerContribution: 0, voluntaryContribution: 0, totalContribution: 0, exceptions: 0 }
   );
-  const providerBreakdown = Array.from(
-    records
-      .reduce((map, record) => {
-        const key = record.providerName || 'Unassigned PFA';
-        const current = map.get(key) || { label: key, employees: 0, remittance: 0, exceptions: 0 };
-        current.employees += 1;
-        current.remittance += record.totalContribution;
-        current.exceptions += record.issues.length;
-        map.set(key, current);
-        return map;
-      }, new Map<string, { label: string; employees: number; remittance: number; exceptions: number }>())
-      .values()
-  ).map((item) => ({ ...item, remittance: roundMoney(item.remittance) }));
+  const providerMap = new Map<string, { label: string; employees: number; remittance: number; exceptions: number }>();
+  for (const record of records) {
+    const key = record.providerName || 'Unassigned PFA';
+    const current = providerMap.get(key) || { label: key, employees: 0, remittance: 0, exceptions: 0 };
+    current.employees += 1;
+    current.remittance += record.totalContribution;
+    current.exceptions += record.issues.length;
+    providerMap.set(key, current);
+  }
+  const providerBreakdown = Array.from(providerMap.values()).map((item) => ({
+    label: item.label,
+    employees: item.employees,
+    remittance: roundMoney(item.remittance),
+    exceptions: item.exceptions,
+  }));
   return {
     generatedAt: new Date().toISOString(),
     source: 'Configurable Nigeria pension payroll engine',
