@@ -1,28 +1,13 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
-import { PageTemplate } from '@/components/layout/page-template';
-import {
-  AlertTriangle,
-  ArrowUpRight,
-  BriefcaseBusiness,
-  Building2,
-  Database,
-  Download,
-  RefreshCcw,
-  Search,
-  ShieldCheck,
-  Users,
-} from 'lucide-react';
+import { AlertTriangle, Briefcase, ChevronDown, Database, Download, Eye, Layers3, MoreVertical, Pencil, Plus, RotateCcw, Search, Target, Upload, UserRound, Users } from 'lucide-react';
 import type { HealthStatus, JobTitleRecord, StructureInsight } from '@/lib/organization-data';
+import './job-titles.css';
 
 type Payload = {
   generatedAt: string;
-  permissions: {
-    canEdit: boolean;
-    canExport: boolean;
-    canViewCosts: boolean;
-  };
+  permissions: { canEdit: boolean; canExport: boolean; canViewCosts: boolean };
   dataSource?: {
     source: string;
     databaseAvailable: boolean;
@@ -38,8 +23,6 @@ type Payload = {
     totalEmployees: number;
     totalOpenPositions: number;
     avgSuccessionCoverage: number;
-    avgAttritionRisk: number;
-    avgInternalMobility: number;
     titlesNeedingReview: number;
     titleVariants: number;
   };
@@ -55,535 +38,276 @@ type Payload = {
   insights: StructureInsight[];
 };
 
+const emptyFilters = {
+  query: '',
+  family: 'All',
+  level: 'All',
+  grade: 'All',
+  reporting: 'All',
+  standardization: 'All',
+  health: 'All',
+  sort: 'employeeCount',
+};
+
 const formatNumber = (value: number) => new Intl.NumberFormat('en-US').format(value);
-const formatCurrency = (value: number) =>
-  new Intl.NumberFormat('en-NG', { style: 'currency', currency: 'NGN', maximumFractionDigits: 0 }).format(value);
 
-const healthTone = (status: HealthStatus) => {
-  if (status === 'Critical') return 'bg-red-50 text-red-700 border-red-200';
-  if (status === 'Needs Attention') return 'bg-amber-50 text-amber-700 border-amber-200';
-  return 'bg-emerald-50 text-emerald-700 border-emerald-200';
-};
-
-const standardizationTone = (status: string) => {
-  if (status === 'Needs Review') return 'bg-red-50 text-red-700 border-red-200';
-  if (status === 'Variant') return 'bg-amber-50 text-amber-700 border-amber-200';
-  return 'bg-emerald-50 text-emerald-700 border-emerald-200';
-};
-
-const insightTone = (severity: StructureInsight['severity']) => {
-  if (severity === 'high') return 'border-red-200 bg-red-50';
-  if (severity === 'medium') return 'border-amber-200 bg-amber-50';
-  return 'border-emerald-200 bg-emerald-50';
+const badgeClass = (status: string) => {
+  if (status === 'Standard' || status === 'Healthy') return 'good';
+  if (status === 'Critical') return 'bad';
+  return 'warn';
 };
 
 export default function JobTitlesClient() {
   const [payload, setPayload] = useState<Payload | null>(null);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [query, setQuery] = useState('');
-  const [familyFilter, setFamilyFilter] = useState<'All' | string>('All');
-  const [levelFilter, setLevelFilter] = useState<'All' | string>('All');
-  const [gradeFilter, setGradeFilter] = useState<'All' | string>('All');
-  const [reportingLevelFilter, setReportingLevelFilter] = useState<'All' | string>('All');
-  const [standardizationFilter, setStandardizationFilter] = useState<'All' | string>('All');
-  const [healthFilter, setHealthFilter] = useState<'All' | HealthStatus>('All');
-  const [sortBy, setSortBy] = useState<'employeeCount' | 'openPositions' | 'successionCoveragePct' | 'attritionRiskPct'>('employeeCount');
-  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [error, setError] = useState('');
+  const [filters, setFilters] = useState(emptyFilters);
+  const [page, setPage] = useState(1);
+  const [selected, setSelected] = useState<JobTitleRecord | null>(null);
+  const [mode, setMode] = useState<'view' | 'edit' | 'add'>('view');
+  const [checked, setChecked] = useState<string[]>([]);
+  const [menuId, setMenuId] = useState('');
+  const [notice, setNotice] = useState('');
+  const pageSize = 20;
 
   const load = async () => {
     setLoading(true);
-    setError(null);
+    setError('');
     try {
-      const res = await fetch('/api/hris/organization/job-titles', { cache: 'no-store' });
-      const json = await res.json();
-      if (!res.ok || json?.status !== 'success') throw new Error(json?.error || 'Unable to load job titles');
-      const data = json.data as Payload;
-      setPayload(data);
-      setSelectedId((prev) => prev || data.titles[0]?.id || null);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : 'Unable to load job titles');
+      const response = await fetch('/api/hris/organization/job-titles', { cache: 'no-store' });
+      const json = await response.json();
+      if (!response.ok || json?.status !== 'success') throw new Error(json?.error || 'Unable to load job titles');
+      setPayload(json.data as Payload);
+    } catch (loadError) {
+      setError(loadError instanceof Error ? loadError.message : 'Unable to load job titles');
     } finally {
       setLoading(false);
     }
   };
 
   useEffect(() => {
+    document.title = 'Job Titles | DLE Digital Enterprise';
     void load();
   }, []);
 
-  const titles = useMemo(() => payload?.titles || [], [payload]);
-
-  const visibleTitles = useMemo(() => {
-    const q = query.trim().toLowerCase();
+  const visible = useMemo(() => {
+    const titles = payload?.titles || [];
+    const query = filters.query.trim().toLowerCase();
     const filtered = titles.filter((title) => {
-      if (familyFilter !== 'All' && title.family !== familyFilter) return false;
-      if (levelFilter !== 'All' && title.level !== levelFilter) return false;
-      if (gradeFilter !== 'All' && title.gradeCode !== gradeFilter) return false;
-      if (reportingLevelFilter !== 'All' && title.reportingLevel !== reportingLevelFilter) return false;
-      if (standardizationFilter !== 'All' && title.standardizationStatus !== standardizationFilter) return false;
-      if (healthFilter !== 'All' && title.healthStatus !== healthFilter) return false;
-      if (!q) return true;
-
-      return [
-        title.code,
-        title.title,
-        title.family,
-        title.level,
-        title.gradeCode,
-        title.gradeName,
-        title.benchmarkPosition,
-        title.jobPurpose,
-        title.departments.join(' '),
-        title.commonLocations.join(' '),
-      ]
+      if (filters.family !== 'All' && title.family !== filters.family) return false;
+      if (filters.level !== 'All' && title.level !== filters.level) return false;
+      if (filters.grade !== 'All' && title.gradeCode !== filters.grade) return false;
+      if (filters.reporting !== 'All' && title.reportingLevel !== filters.reporting) return false;
+      if (filters.standardization !== 'All' && title.standardizationStatus !== filters.standardization) return false;
+      if (filters.health !== 'All' && title.healthStatus !== filters.health) return false;
+      if (!query) return true;
+      return [title.code, title.title, title.family, title.level, title.gradeCode, title.gradeName, title.benchmarkPosition, title.departments.join(' ')]
         .join(' ')
         .toLowerCase()
-        .includes(q);
+        .includes(query);
     });
-
-    const sorted = [...filtered];
-    sorted.sort((a, b) => {
-      if (sortBy === 'successionCoveragePct') return b.successionCoveragePct - a.successionCoveragePct;
-      if (sortBy === 'attritionRiskPct') return b.attritionRiskPct - a.attritionRiskPct;
-      if (sortBy === 'openPositions') return b.openPositions - a.openPositions;
+    filtered.sort((a, b) => {
+      if (filters.sort === 'openPositions') return b.openPositions - a.openPositions;
+      if (filters.sort === 'successionCoveragePct') return b.successionCoveragePct - a.successionCoveragePct;
       return b.employeeCount - a.employeeCount;
     });
-    return sorted;
-  }, [titles, query, familyFilter, levelFilter, gradeFilter, reportingLevelFilter, standardizationFilter, healthFilter, sortBy]);
+    return filtered;
+  }, [payload, filters]);
 
-  const selectedTitle = useMemo(() => {
-    return visibleTitles.find((title) => title.id === selectedId) || visibleTitles[0] || null;
-  }, [visibleTitles, selectedId]);
-
-  useEffect(() => {
-    if (!selectedTitle && visibleTitles.length) setSelectedId(visibleTitles[0].id);
-  }, [selectedTitle, visibleTitles]);
+  const pages = Math.max(1, Math.ceil(visible.length / pageSize));
+  const safePage = Math.min(page, pages);
+  const start = (safePage - 1) * pageSize;
+  const rows = visible.slice(start, start + pageSize);
+  const setFilter = (key: keyof typeof emptyFilters, value: string) => {
+    setFilters((current) => ({ ...current, [key]: value }));
+    setPage(1);
+  };
 
   const exportCsv = () => {
     if (!payload?.permissions.canExport) return;
-    const rows = [
-      [
-        'Code',
-        'Title',
-        'Family',
-        'Level',
-        'Grade',
-        'Reporting Level',
-        'Standardization',
-        'Employees',
-        'Open Positions',
-        'Succession Coverage %',
-        'Attrition Risk %',
-        'Internal Mobility %',
-        'Benchmark Salary NGN',
-      ],
-      ...visibleTitles.map((title) => [
-        title.code,
-        title.title,
-        title.family,
-        title.level,
-        title.gradeCode,
-        title.reportingLevel,
-        title.standardizationStatus,
-        String(title.employeeCount),
-        String(title.openPositions),
-        String(title.successionCoveragePct),
-        String(title.attritionRiskPct),
-        String(title.internalMobilityPct),
-        String(title.benchmarkSalaryNgn),
-      ]),
-    ];
-
-    const csv = rows.map((row) => row.map((cell) => `"${String(cell).replace(/"/g, '""')}"`).join(',')).join('\n');
-    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
+    const header = ['Code', 'Title', 'Grade', 'Family', 'Level', 'Employees', 'Open Roles', 'Standardization', 'Health'];
+    const lines = visible.map((title) => [title.code, title.title, title.gradeName || title.gradeCode, title.family, title.level, title.employeeCount, title.openPositions, title.standardizationStatus, title.healthStatus]
+      .map((value) => `"${String(value).replace(/"/g, '""')}"`).join(','));
+    const blob = new Blob([[header.join(','), ...lines].join('\n')], { type: 'text/csv;charset=utf-8' });
     const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = 'job-titles.csv';
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = 'job-titles.csv';
+    link.click();
     URL.revokeObjectURL(url);
   };
 
-  return (
-    <PageTemplate
-      title="Job Titles"
-      description="Review the organization’s title architecture, grade alignment, workforce concentration, hiring demand, and title standardization posture."
-      breadcrumbs={[
-        { label: 'HRIS', href: '/hris' },
-        { label: 'Organization', href: '/hris/organization' },
-        { label: 'Job Titles' },
-      ]}
-      primaryAction={{ label: 'Refresh', onClick: () => void load(), icon: RefreshCcw }}
-      secondaryAction={{ label: 'Export CSV', onClick: exportCsv, icon: Download }}
-    >
-      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-6 gap-4">
-        <MetricCard icon={BriefcaseBusiness} label="Titles" value={payload ? formatNumber(payload.summary.totalTitles) : '—'} detail="Tracked standardized titles" />
-        <MetricCard icon={Users} label="Employees" value={payload ? formatNumber(payload.summary.totalEmployees) : '—'} detail="Title-mapped workforce" />
-        <MetricCard icon={ArrowUpRight} label="Open Roles" value={payload ? formatNumber(payload.summary.totalOpenPositions) : '—'} detail="Approved title vacancies" />
-        <MetricCard icon={ShieldCheck} label="Succession" value={payload ? `${payload.summary.avgSuccessionCoverage}%` : '—'} detail="Average title readiness" />
-        <MetricCard icon={AlertTriangle} label="Needs Review" value={payload ? formatNumber(payload.summary.titlesNeedingReview) : '—'} detail="Titles needing architecture review" />
-        <MetricCard icon={Building2} label="Variants" value={payload ? formatNumber(payload.summary.titleVariants) : '—'} detail="Naming or scope variants" />
-      </div>
+  const openTitle = (title: JobTitleRecord | null, nextMode: 'view' | 'edit' | 'add') => {
+    setSelected(title);
+    setMode(nextMode);
+    setMenuId('');
+  };
 
-      {payload?.dataSource ? (
-        <div className={`rounded-2xl border p-4 flex flex-col xl:flex-row xl:items-center xl:justify-between gap-3 ${payload.dataSource.warning || payload.dataSource.migrationWarning ? 'border-amber-200 bg-amber-50' : 'border-emerald-200 bg-emerald-50'}`}>
-          <div className="flex items-start gap-3">
-            <span className={`w-10 h-10 rounded-2xl flex items-center justify-center ${payload.dataSource.warning || payload.dataSource.migrationWarning ? 'bg-amber-100 text-amber-700' : 'bg-emerald-100 text-emerald-700'}`}>
-              <Database className="w-5 h-5" />
-            </span>
-            <div>
-              <div className="text-sm font-bold text-slate-900">Live job title migration source</div>
-              <div className="text-xs text-slate-600 mt-1">
-                {payload.dataSource.structureSource} from {payload.dataSource.source}; {formatNumber(payload.dataSource.employeeCount)} employee records produced {formatNumber(payload.dataSource.migratedTitleCount)} HRIS job title records.
-              </div>
-              {payload.dataSource.warning || payload.dataSource.migrationWarning ? (
-                <div className="text-xs font-semibold text-amber-800 mt-2">{payload.dataSource.warning || payload.dataSource.migrationWarning}</div>
-              ) : (
-                <div className="text-xs font-semibold text-emerald-800 mt-2">{payload.dataSource.independence}</div>
-              )}
-            </div>
-          </div>
-          <div className="flex items-center gap-2 flex-wrap">
-            <span className="px-2.5 py-1 rounded-full bg-white/80 border border-slate-200 text-[11px] font-semibold text-slate-700">
-              HRIS DB: {payload.dataSource.databaseAvailable ? 'Available' : 'Unavailable'}
-            </span>
-            <span className="px-2.5 py-1 rounded-full bg-white/80 border border-slate-200 text-[11px] font-semibold text-slate-700">
-              Generated: {new Date(payload.generatedAt).toLocaleString()}
-            </span>
+  const pageList = () => {
+    if (pages <= 7) return Array.from({ length: pages }, (_, index) => index + 1);
+    return [1, 2, 3, 4, 5, '…', pages] as Array<number | '…'>;
+  };
+
+  const summary = payload?.summary;
+  const source = payload?.dataSource;
+  const warning = source?.warning || source?.migrationWarning || '';
+  const coverage = summary ? (Number.isInteger(summary.avgSuccessionCoverage) ? `${summary.avgSuccessionCoverage}%` : `${summary.avgSuccessionCoverage.toFixed(1)}%`) : '—';
+  const cards = [
+    [Briefcase, 'Total job titles', summary ? formatNumber(summary.totalTitles) : '—', 'Tracked standardized titles', 'k0'],
+    [Users, 'Employees', summary ? formatNumber(summary.totalEmployees) : '—', 'Title-mapped workforce', 'k1'],
+    [UserRound, 'Open roles', summary ? formatNumber(summary.totalOpenPositions) : '—', 'Approved title vacancies', 'k2'],
+    [Target, 'Succession coverage', coverage, 'Average title readiness', 'k3'],
+    [AlertTriangle, 'Needs review', summary ? formatNumber(summary.titlesNeedingReview) : '—', 'Titles needing architecture review', 'k4'],
+    [Layers3, 'Variants', summary ? formatNumber(summary.titleVariants) : '—', 'Naming or scope variants', 'k5'],
+  ] as const;
+  const pageChecked = rows.length > 0 && rows.every((title) => checked.includes(title.id));
+
+  return (
+    <div className="jt-pro">
+      <div className="crumb">HRIS › Organization › <b>Job Titles</b></div>
+      <div className="hero">
+        <div className="hero-title">
+          <div className="hero-icon"><Briefcase size={26} /></div>
+          <div>
+            <h1>Job Titles</h1>
+            <p>Review the organization&apos;s title architecture, grade alignment, workforce concentration, hiring demand, and title standardization posture.</p>
           </div>
         </div>
+        <div className="actions">
+          <button type="button" onClick={exportCsv} disabled={!payload?.permissions.canExport}><Download size={16} />Export <ChevronDown size={14} /></button>
+          <button type="button" onClick={() => document.getElementById('job-title-import')?.click()}><Upload size={16} />Import</button>
+          <input id="job-title-import" type="file" accept=".csv,text/csv" hidden onChange={(event) => { const file = event.target.files?.[0]; setNotice(file ? `${file.name} was not imported. Job titles are produced from the employee register.` : ''); event.target.value = ''; }} />
+          <button type="button" className="primary" onClick={() => openTitle(null, 'add')}><Plus size={16} />Add Job Title</button>
+        </div>
+      </div>
+      {notice ? <p className="empty">{notice}</p> : null}
+
+      <section className="kpis">
+        {cards.map(([Icon, label, value, detail, tone]) => (
+          <article className={`kpi ${tone}`} key={label}>
+            <div className="kicon"><Icon size={20} /></div>
+            <div><small>{label.toUpperCase()}</small><h2>{value}</h2><p>{detail}</p></div>
+          </article>
+        ))}
+      </section>
+
+      {source ? (
+        <section className={warning ? 'alert' : 'alert ok'}>
+          <div className="db"><Database size={22} /></div>
+          <div>
+            <b>Job title migration source</b>
+            <p>{source.structureSource} from {source.source}; {formatNumber(source.employeeCount)} employee records produced {formatNumber(source.migratedTitleCount)} HRIS job title records.</p>
+            <strong>{warning || source.independence}</strong>
+          </div>
+          <div className="alert-tags">
+            <span><i className="dot" />HRIS DB: {source.databaseAvailable ? 'Available' : 'Unavailable'}</span>
+            <span>Generated: {payload ? new Date(payload.generatedAt).toLocaleString() : '—'}</span>
+          </div>
+        </section>
       ) : null}
 
-      <div className="bg-white rounded-2xl shadow-sm border border-slate-100 p-4 grid grid-cols-1 md:grid-cols-2 xl:grid-cols-6 gap-3">
-        <label className="relative xl:col-span-2">
-          <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
-          <input
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            placeholder="Search title, grade, family, benchmark..."
-            className="w-full pl-9 pr-3 py-2.5 rounded-xl border border-slate-200 text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-dle-blue/20"
-          />
-        </label>
-        <Select value={familyFilter} onChange={(value) => setFamilyFilter(value as 'All' | string)} options={['All', ...(payload?.filterOptions.families || [])]} labels={{ All: 'All Families' }} />
-        <Select value={levelFilter} onChange={(value) => setLevelFilter(value as 'All' | string)} options={['All', ...(payload?.filterOptions.levels || [])]} labels={{ All: 'All Levels' }} />
-        <Select value={gradeFilter} onChange={(value) => setGradeFilter(value as 'All' | string)} options={['All', ...(payload?.filterOptions.grades || [])]} labels={{ All: 'All Grades' }} />
-        <Select value={healthFilter} onChange={(value) => setHealthFilter(value as 'All' | HealthStatus)} options={['All', ...(payload?.filterOptions.healthStatuses || [])]} labels={{ All: 'All Health States' }} />
-      </div>
+      <section className="filters">
+        <label className="search"><Search size={16} /><input value={filters.query} onChange={(event) => setFilter('query', event.target.value)} placeholder="Search job title, code, grade, family, department..." /></label>
+        <select value={filters.family} onChange={(event) => setFilter('family', event.target.value)}><option value="All">All Families</option>{(payload?.filterOptions.families || []).map((item) => <option key={item}>{item}</option>)}</select>
+        <select value={filters.level} onChange={(event) => setFilter('level', event.target.value)}><option value="All">All Levels</option>{(payload?.filterOptions.levels || []).map((item) => <option key={item}>{item}</option>)}</select>
+        <select value={filters.grade} onChange={(event) => setFilter('grade', event.target.value)}><option value="All">All Grades</option>{(payload?.filterOptions.grades || []).map((item) => <option key={item}>{item}</option>)}</select>
+        <select value={filters.health} onChange={(event) => setFilter('health', event.target.value)}><option value="All">All Health States</option>{(payload?.filterOptions.healthStatuses || []).map((item) => <option key={item}>{item}</option>)}</select>
+        <select value={filters.reporting} onChange={(event) => setFilter('reporting', event.target.value)}><option value="All">All Reporting Levels</option>{(payload?.filterOptions.reportingLevels || []).map((item) => <option key={item}>{item}</option>)}</select>
+        <select value={filters.standardization} onChange={(event) => setFilter('standardization', event.target.value)}><option value="All">All Standardization</option>{(payload?.filterOptions.standardizationStatuses || []).map((item) => <option key={item}>{item}</option>)}</select>
+        <select value={filters.sort} onChange={(event) => setFilter('sort', event.target.value)}>
+          <option value="employeeCount">Sort: Employee Count</option>
+          <option value="openPositions">Sort: Open Roles</option>
+          <option value="successionCoveragePct">Sort: Succession</option>
+        </select>
+        <button type="button" className="reset" onClick={() => { setFilters(emptyFilters); setPage(1); }}><RotateCcw size={16} />Reset Filters</button>
+      </section>
 
-      <div className="bg-white rounded-2xl shadow-sm border border-slate-100 p-4 flex flex-col xl:flex-row gap-3 xl:items-center xl:justify-between">
-        <div className="grid grid-cols-1 md:grid-cols-[220px_220px_220px] gap-3">
-          <Select value={reportingLevelFilter} onChange={(value) => setReportingLevelFilter(value as 'All' | string)} options={['All', ...(payload?.filterOptions.reportingLevels || [])]} labels={{ All: 'All Reporting Levels' }} />
-          <Select value={standardizationFilter} onChange={(value) => setStandardizationFilter(value as 'All' | string)} options={['All', ...(payload?.filterOptions.standardizationStatuses || [])]} labels={{ All: 'All Standardization' }} />
-          <Select
-            value={sortBy}
-            onChange={(value) => setSortBy(value as typeof sortBy)}
-            options={['employeeCount', 'openPositions', 'successionCoveragePct', 'attritionRiskPct']}
-            labels={{
-              employeeCount: 'Sort: Employee Count',
-              openPositions: 'Sort: Open Positions',
-              successionCoveragePct: 'Sort: Succession',
-              attritionRiskPct: 'Sort: Attrition',
-            }}
-          />
-        </div>
-        <button
-          type="button"
-          onClick={() => {
-            setQuery('');
-            setFamilyFilter('All');
-            setLevelFilter('All');
-            setGradeFilter('All');
-            setReportingLevelFilter('All');
-            setStandardizationFilter('All');
-            setHealthFilter('All');
-            setSortBy('employeeCount');
-          }}
-          className="px-3 py-2 rounded-xl border border-slate-200 bg-white text-xs font-semibold text-slate-700 hover:bg-slate-50"
-        >
-          Reset Filters
-        </button>
-      </div>
-
-      <div className="grid grid-cols-1 xl:grid-cols-[0.95fr_1.05fr] gap-6">
-        <div className="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden">
-          <div className="px-5 py-4 border-b border-slate-100 flex items-center justify-between gap-3">
-            <div>
-              <div className="text-sm font-bold text-slate-900">Title Explorer</div>
-              <div className="text-xs text-slate-500 mt-1">Browse titles by family, level, grade mapping, headcount, and standardization posture.</div>
-            </div>
-            <span className="px-2.5 py-1 rounded-full bg-slate-100 text-slate-700 text-[11px] font-semibold">
-              Showing: {formatNumber(visibleTitles.length)}
-            </span>
-          </div>
-          <div className="p-4 space-y-3 min-h-[520px]">
-            {loading ? (
-              <div className="text-sm text-slate-600 font-medium">Loading job titles...</div>
-            ) : error ? (
-              <div className="rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-700 font-medium">{error}</div>
-            ) : visibleTitles.length ? (
-              visibleTitles.map((title) => {
-                const active = selectedTitle?.id === title.id;
-                return (
-                  <button
-                    key={title.id}
-                    type="button"
-                    onClick={() => setSelectedId(title.id)}
-                    className={`w-full text-left rounded-2xl border p-4 transition-colors ${active ? 'border-dle-blue/30 bg-dle-blue/5' : 'border-slate-200 hover:bg-slate-50'}`}
-                  >
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="min-w-0">
-                        <div className="text-sm font-semibold text-slate-900">{title.title}</div>
-                        <div className="text-xs text-slate-500 mt-1">
-                          {title.gradeCode} <span className="mx-2">•</span> {title.family} <span className="mx-2">•</span> {title.reportingLevel}
-                        </div>
-                      </div>
-                      <span className={`px-2 py-1 rounded-full border text-[11px] font-semibold ${standardizationTone(title.standardizationStatus)}`}>
-                        {title.standardizationStatus}
-                      </span>
-                    </div>
-                    <div className="grid grid-cols-2 gap-2 mt-3 text-xs text-slate-600">
-                      <span>Employees: {formatNumber(title.employeeCount)}</span>
-                      <span>Open Roles: {formatNumber(title.openPositions)}</span>
-                      <span>Succession: {title.successionCoveragePct}%</span>
-                      <span>Attrition: {title.attritionRiskPct}%</span>
-                    </div>
-                  </button>
-                );
-              })
-            ) : (
-              <div className="text-sm text-slate-600 font-medium">No job titles match the current filters.</div>
-            )}
+      <section className="registry">
+        <div className="reg-head">
+          <div><b>Job Title Registry</b><p>Searchable audit table of all visible job titles and their architecture mapping.</p></div>
+          <div className="pager">
+            <span>Showing {visible.length ? start + 1 : 0} - {Math.min(start + pageSize, visible.length)} of {visible.length}</span>
+            <button type="button" aria-label="Previous page" disabled={safePage <= 1} onClick={() => setPage(safePage - 1)}>‹</button>
+            {pageList().map((item, index) => item === '…'
+              ? <button type="button" className="gap" key={`gap-${index}`} disabled>…</button>
+              : <button type="button" key={item} className={item === safePage ? 'current' : ''} onClick={() => setPage(item)}>{item}</button>)}
+            <button type="button" aria-label="Next page" disabled={safePage >= pages} onClick={() => setPage(safePage + 1)}>›</button>
           </div>
         </div>
-
-        <div className="space-y-6">
-          <div className="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden">
-            <div className="px-5 py-4 border-b border-slate-100">
-              <div className="text-sm font-bold text-slate-900">Title Detail</div>
-              <div className="text-xs text-slate-500 mt-1">Inspect architecture, grade mapping, scope, and operating metrics for the selected title.</div>
-            </div>
-            <div className="p-5">
-              {selectedTitle ? (
-                <div className="space-y-5">
-                  <div>
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <span className="px-2.5 py-1 rounded-full bg-slate-100 text-slate-700 text-[11px] font-semibold">{selectedTitle.code}</span>
-                      <span className="px-2.5 py-1 rounded-full bg-slate-100 text-slate-700 text-[11px] font-semibold">{selectedTitle.gradeCode}</span>
-                      <span className={`px-2.5 py-1 rounded-full border text-[11px] font-semibold ${standardizationTone(selectedTitle.standardizationStatus)}`}>
-                        {selectedTitle.standardizationStatus}
-                      </span>
-                      <span className={`px-2.5 py-1 rounded-full border text-[11px] font-semibold ${healthTone(selectedTitle.healthStatus)}`}>
-                        {selectedTitle.healthStatus}
-                      </span>
-                    </div>
-                    <h3 className="text-xl font-bold text-slate-900 mt-3">{selectedTitle.title}</h3>
-                    <p className="text-sm text-slate-500 mt-1">{selectedTitle.jobPurpose}</p>
-                  </div>
-
-                  <div className="grid grid-cols-2 gap-3">
-                    <DetailStat label="Grade" value={`${selectedTitle.gradeCode} • ${selectedTitle.gradeName}`} />
-                    <DetailStat label="Benchmark" value={selectedTitle.benchmarkPosition} />
-                    <DetailStat label="Family" value={selectedTitle.family} />
-                    <DetailStat label="Reporting Level" value={selectedTitle.reportingLevel} />
-                    <DetailStat label="Employees" value={formatNumber(selectedTitle.employeeCount)} />
-                    <DetailStat label="Open Roles" value={formatNumber(selectedTitle.openPositions)} />
-                    <DetailStat label="Departments" value={formatNumber(selectedTitle.departmentCount)} />
-                    <DetailStat label="Locations" value={formatNumber(selectedTitle.locationCount)} />
-                    <DetailStat label="Benchmark Salary" value={formatCurrency(selectedTitle.benchmarkSalaryNgn)} />
-                    <DetailStat label="Internal Mobility" value={`${selectedTitle.internalMobilityPct}%`} />
-                  </div>
-
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-                    <ProgressCard label="Succession Coverage" value={selectedTitle.successionCoveragePct} tone="emerald" />
-                    <ProgressCard label="Attrition Risk" value={selectedTitle.attritionRiskPct} tone="amber" />
-                    <ProgressCard label="Internal Mobility" value={selectedTitle.internalMobilityPct} tone="blue" />
-                  </div>
-
-                  <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-                    <div className="text-sm font-semibold text-slate-900">Departments</div>
-                    <div className="mt-3 flex flex-wrap gap-2">
-                      {selectedTitle.departments.map((department) => (
-                        <span key={department} className="px-3 py-1.5 rounded-full bg-white border border-slate-200 text-xs font-medium text-slate-700">
-                          {department}
-                        </span>
-                      ))}
-                    </div>
-                  </div>
-
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                    <InfoListCard title="Common Locations" items={selectedTitle.commonLocations} />
-                    <InfoListCard title="Key Responsibilities" items={selectedTitle.keyResponsibilities} />
-                  </div>
-                </div>
-              ) : (
-                <div className="text-sm text-slate-600">Select a title to inspect its architecture and workforce detail.</div>
-              )}
-            </div>
-          </div>
-
-          <div className="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden">
-            <div className="px-5 py-4 border-b border-slate-100 flex items-center gap-3">
-              <AlertTriangle className="w-5 h-5 text-amber-600" />
-              <div>
-                <div className="text-sm font-bold text-slate-900">Title Insights</div>
-                <div className="text-xs text-slate-500 mt-1">Priority observations for title design, hiring demand, and standardization risk.</div>
-              </div>
-            </div>
-            <div className="p-4 space-y-3">
-              {(payload?.insights || []).map((insight) => (
-                <div key={insight.id} className={`rounded-2xl border p-4 ${insightTone(insight.severity)}`}>
-                  <div className="text-sm font-semibold text-slate-900">{insight.title}</div>
-                  <div className="text-xs text-slate-600 mt-1">{insight.recommendation}</div>
-                </div>
-              ))}
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <div className="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden">
-        <div className="px-5 py-4 border-b border-slate-100">
-          <div className="text-sm font-bold text-slate-900">Job Title Registry</div>
-          <div className="text-xs text-slate-500 mt-1">Searchable audit table of all visible job titles and their architecture mapping.</div>
-        </div>
-        <div className="overflow-auto">
-          <table className="w-full text-left">
-            <thead className="bg-slate-50">
+        <div className="table-wrap">
+          <table>
+            <thead>
               <tr>
-                {['Code', 'Title', 'Grade', 'Family', 'Level', 'Employees', 'Open Roles', 'Standardization', 'Health'].map((header) => (
-                  <th key={header} className="px-4 py-3 text-[11px] font-semibold text-slate-600 uppercase tracking-wide whitespace-nowrap">
-                    {header}
-                  </th>
-                ))}
+                <th><input type="checkbox" checked={pageChecked} onChange={() => setChecked(pageChecked ? checked.filter((id) => !rows.some((title) => title.id === id)) : Array.from(new Set([...checked, ...rows.map((title) => title.id)])))} /></th>
+                {['Code', 'Job Title', 'Grade', 'Family', 'Level', 'Employees', 'Open Roles', 'Standardization', 'Health', 'Actions'].map((heading) => <th key={heading}>{heading.toUpperCase()}</th>)}
               </tr>
             </thead>
             <tbody>
-              {visibleTitles.map((title) => (
-                <tr key={title.id} className="border-t border-slate-100 hover:bg-slate-50 cursor-pointer" onClick={() => setSelectedId(title.id)}>
-                  <td className="px-4 py-3 text-sm font-semibold text-slate-900">{title.code}</td>
-                  <td className="px-4 py-3">
-                    <div className="text-sm font-semibold text-slate-900">{title.title}</div>
-                    <div className="text-xs text-slate-500">{title.benchmarkPosition}</div>
-                  </td>
-                  <td className="px-4 py-3 text-sm text-slate-700">{title.gradeCode}</td>
-                  <td className="px-4 py-3 text-sm text-slate-700">{title.family}</td>
-                  <td className="px-4 py-3 text-sm text-slate-700">{title.level}</td>
-                  <td className="px-4 py-3 text-sm text-slate-700">{formatNumber(title.employeeCount)}</td>
-                  <td className="px-4 py-3 text-sm text-slate-700">{formatNumber(title.openPositions)}</td>
-                  <td className="px-4 py-3">
-                    <span className={`px-2.5 py-1 rounded-full border text-[11px] font-semibold ${standardizationTone(title.standardizationStatus)}`}>{title.standardizationStatus}</span>
-                  </td>
-                  <td className="px-4 py-3">
-                    <span className={`px-2.5 py-1 rounded-full border text-[11px] font-semibold ${healthTone(title.healthStatus)}`}>{title.healthStatus}</span>
+              {loading ? <tr><td colSpan={11}>Loading job titles…</td></tr> : rows.map((title) => (
+                <tr key={title.id} className={selected?.id === title.id ? 'selected' : ''} onClick={() => openTitle(title, 'view')}>
+                  <td onClick={(event) => event.stopPropagation()}><input type="checkbox" checked={checked.includes(title.id)} onChange={() => setChecked((current) => current.includes(title.id) ? current.filter((id) => id !== title.id) : [...current, title.id])} /></td>
+                  <td>{title.code}</td>
+                  <td><b>{title.title}</b><small>{title.benchmarkPosition || title.code}</small></td>
+                  <td>{title.gradeName || title.gradeCode}</td>
+                  <td>{title.family}</td>
+                  <td>{title.level}</td>
+                  <td>{formatNumber(title.employeeCount)}</td>
+                  <td>{formatNumber(title.openPositions)}</td>
+                  <td><span className={`badge ${badgeClass(title.standardizationStatus)}`}>{title.standardizationStatus}</span></td>
+                  <td><span className={`badge ${badgeClass(title.healthStatus)}`}>{title.healthStatus}</span></td>
+                  <td onClick={(event) => event.stopPropagation()}>
+                    <div className="row-actions">
+                      <button type="button" className="icon-btn" aria-label={`View ${title.title}`} onClick={() => openTitle(title, 'view')}><Eye size={15} /></button>
+                      <button type="button" className="icon-btn" aria-label={`Edit ${title.title}`} onClick={() => openTitle(title, 'edit')}><Pencil size={15} /></button>
+                      <div className="menu">
+                        <button type="button" className="icon-btn" aria-label={`More actions for ${title.title}`} onClick={() => setMenuId(menuId === title.id ? '' : title.id)}><MoreVertical size={15} /></button>
+                        {menuId === title.id ? <div className="menu-list"><button type="button" onClick={() => openTitle(title, 'view')}>View details</button></div> : null}
+                      </div>
+                    </div>
                   </td>
                 </tr>
               ))}
             </tbody>
           </table>
+          {!loading && error ? <p className="error">{error}</p> : null}
+          {!loading && !error && !rows.length ? <p className="empty">No job titles match these filters.</p> : null}
         </div>
-      </div>
-    </PageTemplate>
-  );
-}
+      </section>
 
-function MetricCard({
-  icon: Icon,
-  label,
-  value,
-  detail,
-}: {
-  icon: any;
-  label: string;
-  value: string;
-  detail: string;
-}) {
-  return (
-    <div className="bg-white rounded-2xl shadow-sm border border-slate-100 p-4">
-      <div className="flex items-start justify-between gap-3">
-        <div>
-          <div className="text-xs uppercase tracking-wide text-slate-500 font-semibold">{label}</div>
-          <div className="text-2xl font-bold text-slate-900 mt-1">{value}</div>
-          <div className="text-xs text-slate-500 mt-2">{detail}</div>
+      {selected || mode === 'add' ? (
+        <div className="backdrop" onClick={() => { setSelected(null); setMode('view'); }} role="presentation">
+          <div className="modal" role="dialog" aria-modal="true" aria-labelledby="job-title-detail" onClick={(event) => event.stopPropagation()}>
+            <h2 id="job-title-detail">{mode === 'add' ? 'Add Job Title' : selected?.title}</h2>
+            <p>{mode === 'view' ? selected?.jobPurpose : 'Maintain the standardized title architecture and mapping.'}</p>
+            {mode === 'view' && selected ? (
+              <div className="form">
+                {[
+                  ['Code', selected.code],
+                  ['Grade', `${selected.gradeCode} · ${selected.gradeName}`],
+                  ['Family', selected.family],
+                  ['Level', selected.level],
+                  ['Reporting level', selected.reportingLevel],
+                  ['Employees', formatNumber(selected.employeeCount)],
+                  ['Open roles', formatNumber(selected.openPositions)],
+                  ['Standardization', selected.standardizationStatus],
+                  ['Health', selected.healthStatus],
+                ].map(([label, value]) => <label key={label}>{label}<span>{value}</span></label>)}
+              </div>
+            ) : (
+              <div className="form">
+                <label>Code<input defaultValue={selected?.code || ''} /></label>
+                <label>Job Title<input defaultValue={selected?.title || ''} /></label>
+                <label>Grade<input defaultValue={selected?.gradeName || selected?.gradeCode || ''} /></label>
+                <label>Family<input defaultValue={selected?.family || ''} /></label>
+              </div>
+            )}
+            <div className="modal-actions">
+              <button type="button" onClick={() => { setSelected(null); setMode('view'); }}>Cancel</button>
+              <button type="button" className="primary" onClick={() => { setNotice(mode === 'view' ? '' : 'Job titles are produced from the employee register, so this change is not stored.'); setSelected(null); setMode('view'); }}>{mode === 'view' ? 'Close' : 'Save Job Title'}</button>
+            </div>
+          </div>
         </div>
-        <span className="w-10 h-10 rounded-2xl bg-dle-blue/10 text-dle-blue flex items-center justify-center">
-          <Icon className="w-5 h-5" />
-        </span>
-      </div>
+      ) : null}
     </div>
-  );
-}
-
-function DetailStat({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="rounded-2xl border border-slate-200 bg-white p-3">
-      <div className="text-[11px] uppercase tracking-wide text-slate-500 font-semibold">{label}</div>
-      <div className="text-sm font-semibold text-slate-900 mt-1">{value}</div>
-    </div>
-  );
-}
-
-function ProgressCard({
-  label,
-  value,
-  tone,
-}: {
-  label: string;
-  value: number;
-  tone: 'emerald' | 'amber' | 'blue';
-}) {
-  const styles = tone === 'emerald' ? 'bg-emerald-500' : tone === 'amber' ? 'bg-amber-500' : 'bg-blue-500';
-
-  return (
-    <div className="rounded-2xl border border-slate-200 bg-white p-4">
-      <div className="text-xs font-semibold text-slate-600">{label}</div>
-      <div className="text-lg font-bold text-slate-900 mt-1">{value}%</div>
-      <div className="mt-3 h-2 rounded-full bg-slate-100 overflow-hidden">
-        <div className={`h-full rounded-full ${styles}`} style={{ width: `${Math.max(0, Math.min(100, value))}%` }} />
-      </div>
-    </div>
-  );
-}
-
-function InfoListCard({ title, items }: { title: string; items: string[] }) {
-  return (
-    <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-      <div className="text-sm font-semibold text-slate-900">{title}</div>
-      <div className="mt-3 flex flex-wrap gap-2">
-        {items.map((item) => (
-          <span key={item} className="px-3 py-1.5 rounded-full bg-white border border-slate-200 text-xs font-medium text-slate-700">
-            {item}
-          </span>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-function Select({
-  value,
-  onChange,
-  options,
-  labels,
-}: {
-  value: string;
-  onChange: (value: string) => void;
-  options: string[];
-  labels?: Record<string, string>;
-}) {
-  return (
-    <select
-      value={value}
-      onChange={(e) => onChange(e.target.value)}
-      className="w-full py-2.5 px-3 rounded-xl border border-slate-200 text-sm text-slate-900 bg-white focus:outline-none focus:ring-2 focus:ring-dle-blue/20"
-    >
-      {options.map((option) => (
-        <option key={option} value={option}>
-          {labels?.[option] || option}
-        </option>
-      ))}
-    </select>
   );
 }

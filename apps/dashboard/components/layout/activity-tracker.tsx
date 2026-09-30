@@ -19,22 +19,81 @@ const forceLogout = async () => {
   window.location.replace(next && next !== '/' ? `/login?next=${encodeURIComponent(next)}` : '/login');
 };
 
+type GrantedLocation = { latitude: number; longitude: number; accuracyM: number };
+
+let grantedLocation: { at: number; value: GrantedLocation } | null = null;
+let locationDenied = false;
+let locationPromise: Promise<GrantedLocation | null> | null = null;
+
+const readDeviceLocation = async (allowPrompt: boolean): Promise<GrantedLocation | null> => {
+  if (grantedLocation && Date.now() - grantedLocation.at < 5 * 60 * 1000) return grantedLocation.value;
+  if (locationDenied || !navigator.geolocation) return null;
+  if (locationPromise) return locationPromise;
+  let state: PermissionState | 'unknown' = 'unknown';
+  try {
+    if (navigator.permissions?.query) {
+      state = (await navigator.permissions.query({ name: 'geolocation' })).state;
+    }
+  } catch {
+    state = 'unknown';
+  }
+  if (state === 'denied') {
+    locationDenied = true;
+    return null;
+  }
+  if (state !== 'granted' && !allowPrompt) return null;
+  locationPromise = new Promise<GrantedLocation | null>((resolve) => {
+    navigator.geolocation.getCurrentPosition(
+      (position) => resolve({
+        latitude: position.coords.latitude,
+        longitude: position.coords.longitude,
+        accuracyM: position.coords.accuracy,
+      }),
+      () => resolve(null),
+      { enableHighAccuracy: true, maximumAge: 5 * 60 * 1000, timeout: state === 'granted' ? 8000 : 25000 },
+    );
+  }).then((value) => {
+    if (!value) {
+      locationDenied = true;
+      return null;
+    }
+    grantedLocation = { at: Date.now(), value };
+    return value;
+  }).finally(() => {
+    locationPromise = null;
+  });
+  return locationPromise;
+};
+
 export function ActivityTracker() {
   useEffect(() => {
     let lastSignature = '';
+    const post = async (body: { kind: 'page' | 'action' | 'heartbeat'; path: string; page: string; action?: string }, browserLocation: GrantedLocation | null) => {
+      const response = await fetch('/api/auth/activity', {
+        method: 'POST',
+        credentials: 'same-origin',
+        cache: 'no-store',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ...body, browserLocation }),
+      });
+      if (response.status !== 401) return;
+      const payload = await response.json().catch(() => ({}));
+      if (payload?.code === 'session-revoked') await forceLogout();
+    };
+
     const send = async (body: { kind: 'page' | 'action' | 'heartbeat'; path: string; page: string; action?: string }) => {
       if (isPublicPath(window.location.pathname)) return;
       try {
-        const response = await fetch('/api/auth/activity', {
-          method: 'POST',
-          credentials: 'same-origin',
-          cache: 'no-store',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(body),
-        });
-        if (response.status !== 401) return;
-        const payload = await response.json().catch(() => ({}));
-        if (payload?.code === 'session-revoked') await forceLogout();
+        let browserLocation: GrantedLocation | null = null;
+        if (body.kind !== 'heartbeat') {
+          browserLocation = await readDeviceLocation(false);
+          if (!browserLocation && !locationDenied) {
+            void readDeviceLocation(true).then((place) => {
+              if (place) void post(body, place).catch(() => undefined);
+            });
+          }
+        }
+        await post(body, browserLocation);
       } catch {
         // A failed beacon must not interrupt the page the user is working on.
       }

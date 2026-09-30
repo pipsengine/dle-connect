@@ -3,6 +3,7 @@ import path from 'node:path';
 import sql from 'mssql';
 import { getDleEnterpriseDbPool } from '@/lib/dle-enterprise-db';
 import type { SessionPayload } from '@/lib/auth/session';
+import { describeBrowserPlace, lookupIpPlace, type BrowserPlace, type IpPlace } from '@/lib/auth/ip-geolocation';
 
 const requirePool = async () => {
   const pool = await getDleEnterpriseDbPool();
@@ -40,6 +41,8 @@ export type ActivityEvent = {
   location: string;
   ipAddress: string;
   device: string;
+  ipPlace?: IpPlace | null;
+  browserPlace?: BrowserPlace | null;
 };
 
 const ONLINE_MS = 3 * 60 * 1000;
@@ -153,6 +156,29 @@ const ensureSchema = () => {
           [RevokedAt] DATETIME2(0) NOT NULL
         );
       `);
+      await pool.request().query(`
+        IF COL_LENGTH('security.UserActivity', 'GeoSource') IS NULL
+        ALTER TABLE [security].[UserActivity] ADD
+          [GeoCountry] NVARCHAR(80) NULL,
+          [GeoRegion] NVARCHAR(80) NULL,
+          [GeoCity] NVARCHAR(80) NULL,
+          [GeoLatitude] FLOAT NULL,
+          [GeoLongitude] FLOAT NULL,
+          [GeoSource] NVARCHAR(40) NULL,
+          [GeoNote] NVARCHAR(300) NULL,
+          [BrowserLatitude] FLOAT NULL,
+          [BrowserLongitude] FLOAT NULL,
+          [BrowserAccuracyM] INT NULL,
+          [BrowserSource] NVARCHAR(40) NULL;
+      `);
+      await pool.request().query(`
+        IF COL_LENGTH('security.UserActivity', 'BrowserState') IS NULL
+        ALTER TABLE [security].[UserActivity] ADD
+          [BrowserState] NVARCHAR(80) NULL,
+          [BrowserCity] NVARCHAR(80) NULL,
+          [BrowserLga] NVARCHAR(120) NULL,
+          [BrowserStreet] NVARCHAR(200) NULL;
+      `);
       return true;
     })().catch((error) => {
       schemaReady = null;
@@ -210,6 +236,7 @@ export const recordPresence = async (input: {
   action?: string;
   ipAddress: string;
   device: string;
+  browserPlace?: BrowserPlace | null;
 }) => enqueue(async () => {
   const key = sessionKeyFor(input.session);
   if (await isSessionRevoked(key)) return { revoked: true as const };
@@ -262,7 +289,9 @@ export const recordPresence = async (input: {
         ([SessionKey],[UserId],[Username],[FullName],[Roles],[Module],[Page],[Path],[Location],[IpAddress],[Device],[LoggedInAt],[LastSeenAt],[Status])
         VALUES (@key,@userId,@username,@fullName,@roles,@module,@page,@path,@location,@ip,@device,@loggedIn,@seen,N'Online');
     `);
+    const browser = input.browserPlace ? await describeBrowserPlace(input.browserPlace) : null;
     if (action) {
+      const place = await lookupIpPlace(row.ipAddress);
       await pool.request()
         .input('id', sql.NVarChar(80), newId())
         .input('at', sql.DateTime2, now)
@@ -276,8 +305,23 @@ export const recordPresence = async (input: {
         .input('location', sql.NVarChar(200), row.location)
         .input('ip', sql.NVarChar(100), row.ipAddress)
         .input('device', sql.NVarChar(400), row.device)
-        .query(`INSERT [security].[UserActivity] ([Id],[At],[UserId],[Username],[FullName],[Action],[Module],[Page],[Path],[Location],[IpAddress],[Device])
-          VALUES (@id,@at,@userId,@username,@fullName,@action,@module,@page,@path,@location,@ip,@device)`);
+        .input('geoCountry', sql.NVarChar(80), place.country || null)
+        .input('geoRegion', sql.NVarChar(80), place.region || null)
+        .input('geoCity', sql.NVarChar(80), place.city || null)
+        .input('geoLat', sql.Float, place.latitude)
+        .input('geoLon', sql.Float, place.longitude)
+        .input('geoSource', sql.NVarChar(40), place.source)
+        .input('geoNote', sql.NVarChar(300), place.note)
+        .input('browserLat', sql.Float, browser?.latitude ?? null)
+        .input('browserLon', sql.Float, browser?.longitude ?? null)
+        .input('browserAcc', sql.Int, browser?.accuracyM ?? null)
+        .input('browserSource', sql.NVarChar(40), browser?.source ?? null)
+        .input('browserState', sql.NVarChar(80), browser?.state || null)
+        .input('browserCity', sql.NVarChar(80), browser?.city || null)
+        .input('browserLga', sql.NVarChar(120), browser?.lga || null)
+        .input('browserStreet', sql.NVarChar(200), browser?.street || null)
+        .query(`INSERT [security].[UserActivity] ([Id],[At],[UserId],[Username],[FullName],[Action],[Module],[Page],[Path],[Location],[IpAddress],[Device],[GeoCountry],[GeoRegion],[GeoCity],[GeoLatitude],[GeoLongitude],[GeoSource],[GeoNote],[BrowserLatitude],[BrowserLongitude],[BrowserAccuracyM],[BrowserSource],[BrowserState],[BrowserCity],[BrowserLga],[BrowserStreet])
+          VALUES (@id,@at,@userId,@username,@fullName,@action,@module,@page,@path,@location,@ip,@device,@geoCountry,@geoRegion,@geoCity,@geoLat,@geoLon,@geoSource,@geoNote,@browserLat,@browserLon,@browserAcc,@browserSource,@browserState,@browserCity,@browserLga,@browserStreet)`);
     }
     return { revoked: false as const };
   }
@@ -288,6 +332,8 @@ export const recordPresence = async (input: {
   else sessions.unshift(stored);
   await writeJson(sessionsFile(), sessions.slice(0, 500));
   if (action) {
+    const place = await lookupIpPlace(row.ipAddress);
+    const browser = input.browserPlace ? await describeBrowserPlace(input.browserPlace) : null;
     const events = await readJson<ActivityEvent[]>(activityFile(), []);
     events.unshift({
       id: newId(),
@@ -302,6 +348,8 @@ export const recordPresence = async (input: {
       location: row.location,
       ipAddress: row.ipAddress,
       device: row.device,
+      ipPlace: place,
+      browserPlace: browser,
     });
     await writeJson(activityFile(), events.slice(0, 5000));
   }
@@ -346,24 +394,92 @@ export const listLiveSessions = async () => {
   return sessions.map((row) => mapSession(row as unknown as Record<string, unknown>));
 };
 
+const finiteOrNull = (value: unknown) => {
+  if (value == null || value === '') return null;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : null;
+};
+
+const mapActivity = (row: Record<string, unknown>): ActivityEvent => {
+  const source = String(row.GeoSource || '');
+  const storedPlace = row.ipPlace && typeof row.ipPlace === 'object' ? row.ipPlace as IpPlace : null;
+  const ipPlace: IpPlace | null = storedPlace || (source === 'IP Geolocation' || source === 'Corporate Network' || source === 'Unavailable'
+    ? {
+      country: String(row.GeoCountry || ''),
+      region: String(row.GeoRegion || ''),
+      city: String(row.GeoCity || ''),
+      latitude: finiteOrNull(row.GeoLatitude),
+      longitude: finiteOrNull(row.GeoLongitude),
+      source,
+      note: String(row.GeoNote || ''),
+    }
+    : null);
+  const browserSource = String(row.BrowserSource || '');
+  const browserLatitude = finiteOrNull(row.BrowserLatitude);
+  const browserLongitude = finiteOrNull(row.BrowserLongitude);
+  const browserAccuracy = finiteOrNull(row.BrowserAccuracyM);
+  const storedBrowser = row.browserPlace && typeof row.browserPlace === 'object' ? row.browserPlace as BrowserPlace : null;
+  const browserPlace: BrowserPlace | null = storedBrowser
+    ? storedBrowser
+    : browserSource === 'Browser GPS' && browserLatitude != null && browserLongitude != null && browserAccuracy != null
+      ? {
+        latitude: browserLatitude,
+        longitude: browserLongitude,
+        accuracyM: browserAccuracy,
+        source: 'Browser GPS',
+        state: String(row.BrowserState || ''),
+        city: String(row.BrowserCity || ''),
+        lga: String(row.BrowserLga || ''),
+        street: String(row.BrowserStreet || ''),
+      }
+      : null;
+  return {
+    id: String(row.Id || row.id || ''),
+    at: asIso(row.At || row.at),
+    userId: String(row.UserId || row.userId || ''),
+    username: String(row.Username || row.username || ''),
+    fullName: String(row.FullName || row.fullName || ''),
+    action: String(row.Action || row.action || ''),
+    module: String(row.Module || row.module || ''),
+    page: String(row.Page || row.page || ''),
+    path: String(row.Path || row.path || ''),
+    location: String(row.Location || row.location || ''),
+    ipAddress: String(row.IpAddress || row.ipAddress || ''),
+    device: String(row.Device || row.device || ''),
+    ipPlace,
+    browserPlace,
+  };
+};
+
+const rememberPlace = async (ipAddress: string, place: IpPlace) => {
+  if (place.source === 'Unavailable' || !(await ensureSchema())) return;
+  const pool = await requirePool();
+  await pool.request()
+    .input('ip', sql.NVarChar(100), ipAddress)
+    .input('geoCountry', sql.NVarChar(80), place.country || null)
+    .input('geoRegion', sql.NVarChar(80), place.region || null)
+    .input('geoCity', sql.NVarChar(80), place.city || null)
+    .input('geoLat', sql.Float, place.latitude)
+    .input('geoLon', sql.Float, place.longitude)
+    .input('geoSource', sql.NVarChar(40), place.source)
+    .input('geoNote', sql.NVarChar(300), place.note)
+    .query(`UPDATE [security].[UserActivity] SET [GeoCountry]=@geoCountry,[GeoRegion]=@geoRegion,[GeoCity]=@geoCity,[GeoLatitude]=@geoLat,[GeoLongitude]=@geoLon,[GeoSource]=@geoSource,[GeoNote]=@geoNote WHERE [IpAddress]=@ip AND [GeoSource] IS NULL`);
+};
+
 export const listActivity = async () => {
   if (await ensureSchema()) {
     const pool = await requirePool();
-    const result = await pool.request().query(`SELECT TOP (2000) [Id],[At],[UserId],[Username],[FullName],[Action],[Module],[Page],[Path],[Location],[IpAddress],[Device] FROM [security].[UserActivity] ORDER BY [At] DESC`);
-    return (result.recordset as Record<string, unknown>[]).map((row) => ({
-      id: String(row.Id),
-      at: asIso(row.At),
-      userId: String(row.UserId || ''),
-      username: String(row.Username || ''),
-      fullName: String(row.FullName || ''),
-      action: String(row.Action || ''),
-      module: String(row.Module || ''),
-      page: String(row.Page || ''),
-      path: String(row.Path || ''),
-      location: String(row.Location || ''),
-      ipAddress: String(row.IpAddress || ''),
-      device: String(row.Device || ''),
-    }));
+    const result = await pool.request().query(`SELECT TOP (2000) [Id],[At],[UserId],[Username],[FullName],[Action],[Module],[Page],[Path],[Location],[IpAddress],[Device],[GeoCountry],[GeoRegion],[GeoCity],[GeoLatitude],[GeoLongitude],[GeoSource],[GeoNote],[BrowserLatitude],[BrowserLongitude],[BrowserAccuracyM],[BrowserSource],[BrowserState],[BrowserCity],[BrowserLga],[BrowserStreet] FROM [security].[UserActivity] ORDER BY [At] DESC`);
+    const rows = (result.recordset as Record<string, unknown>[]).map(mapActivity);
+    const missing = [...new Set(rows.filter((row) => !row.ipPlace && row.ipAddress).map((row) => row.ipAddress))].slice(0, 20);
+    const places = await Promise.all(missing.map(async (ipAddress) => [ipAddress, await lookupIpPlace(ipAddress)] as const));
+    for (const [ipAddress, place] of places) {
+      rows.forEach((row) => {
+        if (row.ipAddress === ipAddress && !row.ipPlace) row.ipPlace = place;
+      });
+      await rememberPlace(ipAddress, place);
+    }
+    return rows;
   }
   return readJson<ActivityEvent[]>(activityFile(), []);
 };

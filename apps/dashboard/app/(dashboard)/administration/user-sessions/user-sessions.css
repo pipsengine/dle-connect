@@ -13,7 +13,9 @@
 .us-pro .terminate,.us-pro .apply{border:0;border-radius:8px;background:#087ef2;color:white;height:44px;padding:0 20px;display:flex;align-items:center;gap:8px;box-shadow:0 5px 12px rgba(11,130,255,.14)}
 .us-pro .terminate:disabled{opacity:.55;cursor:not-allowed}
 .us-pro .stats{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:12px;margin-bottom:18px}
-.us-pro .stat{min-height:112px;border-radius:12px;padding:20px;display:flex;align-items:center;gap:14px;border:1px solid rgba(148,163,184,.08)}
+.us-pro .stat{min-height:112px;border-radius:12px;padding:20px;display:flex;align-items:center;gap:14px;border:1px solid rgba(148,163,184,.08);appearance:none;font:inherit;color:inherit;text-align:left;width:100%;cursor:pointer}
+.us-pro .stat.selected{outline:2px solid #087ef2;outline-offset:2px}
+.us-pro .card-note{margin:-6px 0 14px;color:#0b5cab;font-size:13px;font-weight:700}
 .us-pro .stat.blue{background:linear-gradient(120deg,#eaf6ff,#f6fbff)}
 .us-pro .stat.green{background:linear-gradient(120deg,#e9fbf1,#f4fff8)}
 .us-pro .stat.orange{background:linear-gradient(120deg,#fff4e8,#fff9f2)}

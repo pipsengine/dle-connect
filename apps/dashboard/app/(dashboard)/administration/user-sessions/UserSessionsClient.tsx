@@ -82,6 +82,7 @@ export default function UserSessionsClient() {
   const [toast, setToast] = useState('');
   const [busy, setBusy] = useState(false);
   const [detail, setDetail] = useState<Row | null>(null);
+  const [card, setCard] = useState('');
 
   const load = useCallback(async () => {
     const response = await fetch('/api/admin/user-sessions', { cache: 'no-store' });
@@ -115,9 +116,19 @@ export default function UserSessionsClient() {
   const modules = Array.from(new Set(rows.map((row) => row.module).filter(Boolean)));
   const locations = Array.from(new Set(rows.map((row) => row.location).filter((item) => item && item !== 'Not recorded')));
 
+  const matchesCard = (row: Row) => {
+    if (card === 'Active Sessions') return row.displayStatus !== 'Offline';
+    if (card === 'Employees Online') return row.displayStatus === 'Online';
+    if (card === 'Administrators Online') return row.displayStatus !== 'Offline' && isAdmin(row.roles);
+    if (card === 'Windows PCs') return row.kind === 'desktop';
+    if (card === 'Mobile Devices') return row.kind === 'mobile';
+    return true;
+  };
+
   const filtered = rows.filter((row) => {
     const query = filters.q.trim().toLowerCase();
-    return (!query || `${row.fullName} ${row.username} ${row.roles}`.toLowerCase().includes(query))
+    return matchesCard(row)
+      && (!query || `${row.fullName} ${row.username} ${row.roles}`.toLowerCase().includes(query))
       && (filters.status === 'All' || row.displayStatus === filters.status)
       && (filters.module === 'All Modules' || row.module === filters.module)
       && (filters.location === 'All Locations' || row.location === filters.location)
@@ -188,12 +199,13 @@ export default function UserSessionsClient() {
       {error ? <div className="error">{error}</div> : null}
       <section className="stats">
         {cards.map(([count, title, subtitle, Icon, tone]) => (
-          <div className={`stat ${tone}`} key={title}>
+          <button type="button" className={`stat ${tone}${card === title ? ' selected' : ''}`} key={title} aria-pressed={card === title} onClick={() => { setCard((current) => current === title ? '' : title); setPage(1); }}>
             <div className="stat-icon"><Icon size={28} /></div>
             <div><b>{count}</b><strong>{title}</strong><small>{subtitle}</small></div>
-          </div>
+          </button>
         ))}
       </section>
+      {card ? <p className="card-note">Showing the {filtered.length} session{filtered.length === 1 ? '' : 's'} counted in {card}. Click the card again to clear.</p> : null}
       <section className="filters">
         <label className="search-field"><span>Search User</span><div><Search size={17} /><input value={filters.q} onChange={(event) => { setFilters({ ...filters, q: event.target.value }); setPage(1); }} placeholder="Search by name, employee ID..." /></div></label>
         <label><span>Status</span><select value={filters.status} onChange={(event) => { setFilters({ ...filters, status: event.target.value }); setPage(1); }}><option>All</option><option>Online</option><option>Away</option><option>Offline</option></select></label>
@@ -201,7 +213,7 @@ export default function UserSessionsClient() {
         <label><span>Location</span><select value={filters.location} onChange={(event) => { setFilters({ ...filters, location: event.target.value }); setPage(1); }}><option>All Locations</option>{locations.map((item) => <option key={item}>{item}</option>)}</select></label>
         <label><span>Device Type</span><select value={filters.device} onChange={(event) => { setFilters({ ...filters, device: event.target.value }); setPage(1); }}><option>All Devices</option><option value="desktop">Desktop</option><option value="mobile">Mobile</option></select></label>
         <button type="button" className="apply"><Filter size={17} />Apply Filters</button>
-        <button type="button" className="reset" onClick={() => { setFilters(emptyFilters); setPage(1); }}><RotateCcw size={17} />Reset</button>
+        <button type="button" className="reset" onClick={() => { setFilters(emptyFilters); setCard(''); setPage(1); }}><RotateCcw size={17} />Reset</button>
       </section>
       {detail ? (
         <div className="detail">

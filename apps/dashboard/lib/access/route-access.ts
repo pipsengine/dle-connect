@@ -88,6 +88,15 @@ export const isLegacyWorkforceTimesheetPage = (pathname: string) => {
   return LEGACY_WORKFORCE_TIMESHEET_PREFIXES.some((prefix) => path === prefix || path.startsWith(`${prefix}/`) || path.startsWith(`${prefix}-`));
 };
 
+/** Security Audit Trail under Administration. Global Super Administrator only. */
+export const isSecurityAuditTrailPath = (pathname: string) => {
+  const path = normalizePath(pathname.split('?')[0] || '/');
+  return path === '/administration/audit-trail'
+    || path.startsWith('/administration/audit-trail/')
+    || path === '/hris/administration/audit-trail'
+    || path.startsWith('/hris/administration/audit-trail/');
+};
+
 export const isGlobalSuperAdministrator = (session: SessionLike) =>
   Boolean(session.isGlobalAdmin)
   || (session.roles || []).includes('Super Administrator')
@@ -517,6 +526,7 @@ export const itSupportRoutePermissionOptions = (pathname: string): string[] | nu
 
 export const canAccessRoute = (session: SessionLike, pathname: string) => {
   const path = routePathFromRequestPath(pathname);
+  if (isSecurityAuditTrailPath(pathname) || isSecurityAuditTrailPath(path)) return isGlobalSuperAdministrator(session);
   if (path.startsWith('/hris')) {
     if (!pathname.startsWith('/api') && isLegacyWorkforceTimesheetPage(path) && !isGlobalSuperAdministrator(session)) return false;
     return canAccessHrisPath(session, path);

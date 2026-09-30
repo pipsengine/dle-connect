@@ -75,6 +75,17 @@ const OUTSTANDING_CASH_ADVANCE_STATUSES = [
   'Finance Verification',
 ] as const;
 
+/** Standing cash-advance allowance. P0467 Fawaz Adeshina may hold three open advances. */
+const CASH_ADVANCE_OPEN_ALLOWANCE: Array<{ codes: string[]; limit: number }> = [
+  { codes: ['P0467', 'L2770'], limit: 3 },
+];
+
+export const cashAdvanceOpenAllowance = (employeeCode: string) => {
+  const code = compact(employeeCode).toUpperCase();
+  const head = code.split(/[\s:/|-]+/).find(Boolean) || code;
+  return CASH_ADVANCE_OPEN_ALLOWANCE.find((item) => item.codes.includes(code) || item.codes.includes(head))?.limit ?? 1;
+};
+
 /** Unpaid items sitting with Treasury (or scheduled) that can still be closed without disbursement. */
 export const isUnpaidTreasuryPayable = (row: { status?: string | null; paidAt?: string | null }) =>
   /^(ready for treasury|approved|payment scheduled|payment processing)$/i.test(compact(row.status))
@@ -1895,15 +1906,20 @@ WHERE [WaiverId] = @WaiverId
 export const getCashAdvanceEligibility = async (employeeCode: string): Promise<CashAdvanceEligibility> => {
   const code = compact(employeeCode);
   const outstanding = await listOutstandingCashAdvances(code);
+  const allowance = cashAdvanceOpenAllowance(code);
   const activeWaiver = code ? await findActiveCashAdvanceWaiver(code) : null;
-  const blocked = outstanding.length > 0 && !activeWaiver;
+  const blocked = outstanding.length >= allowance && !activeWaiver;
   const canRaise = !blocked && Boolean(code);
   let message = 'Eligible to raise a cash advance.';
   if (!code) message = 'Select an employee before continuing.';
   else if (blocked) {
-    message = `Blocked: ${outstanding.length} outstanding cash advance${outstanding.length === 1 ? '' : 's'} must be retired first, or CFO must cancel/waive.`;
+    message = allowance > 1
+      ? `Blocked: ${outstanding.length} cash advances are still open without retirement. The allowance is ${allowance}. Retire one before raising another.`
+      : `Blocked: ${outstanding.length} outstanding cash advance${outstanding.length === 1 ? '' : 's'} must be retired first, or CFO must cancel/waive.`;
   } else if (outstanding.length > 0 && activeWaiver) {
     message = `Outstanding advance exists, but CFO waiver ${activeWaiver.waiverId} is active.`;
+  } else if (outstanding.length > 0 && allowance > 1) {
+    message = `${outstanding.length} of ${allowance} open cash advances are in progress. Another cash advance can be raised until that allowance is reached.`;
   }
   return {
     employeeCode: code,
@@ -1933,11 +1949,18 @@ export const buildCashAdvanceControlsWorkspace = async (): Promise<CashAdvanceCo
   ]);
   const awaitingRetirement = outstanding.filter((row) =>
     /awaiting retirement|retirement submitted|treasury verification|finance verification/i.test(row.status));
+  const openByEmployee = new Map<string, Set<string>>();
+  outstanding.forEach((row) => {
+    [compact(row.beneficiaryCode), compact(row.requesterCode)].filter(Boolean).forEach((code) => {
+      const ids = openByEmployee.get(code) || new Set<string>();
+      ids.add(row.requestId);
+      openByEmployee.set(code, ids);
+    });
+  });
   const blockedEmployees = new Set(
-    outstanding
-      .map((row) => compact(row.beneficiaryCode || row.requesterCode))
-      .filter(Boolean)
-      .filter((code) => !activeWaivers.some((waiver) => waiver.employeeCode === code)),
+    [...openByEmployee.entries()]
+      .filter(([code, ids]) => ids.size >= cashAdvanceOpenAllowance(code) && !activeWaivers.some((waiver) => waiver.employeeCode === code))
+      .map(([code]) => code),
   );
   return {
     generatedAt: nowIso(),
@@ -2600,11 +2623,14 @@ export const createPaymentRequest = async (input: CreatePaymentRequestInput) => 
     if (!(amount >= 1)) throw new Error('Amount must be at least 1.00.');
 
     const outstanding = await countOutstandingCashAdvances(beneficiaryCode);
-    if (outstanding > 0) {
+    const allowance = cashAdvanceOpenAllowance(beneficiaryCode);
+    if (outstanding >= allowance) {
       const waiver = await findActiveCashAdvanceWaiver(beneficiaryCode);
       if (!waiver) {
         throw new Error(
-          `${beneficiaryCode} has ${outstanding} outstanding cash advance${outstanding === 1 ? '' : 's'} awaiting retirement. Retire the previous advance, or ask Finance/CFO to cancel or waive it before raising a new one.`,
+          allowance > 1
+            ? `${beneficiaryCode} already has ${outstanding} open cash advances. The allowance is ${allowance} without retirement. Retire one before raising another.`
+            : `${beneficiaryCode} has ${outstanding} outstanding cash advance${outstanding === 1 ? '' : 's'} awaiting retirement. Retire the previous advance, or ask Finance/CFO to cancel or waive it before raising a new one.`,
         );
       }
       waiverIdToConsume = waiver.waiverId;

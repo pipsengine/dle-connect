@@ -1,0 +1,82 @@
+.jt-pro{width:100%;max-width:100%;min-width:0;color:#0b1d3a;font-family:Inter,ui-sans-serif,system-ui,"Segoe UI",Arial,sans-serif;font-size:13px}
+.jt-pro button,.jt-pro input,.jt-pro select{font:inherit}
+.jt-pro button{cursor:pointer}
+.jt-pro .crumb{color:#607b9c;margin-bottom:14px}
+.jt-pro .crumb b{color:#0b1d3a}
+.jt-pro .hero{display:flex;justify-content:space-between;align-items:center;gap:16px;flex-wrap:wrap}
+.jt-pro .hero-title{display:flex;gap:14px;align-items:center;min-width:0}
+.jt-pro .hero-icon{width:52px;height:52px;border-radius:12px;background:#dbeaff;color:#0877ee;display:grid;place-items:center;flex:none}
+.jt-pro h1{font-size:28px;margin:0;line-height:1.1}
+.jt-pro .hero p,.jt-pro .reg-head p{margin:5px 0 0;color:#607b9c}
+.jt-pro .actions{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+.jt-pro .actions button,.jt-pro .modal-actions button{border:1px solid #d7e2ef;background:#fff;border-radius:8px;padding:10px 14px;display:inline-flex;align-items:center;gap:8px;color:#163458}
+.jt-pro .actions .primary,.jt-pro .modal-actions .primary{background:#0877ee;color:#fff;border-color:#0877ee}
+.jt-pro .kpis{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:12px;margin:18px 0}
+.jt-pro .kpi{background:#fff;border:1px solid #e3ebf5;border-radius:13px;padding:16px;display:flex;gap:12px;min-height:108px;min-width:0;box-shadow:0 5px 15px #0c4c8d0a}
+.jt-pro .kicon{width:40px;height:40px;border-radius:10px;display:grid;place-items:center;flex:none}
+.jt-pro .k0 .kicon{background:#efe8ff;color:#7046e9}
+.jt-pro .k1 .kicon{background:#e5f8ee;color:#12a15a}
+.jt-pro .k2 .kicon{background:#e7f8f6;color:#0f9b8e}
+.jt-pro .k3 .kicon{background:#e7f1ff;color:#0877ee}
+.jt-pro .k4 .kicon{background:#fff1e8;color:#e85d04}
+.jt-pro .k5 .kicon{background:#efe8ff;color:#5b4cdb}
+.jt-pro .kpi small{display:block;font-weight:800;color:#526c8d;letter-spacing:.02em}
+.jt-pro .kpi h2{font-size:25px;margin:6px 0}
+.jt-pro .kpi p{margin:0;color:#7187a4;font-size:11px}
+.jt-pro .alert{background:#fff9e9;border:1px solid #f1ca5d;border-radius:13px;padding:15px;display:flex;gap:14px;align-items:flex-start}
+.jt-pro .alert.ok{background:#f3fbf6;border-color:#b7ebc9}
+.jt-pro .db{width:42px;height:42px;color:#e27b00;background:#fff0c2;border-radius:10px;display:grid;place-items:center;flex:none}
+.jt-pro .alert.ok .db{color:#0a9d59;background:#e1f9ec}
+.jt-pro .alert p{margin:4px 0;color:#5e7695}
+.jt-pro .alert strong{color:#c34e00;font-size:12px;overflow-wrap:anywhere}
+.jt-pro .alert.ok strong{color:#0a7a45}
+.jt-pro .alert-tags{margin-left:auto;display:flex;gap:8px;flex-wrap:wrap;align-items:flex-start}
+.jt-pro .alert-tags span{background:#fff;border:1px solid #d9e3ef;border-radius:20px;padding:7px 10px;font-size:11px;white-space:nowrap;display:inline-flex;align-items:center;gap:6px}
+.jt-pro .dot{width:8px;height:8px;border-radius:50%;background:#12a15a;display:inline-block}
+.jt-pro .filters{margin:16px 0;background:#fff;border:1px solid #e3ebf5;border-radius:13px;padding:14px;display:grid;grid-template-columns:minmax(220px,1.6fr) repeat(4,minmax(0,1fr));gap:10px;align-items:center}
+.jt-pro .search{border:1px solid #d7e2ef;border-radius:8px;display:flex;align-items:center;padding:0 12px;background:#fff}
+.jt-pro .search input{border:0;outline:0;width:100%;min-width:0;padding:11px 8px;background:transparent}
+.jt-pro .filters select{border:1px solid #d7e2ef;border-radius:8px;padding:0 12px;height:42px;background:#fff;color:#163458;min-width:0;width:100%}
+.jt-pro .filters .reset{grid-column:5;border:1px solid #d7e2ef;background:#fff;border-radius:8px;height:42px;padding:0 14px;display:inline-flex;align-items:center;justify-content:center;gap:8px;color:#163458;justify-self:end}
+.jt-pro .registry{background:#fff;border:1px solid #e3ebf5;border-radius:13px;overflow:hidden;min-width:0;max-width:100%}
+.jt-pro .reg-head{padding:15px;display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap}
+.jt-pro .pager{display:flex;align-items:center;gap:6px;color:#526c8d;flex-wrap:wrap}
+.jt-pro .pager button{min-width:32px;height:32px;border:1px solid #d7e2ef;background:#fff;border-radius:8px;color:#163458;padding:0 8px}
+.jt-pro .pager .current{background:#0877ee;color:#fff;border-color:#0877ee}
+.jt-pro .pager .gap{border:0;background:transparent;min-width:16px;color:#526c8d}
+.jt-pro .table-wrap{overflow:auto;max-width:100%}
+.jt-pro table{width:100%;border-collapse:collapse;min-width:920px}
+.jt-pro th{background:#f4f7fb;font-size:10px;color:#526c8d;text-align:left;padding:11px;white-space:nowrap}
+.jt-pro td{padding:10px 11px;border-top:1px solid #e7edf5;color:#17385e;vertical-align:middle}
+.jt-pro td b{display:block}
+.jt-pro td small{display:block;color:#758aa5;margin-top:2px;max-width:280px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.jt-pro tbody tr{cursor:pointer}
+.jt-pro tbody tr:hover,.jt-pro tbody tr.selected{background:#f4f9ff}
+.jt-pro .badge{display:inline-block;border-radius:15px;padding:5px 10px;font-size:10px;font-weight:700;white-space:nowrap}
+.jt-pro .good{background:#e4fbf1;color:#008a5a;border:1px solid #a8e9d1}
+.jt-pro .warn{background:#fff0ed;color:#e54b3f;border:1px solid #ffc4bd}
+.jt-pro .bad{background:#fff0ef;color:#e2302c;border:1px solid #ffc8c5}
+.jt-pro .row-actions{display:flex;gap:6px}
+.jt-pro .icon-btn{width:32px;height:32px;border:1px solid #d7e2ef;background:#fff;border-radius:8px;display:grid;place-items:center;color:#163458}
+.jt-pro .menu{position:relative}
+.jt-pro .menu-list{position:absolute;right:0;top:34px;z-index:6;background:#fff;border:1px solid #d7e2ef;border-radius:8px;box-shadow:0 8px 24px rgba(15,23,42,.12);min-width:140px;padding:4px}
+.jt-pro .menu-list button{width:100%;border:0;background:#fff;text-align:left;padding:8px 10px;border-radius:6px}
+.jt-pro .empty,.jt-pro .error{padding:18px;color:#526c8d}
+.jt-pro .error{color:#991b1b}
+.jt-pro .insights{margin-top:14px;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+.jt-pro .insight{background:#fff;border:1px solid #e3ebf5;border-radius:12px;padding:12px 14px}
+.jt-pro .insight b{display:block}
+.jt-pro .insight p{margin:4px 0 0;color:#607b9c}
+.jt-pro .backdrop{position:fixed;inset:0;background:#071b347a;display:grid;place-items:center;z-index:80;padding:24px}
+.jt-pro .modal{width:min(760px,100%);max-height:min(88vh,860px);overflow:auto;background:#fff;border-radius:16px;padding:24px;box-shadow:0 20px 60px #071b3455}
+.jt-pro .modal h2{margin:0;font-size:24px}
+.jt-pro .modal>p{color:#6d829d;margin:6px 0 0}
+.jt-pro .form{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin:18px 0}
+.jt-pro .form label{font-weight:700;min-width:0}
+.jt-pro .form span,.jt-pro .form input{display:block;width:100%;box-sizing:border-box;margin-top:7px;padding:12px;border:1px solid #d7e2ef;border-radius:8px;background:#f8fbff;font-weight:600;overflow-wrap:anywhere}
+.jt-pro .chips{display:flex;flex-wrap:wrap;gap:6px;margin-top:7px}
+.jt-pro .chips i{font-style:normal;background:#f4f7fb;border:1px solid #d7e2ef;border-radius:14px;padding:5px 9px;font-size:11px;font-weight:650}
+.jt-pro .modal-actions{display:flex;justify-content:flex-end;gap:10px}
+@media(max-width:1100px){.jt-pro .kpis{grid-template-columns:repeat(3,minmax(0,1fr))}.jt-pro .filters{grid-template-columns:repeat(2,minmax(0,1fr))}.jt-pro .filters .reset{grid-column:auto;justify-self:stretch}}
+@media(max-width:900px){.jt-pro .form{grid-template-columns:1fr}.jt-pro h1{font-size:22px}.jt-pro .alert{flex-direction:column}.jt-pro .alert-tags{margin-left:0}}
+@media(max-width:640px){.jt-pro .kpis,.jt-pro .filters{grid-template-columns:1fr}.jt-pro .backdrop{padding:12px}}
