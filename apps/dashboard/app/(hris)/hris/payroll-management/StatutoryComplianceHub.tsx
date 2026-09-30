@@ -562,7 +562,7 @@ function StatutoryTabPanel({
       </div>
 
       {tab === 'paye' ? <TaxPayeClient initialNow={now} /> : null}
-      {tab === 'pension' ? <PensionClient initialNow={now} /> : null}
+      {tab === 'pension' ? <PensionClient initialNow={now} period={viewPeriod || payload?.period} /> : null}
       {tab === 'nhf' || tab === 'nsitf' || tab === 'itf' ? <StatutoryFundsClient initialNow={now} /> : null}
       {tab === 'compliance-reports' ? (
         <ComplianceReportsPanel

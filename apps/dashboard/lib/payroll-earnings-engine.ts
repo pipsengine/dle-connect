@@ -811,6 +811,17 @@ const pensionablePayFromLines = (lines: PayrollEarningLine[]) => {
   };
 };
 
+/** Basic + Housing + Transport only. Other allowances, refunds, and gross-only settlement lines are excluded. */
+export const pensionableEmolumentFromLines = (
+  lines: Array<{ code?: string | null; name?: string | null; amount?: number | null }>,
+) => pensionablePayFromLines(lines.map((line) => ({
+  code: String(line.code || ''),
+  name: String(line.name || ''),
+  taxable: true,
+  percentOfGross: 0,
+  amount: Number(line.amount || 0),
+}))).total;
+
 const isLeaveAllowanceLine = (line: Pick<PayrollEarningLine, 'code' | 'name'>) =>
   isLeaveAllowancePaymentCode(line.code)
   || /LEAVEALLOW/i.test(String(line.code || ''))
@@ -1589,11 +1600,18 @@ export const taxablePayrollInputFromEmployee = (employee: DleEmployeeDirectoryRo
 };
 
 export const pensionablePayrollInputFromEmployee = (employee: DleEmployeeDirectoryRow, options?: PayrollEarningsOptions) => {
-  const earnings = calculatePayrollEarnings(employee, options);
+  // The grade formula and the stored package use different codes for the same
+  // Basic, Housing, and Transport amounts (SNR_BASIC and BASIC). Pension must
+  // use the stored package once. Other taxable pay is not pensionable.
+  const earnings = calculatePayrollEarnings(employee, {
+    ...options,
+    useHrisPackageLines: true,
+    ignoreHrisPackageLines: false,
+  });
   const paidLines = (earnings.paidEarningLines || earnings.earningLines) as PayrollEarningLine[];
   const pensionable = pensionablePayFromLines(paidLines);
-  const basePay = pensionable.basePay || earnings.basicPay;
-  const pensionableAllowances = pensionable.allowances || roundMoney(Math.max(0, earnings.taxablePay - earnings.basicPay));
+  const basePay = pensionable.basePay;
+  const pensionableAllowances = pensionable.allowances;
   return {
     employee,
     monthlyBasePay: basePay,

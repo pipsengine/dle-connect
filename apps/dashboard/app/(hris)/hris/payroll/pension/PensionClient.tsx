@@ -108,7 +108,7 @@ function MetricCard({ label, value, detail, icon: Icon, tone }: { label: string;
   );
 }
 
-export default function PensionClient({ initialNow }: { initialNow: string }) {
+export default function PensionClient({ initialNow, period }: { initialNow: string; period?: string | null }) {
   const [role, setRole] = useState<Role>('Payroll Officer');
   const [payload, setPayload] = useState<Payload | null>(null);
   const [loading, setLoading] = useState(true);
@@ -123,7 +123,8 @@ export default function PensionClient({ initialNow }: { initialNow: string }) {
     setLoading(true);
     setError('');
     try {
-      const res = await fetch('/api/hris/payroll/pension', { headers: { 'x-hris-role': role }, cache: 'no-store' });
+      const query = period ? `?period=${encodeURIComponent(period)}` : '';
+      const res = await fetch(`/api/hris/payroll/pension${query}`, { headers: { 'x-hris-role': role }, cache: 'no-store' });
       const json = (await res.json()) as ApiResponse<Payload>;
       if (!res.ok || json.status !== 'success' || !json.data) throw new Error(json.error || `Pension request failed (${res.status})`);
       setPayload(json.data);
@@ -136,7 +137,7 @@ export default function PensionClient({ initialNow }: { initialNow: string }) {
 
   useEffect(() => {
     void load();
-  }, [role]);
+  }, [role, period]);
 
   const canViewMoney = Boolean(payload?.permissions.canViewMoney);
   const version = payload?.config.activeVersion;
@@ -153,7 +154,9 @@ export default function PensionClient({ initialNow }: { initialNow: string }) {
   }, [group, payload?.records, query, status]);
 
   const exportCsv = () => {
-    window.location.href = '/api/hris/payroll/pension?format=csv';
+    const params = new URLSearchParams({ format: 'excel' });
+    if (period) params.set('period', period);
+    window.location.href = `/api/hris/payroll/pension?${params.toString()}`;
   };
 
   return (

@@ -581,6 +581,26 @@ export const isConfirmedPermanent = (employee: ConfirmedPermanentInput) => {
   return false;
 };
 
+/** HR set this person's annual leave balance, so confirmation of appointment is not required to apply. */
+export const hrSetAnnualLeaveRemovesConfirmationLock = (manualAnnualEntitlement: unknown) => {
+  if (manualAnnualEntitlement == null || manualAnnualEntitlement === '') return false;
+  const amount = Number(manualAnnualEntitlement);
+  return Number.isFinite(amount);
+};
+
+export const readHrSetAnnualLeaveKeys = async (pool: sql.ConnectionPool) => {
+  const result = await pool.request().query(`
+SELECT [EmployeeId]
+FROM [hris].[LeaveBalances]
+WHERE [LeaveType] = N'Annual Leave'
+  AND [ManualAnnualEntitlement] IS NOT NULL;`);
+  return new Set(
+    (result.recordset as Array<{ EmployeeId?: string }>)
+      .map((row) => String(row.EmployeeId || '').trim().toUpperCase())
+      .filter(Boolean),
+  );
+};
+
 const entitlementFor = (employee: DleEmployeeDirectoryRow, leaveType = 'Annual Leave') => {
   if (leaveType === 'Annual Leave') return annualLeaveEntitlementForEmployee(employee);
   if (leaveType === 'Maternity Leave') return isMaternityEligibleEmployee(employee) ? dormantLongPolicy.maternityCalendarDays : 0;
@@ -1040,6 +1060,7 @@ const upsertEssLeaveRequests = async (pool: sql.ConnectionPool, employees: DleEm
     [employee.employeeCode, employee],
   ].filter(([key]) => Boolean(key)) as Array<[string, DleEmployeeDirectoryRow]>));
   const requests = await readEssLeaveRequests();
+  const hrSetAnnualLeave = await readHrSetAnnualLeaveKeys(pool);
   for (const item of requests) {
     const employee = employeeById.get(item.employeeId);
     const rawStatus = item.status;
@@ -1053,7 +1074,7 @@ const upsertEssLeaveRequests = async (pool: sql.ConnectionPool, employees: DleEm
     const exceptions = [
       ...(days <= 0 ? ['Leave request has no calculated duration'] : []),
       ...(!employee ? ['Employee record not found in HRIS employee master'] : []),
-      ...(leaveType === 'Annual Leave' && employee && !isFourteenDayPaidLeaveEmployee(employee) && !isConfirmedPermanent(employee) ? ['Annual Leave locked pending confirmation of appointment'] : []),
+      ...(leaveType === 'Annual Leave' && employee && !isFourteenDayPaidLeaveEmployee(employee) && !isConfirmedPermanent(employee) && ![employee.employeeId, employee.employeeCode, item.employeeId].some((value) => hrSetAnnualLeave.has(String(value || '').trim().toUpperCase())) ? ['Annual Leave locked pending confirmation of appointment'] : []),
     ];
     const blocked = exceptions.some((entry) => entry.includes('not found') || entry.includes('locked'));
     await pool.request()
@@ -1809,11 +1830,13 @@ export function validateLeaveAction(actionId: LeaveActionId, roleInput: string |
     const leaveType = String(body.leaveType || 'Annual Leave');
     const employeeCategory = String(body.employeeCategory || body.employmentType || 'Permanent');
     const fourteenDayPaidLeaveRequest = /contract|lumpsum|lump sum|daily rate|casual|temporary|nysc|national youth service|industrial training|intern|internship|\bit\b/i.test(employeeCategory) || /^(IT|I|NYSC|N)\d+/i.test(String(body.employeeId || body.employeeCode || ''));
-    const confirmed = body.confirmed === true || String(body.confirmationStatus || '').toLowerCase() === 'confirmed';
     const employeeKey = String(body.employeeId || body.employeeCode || '').trim();
     const employeeBalance = payload.balances.find((balance) => balance.employeeId === employeeKey && balance.leaveType === leaveType)
       || payload.balances.find((balance) => balance.employeeId === employeeKey)
       || payload.balances.find((balance) => balance.leaveType === leaveType);
+    const confirmed = body.confirmed === true
+      || String(body.confirmationStatus || '').toLowerCase() === 'confirmed'
+      || hrSetAnnualLeaveRemovesConfirmationLock(employeeBalance?.manualAnnualEntitlement);
     const storedCurrent = employeeBalance?.currentBalance || 0;
     const pendingReserved = employeeBalance?.pendingBalance || 0;
     const availableBalance = Number.isFinite(Number(body.availableBalance))

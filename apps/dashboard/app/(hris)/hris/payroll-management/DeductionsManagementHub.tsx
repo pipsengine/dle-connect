@@ -561,6 +561,7 @@ export default function DeductionsManagementHub({
           <DeductionsTabPanel
             tab={activeTab}
             lastLoaded={lastLoaded}
+            period={viewPeriod || payload?.period}
             onBack={() => onSelectTab('overview')}
           />
         )}
@@ -580,10 +581,12 @@ function WorkspaceLoading({ label }: { label: string }) {
 function DeductionsTabPanel({
   tab,
   lastLoaded,
+  period,
   onBack,
 }: {
   tab: DeductionsTabId;
   lastLoaded: string;
+  period?: string | null;
   onBack: () => void;
 }) {
   const tabMeta = tabs.find((item) => item.id === tab);
@@ -599,7 +602,7 @@ function DeductionsTabPanel({
       </div>
 
       {tab === 'paye' ? <TaxPayeClient initialNow={now} /> : null}
-      {tab === 'pension' ? <PensionClient initialNow={now} /> : null}
+      {tab === 'pension' ? <PensionClient initialNow={now} period={period} /> : null}
       {tab === 'nhf-loans' ? <LoansAndSalaryAdvancesClient initialNow={now} /> : null}
       {tab === 'rules-engine' ? <DeductionsClient initialNow={now} /> : null}
     </div>

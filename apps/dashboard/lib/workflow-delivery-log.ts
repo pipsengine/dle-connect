@@ -1,5 +1,4 @@
-import { mkdir, readFile, writeFile } from 'node:fs/promises';
-import path from 'node:path';
+import { readHrisDataFile, writeHrisDataFile } from '@/lib/hris-data-paths';
 
 export type WorkflowDeliveryModule = 'leave' | 'payroll' | 'overtime' | 'mail';
 export type WorkflowDeliveryChannel = 'email' | 'in-app' | 'database' | 'balance' | 'system';
@@ -24,29 +23,7 @@ export type WorkflowDeliveryEntry = {
 };
 
 const compact = (value: unknown) => String(value || '').trim();
-
-const resolveDashboardRoot = () => {
-  const cwd = process.cwd();
-  const dashboardSuffix = path.join('apps', 'dashboard');
-  return cwd.endsWith(dashboardSuffix) ? cwd : path.join(cwd, dashboardSuffix);
-};
-
-const DATA_DIR = process.env.DLE_HRIS_DATA_DIR
-  ? path.resolve(process.env.DLE_HRIS_DATA_DIR)
-  : path.join(resolveDashboardRoot(), 'data', 'hris');
-
-const uniquePaths = (paths: Array<string | null | undefined>) => Array.from(new Set(paths.reduce<string[]>((items, item) => {
-  if (item) items.push(path.normalize(item));
-  return items;
-}, [])));
-
-const deliveryLogFile = path.join(DATA_DIR, 'workflow-delivery-log.json');
-const DELIVERY_LOG_PATHS = uniquePaths([
-  deliveryLogFile,
-  path.join(resolveDashboardRoot(), 'data', 'hris', 'workflow-delivery-log.json'),
-  path.join(process.cwd(), 'apps', 'dashboard', 'data', 'hris', 'workflow-delivery-log.json'),
-]);
-
+const DELIVERY_LOG_FILE = 'workflow-delivery-log.json';
 const MAX_ENTRIES = 5000;
 
 const parseTimestamp = (value: string) => {
@@ -55,43 +32,24 @@ const parseTimestamp = (value: string) => {
 };
 
 const readDeliveryLogEntries = async (): Promise<WorkflowDeliveryEntry[]> => {
-  const merged = new Map<string, WorkflowDeliveryEntry>();
-  for (const file of DELIVERY_LOG_PATHS) {
-    try {
-      const parsed = JSON.parse(await readFile(file, 'utf8'));
-      if (!Array.isArray(parsed)) continue;
-      for (const item of parsed as WorkflowDeliveryEntry[]) {
-        if (!item?.id) continue;
-        const existing = merged.get(item.id);
-        if (!existing || parseTimestamp(item.createdAt) >= parseTimestamp(existing.createdAt)) {
-          merged.set(item.id, item);
-        }
-      }
-    } catch {
-      // Try the next candidate path.
-    }
+  const stored = await readHrisDataFile(DELIVERY_LOG_FILE);
+  if (!stored?.text) return [];
+  try {
+    const parsed = JSON.parse(stored.text);
+    if (!Array.isArray(parsed)) return [];
+    return (parsed as WorkflowDeliveryEntry[])
+      .filter((item) => item?.id)
+      .sort((left, right) => parseTimestamp(right.createdAt) - parseTimestamp(left.createdAt));
+  } catch {
+    return [];
   }
-  return [...merged.values()].sort((left, right) => parseTimestamp(right.createdAt) - parseTimestamp(left.createdAt));
 };
 
 const writeDeliveryLogEntries = async (entries: WorkflowDeliveryEntry[]) => {
   const trimmed = entries
     .sort((left, right) => parseTimestamp(right.createdAt) - parseTimestamp(left.createdAt))
     .slice(0, MAX_ENTRIES);
-  const content = JSON.stringify(trimmed, null, 2);
-  let lastError: unknown = null;
-  let wrote = false;
-  for (const file of DELIVERY_LOG_PATHS) {
-    try {
-      await mkdir(path.dirname(file), { recursive: true });
-      await writeFile(file, content, 'utf8');
-      wrote = true;
-    } catch (error) {
-      lastError = error;
-      console.warn('[workflow-delivery-log] unable to write delivery log store', { file, error });
-    }
-  }
-  if (!wrote && lastError) throw lastError;
+  await writeHrisDataFile(DELIVERY_LOG_FILE, JSON.stringify(trimmed, null, 2));
 };
 
 export class WorkflowDeliveryError extends Error {

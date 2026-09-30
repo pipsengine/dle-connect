@@ -14,6 +14,8 @@ import {
 import {
   dormantLongPolicy,
   isConfirmedPermanent,
+  hrSetAnnualLeaveRemovesConfirmationLock,
+  readHrSetAnnualLeaveKeys,
   isFourteenDayPaidLeaveEmployee,
   annualLeaveEntitlementForEmployee,
   auditLeaveAction,
@@ -1911,7 +1913,7 @@ const readEmployeeLeaveBalanceForValidation = async (
   keys.forEach((key, index) => request.input(`EmployeeKey${index}`, sql.NVarChar(120), key));
   const keySql = keys.map((_, index) => `@EmployeeKey${index}`).join(', ');
   const result = await request.query(`
-SELECT TOP 1 [EmployeeId],[LeaveType],[CurrentBalance],[AccruedBalance],[PendingBalance]
+SELECT TOP 1 [EmployeeId],[LeaveType],[CurrentBalance],[AccruedBalance],[PendingBalance],[ManualAnnualEntitlement]
 FROM [hris].[LeaveBalances]
 WHERE [EmployeeId] IN (${keySql})
   AND [LeaveType]=@LeaveType
@@ -1922,6 +1924,7 @@ ORDER BY [UpdatedAt] DESC;`);
     CurrentBalance?: number;
     AccruedBalance?: number;
     PendingBalance?: number;
+    ManualAnnualEntitlement?: number | null;
   } | undefined;
   if (!row) return null;
   const currentBalance = Number(row.CurrentBalance ?? row.AccruedBalance ?? 0);
@@ -1932,6 +1935,7 @@ ORDER BY [UpdatedAt] DESC;`);
     // Bookable days exclude pending/unapproved reservations without reducing stored CurrentBalance.
     currentBalance: Math.max(0, round2(currentBalance - pendingBalance)),
     pendingBalance,
+    manualAnnualEntitlement: row.ManualAnnualEntitlement == null ? null : Number(row.ManualAnnualEntitlement),
   };
 };
 
@@ -2135,6 +2139,8 @@ export const validateEssLeaveApplication = async (input: {
           employeeId: employeeBalance.employeeId,
           leaveType: employeeBalance.leaveType,
           currentBalance: employeeBalance.currentBalance,
+          pendingBalance: employeeBalance.pendingBalance,
+          manualAnnualEntitlement: employeeBalance.manualAnnualEntitlement,
         }]
       : [],
     applications: [],
@@ -2149,7 +2155,7 @@ export const validateEssLeaveApplication = async (input: {
     days: regularized.days,
     startDate,
     endDate,
-    confirmed: isConfirmedPermanent(employee),
+    confirmed: isConfirmedPermanent(employee) || hrSetAnnualLeaveRemovesConfirmationLock(employeeBalance?.manualAnnualEntitlement),
     usesCarryForward: /carry forward/i.test(leaveType),
     overlaps: false,
     blockedPeriod: false,
@@ -2457,10 +2463,13 @@ export const upsertEssLeaveRequestToDb = async (item: EssLeaveRequest, employees
     throw new Error(`Leave request ${item.id} has invalid dates (${String(item.startDate || '')} to ${String(item.endDate || '')}).`);
   }
   const days = Number(item.days || 0);
+  const hrSetAnnualLeave = await readHrSetAnnualLeaveKeys(pool);
+  const hrSetThisEmployee = [employee?.employeeId, employee?.employeeCode, employeeKey, item.employeeId]
+    .some((value) => hrSetAnnualLeave.has(String(value || '').trim().toUpperCase()));
   const exceptionMessages = [
     ...(days <= 0 ? ['Leave request has no calculated duration'] : []),
     ...(!employee ? ['Employee record not found in HRIS employee master'] : []),
-    ...(leaveType === 'Annual Leave' && employee && !isFourteenDayPaidLeaveEmployee(employee) && !isConfirmedPermanent(employee) ? ['Annual Leave locked pending confirmation of appointment'] : []),
+    ...(leaveType === 'Annual Leave' && employee && !isFourteenDayPaidLeaveEmployee(employee) && !isConfirmedPermanent(employee) && !hrSetThisEmployee ? ['Annual Leave locked pending confirmation of appointment'] : []),
   ];
   const blocked = exceptionMessages.some((entry) => entry.includes('not found') || entry.includes('locked'));
   const requester = employee || resolveEmployeeReference(employees, item.employeeId);
