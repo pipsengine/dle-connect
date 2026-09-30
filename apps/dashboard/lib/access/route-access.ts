@@ -38,6 +38,7 @@ const administrationRoutePermissions = (pathname: string): string[] => {
   const path = normalizePath(pathname);
   if (path.startsWith('/administration/user-management')) return ['admin.users.view'];
   if (path.startsWith('/administration/access-control')) return ['admin.roles.view'];
+  if (path.startsWith('/administration/user-sessions')) return ['page.admin.user-sessions.view'];
   if (path.startsWith('/administration/audit-trail') || path.startsWith('/administration/compliance-and-governance')) return ['audit.view'];
   if (path.startsWith('/administration/approval-workflow')) return ['workflow.configure'];
   if (path.startsWith('/administration/system-settings')) return ['security.configure'];
@@ -56,6 +57,41 @@ export const isCrewMobilizationPath = (pathname: string) => {
   const path = normalizePath(pathname);
   return path === '/hris/workforce-management/crew-mobilization' || path === '/hris/time-and-logs/crew-mobilization';
 };
+
+/** Previous workforce timesheet screens. Only the global super administrator may open them. */
+const LEGACY_WORKFORCE_TIMESHEET_PREFIXES = [
+  '/hris/workforce-management/timesheet-entry',
+  '/hris/time-and-logs/timesheet-entry',
+  '/hris/workforce-management/timesheet-period',
+  '/hris/time-and-logs/timesheet-period',
+  '/hris/workforce-management/timesheet-approval',
+  '/hris/time-and-logs/timesheet-approval',
+  '/hris/workforce-management/timesheet-reports',
+  '/hris/time-and-logs/timesheet-reports',
+  '/hris/workforce-management/timesheet-recapture',
+  '/hris/time-and-logs/timesheet-recapture',
+  '/hris/workforce-management/dayrate-schedule-reconcile',
+  '/hris/workforce-management/dayrate-payment-schedule',
+  '/hris/time-and-logs/dayrate-schedule-reconcile',
+  '/hris/workforce-management/crew-mobilization',
+  '/hris/time-and-logs/crew-mobilization',
+  '/hris/workforce-management/shift-and-scheduling',
+  '/hris/workforce-management/overtime-management',
+  '/hris/workforce-management/reviews-and-approvals',
+  '/hris/workforce-management/time-corrections',
+  '/hris/workforce-management/reports-and-analytics',
+];
+
+export const isLegacyWorkforceTimesheetPage = (pathname: string) => {
+  const path = normalizePath(pathname);
+  if (path.includes('/authorize') || path.includes('/email-action')) return false;
+  return LEGACY_WORKFORCE_TIMESHEET_PREFIXES.some((prefix) => path === prefix || path.startsWith(`${prefix}/`) || path.startsWith(`${prefix}-`));
+};
+
+export const isGlobalSuperAdministrator = (session: SessionLike) =>
+  Boolean(session.isGlobalAdmin)
+  || (session.roles || []).includes('Super Administrator')
+  || (session.permissions || []).includes('*');
 
 /** HR portal users, or anyone published the Crew Mobilization page grant. */
 export const canAccessCrewMobilization = (session: SessionLike) => {
@@ -481,7 +517,10 @@ export const itSupportRoutePermissionOptions = (pathname: string): string[] | nu
 
 export const canAccessRoute = (session: SessionLike, pathname: string) => {
   const path = routePathFromRequestPath(pathname);
-  if (path.startsWith('/hris')) return canAccessHrisPath(session, path);
+  if (path.startsWith('/hris')) {
+    if (!pathname.startsWith('/api') && isLegacyWorkforceTimesheetPage(path) && !isGlobalSuperAdministrator(session)) return false;
+    return canAccessHrisPath(session, path);
+  }
   // Legacy /offboarding/* redirects — same gates as /hris/offboarding/*
   if (path.startsWith('/offboarding/exit-clearance')) return canAccessExitClearance(session);
   if (path.startsWith('/offboarding')) return canAccessOffboardingManagement(session);

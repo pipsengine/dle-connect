@@ -13,7 +13,7 @@ import {
 } from 'lucide-react';
 import { navigationConfig, NavItem } from '@/lib/config/navigation';
 import { canAccessAdministrationCentre, hasPermission } from '@/lib/auth/permission-match';
-import { canAccessCrewMobilization, canAccessHrManagementNav } from '@/lib/access/route-access';
+import { canAccessCrewMobilization, canAccessHrManagementNav, isGlobalSuperAdministrator, isLegacyWorkforceTimesheetPage } from '@/lib/access/route-access';
 import { canAccessTimesheetEntryAndApproval } from '@/lib/access/timesheet-access';
 import {
   canAccessFinanceModule,
@@ -31,6 +31,7 @@ const requiredPermission = (route?: string) => {
   if (route === '/administration') return 'admin.roles.view';
   if (route.startsWith('/administration/access-control')) return 'admin.roles.view';
   if (route.startsWith('/administration/user-management')) return 'admin.users.view';
+  if (route.startsWith('/administration/user-sessions')) return 'page.admin.user-sessions.view';
   if (route.startsWith('/administration/audit-trail')) return 'audit.view';
   if (route.startsWith('/administration/approval-workflow')) return 'workflow.configure';
   if (route.startsWith('/administration/system-settings')) return 'security.configure';
@@ -172,6 +173,7 @@ export function Sidebar({
       .map((item) => {
         if (item.id === 'administration' && !canSeeAdministration) return null;
         const subItems = item.subItems?.filter((sub) => {
+          if (sub.route && isLegacyWorkforceTimesheetPage(sub.route) && !isGlobalSuperAdministrator(sessionLike)) return false;
           if (sub.route === '/hris') return canAccessHrManagementNav(sessionLike);
           if (sub.route === '/workforce-portal') return WORKFORCE_PORTAL_ENABLED;
           if (

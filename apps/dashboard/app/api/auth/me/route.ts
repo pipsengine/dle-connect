@@ -10,6 +10,7 @@ import {
   refreshSessionToken,
   verifySessionToken,
 } from '@/lib/auth/session';
+import { isSessionRevoked, sessionKeyFor } from '@/lib/auth/user-activity';
 
 const PERMISSIONS_BUDGET_MS = 4000;
 
@@ -44,8 +45,8 @@ const resolvePermissionsWithBudget = async (session: NonNullable<Awaited<ReturnT
 
 export async function GET(request: Request) {
   const session = await verifySessionToken(readAuthToken(request));
-  if (!session) {
-    const response = NextResponse.json({ status: 'error', error: 'Unauthenticated' }, { status: 401 });
+  if (!session || await isSessionRevoked(sessionKeyFor(session))) {
+    const response = NextResponse.json({ status: 'error', error: session ? 'This session was disconnected.' : 'Unauthenticated', code: session ? 'session-revoked' : undefined }, { status: 401 });
     response.cookies.set(AUTH_COOKIE, '', clearAuthCookieOptions(request));
     return response;
   }

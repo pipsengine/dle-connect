@@ -228,6 +228,7 @@ export const navigationConfig: NavItem[] = [
       { title: 'Approval Workflow', slug: 'approval-workflow', route: '/administration/approval-workflow', permissionKey: 'workflow.configure' },
       { title: 'System Settings', slug: 'system-settings', route: '/administration/system-settings', permissionKey: 'security.configure' },
       { title: 'Backup & Disaster Recovery', slug: 'backup-disaster-recovery', route: '/administration/backup-disaster-recovery', permissionKey: 'backup.configure' },
+      { title: 'User Sessions', slug: 'user-sessions', route: '/administration/user-sessions', permissionKey: 'page.admin.user-sessions.view' },
       { title: 'Audit Trail', slug: 'audit-trail', route: '/administration/audit-trail', permissionKey: 'audit.view' },
       { title: 'Integrations', slug: 'integrations', route: '/administration/integrations', permissionKey: 'integration.view' },
       { title: 'AI & Automation', slug: 'ai-and-automation', route: '/administration/ai-and-automation', permissionKey: 'it.view' },

@@ -18,12 +18,23 @@ const canUse = (request: Request) => {
   return hasPermission(permissions, 'view_timesheet_management') || request.headers.get('x-auth-global-admin') === '1';
 };
 
+const canManageTimesheetPeriods = (request: Request) => {
+  if (request.headers.get('x-auth-global-admin') === '1') return true;
+  const roles = request.headers.get('x-auth-roles') || '';
+  return /super administrator|hr administrator|hr manager|hr director|hr officer|human resource|recruitment officer|onboarding officer|offboarding officer|employee records officer|it administrator|it support|service desk|infrastructure officer|application support|\bict\b/i.test(roles);
+};
+
+const snapshotFor = async (request: Request) => ({
+  ...(await readTimesheetManagementSnapshot()),
+  viewer: { canManagePeriods: canManageTimesheetPeriods(request) },
+});
+
 export async function GET(request: Request) {
   if (!canUse(request)) return err(403, 'You do not have permission to open Timesheet Management.');
   try {
     const signals = new URL(request.url).searchParams.get('signals');
     if (signals) return ok(await readCrewSignals(signals));
-    return ok(await readTimesheetManagementSnapshot());
+    return ok(await snapshotFor(request));
   } catch (error) {
     console.error('[timesheet-management] read', error);
     return err(500, error instanceof Error ? error.message : 'Unable to read timesheet management data.');
@@ -36,6 +47,9 @@ export async function POST(request: Request) {
   try {
     const body = await request.json() as Record<string, unknown>;
     const action = String(body.action || '');
+    if (action === 'create-period' || action === 'update-period') {
+      if (!canManageTimesheetPeriods(request)) return err(403, 'Timesheet Periods is available to IT and HR only.');
+    }
     if (action === 'create-period') {
       const id = await createTimesheetManagementPeriod({
         name: String(body.name || ''),
@@ -47,7 +61,7 @@ export async function POST(request: Request) {
         notes: String(body.notes || ''),
         actor: access.actor,
       });
-      return ok({ id, snapshot: await readTimesheetManagementSnapshot() });
+      return ok({ id, snapshot: await snapshotFor(request) });
     }
     if (action === 'update-period') {
       await updateTimesheetManagementPeriod({
@@ -56,7 +70,7 @@ export async function POST(request: Request) {
         notes: String(body.notes || ''),
         actor: access.actor,
       });
-      return ok({ snapshot: await readTimesheetManagementSnapshot() });
+      return ok({ snapshot: await snapshotFor(request) });
     }
     if (action === 'save-bookings') {
       await saveTimesheetManagementBookings({
@@ -70,7 +84,7 @@ export async function POST(request: Request) {
         actor: access.actor,
         lines: Array.isArray(body.lines) ? body.lines as never : [],
       });
-      return ok({ snapshot: await readTimesheetManagementSnapshot() });
+      return ok({ snapshot: await snapshotFor(request) });
     }
     if (action === 'save-crew') {
       const result = await saveTimesheetCrewAssignment({
@@ -85,7 +99,7 @@ export async function POST(request: Request) {
         notes: [String(body.notes || ''), access.role ? `Role: ${access.role}` : ''].filter(Boolean).join(' · '),
         actor: access.actor,
       });
-      return ok({ ...result, snapshot: await readTimesheetManagementSnapshot() });
+      return ok({ ...result, snapshot: await snapshotFor(request) });
     }
     if (action === 'update-crew-status') {
       const result = await updateTimesheetCrewStatus({
@@ -97,7 +111,7 @@ export async function POST(request: Request) {
         notes: [String(body.notes || ''), access.role ? `Role: ${access.role}` : ''].filter(Boolean).join(' · '),
         actor: access.actor,
       });
-      return ok({ ...result, snapshot: await readTimesheetManagementSnapshot() });
+      return ok({ ...result, snapshot: await snapshotFor(request) });
     }
     if (action === 'request-crew-removal') {
       const employees = Array.isArray(body.employees) ? body.employees as Array<Record<string, unknown>> : [];
@@ -106,7 +120,7 @@ export async function POST(request: Request) {
         reason: String(body.reason || ''),
         actor: access.actor,
       });
-      return ok({ ...result, snapshot: await readTimesheetManagementSnapshot() });
+      return ok({ ...result, snapshot: await snapshotFor(request) });
     }
     if (action === 'decide-crew-removal') {
       const roles = `${request.headers.get('x-auth-roles') || ''} ${access.role}`.toLowerCase();
@@ -118,7 +132,7 @@ export async function POST(request: Request) {
         hrReason: String(body.hrReason || ''),
         actor: access.actor,
       });
-      return ok({ ...result, snapshot: await readTimesheetManagementSnapshot() });
+      return ok({ ...result, snapshot: await snapshotFor(request) });
     }
     if (action === 'create-record') {
       const record = body.record && typeof body.record === 'object' ? body.record as Record<string, unknown> : {};
@@ -139,7 +153,7 @@ export async function POST(request: Request) {
         payload: record.payload && typeof record.payload === 'object' ? record.payload as Record<string, string> : {},
         actor: access.actor,
       });
-      return ok({ ...created, snapshot: await readTimesheetManagementSnapshot() });
+      return ok({ ...created, snapshot: await snapshotFor(request) });
     }
     return err(400, 'Unknown timesheet management action.');
   } catch (error) {

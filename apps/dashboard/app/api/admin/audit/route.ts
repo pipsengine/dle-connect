@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { effectivePermissionsForUser } from '@/lib/auth/access-control-store';
 import { readLoginHistory, readSecurityAudit } from '@/lib/auth/auth-store';
+import { listActivity } from '@/lib/auth/user-activity';
 import { AUTH_COOKIE, hasPermission, verifySessionToken } from '@/lib/auth/session';
 
 export async function GET(request: Request) {
@@ -10,6 +11,6 @@ export async function GET(request: Request) {
   if (!session) return NextResponse.json({ status: 'error', error: 'Unauthenticated' }, { status: 401 });
   const permissions = await effectivePermissionsForUser(session.sub, session.roles);
   if (!hasPermission(permissions, 'audit.view') && !hasPermission(permissions, 'admin.*')) return NextResponse.json({ status: 'error', error: 'Forbidden' }, { status: 403 });
-  const [audit, loginHistory] = await Promise.all([readSecurityAudit(), readLoginHistory()]);
-  return NextResponse.json({ status: 'success', data: { audit, loginHistory } });
+  const [audit, loginHistory, activity] = await Promise.all([readSecurityAudit(), readLoginHistory(), listActivity()]);
+  return NextResponse.json({ status: 'success', data: { audit, loginHistory, activity } });
 }

@@ -63,6 +63,8 @@ const actionIcon = (id: string) => {
   return PlayCircle;
 };
 
+const legacyWorkforceSectionIds = new Set(['shift-and-scheduling', 'overtime-management', 'reviews-and-approvals', 'time-corrections', 'reports-and-analytics']);
+
 const timesheetQuickLinks = [
   { label: 'Timesheet Entry', href: '/hris/workforce-management/timesheet-entry' },
   { label: 'Timesheet Period', href: '/hris/workforce-management/timesheet-period' },
@@ -118,6 +120,22 @@ export default function WorkforceManagementClient({ initialNow, initialSection =
   const [query, setQuery] = useState('');
   const [summaryFilter, setSummaryFilter] = useState<SummaryFilter>(null);
   const [auditOpen, setAuditOpen] = useState(false);
+  const [legacyTimesheetVisible, setLegacyTimesheetVisible] = useState(false);
+
+  useEffect(() => {
+    let active = true;
+    fetch('/api/auth/me', { cache: 'no-store' })
+      .then((response) => response.json())
+      .then((body) => {
+        if (!active) return;
+        const data = body?.data || {};
+        const roles = Array.isArray(data.roles) ? data.roles : [];
+        const permissions = Array.isArray(data.permissions) ? data.permissions : [];
+        setLegacyTimesheetVisible(Boolean(data.isGlobalAdmin || roles.includes('Super Administrator') || permissions.includes('*')));
+      })
+      .catch(() => { if (active) setLegacyTimesheetVisible(false); });
+    return () => { active = false; };
+  }, []);
 
   const activeSection = useMemo(() => payload?.sections.find((item) => item.id === section) || payload?.sections[0], [payload?.sections, section]);
   const activeTab = useMemo(() => activeSection?.tabs.find((item) => item.id === (tab || payload?.tab)) || activeSection?.tabs[0], [activeSection, payload?.tab, tab]);
@@ -269,18 +287,18 @@ export default function WorkforceManagementClient({ initialNow, initialSection =
         <aside className="rounded-2xl border border-slate-200 bg-white p-3 shadow-sm">
           <p className="px-2 pb-2 text-xs font-black uppercase text-slate-500">Workforce Pages</p>
           <nav className="grid grid-cols-2 gap-1 xl:grid-cols-1" aria-label="Workforce Management pages">
-            {(payload?.sections || []).map((item) => (
+            {(payload?.sections || []).filter((item) => legacyTimesheetVisible || !legacyWorkforceSectionIds.has(item.id)).map((item) => (
               <Link key={item.id} href={`/hris/workforce-management/${item.id}`} onClick={() => chooseSection(item.id)} className={`rounded-xl px-3 py-2 text-xs font-black transition-colors ${section === item.id ? 'bg-blue-600 text-white' : 'text-slate-700 hover:bg-slate-50'}`}>{item.label}</Link>
             ))}
           </nav>
-          <div className="mt-4 border-t border-slate-100 pt-3">
+          {legacyTimesheetVisible ? <div className="mt-4 border-t border-slate-100 pt-3">
             <p className="px-2 pb-2 text-xs font-black uppercase text-slate-500">Timesheet</p>
             <nav className="grid grid-cols-2 gap-1 xl:grid-cols-1" aria-label="Timesheet functions">
               {timesheetQuickLinks.map((item) => (
                 <Link key={item.href} href={item.href} className="rounded-xl px-3 py-2 text-xs font-black text-slate-700 transition-colors hover:bg-blue-50 hover:text-blue-700">{item.label}</Link>
               ))}
             </nav>
-          </div>
+          </div> : null}
         </aside>
 
         <main className="min-w-0 space-y-5">
@@ -305,7 +323,7 @@ export default function WorkforceManagementClient({ initialNow, initialSection =
           </section>
 
           {section === 'time-tracking' ? (
-            <TimeTrackingWorkspace payload={payload} rows={filteredRecords} query={query} setQuery={setQuery} />
+            <TimeTrackingWorkspace payload={payload} rows={filteredRecords} query={query} setQuery={setQuery} showLegacyTimesheet={legacyTimesheetVisible} />
           ) : section === 'shift-and-scheduling' ? (
             <ShiftSchedulingWorkspace payload={payload} role={role} onSaved={(message, nextPayload) => { setToast(message); setPayload(nextPayload); }} />
           ) : (
@@ -620,7 +638,7 @@ function ShiftSelect({ label, value, options, onChange }: { label: string; value
   );
 }
 
-function TimeTrackingWorkspace({ payload, rows, query, setQuery }: { payload: Payload | null; rows: RecordRow[]; query: string; setQuery: (value: string) => void }) {
+function TimeTrackingWorkspace({ payload, rows, query, setQuery, showLegacyTimesheet = false }: { payload: Payload | null; rows: RecordRow[]; query: string; setQuery: (value: string) => void; showLegacyTimesheet?: boolean }) {
   const [view, setView] = useState<'all' | 'exceptions' | 'pending' | 'payroll-ready' | 'no-time'>('all');
   const [drill, setDrill] = useState<{ type: 'department' | 'location' | 'status' | 'exception'; label: string } | null>(null);
   const sourceRows = payload?.records || [];
@@ -766,7 +784,7 @@ function TimeTrackingWorkspace({ payload, rows, query, setQuery }: { payload: Pa
         </section>
       ) : null}
 
-      <TimesheetAccess />
+      {showLegacyTimesheet ? <TimesheetAccess /> : null}
 
       <section className="rounded-2xl border border-slate-200 bg-white shadow-sm">
         <div className="border-b border-slate-100 p-4">

@@ -61,6 +61,24 @@ const PERMISSION_ALIASES: Record<string, string[]> = {
   'page.hris.time-and-logs.crew-mobilization.view': [
     'page.hris.time-and-logs.crew-mobilization',
   ],
+  'page.admin.user-sessions.view': [
+    'admin.users.view',
+    'security.configure',
+    'audit.view',
+  ],
+  'button.admin.user-sessions.disconnect': [
+    'admin.users.edit',
+    'security.configure',
+    'button.admin.user-sessions.remove',
+  ],
+  'button.admin.user-sessions.remove': [
+    'admin.users.edit',
+    'security.configure',
+  ],
+  'page.timesheet.management.periods.view': [
+    'timesheet.period.view',
+    'timesheet.period.manage',
+  ],
   'view_timesheet_management': [
     'enterprise.view',
     'operations.timesheets.view',
@@ -240,6 +258,10 @@ export const expandPublishedPermissions = (permissions: string[]) => {
     out.add('view_it_support');
     out.add('view_it_assets');
     out.add('page.it-support.asset-management.view');
+    out.add('page.admin.user-sessions.view');
+    out.add('page.timesheet.management.periods.view');
+    out.add('timesheet.period.view');
+    out.add('timesheet.period.manage');
   }
   if (list.some((permission) => permission.startsWith('it.account-recovery') || permission.startsWith('page.it-support.account-recovery'))) {
     out.add('view_it_support');
@@ -248,7 +270,13 @@ export const expandPublishedPermissions = (permissions: string[]) => {
     out.add('page.it-support.account-recovery.view');
   }
   if (list.some((permission) => permission.startsWith('admin.roles'))) out.add('page.admin.access-control.view');
-  if (list.some((permission) => permission.startsWith('admin.users'))) out.add('page.admin.user-management.view');
+  if (list.some((permission) => permission.startsWith('admin.users'))) {
+    out.add('page.admin.user-management.view');
+    out.add('page.admin.user-sessions.view');
+  }
+  if (list.some((permission) => permission.startsWith('security.') || permission.startsWith('audit.'))) {
+    out.add('page.admin.user-sessions.view');
+  }
   if (list.some((permission) => permission === 'page.hris.time-and-logs.crew-mobilization' || permission.startsWith('page.hris.time-and-logs.crew-mobilization.'))) {
     out.add('page.hris.time-and-logs.crew-mobilization.view');
   }

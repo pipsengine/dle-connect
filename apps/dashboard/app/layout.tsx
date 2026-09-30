@@ -2,6 +2,7 @@ import type {Metadata} from 'next';
 import { Inter, JetBrains_Mono } from 'next/font/google';
 import { ChunkLoadRecovery } from '@/components/layout/chunk-load-recovery';
 import { AuthSessionGuard } from '@/components/layout/auth-session-guard';
+import { ActivityTracker } from '@/components/layout/activity-tracker';
 import { RouteTitle } from '@/components/layout/route-title';
 import './globals.css';
 
@@ -29,6 +30,7 @@ export default function RootLayout({children}: {children: React.ReactNode}) {
       <body className="min-w-0 overflow-x-clip bg-slate-50 font-sans antialiased text-slate-900" suppressHydrationWarning>
         <ChunkLoadRecovery />
         <AuthSessionGuard />
+        <ActivityTracker />
         <RouteTitle />
         {children}
       </body>

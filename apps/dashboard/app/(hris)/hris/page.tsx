@@ -19,7 +19,7 @@ import {
   Zap,
 } from 'lucide-react';
 import { canAccessTimesheetEntryAndApproval } from '@/lib/access/timesheet-access';
-import { canAccessCrewMobilization } from '@/lib/access/route-access';
+import { canAccessCrewMobilization, isGlobalSuperAdministrator, isLegacyWorkforceTimesheetPage } from '@/lib/access/route-access';
 import { hasPermission } from '@/lib/auth/permission-match';
 import { effectivePermissionsForUser } from '@/lib/auth/access-control-store';
 import { AUTH_COOKIE, verifySessionToken } from '@/lib/auth/session';
@@ -101,6 +101,9 @@ export default async function HRISHomePage() {
   const { permissions, session } = await getPermissions();
   const visibleQuickLinks = quickLinks.filter((item) => {
     if (item.href === '/workforce-portal' && !WORKFORCE_PORTAL_ENABLED) return false;
+    if (isLegacyWorkforceTimesheetPage(item.href)) {
+      return isGlobalSuperAdministrator({ ...(session || { roles: [], isGlobalAdmin: false }), permissions });
+    }
     if (item.href === '/hris/workforce-management/timesheet-entry') {
       return canAccessTimesheetEntryAndApproval(session);
     }
