@@ -953,6 +953,52 @@ export const decideInternshipApproval = async (
     return review;
   });
 
+const INTERNSHIP_APPROVAL_REMINDER_STATUSES = new Set(['Pending HOD', 'Pending HR Manager', 'Pending MD']);
+const INTERNSHIP_REMINDER_COOLDOWN_MS = 15 * 60 * 1000;
+
+/** Notify the current internship approver again. The review status does not change. */
+export const remindInternshipApproval = async (
+  id: string,
+  actor: string,
+  session: SessionPayload | null,
+) =>
+  withLock(async () => {
+    const review = await requireReview(id);
+    if (!INTERNSHIP_APPROVAL_REMINDER_STATUSES.has(review.status)) {
+      throw new Error('Reminders can only be sent while the review is awaiting HOD, HR Manager, or MD approval.');
+    }
+    if (session && !internshipActorInvolved(review, session) && !internshipCanApprove(review, session)) {
+      throw new Error('You can only remind approvers on internship reviews visible to you.');
+    }
+    const last = [...review.audit].reverse().find((item) => item.action === 'Approval reminder sent');
+    if (last?.at) {
+      const elapsed = Date.now() - Date.parse(last.at);
+      if (Number.isFinite(elapsed) && elapsed >= 0 && elapsed < INTERNSHIP_REMINDER_COOLDOWN_MS) {
+        const mins = Math.max(1, Math.ceil((INTERNSHIP_REMINDER_COOLDOWN_MS - elapsed) / 60_000));
+        throw new Error(`A reminder was sent recently. Please wait about ${mins} minute${mins === 1 ? '' : 's'} before sending again.`);
+      }
+    }
+    const step = internshipCurrentApprovalStep(review);
+    const delivery = await notifyPeople(
+      session,
+      `Reminder: internship review awaiting ${review.status.replace(/^Pending /, '')}`,
+      `${actor} sent a reminder. ${review.employee.name} (${review.id}) is still ${review.status}. Complete this in the ESS portal.`,
+      internshipEssHref({ id: review.id, action: 'approve' }),
+      [{ code: step?.approverCode, name: step?.approver }],
+      fallbackRolesForStatus(review.status),
+      review,
+    );
+    const approver = step?.approver || review.status.replace(/^Pending /, '');
+    review.audit.push(audit(
+      actor,
+      'Approval reminder sent',
+      delivery.sent ? `Emailed ${delivery.to || approver}` : (delivery.reason || 'In-app notice recorded'),
+    ));
+    review.updatedAt = nowIsoDate();
+    await persistReview(review);
+    return { review, sent: delivery.sent, approver, reason: delivery.reason };
+  });
+
 export const recordInternshipHrAction = async (
   id: string,
   payload: {

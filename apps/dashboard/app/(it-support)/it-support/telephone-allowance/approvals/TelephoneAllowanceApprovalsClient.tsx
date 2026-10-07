@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { CheckCircle2, RefreshCw, Undo2 } from 'lucide-react';
+import { Bell, CheckCircle2, RefreshCw, Undo2 } from 'lucide-react';
 import {
   moneyNgn,
   statusTone,
@@ -72,6 +72,16 @@ export default function TelephoneAllowanceApprovalsClient() {
     setDetail(res.cycle);
   };
 
+  const awaitingApproval = (status: string) => ['PENDING_HR_APPROVAL', 'PENDING_MD_APPROVAL', 'PENDING_CFO_AUTHORIZATION'].includes(status);
+
+  const remind = async (card: ApprovalCard) => {
+    await post('remind-approval', { cycleId: card.id });
+    if (selected?.id === card.id) {
+      const res = await get<{ cycle: any }>('cycle', { cycleId: card.id });
+      setDetail(res.cycle);
+    }
+  };
+
   const act = async (action: string, extra: Record<string, unknown> = {}) => {
     if (!selected) return;
     if (action === 'authorize-cfo') {
@@ -108,30 +118,40 @@ export default function TelephoneAllowanceApprovalsClient() {
 
       <div className="grid gap-4 xl:grid-cols-2">
         {list.map((card) => (
-          <button
+          <div
             key={card.id}
-            type="button"
-            onClick={() => void openDetail(card)}
-            className="rounded-2xl border border-slate-200 bg-white p-4 text-left shadow-sm transition hover:-translate-y-0.5 hover:shadow-md"
+            className="rounded-2xl border border-slate-200 bg-white p-4 text-left shadow-sm"
           >
-            <div className="flex items-start justify-between gap-3">
-              <div>
-                <p className="text-xs font-black uppercase text-teal-700">{card.pairLabel} {card.year} Telephone Allowance</p>
-                <p className="mt-1 text-sm font-semibold text-slate-500">{card.cycleCode}</p>
+            <button type="button" onClick={() => void openDetail(card)} className="w-full text-left">
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <p className="text-xs font-black uppercase text-teal-700">{card.pairLabel} {card.year} Telephone Allowance</p>
+                  <p className="mt-1 text-sm font-semibold text-slate-500">{card.cycleCode}</p>
+                </div>
+                <span className={`rounded-full border px-2 py-0.5 text-[10px] font-black ${statusTone(card.status)}`}>{(card.currentStageLabel || card.status).replaceAll('_', ' ')}</span>
               </div>
-              <span className={`rounded-full border px-2 py-0.5 text-[10px] font-black ${statusTone(card.status)}`}>{(card.currentStageLabel || card.status).replaceAll('_', ' ')}</span>
-            </div>
-            <div className="mt-3 grid grid-cols-2 gap-2 text-sm">
-              <p><span className="text-xs font-bold text-slate-500">Beneficiaries</span><br /><span className="font-black">{card.beneficiaryCount}</span></p>
-              <p><span className="text-xs font-bold text-slate-500">Total</span><br /><span className="font-black">{moneyNgn(card.bimonthlyTotal)}</span></p>
-              <p><span className="text-xs font-bold text-slate-500">Month 1</span><br /><span className="font-semibold">{moneyNgn(card.month1Total)}</span></p>
-              <p><span className="text-xs font-bold text-slate-500">Month 2</span><br /><span className="font-semibold">{moneyNgn(card.month2Total)}</span></p>
-            </div>
-            <p className="mt-3 text-xs font-semibold text-slate-500">
-              Added {card.added ?? 0} · Removed {card.removed ?? 0} · Amount changes {card.amountChanges ?? 0}
-              {card.variance != null ? ` · Variance ${card.variance >= 0 ? '+' : ''}${moneyNgn(card.variance)}` : ''}
-            </p>
-          </button>
+              <div className="mt-3 grid grid-cols-2 gap-2 text-sm">
+                <p><span className="text-xs font-bold text-slate-500">Beneficiaries</span><br /><span className="font-black">{card.beneficiaryCount}</span></p>
+                <p><span className="text-xs font-bold text-slate-500">Total</span><br /><span className="font-black">{moneyNgn(card.bimonthlyTotal)}</span></p>
+                <p><span className="text-xs font-bold text-slate-500">Month 1</span><br /><span className="font-semibold">{moneyNgn(card.month1Total)}</span></p>
+                <p><span className="text-xs font-bold text-slate-500">Month 2</span><br /><span className="font-semibold">{moneyNgn(card.month2Total)}</span></p>
+              </div>
+              <p className="mt-3 text-xs font-semibold text-slate-500">
+                Added {card.added ?? 0} · Removed {card.removed ?? 0} · Amount changes {card.amountChanges ?? 0}
+                {card.variance != null ? ` · Variance ${card.variance >= 0 ? '+' : ''}${moneyNgn(card.variance)}` : ''}
+              </p>
+            </button>
+            {awaitingApproval(card.status) ? (
+              <button
+                type="button"
+                disabled={Boolean(busy)}
+                onClick={() => void remind(card)}
+                className="mt-3 inline-flex min-h-9 items-center gap-2 rounded-lg border border-sky-200 bg-sky-50 px-3 text-xs font-black text-sky-800 disabled:opacity-50"
+              >
+                <Bell className="h-4 w-4" /> Remind
+              </button>
+            ) : null}
+          </div>
         ))}
         {!list.length ? <p className="rounded-2xl border border-dashed border-slate-200 bg-white p-8 text-sm font-semibold text-slate-500">No items in this tab.</p> : null}
       </div>
@@ -214,7 +234,17 @@ export default function TelephoneAllowanceApprovalsClient() {
             <div className="flex flex-wrap justify-between gap-2 border-t border-slate-100 p-4">
               <button type="button" onClick={() => { setSelected(null); setDetail(null); }} className="min-h-10 rounded-lg border border-slate-200 px-3 text-xs font-black">Close</button>
               <div className="flex flex-wrap gap-2">
-                {(caps?.canHrApprove || caps?.canMdApprove || caps?.canCfoAuthorize) && ['PENDING_HR_APPROVAL', 'PENDING_MD_APPROVAL', 'PENDING_CFO_AUTHORIZATION'].includes(selected.status) ? (
+                {awaitingApproval(selected.status) ? (
+                  <button
+                    type="button"
+                    disabled={Boolean(busy)}
+                    onClick={() => void remind(selected)}
+                    className="inline-flex min-h-10 items-center gap-2 rounded-lg border border-sky-200 bg-sky-50 px-3 text-xs font-black text-sky-800 disabled:opacity-50"
+                  >
+                    <Bell className="h-4 w-4" /> Remind
+                  </button>
+                ) : null}
+                {(caps?.canHrApprove || caps?.canMdApprove || caps?.canCfoAuthorize) && awaitingApproval(selected.status) ? (
                   <button
                     type="button"
                     disabled={Boolean(busy)}

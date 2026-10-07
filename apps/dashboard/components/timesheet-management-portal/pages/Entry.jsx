@@ -118,7 +118,7 @@ export default function Entry({ setPage }) {
     ? offshoreHere.map((row) => {
       const existing = lines.find((line) => line.employeeCode === row.employeeCode);
       if (existing) return existing;
-      const onLeave = (context?.approvedLeaveCodes || []).includes(String(row.employeeCode || '').toUpperCase());
+      const onLeave = (context?.classification?.dayKind || 'Weekday') === 'Weekday' && (context?.approvedLeaveCodes || []).includes(String(row.employeeCode || '').toUpperCase());
       const expected = context?.settings?.expectedHours || 8;
       return emptyLine({
         employeeCode: row.employeeCode,

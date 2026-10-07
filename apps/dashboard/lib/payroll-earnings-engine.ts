@@ -16,6 +16,7 @@ import {
   findDayrateScheduleOverrideRow,
   isHrDayrateScheduleOverrideSource,
 } from '@/lib/dayrate-schedule-override-read';
+import { portalCCodePayrollFeedApplies } from '@/lib/timesheet-portal-payroll-feed';
 import { NIGHT_INCONVENIENCE_ALLOWANCE_AMOUNT } from '@/lib/timesheet-entry-shared';
 import {
   hrisDataFileCandidates,
@@ -704,7 +705,9 @@ export const mergeTimesheetDayRateEarnings = (
     period?: string;
   },
 ): PayrollEarningsResult => {
-  const excel = findDayrateScheduleOverrideRow(input.period, employee);
+  const excel = portalCCodePayrollFeedApplies(input.period) && contractEmployeeCode(employee)
+    ? null
+    : findDayrateScheduleOverrideRow(input.period, employee);
   // A stored day-rate schedule is the pay authority for rate, weekday days (including
   // counts above the 21 weekdays in the payroll window), overtime, weekend, holiday,
   // night, meal, and the schedule allowance columns. Salary Excel overlay stays off.

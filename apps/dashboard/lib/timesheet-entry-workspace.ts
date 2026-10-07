@@ -299,35 +299,46 @@ export const searchTimesheetEntry = async (kind: string, query: string, workDate
         ISNULL(v.job_title, N'') AS job_title, ISNULL(v.department, N'') AS department,
         COALESCE(NULLIF(v.work_location, N''), NULLIF(j.office_location, N''), N'') AS location,
         (
-          SELECT COUNT(*) FROM (
-            SELECT DISTINCT [code] FROM (
-              SELECT NULLIF(s.employee_code, N'') AS [code]
+          SELECT CASE
+            WHEN EXISTS (
+              SELECT 1
               FROM [hris].[SupervisorEmployeeAssignments] s
-              WHERE ISNULL(s.matched_status, N'') <> N'Unresolved' AND s.supervisor_employee_code = v.employee_code
-              UNION
-              SELECT r.employee_code
+              WHERE ISNULL(s.matched_status, N'') <> N'Unresolved'
+                AND (
+                  s.supervisor_employee_code = v.employee_code
+                  OR (alias.[code] <> N'' AND s.supervisor_employee_code IN (alias.[code], N'P' + alias.[code]))
+                )
+            )
+            THEN (
+              SELECT COUNT(DISTINCT s.employee_code)
+              FROM [hris].[SupervisorEmployeeAssignments] s
+              INNER JOIN [hris].[EmployeeMasterView] ev ON ev.employee_code = s.employee_code
+              WHERE ISNULL(s.matched_status, N'') <> N'Unresolved'
+                AND s.employee_code LIKE N'C[0-9]%'
+                AND ISNULL(ev.employment_status, N'') NOT LIKE N'%terminated%'
+                AND ISNULL(ev.employment_status, N'') NOT LIKE N'%inactive%'
+                AND ISNULL(ev.employment_status, N'') NOT LIKE N'%resigned%'
+                AND ISNULL(ev.employment_status, N'') NOT LIKE N'%retired%'
+                AND (
+                  s.supervisor_employee_code = v.employee_code
+                  OR (alias.[code] <> N'' AND s.supervisor_employee_code IN (alias.[code], N'P' + alias.[code]))
+                )
+            )
+            ELSE (
+              SELECT COUNT(DISTINCT r.employee_code)
               FROM [hris].[EmployeeMasterView] r
               WHERE r.employee_id <> v.employee_id
+                AND r.employee_code LIKE N'C[0-9]%'
+                AND ISNULL(r.employment_status, N'') NOT LIKE N'%terminated%'
+                AND ISNULL(r.employment_status, N'') NOT LIKE N'%inactive%'
+                AND ISNULL(r.employment_status, N'') NOT LIKE N'%resigned%'
+                AND ISNULL(r.employment_status, N'') NOT LIKE N'%retired%'
                 AND (
                   r.reporting_manager = v.employee_code OR r.reporting_manager LIKE v.employee_code + N' - %'
-                  OR (alias.[code] <> N'' AND (r.reporting_manager = alias.[code] OR r.reporting_manager LIKE alias.[code] + N' - %'))
+                  OR (alias.[code] <> N'' AND (r.reporting_manager = N'P' + alias.[code] OR r.reporting_manager LIKE N'P' + alias.[code] + N' - %'))
                 )
-              UNION
-              SELECT rv.employee_code
-              FROM [hris].[EmployeeJobInfo] rj
-              INNER JOIN [hris].[EmployeeMasterView] rv ON rv.employee_id = rj.employee_id
-              WHERE rv.employee_id <> v.employee_id
-                AND (
-                  rj.functional_manager = v.employee_code OR rj.functional_manager LIKE v.employee_code + N' - %'
-                  OR rj.department_head = v.employee_code OR rj.department_head LIKE v.employee_code + N' - %'
-                  OR (alias.[code] <> N'' AND (
-                    rj.functional_manager = alias.[code] OR rj.functional_manager LIKE alias.[code] + N' - %'
-                    OR rj.department_head = alias.[code] OR rj.department_head LIKE alias.[code] + N' - %'
-                  ))
-                )
-            ) people
-            WHERE [code] IS NOT NULL
-          ) counted
+            )
+          END
         ) AS crew
       FROM [hris].[EmployeeMasterView] v
       LEFT JOIN [hris].[EmployeeJobInfo] j ON j.employee_id = v.employee_id
@@ -691,9 +702,18 @@ export const resolveTimesheetEntry = async (input: { periodId: string; workDate:
   const settings = await readShiftSettings();
   const dayHours = Number(settings.expectedHours || 8);
   const leaveCodes = await approvedLeaveCodesForDate(connection, workDate);
-  const contractLeaveIdle = (code: string) => /^C\d/i.test(code) && leaveCodes.has(code.toUpperCase())
+  const leaveBookable = classification.dayKind === 'Weekday';
+  const contractLeaveIdle = (code: string) => leaveBookable && /^C\d/i.test(code) && leaveCodes.has(code.toUpperCase())
     ? [{ id: '', projectCode: 'DL1949', projectName: 'IDLE TIME', kind: 'Project', regularHours: dayHours, ovtHours: 0, activity: '', chargeCode: '', ovtReason: '', comment: 'Approved paid leave' }]
     : [];
+  const withoutNonWorkingLeave = <T extends { employeeCode?: string; allocations?: Array<{ projectCode?: string; comment?: string; ovtReason?: string }> }>(line: T): T => {
+    if (leaveBookable || !/^C\d/i.test(text(line.employeeCode))) return line;
+    const allocations = (line.allocations || []).filter((item) => {
+      const paidLeave = text(item.projectCode).toUpperCase() === 'DL1949' && /approved paid leave/i.test(`${text(item.comment)} ${text(item.ovtReason)}`);
+      return !paidLeave;
+    });
+    return { ...line, allocations };
+  };
   let crew: Array<Record<string, unknown>> = [];
   let legacyOffshoreCodes = new Set<string>();
   if (!timesheet) {
@@ -777,7 +797,9 @@ export const resolveTimesheetEntry = async (input: { periodId: string; workDate:
           AND (${managerMatch})
         ORDER BY full_name
       `);
-      const assignedRows = [...(assigned.recordset || []), ...(reports.recordset || [])];
+      const assignedRows = (assigned.recordset || []).length
+        ? (assigned.recordset || [])
+        : [...(reports.recordset || [])];
       for (const row of assignedRows) {
         const code = text(row.employee_code);
         if (!isContractEmployee(code) || seen.has(code) || code.toUpperCase() === supervisorCode.toUpperCase()) continue;
@@ -800,7 +822,7 @@ export const resolveTimesheetEntry = async (input: { periodId: string; workDate:
   } else {
     timesheet.lines = timesheet.lines.filter((line) => isContractEmployee(line.employeeCode)).map((line) => {
       const idle = contractLeaveIdle(line.employeeCode);
-      if (!idle.length) return { ...line, nightSession: line.operationalStatus === 'Approved Leave' ? false : line.nightSession, nightStart: line.operationalStatus === 'Approved Leave' ? '' : line.nightStart, nightEnd: line.operationalStatus === 'Approved Leave' ? '' : line.nightEnd, nightNote: line.operationalStatus === 'Approved Leave' ? '' : line.nightNote };
+      if (!idle.length) return withoutNonWorkingLeave({ ...line, nightSession: line.operationalStatus === 'Approved Leave' ? false : line.nightSession, nightStart: line.operationalStatus === 'Approved Leave' ? '' : line.nightStart, nightEnd: line.operationalStatus === 'Approved Leave' ? '' : line.nightEnd, nightNote: line.operationalStatus === 'Approved Leave' ? '' : line.nightNote });
       const already = (line.allocations || []).some((item) => text(item.projectCode).toUpperCase() === 'DL1949' && Number(item.regularHours) > 0);
       return {
         ...line,
@@ -936,7 +958,7 @@ export const saveTimesheetEntry = async (input: {
       const code = text(line.employeeCode);
       const name = text(line.employeeName);
       if (!isContractEmployee(code) || !name) continue;
-      const onLeave = (resolved.approvedLeaveCodes || []).includes(code.toUpperCase()) || text(line.operationalStatus) === 'Approved Leave';
+      const onLeave = classification.dayKind === 'Weekday' && ((resolved.approvedLeaveCodes || []).includes(code.toUpperCase()) || text(line.operationalStatus) === 'Approved Leave');
       const nightOn = onLeave ? false : Boolean(line.nightSession);
       const operationalStatus = onLeave ? 'Approved Leave' : text(line.operationalStatus);
       const lineId = newId('ln');
@@ -965,9 +987,10 @@ export const saveTimesheetEntry = async (input: {
       let ovt = 0;
       const dayHours = Number(resolved.settings?.expectedHours || 8);
       const lockedIdle = onLeave && /^C\d/i.test(code);
-      const allocations = lockedIdle
+      const allocations = (lockedIdle
         ? [{ projectCode: 'DL1949', projectName: 'IDLE TIME', kind: 'Project', regularHours: dayHours, ovtHours: 0, comment: 'Approved paid leave' }, ...(line.allocations || []).filter((item) => text(item.projectCode).toUpperCase() !== 'DL1949')]
-        : (line.allocations || []);
+        : (line.allocations || [])
+      ).filter((item) => classification.dayKind === 'Weekday' || !(text(item.projectCode).toUpperCase() === 'DL1949' && /approved paid leave/i.test(text(item.comment))));
       const regularCeiling = onLeave && !/^C\d/i.test(code) ? 0 : dayHours;
       let regularRemaining = regularCeiling;
       for (const allocation of allocations) {

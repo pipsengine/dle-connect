@@ -21,6 +21,7 @@ import { buildTimesheetHoursMapForPayrollPeriod, type PayrollTimesheetHoursEntry
 import { readBiometricClockedDaysForPeriod } from '@/lib/biometric-live-attendance-store';
 import { dayrateBookedHours } from '@/lib/dayrate-schedule-xlsx';
 import { findDayrateScheduleOverrideRow, readAppliedDayrateScheduleOverride } from '@/lib/dayrate-schedule-override-read';
+import { portalCCodePayrollFeedApplies } from '@/lib/timesheet-portal-payroll-feed';
 import { explicitPayrollDayRate, isPayrollProfileTimesheetSourcePeriod, payrollExcelAmountOverlayApplies } from '@/lib/payroll-source-of-truth';
 import { normalizeBankSortCode, withNormalizedBankCodes } from '@/lib/payroll-bank-constants';
 import { isDleUsdMdEmployee, isDleUsdPayrollEmployee } from '@/lib/payroll-bank-schedule-packs';
@@ -339,8 +340,9 @@ const applyDailyRateFromTimesheets = (
 
   const rates = dailyRateValues(employee, true);
   const timesheet = resolveTimesheetHoursForEmployee(employee, timesheetHours);
-  const excel = findDayrateScheduleOverrideRow(period, employee);
-  const appliedSchedule = readAppliedDayrateScheduleOverride(period);
+  const portalFeed = portalCCodePayrollFeedApplies(period) && contractEmployeeCode(employee);
+  const excel = portalFeed ? null : findDayrateScheduleOverrideRow(period, employee);
+  const appliedSchedule = portalFeed ? null : readAppliedDayrateScheduleOverride(period);
   // Once HR stores a dayrate schedule it defines the payable roster as well as the
   // amounts, so anyone absent from the sheet is out of this run. The Excel export
   // already builds its roster from the sheet; the run has to agree with it.

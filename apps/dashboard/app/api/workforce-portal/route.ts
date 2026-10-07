@@ -49,6 +49,7 @@ import { assertEssPerformanceAction, buildEssPerformanceWorkspace } from '@/lib/
 import {
   buildEssInternshipWorkspace,
   decideInternshipApproval,
+  remindInternshipApproval,
   saveInternshipEvaluation,
   submitInternshipEvaluation,
 } from '@/lib/internship-performance-review-store';
@@ -1871,6 +1872,15 @@ export async function POST(request: Request) {
           );
         } else if (internAction === 'approve' || internAction === 'return') {
           await decideInternshipApproval(reviewId, internAction, String(payload.comment || ''), actor, session);
+        } else if (internAction === 'remind') {
+          const reminder = await remindInternshipApproval(reviewId, actor, session);
+          invalidateEssPortalCache();
+          return ok({
+            message: reminder.sent
+              ? `Reminder sent to ${reminder.approver}.`
+              : `Reminder recorded for ${reminder.approver}.${reminder.reason ? ` ${reminder.reason}` : ''}`,
+            internshipReviews: await buildEssInternshipWorkspace(session).catch(() => null),
+          });
         } else {
           return err(400, 'Unknown internship review action.');
         }

@@ -46,7 +46,8 @@ import {
   isNightTimesheetBooking,
   type TimesheetLine,
 } from '@/lib/timesheet-entry-shared';
-import { overlayMissingTimesheetClocks, selectCanonicalTimesheetHeader, timesheetAssignmentGroupIsExclusive } from '@/lib/timesheet-sheet-identity';
+import { portalCCodePayrollFeedApplies } from '@/lib/timesheet-portal-payroll-feed';
+import { overlayMissingTimesheetClocks, selectCanonicalTimesheetHeader } from '@/lib/timesheet-sheet-identity';
 import { getPayrollPublicHolidayDates } from '@/lib/nigeria-public-holidays';
 import {
   TIMESHEET_OCTOBER_2026_PERIOD_ID,
@@ -2939,6 +2940,15 @@ export async function buildTimesheetHoursMapForPayrollPeriod(
 
   const raw = await loadRaw();
   const copy = new Map(raw);
+  if (portalCCodePayrollFeedApplies(periodToken)) {
+    try {
+      const { loadPortalBookingsForPayrollPeriod, replaceContractHoursWithPortalFeed } = await import('@/lib/timesheet-portal-payroll-feed');
+      const portal = await loadPortalBookingsForPayrollPeriod(periodToken);
+      replaceContractHoursWithPortalFeed(copy, portal);
+    } catch (error) {
+      console.warn('[Timesheet] Timesheet Management payroll feed was not applied:', error instanceof Error ? error.message : error);
+    }
+  }
   if (options?.ignoreDayrateScheduleOverride) return copy;
   try {
     const { applyDayrateScheduleOverrideToHoursMap } = await import('@/lib/dayrate-schedule-override-read');
@@ -3877,8 +3887,7 @@ const supervisorEmployeeScope = async (supervisorId: string) => {
       && assignment.matchedStatus !== 'Unresolved'
       && assignmentMatchesSupervisor(assignment, selectedCode),
     );
-    assignmentExclusive = matchedAssignments.length > 0
-      && matchedAssignments.every((assignment) => timesheetAssignmentGroupIsExclusive(assignment.assignmentGroup));
+    assignmentExclusive = matchedAssignments.length > 0;
     assignedElsewhere = new Set(
       allAssignments
         .filter((assignment) => (
@@ -3990,12 +3999,14 @@ export async function syncAttendanceForTimesheet(
   let supervisorScopeResolved = false;
   let supervisorHomeLocation = '';
 
-  const [liveResult, scopeResult, activePayrollResult, approvedLeaveResult] = await Promise.allSettled([
+  const [liveResult, scopeResult, activePayrollResult, approvedLeaveResult, holidayResult] = await Promise.allSettled([
     liveAttendancePromise,
     scopePromise,
     activePayrollPromise,
     approvedLeavePromise,
+    getPayrollPublicHolidayDates(),
   ]);
+  const holidayDates = holidayResult.status === 'fulfilled' ? holidayResult.value : [];
 
   const clockingRecords = liveResult.status === 'fulfilled' ? liveResult.value.records : [];
   if (liveResult.status === 'rejected') {
@@ -4269,16 +4280,27 @@ export async function syncAttendanceForTimesheet(
       : clockIn
         ? STANDARD_TIMESHEET_HOURS
         : 0;
+    const leaveDay = timesheetDayRulesForDate(date, holidayDates).kind === 'Weekday';
+    const clearNonWorkingLeave = Boolean(
+      !leaveDay
+      && existingLine
+      && isDayRateTimesheetEmployeeCode(employeeCode)
+      && !att.checkInTime
+      && isTimesheetPaidLeaveLine(existingLine),
+    );
     const shouldAutoBookPaidLeave = Boolean(
-      approvedLeave
+      leaveDay
+      && approvedLeave
       && isDayRateTimesheetEmployeeCode(employeeCode)
       && !att.checkInTime
       && (!existingLine?.totalHours || isTimesheetPaidLeaveLine(existingLine)),
     );
     const leaveAllocation: TimesheetLine['projectAllocations'] | null = shouldAutoBookPaidLeave
       ? buildLeaveIdleTimeAllocation(approvedLeave!.requestId)
-      : null;
-    const bookedTotal = shouldAutoBookPaidLeave ? STANDARD_TIMESHEET_HOURS : existingLine?.totalHours || 0;
+      : clearNonWorkingLeave
+        ? []
+        : null;
+    const bookedTotal = shouldAutoBookPaidLeave ? STANDARD_TIMESHEET_HOURS : clearNonWorkingLeave ? 0 : existingLine?.totalHours || 0;
 
     const nextLine: TimesheetLine = {
       id: existingLine?.id || `line-${header!.id}-${employeeCode}`,
@@ -4293,14 +4315,14 @@ export async function syncAttendanceForTimesheet(
       attendanceDuration: duration,
       projectAllocations: leaveAllocation || existingLine?.projectAllocations || [],
       idleAllocations: (existingLine?.idleAllocations || []).map(withDefaultIdleReason),
-      usedHours: shouldAutoBookPaidLeave ? STANDARD_TIMESHEET_HOURS : existingLine?.usedHours || 0,
-      idleHours: existingLine?.idleHours || 0,
+      usedHours: shouldAutoBookPaidLeave ? STANDARD_TIMESHEET_HOURS : clearNonWorkingLeave ? 0 : existingLine?.usedHours || 0,
+      idleHours: clearNonWorkingLeave ? 0 : existingLine?.idleHours || 0,
       totalHours: bookedTotal,
       // Variance vs standard day (positive = over, not attendance-minus-booked which went negative for night).
       variance: Math.round((bookedTotal - STANDARD_TIMESHEET_HOURS) * 10) / 10,
-      remarks: shouldAutoBookPaidLeave ? `Approved paid leave: ${approvedLeave!.startDate} to ${approvedLeave!.endDate}` : existingLine?.remarks || null,
-      validationStatus: shouldAutoBookPaidLeave ? 'Valid' : 'Incomplete',
-      validationMessage: shouldAutoBookPaidLeave ? 'Approved paid leave. Biometric attendance is not required for this payable leave day.' : 'Awaiting time allocation.',
+      remarks: shouldAutoBookPaidLeave ? `Approved paid leave: ${approvedLeave!.startDate} to ${approvedLeave!.endDate}` : clearNonWorkingLeave ? null : existingLine?.remarks || null,
+      validationStatus: shouldAutoBookPaidLeave ? 'Valid' : clearNonWorkingLeave ? 'Incomplete' : (existingLine?.validationStatus || 'Incomplete'),
+      validationMessage: shouldAutoBookPaidLeave ? 'Approved paid leave. Biometric attendance is not required for this payable leave day.' : clearNonWorkingLeave ? 'Awaiting time allocation.' : (existingLine?.validationMessage || 'Awaiting time allocation.'),
       attendanceMode: existingLine?.attendanceMode || (att.checkInTime ? 'Biometric' : undefined),
       workCenterName: existingLine?.workCenterName || null,
     };

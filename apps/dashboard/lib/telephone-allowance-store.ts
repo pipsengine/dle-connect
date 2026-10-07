@@ -2385,6 +2385,58 @@ export const resolveException = async (
   return existing;
 };
 
+const APPROVAL_REMINDER_STATUSES = new Set<TelephoneAllowanceStatus>([
+  'PENDING_HR_APPROVAL',
+  'PENDING_MD_APPROVAL',
+  'PENDING_CFO_AUTHORIZATION',
+]);
+const APPROVAL_REMINDER_COOLDOWN_MS = 15 * 60 * 1000;
+
+const reminderRolesForStatus = (status: TelephoneAllowanceStatus) => {
+  if (status === 'PENDING_HR_APPROVAL') return ['HR Manager', 'HR Approver'];
+  if (status === 'PENDING_MD_APPROVAL') return ['MD', 'CEO', 'Executive'];
+  if (status === 'PENDING_CFO_AUTHORIZATION') return ['CFO'];
+  return [];
+};
+
+/** Notify the current approval owner again. The schedule status does not change. */
+export const remindTelephoneAllowanceApproval = async (cycleId: string, actor: TelephoneActor) => {
+  const mode = await resolveMode();
+  const cycle = await loadCycle(mode, cycleId);
+  if (!cycle) throw new Error('Cycle not found.');
+  if (!APPROVAL_REMINDER_STATUSES.has(cycle.status)) {
+    throw new Error('Reminders can only be sent while the schedule is awaiting HR, MD, or CFO approval.');
+  }
+  const audits = await listAudits(cycle.id);
+  const last = audits.find((item) => item.action === 'REMIND_APPROVAL');
+  if (last?.createdAt) {
+    const elapsed = Date.now() - Date.parse(last.createdAt);
+    if (Number.isFinite(elapsed) && elapsed >= 0 && elapsed < APPROVAL_REMINDER_COOLDOWN_MS) {
+      const mins = Math.max(1, Math.ceil((APPROVAL_REMINDER_COOLDOWN_MS - elapsed) / 60_000));
+      throw new Error(`A reminder was sent recently. Please wait about ${mins} minute${mins === 1 ? '' : 's'} before sending again.`);
+    }
+  }
+  const stage = ownerRoleForStatus(cycle.status);
+  await notifyHandoff({
+    actor,
+    title: `Reminder: ${cycle.cycleCode} is awaiting ${stage}`,
+    body: `${actor} sent a reminder. ${cycle.pairLabel} ${cycle.year} telephone allowance (${cycle.cycleCode}) is still waiting for ${stage}.`,
+    href: `${MODULE_HREF}/approvals`,
+    roles: reminderRolesForStatus(cycle.status),
+    severity: 'warning',
+  });
+  await appendAudit(mode, {
+    cycleId: cycle.id,
+    user: actor,
+    role: 'Reminder',
+    action: 'REMIND_APPROVAL',
+    newValue: cycle.status,
+    workflowStage: cycle.status,
+    reason: `Reminder sent to ${stage}.`,
+  });
+  return { cycle, stage };
+};
+
 export const listAudits = async (cycleId?: string): Promise<TelephoneAudit[]> => {
   const mode = await resolveMode();
   if (mode.kind === 'json') {

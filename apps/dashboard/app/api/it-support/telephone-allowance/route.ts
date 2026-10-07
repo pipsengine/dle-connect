@@ -31,6 +31,7 @@ import {
   listEntitlements,
   listExceptions,
   recordPayment,
+  remindTelephoneAllowanceApproval,
   resolveException,
   returnForCorrection,
   saveCycleDraft,
@@ -300,6 +301,11 @@ export async function POST(request: NextRequest) {
         const canOwn = canFormallyApproveOwnPrep(cycle.preparedBy, actor, session.username || '');
         const updated = await authorizeCfo(cycleId, rowVersion, actor, body.comment, canOwn);
         return ok({ cycle: updated, message: 'Authorized for payment.' });
+      }
+      case 'remind-approval': {
+        require(caps.canView);
+        const result = await remindTelephoneAllowanceApproval(cycleId, actor);
+        return ok({ cycle: result.cycle, message: `Reminder sent to ${result.stage}.` });
       }
       case 'return-correction': {
         if (!(caps.canHrApprove || caps.canMdApprove || caps.canCfoAuthorize)) require(false);

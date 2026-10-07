@@ -1,5 +1,6 @@
 'use client';
 import React, { useEffect, useMemo, useState } from 'react';
+import { supervisorCodesMatch } from '@/lib/timesheet-agege-blasting';
 import { Badge, Button, Field, Modal, OptionCombo, SearchCombo, Table, Tabs, personDetail, personLabel } from '../components/UI';
 import { formatDisplayDate, usePortalData } from '../portal-data';
 
@@ -13,6 +14,7 @@ const today = () => {
 };
 const covers = (row, onDate) => row.status === 'Active' && row.effectiveFrom <= onDate && (!row.effectiveTo || row.effectiveTo >= onDate);
 const sameName = (left, right) => {
+  if (supervisorCodesMatch(left, right)) return true;
   const a = String(left || '').trim().toLowerCase();
   const b = String(right || '').trim().toLowerCase();
   if (!a || !b || a === '—' || b === '—' || a === 'unassigned' || b === 'unassigned') return false;
@@ -87,24 +89,29 @@ export default function CrewAssignments() {
   const leave = useMemo(() => new Set((signals.leave || []).map((code) => String(code).toUpperCase())), [signals]);
   const offshore = useMemo(() => new Map((signals.offshore || []).map((row) => [String(row.code).toUpperCase(), row])), [signals]);
 
+  const releasedFromSupervisor = (code) => (snapshot.crewRemovals || []).some((row) => row.status === 'Confirmed' && String(row.employeeCode).toUpperCase() === String(code).toUpperCase() && sameName(row.supervisor, supervisor));
+
   const decorate = (employee) => {
     const code = employee.code.toUpperCase();
     const primaryRows = assignments.filter((row) => row.employeeCode === employee.code && row.assignmentType === 'Primary' && covers(row, effectiveDate));
     const temporary = assignments.find((row) => row.employeeCode === employee.code && row.assignmentType === 'Temporary' && covers(row, effectiveDate));
     const primary = primaryRows[0];
     const away = offshore.get(code);
+    const released = releasedFromSupervisor(employee.code);
+    const homeSupervisor = primary?.supervisor || temporary?.supervisor || employee.supervisor || '—';
+    const onSelectedSupervisor = !released && sameName(homeSupervisor, supervisor);
     let badge = 'Unassigned';
     if (primaryRows.length > 1) badge = 'Assignment Conflict';
     else if (leave.has(code)) badge = 'On Approved Leave';
     else if (away) badge = 'Offshore';
-    else if (temporary) badge = 'Temporarily Deployed';
+    else if (temporary && !onSelectedSupervisor) badge = 'Temporarily Deployed';
     else if (primary?.operationalStatus?.includes('Not Reporting') || primary?.operationalStatus?.includes('Abscondment')) badge = 'Not Reporting';
-    else if (primary && supervisor && sameName(primary.supervisor, supervisor)) badge = 'Active';
-    else if (primary) badge = 'Assigned (Different)';
+    else if (onSelectedSupervisor) badge = 'Active';
+    else if (primary || temporary) badge = 'Assigned (Different)';
     return {
       ...employee,
       badge,
-      currentSupervisor: primary?.supervisor || temporary?.supervisor || employee.supervisor || '—',
+      currentSupervisor: released ? '—' : homeSupervisor,
       currentLocation: primary?.location || employee.location || '—',
       currentWorkCenter: primary?.workCenter || employee.workCenter || '—',
       assignedFrom: primary?.effectiveFrom || '',
@@ -114,18 +121,21 @@ export default function CrewAssignments() {
     };
   };
 
-  const crew = useMemo(() => directory.employees.map(decorate), [directory.employees, assignments, effectiveDate, supervisor, leave, offshore]);
-  const matchesSearch = (employee) => {
+  const crew = useMemo(() => directory.employees.map(decorate), [directory.employees, assignments, effectiveDate, supervisor, leave, offshore, snapshot.crewRemovals]);
+  const matchesQuery = (employee) => {
     const haystack = `${employee.code} ${employee.name}`.toLowerCase();
-    if (query && !haystack.includes(query.toLowerCase())) return false;
+    return !query || haystack.includes(query.toLowerCase());
+  };
+  const matchesSearch = (employee) => {
+    if (!matchesQuery(employee)) return false;
     if (department !== 'All departments' && employee.department !== department) return false;
     if (employeeType !== 'All types' && employee.employeeType !== employeeType) return false;
     if (statusFilter !== 'All statuses' && statusFilter !== 'Unassigned & Available' && employee.badge !== statusFilter) return false;
     if (statusFilter === 'Unassigned & Available' && employee.badge !== 'Unassigned') return false;
     return true;
   };
-  const onThisCrew = (employee) => employee.assignmentId && sameName(employee.currentSupervisor, supervisor) && sameText(employee.currentLocation, location) && sameText(employee.currentWorkCenter, workCenter);
-  const assigned = contextReady ? crew.filter((employee) => onThisCrew(employee) && matchesSearch(employee)) : [];
+  const onThisCrew = (employee) => sameName(employee.currentSupervisor, supervisor);
+  const assigned = contextReady ? crew.filter((employee) => onThisCrew(employee) && matchesQuery(employee)) : [];
   const available = crew.filter((employee) => !onThisCrew(employee) && matchesSearch(employee));
   const locationCrew = contextReady ? assignments.filter((row) => row.assignmentType === 'Primary' && covers(row, effectiveDate) && sameText(row.location, location) && sameText(row.workCenter, workCenter)).length : 0;
   const types = ['All types', ...new Set(directory.employees.map((employee) => employee.employeeType).filter(Boolean))].sort((a, b) => a === 'All types' ? -1 : a.localeCompare(b));

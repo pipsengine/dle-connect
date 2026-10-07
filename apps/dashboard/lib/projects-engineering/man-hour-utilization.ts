@@ -11,6 +11,7 @@ import {
   type TimesheetStatus,
 } from '@/lib/timesheet-entry-store';
 import { ensurePmDb, sql } from '@/lib/projects-engineering/db';
+import { loadPortalProjectHours, type PortalProjectHourRow } from '@/lib/timesheet-portal-payroll-feed';
 import type { Project } from '@/lib/projects-engineering/types';
 import type {
   ManHourEmployeeSummary,
@@ -60,12 +61,16 @@ const gateForStatus = (status: TimesheetStatus): UtilizationGate => {
   return 'all';
 };
 
-const passesGate = (status: TimesheetStatus, gate: UtilizationGate) => {
+const passesGate = (status: TimesheetStatus | string, gate: UtilizationGate) => {
+  if (status === 'Booked') return gate === 'all' || gate === 'pmApproved';
   if (gate === 'all') return !['Rejected', 'Returned'].includes(status);
-  if (gate === 'pmApproved') return PM_APPROVED.includes(status);
-  if (gate === 'costValidated') return COST_VALIDATED.includes(status);
-  return isTimesheetPayrollReadyStatus(status);
+  if (gate === 'pmApproved') return PM_APPROVED.includes(status as TimesheetStatus);
+  if (gate === 'costValidated') return COST_VALIDATED.includes(status as TimesheetStatus);
+  return isTimesheetPayrollReadyStatus(status as TimesheetStatus);
 };
+
+const portalHoursForProject = (rows: PortalProjectHourRow[], projectCode: string) =>
+  rows.filter((row) => row.projectCode === projectCode);
 
 const round1 = (n: number) => Math.round(n * 10) / 10;
 
@@ -131,6 +136,7 @@ export const buildProjectManHourUtilization = async (
   const registerLimit = options?.registerLimit ?? 200;
   const target = canonicalProjectCode(project.code);
   const { headers, lines } = await readTimesheetData({ softFail: true });
+  const portalRows = await loadPortalProjectHours().catch(() => [] as PortalProjectHourRow[]);
   const headerById = new Map<string, TimesheetHeader>();
   for (const header of headers) headerById.set(header.id, header);
 
@@ -222,6 +228,48 @@ export const buildProjectManHourUtilization = async (
     }
   }
 
+  for (const row of portalHoursForProject(portalRows, target)) {
+    const hours = row.hours;
+    totalHours += hours;
+    if (row.idle) idleHours += hours;
+    else productiveHours += hours;
+    pmApprovedHours += hours;
+    if (!passesGate('Booked', gate)) continue;
+    daySet.add(row.workDate);
+    const empKey = row.employeeCode || row.employeeName;
+    const emp = employeeMap.get(empKey) || {
+      employeeId: row.employeeCode,
+      employeeNo: row.employeeCode,
+      employeeName: row.employeeName,
+      hours: 0,
+      days: 0,
+      daySet: new Set<string>(),
+    };
+    emp.hours = round1(emp.hours + hours);
+    emp.daySet.add(row.workDate);
+    emp.days = emp.daySet.size;
+    employeeMap.set(empKey, emp);
+    const week = weekEndingIso(row.workDate);
+    const bucket = weekMap.get(week) || { hours: 0, employees: new Set<string>() };
+    bucket.hours = round1(bucket.hours + hours);
+    bucket.employees.add(empKey);
+    weekMap.set(week, bucket);
+    register.push({
+      workDate: row.workDate,
+      headerId: row.headerId,
+      lineId: row.lineId,
+      employeeId: row.employeeCode,
+      employeeNo: row.employeeCode,
+      employeeName: row.employeeName,
+      projectCode: row.projectCode,
+      projectName: row.projectName || project.name,
+      taskName: row.activity || 'General',
+      hours,
+      headerStatus: 'Booked',
+      gate: 'pmApproved',
+    });
+  }
+
   // Deduplicate labour queue pending only
   const pendingQueue = labourQueue.filter(
     (row) => row.headerStatus === 'Project_Manager_Reviewed' || row.headerStatus === 'Supervisor_Reviewed',
@@ -300,6 +348,7 @@ export const buildPortfolioManHourSummaries = async (
   if (!wanted.size) return [];
 
   const { headers, lines } = await readTimesheetData({ softFail: true });
+  const portalRows = await loadPortalProjectHours().catch(() => [] as PortalProjectHourRow[]);
   const headerById = new Map<string, TimesheetHeader>();
   for (const header of headers) headerById.set(header.id, header);
 
@@ -347,6 +396,18 @@ export const buildPortfolioManHourSummaries = async (
       acc.employees.add(line.employeeId || line.employeeNo || line.employeeName);
       if (workDate) acc.days.add(workDate);
     }
+  }
+
+  for (const row of portalRows) {
+    if (!wanted.has(row.projectCode)) continue;
+    const acc = ensure(row.projectCode);
+    acc.totalHours = round1(acc.totalHours + row.hours);
+    if (row.idle) acc.idleHours = round1(acc.idleHours + row.hours);
+    else acc.productiveHours = round1(acc.productiveHours + row.hours);
+    acc.pmApprovedHours = round1(acc.pmApprovedHours + row.hours);
+    if (!passesGate('Booked', gate)) continue;
+    acc.employees.add(row.employeeCode || row.employeeName);
+    acc.days.add(row.workDate);
   }
 
   const budgetByCode = new Map<string, number>();

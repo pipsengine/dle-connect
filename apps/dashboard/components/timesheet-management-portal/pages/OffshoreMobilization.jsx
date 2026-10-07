@@ -176,7 +176,16 @@ function CreateModal({ periods, onClose, onCreated }) {
   }, [query]);
   const review = async () => {
     setError('');
-    if (!project?.code || !site || !supervisor || !from || !expected || !reason || !selected.length) { setError('Project, site, supervisor, both dates, a reason, and at least one employee are required.'); return; }
+    const missing = [
+      !project?.code && 'Offshore project',
+      !site && 'Offshore location / site',
+      !from && 'Mobilization date',
+      !expected && 'Expected return',
+      !supervisor && 'Offshore supervisor',
+      !reason && 'Reason',
+      !selected.length && 'At least one employee',
+    ].filter(Boolean);
+    if (missing.length) { setError(`${missing.join(', ')} ${missing.length === 1 ? 'is' : 'are'} required.`); return; }
     if (expected < from) { setError('Expected return cannot be earlier than the mobilization date.'); return; }
     try {
       const result = await post({ action: 'validate', employeeCodes: selected.map((item) => item.code), effectiveFrom: from, expectedReturn: expected });
@@ -206,13 +215,13 @@ function CreateModal({ periods, onClose, onCreated }) {
       {step === 'edit' ? <>
         <div className="formGrid">
           <Field label="Timesheet Period"><select value={periodId} onChange={(event) => setPeriodId(event.target.value)}>{periods.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></Field>
-          <SearchCombo label="Offshore project" placeholder="Search project code or name" value={project ? `${project.code} — ${project.name}` : ''} onSelect={setProject} search={(q) => fetch(`/api/timesheet-management/entry?mode=search&kind=project&q=${encodeURIComponent(q)}`).then((response) => response.json()).then((body) => body.data || [])} labelOf={(item) => `${item.code} — ${item.name}`} />
-          <SearchCombo label="Offshore location / site" placeholder="Search site" value={site} onSelect={(item) => setSite(item?.name || '')} search={(q) => fetch(`/api/timesheet-management/mobilization?mode=search&kind=site&q=${encodeURIComponent(q)}`).then((response) => response.json()).then((body) => body.data || [])} labelOf={(item) => item.name} />
-          <Field label="Mobilization date"><input type="date" value={from} onChange={(event) => setFrom(event.target.value)} /></Field>
-          <Field label="Expected return"><input type="date" value={expected} min={from} onChange={(event) => setExpected(event.target.value)} /></Field>
-          <SearchCombo label="Offshore supervisor" placeholder="Search supervisor" value={supervisor} onSelect={(item) => setSupervisor(item?.name || '')} search={(q) => fetch(`/api/timesheet-management/entry?mode=search&kind=supervisor&q=${encodeURIComponent(q)}`).then((response) => response.json()).then((body) => body.data || [])} labelOf={personLabel} detailOf={personDetail} />
+          <SearchCombo required label="Offshore project" placeholder="Search project code or name" value={project ? `${project.code} — ${project.name}` : ''} onSelect={setProject} search={(q) => fetch(`/api/timesheet-management/entry?mode=search&kind=project&q=${encodeURIComponent(q)}`).then((response) => response.json()).then((body) => body.data || [])} labelOf={(item) => `${item.code} — ${item.name}`} />
+          <SearchCombo required label="Offshore location / site" placeholder="Search site" value={site} onSelect={(item) => setSite(item?.name || '')} search={(q) => fetch(`/api/timesheet-management/mobilization?mode=search&kind=site&q=${encodeURIComponent(q)}`).then((response) => response.json()).then((body) => body.data || [])} labelOf={(item) => item.name} />
+          <Field required label="Mobilization date"><input type="date" value={from} onChange={(event) => setFrom(event.target.value)} /></Field>
+          <Field required label="Expected return"><input type="date" value={expected} min={from} onChange={(event) => setExpected(event.target.value)} /></Field>
+          <SearchCombo required label="Offshore supervisor" placeholder="Search supervisor" value={supervisor} onSelect={(item) => setSupervisor(item?.name || '')} search={(q) => fetch(`/api/timesheet-management/entry?mode=search&kind=supervisor&q=${encodeURIComponent(q)}`).then((response) => response.json()).then((body) => body.data || [])} labelOf={personLabel} detailOf={personDetail} />
           <Field label="Authorization / reference"><input value={reference} onChange={(event) => setReference(event.target.value)} placeholder="MOB/OPS/2026/091" /></Field>
-          <Field label="Reason"><select value={reason} onChange={(event) => setReason(event.target.value)}><option value="">Select reason</option>{['Project requirement', 'Offshore campaign', 'Maintenance shutdown', 'Client request', 'Emergency deployment'].map((item) => <option key={item}>{item}</option>)}</select></Field>
+          <Field required label="Reason"><select value={reason} onChange={(event) => setReason(event.target.value)}><option value="">Select reason</option>{['Project requirement', 'Offshore campaign', 'Maintenance shutdown', 'Client request', 'Emergency deployment'].map((item) => <option key={item}>{item}</option>)}</select></Field>
           <Field label="Transport / movement"><select value={transport} onChange={(event) => setTransport(event.target.value)}>{['Company arranged', 'Client arranged', 'Marine transfer', 'Helicopter transfer', 'Other'].map((item) => <option key={item}>{item}</option>)}</select></Field>
         </div>
         <div className="crewPicker">

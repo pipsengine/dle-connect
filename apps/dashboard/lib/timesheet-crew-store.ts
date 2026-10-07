@@ -1,5 +1,6 @@
 import sql from 'mssql';
 import { getDleEnterpriseDbPool } from '@/lib/dle-enterprise-db';
+import { supervisorCodesMatch } from '@/lib/timesheet-agege-blasting';
 
 export const CREW_OPERATIONAL_STATUSES = [
   'Active on Crew',
@@ -276,6 +277,7 @@ const mapRemoval = (row: Record<string, unknown>): TimesheetCrewRemoval => ({
 });
 
 export const namesMatchSupervisor = (left: string, right: string) => {
+  if (supervisorCodesMatch(left, right)) return true;
   const a = text(left).toLowerCase();
   const b = text(right).toLowerCase();
   if (!a || !b || a === '—' || b === '—' || a === 'unassigned' || b === 'unassigned') return false;

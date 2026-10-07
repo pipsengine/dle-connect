@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import {
   AlertTriangle,
+  Bell,
   CheckCircle2,
   ClipboardCheck,
   Clock3,
@@ -51,6 +52,8 @@ const formatDay = (value?: string) => {
   if (Number.isNaN(date.getTime())) return value;
   return date.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
 };
+
+const awaitingApproval = (status: string) => ['Pending HOD', 'Pending HR Manager', 'Pending MD'].includes(status);
 
 const statusTone = (status: string) => {
   const value = status.toLowerCase();
@@ -250,16 +253,31 @@ export function EssInternshipReviewView({
                         <span className={`inline-flex rounded-full border px-2.5 py-1 text-[11px] font-bold ${statusTone(task.status)}`}>{task.status}</span>
                       </td>
                       <td className="px-5 py-4 text-right">
-                        <button
-                          type="button"
-                          onClick={(event) => {
-                            event.stopPropagation();
-                            openTask(task);
-                          }}
-                          className="inline-flex h-9 items-center rounded-[12px] bg-[#2563EB] px-4 text-[12px] font-semibold text-white"
-                        >
-                          {actionLabel}
-                        </button>
+                        <div className="inline-flex items-center justify-end gap-2">
+                          {awaitingApproval(task.status) ? (
+                            <button
+                              type="button"
+                              disabled={saving}
+                              onClick={(event) => {
+                                event.stopPropagation();
+                                void onAction('remind', {}, task.id);
+                              }}
+                              className="inline-flex h-9 items-center gap-1.5 rounded-[12px] border border-sky-200 bg-sky-50 px-3 text-[12px] font-semibold text-sky-800 disabled:opacity-50"
+                            >
+                              <Bell className="h-3.5 w-3.5" /> Remind
+                            </button>
+                          ) : null}
+                          <button
+                            type="button"
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              openTask(task);
+                            }}
+                            className="inline-flex h-9 items-center rounded-[12px] bg-[#2563EB] px-4 text-[12px] font-semibold text-white"
+                          >
+                            {actionLabel}
+                          </button>
+                        </div>
                       </td>
                     </tr>
                   );
@@ -280,7 +298,19 @@ export function EssInternshipReviewView({
           ) : modal === 'approve' ? (
             <ApproveForm review={active} saving={Boolean(saving)} onAction={onAction} onDone={() => { setModal(null); setActiveId(''); }} />
           ) : (
-            <DetailReadOnly review={active} />
+            <div className="space-y-4">
+              <DetailReadOnly review={active} />
+              {awaitingApproval(active.status) ? (
+                <button
+                  type="button"
+                  disabled={saving}
+                  onClick={() => void onAction('remind', {}, active.id)}
+                  className="inline-flex h-11 items-center gap-2 rounded-[14px] border border-sky-200 bg-sky-50 px-4 text-[13px] font-semibold text-sky-800 disabled:opacity-50"
+                >
+                  <Bell className="h-4 w-4" /> Remind {active.status.replace(/^Pending /, '')}
+                </button>
+              ) : null}
+            </div>
           )}
         </EssModal>
       ) : null}

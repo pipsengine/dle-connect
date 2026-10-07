@@ -171,7 +171,7 @@ export const searchMobilizationEmployees = async (query: string) => {
   const connection = await pool();
   const q = text(query);
   const result = await connection.request().input('q', sql.NVarChar(80), `%${q}%`).query(`
-    SELECT TOP 30 v.employee_id, v.employee_code, v.full_name,
+    SELECT v.employee_id, v.employee_code, v.full_name,
       ISNULL(v.first_name, N'') AS first_name, ISNULL(v.middle_name, N'') AS middle_name, ISNULL(v.last_name, N'') AS last_name,
       ISNULL(v.department, N'') AS department, ISNULL(v.reporting_manager, N'') AS supervisor, ISNULL(v.employment_status, N'') AS employment_status,
       COALESCE(NULLIF(v.work_location, N''), NULLIF(j.office_location, N''), N'') AS location,
@@ -179,6 +179,10 @@ export const searchMobilizationEmployees = async (query: string) => {
     FROM [hris].[EmployeeMasterView] v
     LEFT JOIN [hris].[EmployeeJobInfo] j ON j.employee_id = v.employee_id
     WHERE v.employee_code LIKE N'C[0-9]%'
+      AND ISNULL(v.employment_status, N'') NOT LIKE N'%terminated%'
+      AND ISNULL(v.employment_status, N'') NOT LIKE N'%inactive%'
+      AND ISNULL(v.employment_status, N'') NOT LIKE N'%resigned%'
+      AND ISNULL(v.employment_status, N'') NOT LIKE N'%retired%'
       AND (@q = N'%%' OR v.employee_code LIKE @q OR v.full_name LIKE @q OR v.first_name LIKE @q OR ISNULL(v.middle_name, N'') LIKE @q OR v.last_name LIKE @q OR ISNULL(v.department, N'') LIKE @q OR ISNULL(j.work_center, N'') LIKE @q OR ISNULL(v.reporting_manager, N'') LIKE @q)
     ORDER BY v.full_name
   `);
@@ -333,7 +337,15 @@ export const createMobilization = async (input: {
   const site = text(input.site);
   const supervisor = text(input.supervisor);
   const reason = text(input.reason);
-  if (!projectCode || !site || !supervisor || !from || !expected || !reason) throw new Error('Project, offshore site, supervisor, dates, and reason are required.');
+  const missing = [
+    !projectCode && 'Offshore project',
+    !site && 'Offshore location / site',
+    !from && 'Mobilization date',
+    !expected && 'Expected return',
+    !supervisor && 'Offshore supervisor',
+    !reason && 'Reason',
+  ].filter(Boolean);
+  if (missing.length) throw new Error(`${missing.join(', ')} ${missing.length === 1 ? 'is' : 'are'} required.`);
   const validation = await validateMobilizationEmployees({ employeeCodes: input.employeeCodes, effectiveFrom: from, expectedReturn: expected });
   const blocked = validation.employees.filter((item) => item.issues.some((issue) => issue.severity === 'block'));
   if (!validation.employees.length) throw new Error('Select at least one employee.');
