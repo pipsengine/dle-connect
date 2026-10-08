@@ -1,6 +1,7 @@
 import sql from 'mssql';
 import { dleEnterpriseLastPoolError, getDleEnterpriseDbPool } from '@/lib/dle-enterprise-db';
 import { readTimesheetCrewState, type TimesheetCrewAssignment, type TimesheetCrewEvent, type TimesheetCrewRemoval } from '@/lib/timesheet-crew-store';
+import { clearWeekendLeaveHours } from '@/lib/timesheet-entry-workspace';
 
 export type TimesheetManagementEmployee = {
   code: string;
@@ -77,6 +78,8 @@ export type TimesheetManagementSnapshot = {
   periods: TimesheetManagementPeriod[];
   bookings: TimesheetManagementBooking[];
   records: TimesheetManagementRecord[];
+  publicHolidays: string[];
+  standardHours: number;
   crewAssignments: TimesheetCrewAssignment[];
   crewEvents: TimesheetCrewEvent[];
   crewRemovals: TimesheetCrewRemoval[];
@@ -328,19 +331,40 @@ const readDirectory = async (connection: sql.ConnectionPool): Promise<TimesheetM
 
 export const readTimesheetManagementSnapshot = async (): Promise<TimesheetManagementSnapshot> => {
   const connection = await pool();
-  const [directory, periods, bookings, records, crew] = await Promise.all([
+  await clearWeekendLeaveHours(connection).catch(() => undefined);
+  const [directory, periods, bookings, records, holidays, settings, crew] = await Promise.all([
     readDirectory(connection),
     connection.request().query(`SELECT * FROM [tsmgmt].[Periods] ORDER BY [StartDate] DESC, [Name]`),
     connection.request().query(`SELECT * FROM [tsmgmt].[Bookings] ORDER BY [WorkDate] DESC, [EmployeeCode]`),
     connection.request().query(`SELECT * FROM [tsmgmt].[Records] ORDER BY [UpdatedAt] DESC`),
+    connection.request().query(`
+      DECLARE @Dates TABLE ([WorkDate] DATE);
+      IF OBJECT_ID(N'[tsmgmt].[PublicHolidays]', N'U') IS NOT NULL
+        INSERT INTO @Dates ([WorkDate])
+        SELECT [HolidayDate] FROM [tsmgmt].[PublicHolidays]
+        WHERE [Status] = N'Active' AND ISNULL([TimesheetApplicable], 1) = 1;
+      IF OBJECT_ID(N'[tsmgmt].[Timesheets]', N'U') IS NOT NULL
+        INSERT INTO @Dates ([WorkDate])
+        SELECT [WorkDate] FROM [tsmgmt].[Timesheets] WHERE [DayKind] = N'Public Holiday';
+      SELECT DISTINCT [WorkDate] FROM @Dates;
+    `),
+    connection.request().query(`
+      IF OBJECT_ID(N'[tsmgmt].[ShiftSettings]', N'U') IS NULL
+        SELECT CAST(8 AS DECIMAL(9, 2)) AS [ExpectedHours];
+      ELSE
+        SELECT TOP 1 [ExpectedHours] FROM [tsmgmt].[ShiftSettings];
+    `),
     readTimesheetCrewState(),
   ]);
+  const publicHolidays = [...new Set((holidays.recordset || []).map((row) => dateOnly(row.WorkDate)).filter(Boolean))].sort();
   return {
     generatedAt: new Date().toISOString(),
     directory,
     periods: (periods.recordset || []).map(mapPeriod),
     bookings: (bookings.recordset || []).map(mapBooking).filter((booking) => /^C\d/i.test(booking.employeeCode)),
     records: (records.recordset || []).map(mapRecord),
+    publicHolidays,
+    standardHours: hours(settings.recordset?.[0]?.ExpectedHours) || 8,
     crewAssignments: crew.assignments,
     crewEvents: crew.events,
     crewRemovals: crew.removals,

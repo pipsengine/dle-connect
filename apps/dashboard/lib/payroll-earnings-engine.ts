@@ -504,6 +504,7 @@ export const contractDayRatePayrollResult = (input: {
   sundayHours?: number;
   nightDays?: number;
   mealAmount?: number | null;
+  weekdayEarning?: number | null;
 }): PayrollEarningsResult => {
   const result = calculateContractDayRateEarnings({
     ratePerDay: input.ratePerDay,
@@ -514,6 +515,7 @@ export const contractDayRatePayrollResult = (input: {
     sundayHours: input.sundayHours,
     nightDays: input.nightDays,
     mealAmount: input.mealAmount,
+    weekdayEarning: input.weekdayEarning,
   });
   const lines = result.earningLines.map((line) => ({
     ...line,
@@ -723,6 +725,7 @@ export const mergeTimesheetDayRateEarnings = (
         publicHolidayHours: excel.publicHolidayHours,
         nightDays: num(excel.nightAmt) > 0 ? 0 : excel.nightDays,
         mealAmount: num(excel.mealAllowance),
+        weekdayEarning: excel.excelWeekdayEarning,
       })
     : contractDayRatePayrollResult({
         ratePerDay: input.ratePerDay,
@@ -1565,11 +1568,17 @@ export const calculateContractDayRateEarnings = (input: {
   sundayHours?: number;
   nightDays?: number;
   mealAmount?: number | null;
+  /** Sheet weekday earning. Used when it is filled and does not equal days × rate. */
+  weekdayEarning?: number | null;
 }) => {
   const ratePerDay = Math.max(0, num(input.ratePerDay));
   const ratePerHour = ratePerDay / 8;
   const weekdayDays = Math.max(0, num(input.weekdayDays));
-  const weekdayBase = weekdayDays * ratePerDay;
+  const computedWeekday = weekdayDays * ratePerDay;
+  const sheetWeekday = input.weekdayEarning == null ? null : Math.max(0, num(input.weekdayEarning));
+  const weekdayBase = sheetWeekday != null && Math.abs(sheetWeekday - computedWeekday) > 1
+    ? sheetWeekday
+    : computedWeekday;
   const lines: PayrollEarningLine[] = [
     { code: 'JCWEEKDAY', name: 'WEEKDAY EARNING', taxable: true, percentOfGross: 0.45, amount: roundMoney(weekdayBase * 0.45), calculation: '(No of days worked * Day rate) * 45%' },
     { code: 'JCWEEKDAY_NT', name: 'WEEKDAY ALLOWANCE NON TAX', taxable: false, percentOfGross: 0.55, amount: roundMoney(weekdayBase * 0.55), calculation: '(No of days worked * Day rate) * 55%' },

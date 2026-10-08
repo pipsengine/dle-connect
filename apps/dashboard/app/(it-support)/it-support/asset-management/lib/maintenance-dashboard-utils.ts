@@ -88,22 +88,23 @@ export const buildMaintenanceDashboardStats = (records: EnrichedMaintenanceRecor
   }).length;
 
   const monthStart = startOfMonth(today);
-  const completedThisMonth = records.filter((row) => {
+  const completedThisMonthRows = records.filter((row) => {
     if (row.displayStatus !== 'Completed') return false;
     const updated = new Date(row.updatedAt);
-    return updated >= monthStart;
-  }).length;
+    return !Number.isNaN(updated.getTime()) && updated >= monthStart;
+  });
+  const completedThisMonth = completedThisMonthRows.length;
 
   const completionRate = total ? Math.round((completedThisMonth / total) * 1000) / 10 : 0;
 
-  const completedWithSchedule = records.filter((row) => row.displayStatus === 'Completed' && row.scheduledDate);
+  const completedWithSchedule = completedThisMonthRows.filter((row) => row.scheduledDate);
   const downtimeHours = completedWithSchedule.length
     ? completedWithSchedule.reduce((sum, row) => {
       const scheduled = parseDate(row.scheduledDate);
       const completed = new Date(row.updatedAt);
-      if (!scheduled) return sum;
-      const hours = Math.max(1, (completed.getTime() - scheduled.getTime()) / 3600000);
-      return sum + Math.min(hours, 72);
+      if (!scheduled || Number.isNaN(completed.getTime())) return sum;
+      const hours = Math.max(0, (completed.getTime() - scheduled.getTime()) / 3600000);
+      return sum + hours;
     }, 0) / completedWithSchedule.length
     : 0;
 
@@ -227,13 +228,7 @@ export const filterMaintenanceRecords = (
     if (filters.department && !departmentsMatch(row.department, filters.department)) return false;
     if (filters.location && (row.location || '').toLowerCase() !== filters.location.toLowerCase()) return false;
     if (filters.status && row.displayStatus.toLowerCase() !== filters.status.toLowerCase()) return false;
-    if (filters.priority) {
-      const priority = row.priority.toLowerCase();
-      const filter = filters.priority.toLowerCase();
-      if (filter === 'high' && priority !== 'high' && priority !== 'critical') return false;
-      if (filter === 'medium' && priority !== 'medium') return false;
-      if (filter === 'low' && priority !== 'low') return false;
-    }
+    if (filters.priority && row.priority.toLowerCase() !== filters.priority.toLowerCase()) return false;
     if (filters.dateFrom && row.scheduledDate && row.scheduledDate < filters.dateFrom) return false;
     if (filters.dateTo && row.scheduledDate && row.scheduledDate > filters.dateTo) return false;
     return true;

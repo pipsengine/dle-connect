@@ -1,6 +1,19 @@
 import sql from 'mssql';
 import { getDleEnterpriseDbPool } from '@/lib/dle-enterprise-db';
+import { createEnterpriseNotification } from '@/lib/enterprise-notifications-store';
+import type { SessionPayload } from '@/lib/auth/session';
+import { resolveEmployeeMailbox, sendCrewRemovalApprovalEmail } from '@/lib/mail-service';
+import { toAbsoluteWorkflowHref } from '@/lib/public-app-url';
 import { supervisorCodesMatch } from '@/lib/timesheet-agege-blasting';
+
+/** Every supervisor crew-removal request is approved by this employee. */
+export const CREW_REMOVAL_APPROVER_CODE = 'L2782';
+
+export const canDecideCrewRemoval = (input: { employeeCode?: string; isGlobalAdmin?: boolean; roles?: string }) => {
+  if (String(input.employeeCode || '').trim().toUpperCase() === CREW_REMOVAL_APPROVER_CODE) return true;
+  if (input.isGlobalAdmin) return true;
+  return /\bsuper administrator\b/i.test(String(input.roles || ''));
+};
 
 export const CREW_OPERATIONAL_STATUSES = [
   'Active on Crew',
@@ -617,18 +630,71 @@ const onSupervisorCrew = async (transaction: sql.Transaction, code: string, supe
   return (assignments.recordset || []).some((row) => namesMatchSupervisor(text(row.SupervisorName), supervisor));
 };
 
+let crewRemovalApproverName = '';
+export const readCrewRemovalApprover = async () => {
+  if (!crewRemovalApproverName) {
+    const connection = await pool();
+    const result = await connection.request().input('Code', sql.NVarChar(40), CREW_REMOVAL_APPROVER_CODE).query(`
+      SELECT TOP 1 COALESCE(NULLIF(full_name, N''), employee_code) AS full_name
+      FROM [hris].[EmployeeMasterView] WHERE employee_code = @Code
+    `);
+    crewRemovalApproverName = text(result.recordset?.[0]?.full_name) || CREW_REMOVAL_APPROVER_CODE;
+  }
+  return { code: CREW_REMOVAL_APPROVER_CODE, name: crewRemovalApproverName, label: `${CREW_REMOVAL_APPROVER_CODE} · ${crewRemovalApproverName}` };
+};
+
+type CrewRemovalNotice = { employeeCode: string; employeeName: string; supervisor: string; requestedBy: string };
+
+const notifyCrewRemovalApprover = async (lines: CrewRemovalNotice[]) => {
+  if (!lines.length) return;
+  const approver = await readCrewRemovalApprover().catch(() => ({ code: CREW_REMOVAL_APPROVER_CODE, name: CREW_REMOVAL_APPROVER_CODE, label: CREW_REMOVAL_APPROVER_CODE }));
+  const summary = lines.map((line) => `${line.employeeCode} ${line.employeeName} from ${line.supervisor}`.trim()).join('; ');
+  const session = {
+    sub: 'timesheet-workflow',
+    username: 'timesheet-workflow',
+    fullName: 'Timesheet Workflow',
+    roles: ['System'],
+    permissions: [],
+    status: 'Active',
+    firstLoginRequired: false,
+    passwordResetRequired: false,
+    isGlobalAdmin: true,
+    iat: Math.floor(Date.now() / 1000),
+    exp: Math.floor(Date.now() / 1000) + 3600,
+  } as SessionPayload;
+  await createEnterpriseNotification(session, {
+    title: 'Crew removal awaiting your approval',
+    body: `${lines.length} employee${lines.length === 1 ? '' : 's'} ${lines.length === 1 ? 'is' : 'are'} waiting for ${approver.label} to approve removal from a supervisor crew: ${summary}.`,
+    module: 'Timesheet Management',
+    kind: 'Notification',
+    severity: 'info',
+    href: '/timesheet-management?section=crew-removal',
+    recipientEmployeeCode: CREW_REMOVAL_APPROVER_CODE,
+    channels: ['In-App', 'Email'],
+  }).catch(() => undefined);
+  const mailbox = await resolveEmployeeMailbox({ employeeCode: CREW_REMOVAL_APPROVER_CODE, employeeId: CREW_REMOVAL_APPROVER_CODE, fullName: approver.name } as never).catch(() => '');
+  if (!mailbox) return;
+  await sendCrewRemovalApprovalEmail({
+    recipientName: approver.name,
+    recipientEmail: mailbox,
+    lines,
+    workspaceLink: toAbsoluteWorkflowHref('/timesheet-management?section=crew-removal'),
+  }).catch(() => undefined);
+};
+
 export const requestCrewRemoval = async (input: { employees: Array<{ code: string; supervisor: string }>; reason: string; actor: string }) => {
   const reason = text(input.reason);
   const actor = text(input.actor) || 'Timesheet User';
   const employees = (input.employees || []).map((item) => ({ code: text(item.code), supervisor: text(item.supervisor) })).filter((item) => item.code && item.supervisor);
   if (!employees.length) throw new Error('Select an employee who is on a supervisor crew.');
-  if (!reason) throw new Error('A reason is required before HR can review the removal.');
+  if (!reason) throw new Error('A reason is required before the removal can be sent for approval.');
   const connection = await pool();
   const transaction = new sql.Transaction(connection);
   await transaction.begin();
   try {
     const directory = await loadEmployees(transaction, employees.map((item) => item.code));
     let requested = 0;
+    const notified: CrewRemovalNotice[] = [];
     for (const item of employees) {
       if (!(await onSupervisorCrew(transaction, item.code, item.supervisor))) throw new Error(`${item.code} is not on that supervisor's crew.`);
       const pending = await new sql.Request(transaction)
@@ -649,8 +715,10 @@ export const requestCrewRemoval = async (input: { employees: Array<{ code: strin
           VALUES (@Id,@EmployeeCode,@EmployeeName,@Supervisor,@Reason,N'Pending HR',@Actor)
         `);
       requested += 1;
+      notified.push({ employeeCode: item.code, employeeName: person?.name || item.code, supervisor: item.supervisor, requestedBy: actor });
     }
     await transaction.commit();
+    await notifyCrewRemovalApprover(notified);
     return { requested };
   } catch (error) {
     await transaction.rollback();
@@ -661,10 +729,10 @@ export const requestCrewRemoval = async (input: { employees: Array<{ code: strin
 export const decideCrewRemoval = async (input: { id: string; decision: 'confirm' | 'reject'; hrReason: string; actor: string }) => {
   const id = text(input.id);
   const hrReason = text(input.hrReason);
-  const actor = text(input.actor) || 'HR Manager';
+  const actor = text(input.actor) || CREW_REMOVAL_APPROVER_CODE;
   const status = input.decision === 'confirm' ? 'Confirmed' : 'Rejected';
   if (!id) throw new Error('Choose a removal request.');
-  if (!hrReason) throw new Error('HR confirmation needs a reason.');
+  if (!hrReason) throw new Error('A reason is required to confirm or reject this removal.');
   const connection = await pool();
   const transaction = new sql.Transaction(connection);
   await transaction.begin();

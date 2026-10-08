@@ -121,13 +121,14 @@ export const saveDayrateScheduleUploadToSql = async (input: {
       for (const [key, column] of ROW_COLUMNS) {
         request.input(column, sql.Decimal(19, 4), num(row[key]));
       }
+      request.input('excel_weekday_earning', sql.Decimal(19, 4), row.excelWeekdayEarning == null ? null : num(row.excelWeekdayEarning));
       await request.query(`
         INSERT INTO [hris].[DayrateScheduleUploadRows]
           (upload_id, row_no, period_code, employee_code, employee_name, first_name, last_name, job_title, location, company,
-           ${ROW_COLUMNS.map(([, column]) => column).join(', ')})
+           ${ROW_COLUMNS.map(([, column]) => column).join(', ')}, excel_weekday_earning)
         VALUES
           (@upload_id, @row_no, @period_code, @employee_code, @employee_name, @first_name, @last_name, @job_title, @location, @company,
-           ${ROW_COLUMNS.map(([, column]) => `@${column}`).join(', ')})
+           ${ROW_COLUMNS.map(([, column]) => `@${column}`).join(', ')}, @excel_weekday_earning)
       `);
     }
 
@@ -176,7 +177,7 @@ export const readActiveDayrateScheduleUploadFromSql = async (
     .input('upload_id', sql.NVarChar(80), String(record.upload_id))
     .query(`
       SELECT employee_code, employee_name, first_name, last_name, job_title, location, company,
-        ${ROW_COLUMNS.map(([, column]) => column).join(', ')}
+        ${ROW_COLUMNS.map(([, column]) => column).join(', ')}, excel_weekday_earning
       FROM [hris].[DayrateScheduleUploadRows]
       WHERE upload_id = @upload_id
       ORDER BY row_no ASC
@@ -195,6 +196,8 @@ export const readActiveDayrateScheduleUploadFromSql = async (
     for (const [key, column] of ROW_COLUMNS) {
       (mapped as unknown as Record<string, number>)[key as string] = num(row[column]);
     }
+    const sheetWeekday = row.excel_weekday_earning;
+    mapped.excelWeekdayEarning = sheetWeekday == null || sheetWeekday === '' ? null : num(sheetWeekday);
     return mapped;
   });
 

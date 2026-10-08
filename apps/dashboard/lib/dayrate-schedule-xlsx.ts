@@ -32,6 +32,8 @@ export type DayrateScheduleRow = {
   arrears: number;
   excelGross: number;
   excelNet: number;
+  /** Weekday naira from the sheet when that column is filled. Null when the workbook has no weekday-earning column. */
+  excelWeekdayEarning?: number | null;
 };
 
 export type DayrateScheduleParseResult = {
@@ -182,6 +184,7 @@ type FieldKey =
   | 'tcmMeal'
   | 'tcmTransport'
   | 'arrears'
+  | 'excelWeekdayEarning'
   | 'excelGross'
   | 'excelNet';
 
@@ -198,15 +201,16 @@ const HEADER_ALIASES: Array<{ field: FieldKey; match: (header: string) => boolea
   { field: 'sundayHours', match: (h) => !h.includes('earn') && (h.startsWith('total sunday') || h === 'sunday hours' || h === 'sun hours') },
   { field: 'publicHolidayHours', match: (h) => !h.includes('earn') && (h === 'public holiday' || h.startsWith('total public holiday') || h === 'public holiday hours') },
   { field: 'nightDays', match: (h) => h === 'night worked' || h.startsWith('night worked') },
-  { field: 'nightAmt', match: (h) => h === 'night amt' || h.startsWith('night amount') || h === 'night amt' },
+  { field: 'nightAmt', match: (h) => h === 'night amt' || h.startsWith('night amount') || h === 'night allowance' },
   { field: 'mealAllowance', match: (h) => h.startsWith('meal allowance') && !h.includes('tcm') },
   { field: 'transport', match: (h) => (h === 'transport' || h.startsWith('transport allowance')) && !h.includes('tcm') },
   { field: 'siteAllowance', match: (h) => h === 'site allowance' || h.startsWith('site allowance') },
   { field: 'tcmMeal', match: (h) => h === 'tcm meal' || h.startsWith('tcm meal') },
   { field: 'tcmTransport', match: (h) => h === 'tcm transport' || h.startsWith('tcm transport') },
   { field: 'arrears', match: (h) => h === 'arrears' },
-  { field: 'excelGross', match: (h) => h === 'gross salary' || h === 'total earnings' },
-  { field: 'excelNet', match: (h) => h === 'net pay' || h === 'net salary' },
+  { field: 'excelWeekdayEarning', match: (h) => h === 'wkd earning' || h === 'weekday earning' },
+  { field: 'excelGross', match: (h) => h === 'gross salary' || h === 'gross amount' || h === 'total earnings' },
+  { field: 'excelNet', match: (h) => h === 'net pay' || h === 'net salary' || h === 'amount payable' },
 ];
 
 export const mapDayrateHeaders = (headers: string[]) => {
@@ -345,6 +349,9 @@ export const parseDayratePaymentScheduleWorkbook = (buffer: Buffer): DayrateSche
         arrears: num(cell('arrears')),
         excelGross: num(cell('excelGross')),
         excelNet: num(cell('excelNet')),
+        excelWeekdayEarning: mapped.has('excelWeekdayEarning') && compact(cell('excelWeekdayEarning')) !== ''
+          ? num(cell('excelWeekdayEarning'))
+          : null,
       };
       const key = `${employeeCode}::${company}`;
       if (seen.has(employeeCode)) {

@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { hasPermission } from '@/lib/auth/permission-match';
 import { resolveAccessContext } from '@/lib/hris-access';
-import { decideCrewRemoval, readCrewSignals, requestCrewRemoval, saveTimesheetCrewAssignment, updateTimesheetCrewStatus } from '@/lib/timesheet-crew-store';
+import { canDecideCrewRemoval, decideCrewRemoval, readCrewRemovalApprover, readCrewSignals, requestCrewRemoval, saveTimesheetCrewAssignment, updateTimesheetCrewStatus } from '@/lib/timesheet-crew-store';
 import {
   createTimesheetManagementPeriod,
   createTimesheetManagementRecord,
@@ -24,10 +24,28 @@ const canManageTimesheetPeriods = (request: Request) => {
   return /super administrator|hr administrator|hr manager|hr director|hr officer|human resource|recruitment officer|onboarding officer|offboarding officer|employee records officer|it administrator|it support|service desk|infrastructure officer|application support|\bict\b/i.test(roles);
 };
 
-const snapshotFor = async (request: Request) => ({
-  ...(await readTimesheetManagementSnapshot()),
-  viewer: { canManagePeriods: canManageTimesheetPeriods(request) },
-});
+const removalActor = (request: Request) => {
+  const access = resolveAccessContext(request);
+  return {
+    employeeCode: request.headers.get('x-auth-employee-code')?.trim() || '',
+    isGlobalAdmin: request.headers.get('x-auth-global-admin') === '1',
+    roles: `${request.headers.get('x-auth-roles') || ''} ${access.role}`,
+    actor: access.actor,
+  };
+};
+
+const snapshotFor = async (request: Request) => {
+  const approver = await readCrewRemovalApprover().catch(() => ({ code: 'L2782', name: 'L2782', label: 'L2782' }));
+  const actor = removalActor(request);
+  return {
+    ...(await readTimesheetManagementSnapshot()),
+    viewer: {
+      canManagePeriods: canManageTimesheetPeriods(request),
+      canDecideCrewRemoval: canDecideCrewRemoval(actor),
+      crewRemovalApprover: approver.label,
+    },
+  };
+};
 
 export async function GET(request: Request) {
   if (!canUse(request)) return err(403, 'You do not have permission to open Timesheet Management.');
@@ -123,9 +141,8 @@ export async function POST(request: Request) {
       return ok({ ...result, snapshot: await snapshotFor(request) });
     }
     if (action === 'decide-crew-removal') {
-      const roles = `${request.headers.get('x-auth-roles') || ''} ${access.role}`.toLowerCase();
-      const hrManager = request.headers.get('x-auth-global-admin') === '1' || /hr manager|hr administrator|organization admin|super administrator|hr business partner/.test(roles);
-      if (!hrManager) return err(403, 'An HR manager must confirm or reject this removal.');
+      const actor = removalActor(request);
+      if (!canDecideCrewRemoval(actor)) return err(403, 'Crew removal is approved by L2782.');
       const result = await decideCrewRemoval({
         id: String(body.id || ''),
         decision: body.decision === 'confirm' ? 'confirm' : 'reject',

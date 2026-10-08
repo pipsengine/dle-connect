@@ -37,6 +37,7 @@ import {
   buildPayrollStageApprovedEmail,
   buildPayrollSubmittedEmail,
   buildTimesheetApprovalRequestEmail,
+  buildCrewRemovalApprovalEmail,
   buildTelephoneAllowanceWorkflowEmail,
   buildInternshipReviewTaskEmail,
   buildFinalSettlementApprovalEmail,
@@ -563,6 +564,20 @@ export const sendTimesheetApprovalRequestEmail = async (input: {
   return sendTransactionalEmail({ to, subject: email.subject, text: email.text, html: email.html });
 };
 
+export const sendCrewRemovalApprovalEmail = async (input: {
+  recipientName: string;
+  recipientEmail: string | null;
+  lines: Array<{ employeeCode: string; employeeName: string; supervisor: string; requestedBy: string }>;
+  workspaceLink: string;
+  baseUrl?: string | null;
+}) => {
+  const to = compact(input.recipientEmail);
+  if (!to) return { sent: false, reason: 'No recipient email.' };
+  if (!input.lines.length) return { sent: false, reason: 'No crew removal requests to send.' };
+  const email = buildCrewRemovalApprovalEmail({ ...input, baseUrl: input.baseUrl });
+  return sendTransactionalEmail({ to, subject: email.subject, text: email.text, html: email.html });
+};
+
 export const sendTelephoneAllowanceWorkflowEmail = async (input: {
   recipientName: string;
   recipientEmail: string | null;
@@ -570,6 +585,7 @@ export const sendTelephoneAllowanceWorkflowEmail = async (input: {
   body: string;
   actorName?: string;
   workspaceLink: string;
+  actionLabel?: string;
   baseUrl?: string | null;
 }) => {
   const to = compact(input.recipientEmail);

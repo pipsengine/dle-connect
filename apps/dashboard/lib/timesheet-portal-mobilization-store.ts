@@ -526,13 +526,43 @@ export const listMobilizationWorkspace = async (filters: { asOf?: string; period
   const tomorrowDate = new Date(`${asOf}T00:00:00Z`);
   tomorrowDate.setUTCDate(tomorrowDate.getUTCDate() + 1);
   const tomorrow = tomorrowDate.toISOString().slice(0, 10);
+  const brief = (row: ReturnType<typeof mapRow>) => ({
+    code: row.employeeCode,
+    name: row.employeeName,
+    project: row.projectCode,
+    projectName: row.projectName,
+    site: row.site,
+    from: row.effectiveFrom,
+    expected: row.expectedReturn,
+    status: row.status,
+  });
+  const mobilizedRows = active.filter((row) => row.effectiveFrom <= asOf);
+  const mobilizingTodayRows = rows.filter((row) => OPEN_STATUSES.includes(row.status) && row.effectiveFrom === asOf);
+  const returningTodayRows = active.filter((row) => row.expectedReturn === asOf);
+  const overdueRows = active.filter((row) => row.expectedReturn < asOf);
+  const exceptionRows = active.filter((row) => row.exceptionStatus || row.expectedReturn < asOf);
+  const projectRows = [...active.reduce((map, row) => {
+    if (!row.projectCode) return map;
+    const current = map.get(row.projectCode) || { code: row.projectCode, name: row.projectName, crew: 0 };
+    current.crew += 1;
+    map.set(row.projectCode, current);
+    return map;
+  }, new Map<string, { code: string; name: string; crew: number }>()).values()];
   const kpis = {
-    mobilized: active.filter((row) => row.effectiveFrom <= asOf).length,
-    mobilizingToday: rows.filter((row) => OPEN_STATUSES.includes(row.status) && row.effectiveFrom === asOf).length,
-    returningToday: active.filter((row) => row.expectedReturn === asOf).length,
-    overdue: active.filter((row) => row.expectedReturn < asOf).length,
-    projects: new Set(active.map((row) => row.projectCode).filter(Boolean)).size,
-    exceptions: active.filter((row) => row.exceptionStatus || row.expectedReturn < asOf).length,
+    mobilized: mobilizedRows.length,
+    mobilizingToday: mobilizingTodayRows.length,
+    returningToday: returningTodayRows.length,
+    overdue: overdueRows.length,
+    projects: projectRows.length,
+    exceptions: exceptionRows.length,
+  };
+  const cards = {
+    mobilized: mobilizedRows.map(brief),
+    mobilizingToday: mobilizingTodayRows.map(brief),
+    returningToday: returningTodayRows.map(brief),
+    overdue: overdueRows.map(brief),
+    projects: projectRows,
+    exceptions: exceptionRows.map(brief),
   };
   const needle = text(filters.q).toLowerCase();
   const filtered = rows.filter((row) => {
@@ -561,6 +591,7 @@ export const listMobilizationWorkspace = async (filters: { asOf?: string; period
     tomorrow,
     week,
     kpis,
+    cards,
     rows: filtered.map((row) => {
       const hit = attendance.get(row.employeeCode.toUpperCase());
       const attendanceStatus = !hit || hit.hours <= 0

@@ -1,6 +1,6 @@
 'use client';
 import React, { useEffect, useMemo, useState } from 'react';
-import { supervisorCodesMatch } from '@/lib/timesheet-agege-blasting';
+import { supervisorCodesMatch, timesheetLocationsMatch } from '@/lib/timesheet-agege-blasting';
 import { Badge, Button, Field, Modal, OptionCombo, SearchCombo, Table, Tabs, personDetail, personLabel } from '../components/UI';
 import { formatDisplayDate, usePortalData } from '../portal-data';
 
@@ -34,6 +34,9 @@ const searchLookup = (kind, query) => fetch(`/api/timesheet-management/entry?mod
 export default function CrewAssignments() {
   const { snapshot, loading, error, notice, setNotice, save } = usePortalData();
   const [tab, setTab] = useState(TABS[0]);
+  useEffect(() => {
+    if (new URLSearchParams(window.location.search).get('section') === 'crew-removal') setTab('Removal Requests');
+  }, []);
   const [effectiveDate, setEffectiveDate] = useState(today());
   const [location, setLocation] = useState('');
   const [workCenter, setWorkCenter] = useState('');
@@ -135,7 +138,8 @@ export default function CrewAssignments() {
     return true;
   };
   const onThisCrew = (employee) => sameName(employee.currentSupervisor, supervisor);
-  const assigned = contextReady ? crew.filter((employee) => onThisCrew(employee) && matchesQuery(employee)) : [];
+  const atSelectedLocation = (employee) => timesheetLocationsMatch(employee.currentLocation, location);
+  const assigned = contextReady ? crew.filter((employee) => onThisCrew(employee) && atSelectedLocation(employee) && matchesQuery(employee)) : [];
   const available = crew.filter((employee) => !onThisCrew(employee) && matchesSearch(employee));
   const locationCrew = contextReady ? assignments.filter((row) => row.assignmentType === 'Primary' && covers(row, effectiveDate) && sameText(row.location, location) && sameText(row.workCenter, workCenter)).length : 0;
   const types = ['All types', ...new Set(directory.employees.map((employee) => employee.employeeType).filter(Boolean))].sort((a, b) => a === 'All types' ? -1 : a.localeCompare(b));
@@ -157,7 +161,7 @@ export default function CrewAssignments() {
     {error && <div className="success" style={{ background: '#fef2f2', color: '#991b1b' }}>{error}</div>}
     {notice && <div className="success">{notice} <button onClick={() => setNotice('')}>×</button></div>}
     <Tabs items={TABS} active={tab} setActive={(next) => { setTab(next); setSelected([]); setAssignedSelected([]); }} />
-    {tab === 'Assignment History' ? <History events={history} query={historyQuery} setQuery={setHistoryQuery} loading={loading} /> : tab === 'Removal Requests' ? <RemovalRequests requests={snapshot.crewRemovals || []} loading={loading} save={save} setNotice={setNotice} /> : <>
+    {tab === 'Assignment History' ? <History events={history} query={historyQuery} setQuery={setHistoryQuery} loading={loading} /> : tab === 'Removal Requests' ? <RemovalRequests requests={snapshot.crewRemovals || []} loading={loading} save={save} setNotice={setNotice} canDecide={Boolean(snapshot.viewer?.canDecideCrewRemoval)} approver={snapshot.viewer?.crewRemovalApprover || 'L2782'} /> : <>
       <section className="crewFilters">
         <div className="crewFilter"><label>Effective Date <b>*</b></label><input type="date" value={effectiveDate} onChange={(event) => changeContext(() => setEffectiveDate(event.target.value))} /></div>
         <SearchCombo variant="crew" label="Location / Site" required placeholder="Search location" value={location} onSelect={(item) => changeContext(() => { setLocation(item?.name || ''); setWorkCenter(''); })} search={(q) => searchLookup('location', q)} labelOf={(item) => item.name} />
@@ -187,16 +191,16 @@ export default function CrewAssignments() {
           <button className="assignArrow" type="button" disabled={!contextReady || !picked.length || tab === 'Operational Status'} onClick={openAssign}><span>»</span><small>{tab === 'Temporary Deployment' ? 'Deploy' : tab === 'Reassignment & Transfer' ? 'Transfer' : 'Assign'}<br />Selected ({picked.length})</small></button>
           <button className="removeArrow" type="button" disabled={!pickedAssigned.length} onClick={() => setModal('Removal Request')}><span>«</span><small>Remove<br />Selected ({pickedAssigned.length})</small></button>
         </div>
-        <CrewCard title="Assigned Crew" hint={supervisor ? `Employees currently assigned to ${supervisor}.` : 'Select a date, location, work centre and supervisor.'} rows={assigned} page={assignedPage} setPage={setAssignedPage} pageSize={pageSize} setPageSize={setPageSize} selected={assignedSelected} setSelected={setAssignedSelected} loading={loading} kind="assigned" menu={menu} setMenu={setMenu} onRemove={(row) => { setAssignedSelected([row.code]); setModal('Removal Request'); }} contextReady={contextReady} />
+        <CrewCard title="Assigned Crew" hint={supervisor ? `Employees assigned to ${supervisor} at ${location}.` : 'Select a date, location, work centre and supervisor.'} rows={assigned} page={assignedPage} setPage={setAssignedPage} pageSize={pageSize} setPageSize={setPageSize} selected={assignedSelected} setSelected={setAssignedSelected} loading={loading} kind="assigned" menu={menu} setMenu={setMenu} onRemove={(row) => { setAssignedSelected([row.code]); setModal('Removal Request'); }} contextReady={contextReady} />
       </section>
       <div className="crewBottom">
         <Button kind="secondary" disabled={!pickedAssigned.length} onClick={() => setModal('Removal Request')}>Request Removal</Button>
         <Button disabled={!contextReady || (tab === 'Operational Status' ? !pickedAssigned.length : !picked.length)} onClick={() => setModal(tab === 'Operational Status' ? 'Operational Status' : tab === 'Crew Assignment' ? 'Assign' : tab)}>{tab === 'Operational Status' ? `Update Status (${pickedAssigned.length})` : 'Save Assignments'}</Button>
       </div>
     </>}
-    {modal === 'Removal Request' && <RemovalRequestModal employees={pickedAssigned} onClose={() => setModal(null)} onSave={async (reason) => {
+    {modal === 'Removal Request' && <RemovalRequestModal employees={pickedAssigned} approver={snapshot.viewer?.crewRemovalApprover || 'L2782'} onClose={() => setModal(null)} onSave={async (reason) => {
       const result = await save({ action: 'request-crew-removal', reason, employees: pickedAssigned.map((employee) => ({ code: employee.code, supervisor: employee.currentSupervisor })) });
-      setNotice(`${result.requested || 0} removal request${result.requested === 1 ? '' : 's'} sent to the HR manager. The assignment stays until HR confirms.`);
+      setNotice(`${result.requested || 0} removal request${result.requested === 1 ? '' : 's'} sent to ${snapshot.viewer?.crewRemovalApprover || 'L2782'} for approval. The assignment stays until that approval.`);
       setAssignedSelected([]);
       setModal(null);
     }} />}
@@ -289,35 +293,35 @@ function AssignModal({ mode, employees, supervisor, location, workCenter, effect
   </Modal>;
 }
 
-function RemovalRequestModal({ employees, onClose, onSave }) {
+function RemovalRequestModal({ employees, approver, onClose, onSave }) {
   const [reason, setReason] = useState('');
   const [notes, setNotes] = useState('');
   const [saving, setSaving] = useState(false);
   const [formError, setFormError] = useState('');
-  return <Modal title="Request crew removal" onClose={onClose} footer={<><Button kind="secondary" onClick={onClose}>Cancel</Button><Button disabled={saving || !reason.trim() || !employees.length} onClick={async () => { setSaving(true); setFormError(''); try { await onSave(`${reason.trim()}${notes.trim() ? ` · ${notes.trim()}` : ''}`); } catch (saveError) { setFormError(saveError.message); } finally { setSaving(false); } }}>{saving ? 'Sending…' : `Request removal of ${employees.length}`}</Button></>}><p>The employee stays on the crew until an HR manager confirms. This does not delete history and does not make the employee inactive.</p>{formError && <div className="validationError">{formError}</div>}<div className="pickerList">{employees.map((employee) => <span key={employee.code}><b>{employee.code}</b><span>{employee.name} · {employee.currentSupervisor}</span></span>)}</div><Field label="Reason"><textarea value={reason} onChange={(event) => setReason(event.target.value)} placeholder="Why this person should leave this crew" /></Field><Field label="Notes"><textarea value={notes} onChange={(event) => setNotes(event.target.value)} /></Field></Modal>;
+  return <Modal title="Request crew removal" onClose={onClose} footer={<><Button kind="secondary" onClick={onClose}>Cancel</Button><Button disabled={saving || !reason.trim() || !employees.length} onClick={async () => { setSaving(true); setFormError(''); try { await onSave(`${reason.trim()}${notes.trim() ? ` · ${notes.trim()}` : ''}`); } catch (saveError) { setFormError(saveError.message); } finally { setSaving(false); } }}>{saving ? 'Sending…' : `Request removal of ${employees.length}`}</Button></>}><p>The employee stays on the crew until {approver} approves the request. This does not delete history and does not make the employee inactive.</p>{formError && <div className="validationError">{formError}</div>}<div className="pickerList">{employees.map((employee) => <span key={employee.code}><b>{employee.code}</b><span>{employee.name} · {employee.currentSupervisor}</span></span>)}</div><Field label="Reason"><textarea value={reason} onChange={(event) => setReason(event.target.value)} placeholder="Why this person should leave this crew" /></Field><Field label="Notes"><textarea value={notes} onChange={(event) => setNotes(event.target.value)} /></Field></Modal>;
 }
 
-function RemovalRequests({ requests, loading, save, setNotice }) {
+function RemovalRequests({ requests, loading, save, setNotice, canDecide, approver }) {
   const [decision, setDecision] = useState(null);
   const [hrReason, setHrReason] = useState('');
   const [saving, setSaving] = useState(false);
   const [formError, setFormError] = useState('');
   return <section className="panel">
-    <div className="panelHead"><div><h3>Removal requests</h3><p>Pending requests stay on the crew until an HR manager confirms them with a reason.</p></div></div>
-    <Table headers={['Employee', 'Supervisor', 'Request reason', 'Status', 'Requested by', 'HR reason', '']} rows={requests.map((request) => [
+    <div className="panelHead"><div><h3>Removal requests</h3><p>Pending requests stay on the crew until {approver} approves them with a reason.</p></div></div>
+    <Table headers={['Employee', 'Supervisor', 'Request reason', 'Status', 'Requested by', 'Approval reason', '']} rows={requests.map((request) => [
       `${request.employeeCode} · ${request.employeeName}`,
       request.supervisor,
       request.requestReason || '—',
-      <Badge tone={request.status === 'Confirmed' ? 'green' : request.status === 'Rejected' ? 'red' : 'amber'}>{request.status}</Badge>,
+      <Badge tone={request.status === 'Confirmed' ? 'green' : request.status === 'Rejected' ? 'red' : 'amber'}>{request.status === 'Pending HR' ? `Awaiting ${approver}` : request.status}</Badge>,
       request.requestedBy || '—',
       request.hrReason || '—',
-      request.status === 'Pending HR' ? <Button kind="secondary" onClick={() => { setDecision(request); setHrReason(''); setFormError(''); }}>HR decision</Button> : '—',
+      request.status === 'Pending HR' && canDecide ? <Button kind="secondary" onClick={() => { setDecision(request); setHrReason(''); setFormError(''); }}>Approve or reject</Button> : request.status === 'Pending HR' ? `Awaiting ${approver}` : '—',
     ])} empty={loading ? 'Loading requests…' : 'No removal requests yet.'} />
-    {decision && <Modal title="HR manager decision" onClose={() => setDecision(null)} footer={<><Button kind="secondary" onClick={() => setDecision(null)}>Cancel</Button><Button kind="secondary" disabled={saving || !hrReason.trim()} onClick={() => submit('reject')}>Reject</Button><Button disabled={saving || !hrReason.trim()} onClick={() => submit('confirm')}>{saving ? 'Saving…' : 'Confirm removal'}</Button></>}>
+    {decision && <Modal title={`Approval by ${approver}`} onClose={() => setDecision(null)} footer={<><Button kind="secondary" onClick={() => setDecision(null)}>Cancel</Button><Button kind="secondary" disabled={saving || !hrReason.trim()} onClick={() => submit('reject')}>Reject</Button><Button disabled={saving || !hrReason.trim()} onClick={() => submit('confirm')}>{saving ? 'Saving…' : 'Confirm removal'}</Button></>}>
       {formError && <div className="validationError">{formError}</div>}
       <p>{decision.employeeCode} · {decision.employeeName} stays with {decision.supervisor} until you confirm. Confirmation ends that crew assignment only.</p>
       <Field label="Supervisor request"><textarea readOnly value={decision.requestReason} /></Field>
-      <Field label="HR reason"><textarea value={hrReason} onChange={(event) => setHrReason(event.target.value)} placeholder="Justification for confirming or rejecting" /></Field>
+      <Field label="Approval reason"><textarea value={hrReason} onChange={(event) => setHrReason(event.target.value)} placeholder="Justification for confirming or rejecting" /></Field>
     </Modal>}
   </section>;
 
@@ -326,7 +330,7 @@ function RemovalRequests({ requests, loading, save, setNotice }) {
     setFormError('');
     try {
       await save({ action: 'decide-crew-removal', id: decision.id, decision: choice, hrReason: hrReason.trim() });
-      setNotice(choice === 'confirm' ? 'HR confirmed the removal. The employee is off that crew and is still active.' : 'HR rejected the removal. The employee stays on the crew.');
+      setNotice(choice === 'confirm' ? `${approver} confirmed the removal. The employee is off that crew and is still active.` : `${approver} rejected the removal. The employee stays on the crew.`);
       setDecision(null);
     } catch (saveError) {
       setFormError(saveError.message);

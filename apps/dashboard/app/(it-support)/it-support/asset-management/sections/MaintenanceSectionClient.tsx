@@ -16,6 +16,7 @@ import {
   Wrench,
 } from 'lucide-react';
 import { Bar, BarChart, Cell, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
+import { canonicalDepartmentLabel } from '@/lib/it-asset-department';
 import type { ItAssetDashboardPayload, ItMaintenanceRecord } from '@/lib/it-asset-management-store';
 import { fetchAssetManagementPayload, postAssetManagementAction } from '../lib/asset-management-api';
 import {
@@ -89,34 +90,39 @@ function RowActionsMenu({
   row,
   onStart,
   onComplete,
+  onCreateWorkOrder,
 }: {
   row: EnrichedMaintenanceRecord;
   onStart: () => void;
   onComplete: () => void;
+  onCreateWorkOrder: () => void;
 }) {
   const [open, setOpen] = useState(false);
-  const isComplete = row.displayStatus === 'Completed';
+  const isComplete = row.displayStatus === 'Completed' || row.displayStatus === 'Cancelled';
   const canStart = !isComplete && row.displayStatus !== 'In Progress';
-
-  if (isComplete) return <span className="text-xs text-slate-400">—</span>;
 
   return (
     <div className="relative">
-      <button type="button" onClick={() => setOpen((value) => !value)} className="rounded-lg p-1.5 text-slate-500 hover:bg-slate-100">
+      <button type="button" onClick={() => setOpen((value) => !value)} className="rounded-lg p-1.5 text-slate-500 hover:bg-slate-100" aria-label={`Actions for ${row.title}`}>
         <MoreVertical className="h-4 w-4" />
       </button>
       {open ? (
         <>
           <button type="button" className="fixed inset-0 z-10" aria-label="Close menu" onClick={() => setOpen(false)} />
-          <div className="absolute right-0 z-20 mt-1 w-40 rounded-lg border border-slate-200 bg-white py-1 shadow-lg">
+          <div className="absolute right-0 z-20 mt-1 w-44 rounded-lg border border-slate-200 bg-white py-1 shadow-lg">
+            <button type="button" onClick={() => { setOpen(false); onCreateWorkOrder(); }} className="block w-full px-3 py-2 text-left text-xs font-semibold text-dle-blue hover:bg-slate-50">
+              Create work order
+            </button>
             {canStart ? (
               <button type="button" onClick={() => { setOpen(false); onStart(); }} className="block w-full px-3 py-2 text-left text-xs font-semibold text-amber-700 hover:bg-slate-50">
                 Start maintenance
               </button>
             ) : null}
-            <button type="button" onClick={() => { setOpen(false); onComplete(); }} className="block w-full px-3 py-2 text-left text-xs font-semibold text-emerald-700 hover:bg-slate-50">
-              Mark complete
-            </button>
+            {!isComplete ? (
+              <button type="button" onClick={() => { setOpen(false); onComplete(); }} className="block w-full px-3 py-2 text-left text-xs font-semibold text-emerald-700 hover:bg-slate-50">
+                Mark complete
+              </button>
+            ) : null}
           </div>
         </>
       ) : null}
@@ -136,7 +142,7 @@ export function MaintenanceSectionClient() {
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
   const [page, setPage] = useState(1);
-  const [scheduleModal, setScheduleModal] = useState<{ open: boolean; preset: ScheduleModalPreset }>({ open: false, preset: 'default' });
+  const [scheduleModal, setScheduleModal] = useState<{ open: boolean; preset: ScheduleModalPreset; assetId?: string }>({ open: false, preset: 'default' });
   const [calendarOpen, setCalendarOpen] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
@@ -213,12 +219,12 @@ export function MaintenanceSectionClient() {
     await load();
   };
 
-  const openScheduleModal = (preset: ScheduleModalPreset = 'default') => {
-    setScheduleModal({ open: true, preset });
+  const openScheduleModal = (preset: ScheduleModalPreset = 'default', assetId?: string) => {
+    setScheduleModal({ open: true, preset, assetId });
   };
 
   const closeScheduleModal = () => {
-    setScheduleModal((current) => ({ ...current, open: false }));
+    setScheduleModal((current) => ({ ...current, open: false, assetId: undefined }));
   };
 
   const startMaintenance = async (row: EnrichedMaintenanceRecord) => {
@@ -255,7 +261,7 @@ export function MaintenanceSectionClient() {
     { label: 'Due This Week', value: numberFmt(stats.dueThisWeek), hint: `${stats.dueThisWeekPct}% of total tasks`, icon: CalendarClock, color: 'orange' },
     { label: 'Completed (This Month)', value: numberFmt(stats.completedThisMonth), hint: `${stats.completionRate}% completion rate`, icon: CheckCircle2, color: 'green' },
     { label: 'Avg. Downtime (hrs)', value: String(stats.avgDowntimeHours || '—'), hint: 'This month', icon: Timer, color: 'violet' },
-    { label: 'Maintenance Cost', value: currencyNgn(stats.maintenanceCostYtd), hint: 'Year to date', icon: Wallet, color: 'teal' },
+    { label: 'Maintenance Cost', value: currencyNgn(stats.maintenanceCostYtd), hint: 'Estimated, year to date', icon: Wallet, color: 'teal' },
   ];
 
   const showingFrom = filtered.length ? (paged.page - 1) * PAGE_SIZE + 1 : 0;
@@ -339,8 +345,29 @@ export function MaintenanceSectionClient() {
         </div>
       </section>
 
-      <div className="grid grid-cols-1 gap-4 wide:grid-cols-[minmax(0,1fr)_280px]">
+      <div className="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1fr)_280px]">
         <div className="space-y-3">
+          <div className="rounded-xl border border-slate-200 bg-white p-3 shadow-sm">
+            <div className="flex flex-wrap items-center gap-2">
+              <button type="button" onClick={() => openScheduleModal('work-order')} className="inline-flex items-center gap-2 rounded-lg bg-dle-blue px-3 py-2 text-xs font-semibold text-white hover:bg-dle-blue-deep">
+                <Wrench className="h-4 w-4" />Create Work Order
+              </button>
+              <button type="button" onClick={() => openScheduleModal('default')} className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50">
+                <Plus className="h-4 w-4" />Schedule maintenance
+              </button>
+              <button type="button" onClick={() => openScheduleModal('bulk-schedule')} className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50">
+                <Layers className="h-4 w-4" />Bulk Schedule
+              </button>
+              <button type="button" onClick={() => openScheduleModal('service-request')} className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50">
+                <ClipboardList className="h-4 w-4" />Service Request
+              </button>
+              <button type="button" onClick={() => setCalendarOpen(true)} className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50">
+                <CalendarClock className="h-4 w-4" />Maintenance Calendar
+              </button>
+            </div>
+            <p className="mt-2 text-xs text-slate-500">Create Work Order starts maintenance now. Schedule sets a date. Bulk Schedule covers a department or location. Service Request logs a fault.</p>
+          </div>
+
           <div className="flex flex-wrap items-center gap-2">
             <select value={departmentFilter} onChange={(e) => { setDepartmentFilter(e.target.value); setPage(1); }} className={filterSelectClass}>
               <option value="">Department</option>
@@ -356,6 +383,7 @@ export function MaintenanceSectionClient() {
             </select>
             <select value={priorityFilter} onChange={(e) => { setPriorityFilter(e.target.value); setPage(1); }} className={filterSelectClass}>
               <option value="">Priority</option>
+              <option value="Critical">Critical</option>
               <option value="High">High</option>
               <option value="Medium">Medium</option>
               <option value="Low">Low</option>
@@ -378,9 +406,6 @@ export function MaintenanceSectionClient() {
               </button>
               <button type="button" onClick={() => window.open('/api/it-support/asset-management?section=maintenance&format=csv', '_blank')} className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50">
                 <Download className="h-4 w-4" />Export CSV
-              </button>
-              <button type="button" onClick={() => openScheduleModal('default')} className="inline-flex items-center gap-2 rounded-lg bg-dle-blue px-3 py-2 text-xs font-semibold text-white hover:bg-dle-blue-deep">
-                <Plus className="h-4 w-4" />Schedule maintenance
               </button>
             </div>
           </div>
@@ -414,7 +439,7 @@ export function MaintenanceSectionClient() {
                           <div className="font-medium text-slate-800">{row.assetName}</div>
                           {row.assetTag ? <div className="font-mono text-xs text-slate-500">{row.assetTag}</div> : null}
                         </td>
-                        <td className="px-4 py-3 text-slate-700">{row.department || '—'}</td>
+                        <td className="px-4 py-3 text-slate-700">{canonicalDepartmentLabel(row.department) || '—'}</td>
                         <td className="px-4 py-3 text-slate-700">{row.location || '—'}</td>
                         <td className="px-4 py-3">
                           <div className="font-mono text-xs text-slate-700">{schedule.date}</div>
@@ -424,7 +449,7 @@ export function MaintenanceSectionClient() {
                         </td>
                         <td className="px-4 py-3">
                           <span className={`inline-flex rounded-full px-2 py-0.5 text-xs font-semibold ring-1 ring-inset ${priorityTone(row.priority)}`}>
-                            {row.priority === 'Critical' ? 'High' : row.priority}
+                            {row.priority}
                           </span>
                         </td>
                         <td className="px-4 py-3">
@@ -435,10 +460,14 @@ export function MaintenanceSectionClient() {
                         </td>
                         <td className="px-4 py-3">
                           <div className="text-slate-800">{row.assignedTo || 'Unassigned'}</div>
-                          {row.department ? <div className="text-xs text-slate-500">IT Technician</div> : null}
                         </td>
                         <td className="px-4 py-3">
-                          <RowActionsMenu row={row} onStart={() => void startMaintenance(row)} onComplete={() => void markCompleted(row)} />
+                          <RowActionsMenu
+                            row={row}
+                            onStart={() => void startMaintenance(row)}
+                            onComplete={() => void markCompleted(row)}
+                            onCreateWorkOrder={() => openScheduleModal('work-order', row.assetId || undefined)}
+                          />
                         </td>
                       </tr>
                     );
@@ -471,6 +500,34 @@ export function MaintenanceSectionClient() {
         </div>
 
         <aside className="space-y-4">
+          <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+            <h3 className="mb-3 text-sm font-bold text-slate-950">Quick Actions</h3>
+            <div className="grid grid-cols-2 gap-2">
+              {[
+                { label: 'Create Work Order', sub: 'Start maintenance now', icon: Wrench, action: () => openScheduleModal('work-order') },
+                { label: 'Bulk Schedule', sub: 'By dept or site', icon: Layers, action: () => openScheduleModal('bulk-schedule') },
+                { label: 'Service Request', sub: 'Corrective work', icon: ClipboardList, action: () => openScheduleModal('service-request') },
+                { label: 'Maintenance Calendar', sub: 'View upcoming', icon: CalendarClock, action: () => setCalendarOpen(true) },
+              ].map((item) => {
+                const Icon = item.icon;
+                return (
+                  <button
+                    key={item.label}
+                    type="button"
+                    onClick={item.action}
+                    className="rounded-xl border border-slate-100 bg-slate-50/80 p-3 text-left transition hover:border-slate-200 hover:bg-white"
+                  >
+                    <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-white text-dle-blue shadow-sm">
+                      <Icon className="h-4 w-4" />
+                    </span>
+                    <div className="mt-2 text-xs font-bold text-slate-900">{item.label}</div>
+                    <div className="text-[11px] text-slate-500">{item.sub}</div>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
           <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
             <h3 className="text-sm font-bold text-slate-950">Maintenance Highlights</h3>
             <div className="mt-3 space-y-2">
@@ -506,33 +563,6 @@ export function MaintenanceSectionClient() {
             </div>
           </div>
 
-          <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-            <h3 className="mb-3 text-sm font-bold text-slate-950">Quick Actions</h3>
-            <div className="grid grid-cols-2 gap-2">
-              {[
-                { label: 'Create Work Order', sub: 'Start maintenance now', icon: Wrench, action: () => openScheduleModal('work-order') },
-                { label: 'Bulk Schedule', sub: 'By dept or site', icon: Layers, action: () => openScheduleModal('bulk-schedule') },
-                { label: 'Service Request', sub: 'Corrective work', icon: ClipboardList, action: () => openScheduleModal('service-request') },
-                { label: 'Maintenance Calendar', sub: 'View upcoming', icon: CalendarClock, action: () => setCalendarOpen(true) },
-              ].map((item) => {
-                const Icon = item.icon;
-                return (
-                  <button
-                    key={item.label}
-                    type="button"
-                    onClick={item.action}
-                    className="rounded-xl border border-slate-100 bg-slate-50/80 p-3 text-left transition hover:border-slate-200 hover:bg-white"
-                  >
-                    <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-white text-dle-blue shadow-sm">
-                      <Icon className="h-4 w-4" />
-                    </span>
-                    <div className="mt-2 text-xs font-bold text-slate-900">{item.label}</div>
-                    <div className="text-[11px] text-slate-500">{item.sub}</div>
-                  </button>
-                );
-              })}
-            </div>
-          </div>
         </aside>
       </div>
 
@@ -541,6 +571,7 @@ export function MaintenanceSectionClient() {
         onClose={closeScheduleModal}
         assets={assets}
         preset={scheduleModal.preset}
+        initialAssetId={scheduleModal.assetId}
         onSubmit={handleSchedule}
       />
 
@@ -551,10 +582,7 @@ export function MaintenanceSectionClient() {
         departments={departments}
         locations={locations}
         onStart={startMaintenance}
-        onComplete={async (row) => {
-          if (!window.confirm(`Mark "${row.title}" as completed?`)) return;
-          await markCompleted(row);
-        }}
+        onComplete={markCompleted}
       />
     </AssetManagementShell>
   );

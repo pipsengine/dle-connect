@@ -8,6 +8,7 @@ import { getDleEnterpriseDbPool } from '@/lib/dle-enterprise-db';
 import { getPayrollPublicHolidayDates } from '@/lib/nigeria-public-holidays';
 import { payrollPeriodSortKey } from '@/lib/payroll-source-of-truth';
 import { normalizePayrollMatchKey } from '@/lib/sage-people-payroll-store';
+import { clearWeekendLeaveHours } from '@/lib/timesheet-entry-workspace';
 import {
   OFFSHORE_ALLOWANCE_HOURS,
   STANDARD_TIMESHEET_HOURS,
@@ -103,7 +104,8 @@ export const aggregatePortalBookingsForPayroll = (
 ) => {
   const mapped = new Map<string, PortalPayrollHours>();
   const seenDay = new Set<string>();
-  const ordered = [...rows].sort((left, right) => left.workDate.localeCompare(right.workDate) || left.employeeCode.localeCompare(right.employeeCode));
+  const seenNight = new Set<string>();
+  const ordered = [...rows].sort((left, right) => left.workDate.localeCompare(right.workDate) || left.employeeCode.localeCompare(right.employeeCode) || Number(num(left.nightHours) > 0) - Number(num(right.nightHours) > 0));
   for (const row of ordered) {
     const code = compact(row.employeeCode).toUpperCase();
     if (!isContractCode(code)) continue;
@@ -150,11 +152,12 @@ export const aggregatePortalBookingsForPayroll = (
     }
     if (kind === 'Weekday' && payable) {
       let overtime = round1(Math.max(0, regular + ovt - STANDARD_TIMESHEET_HOURS));
-      if (overtime <= 0.001 && regular > 0 && isOffshoreTimesheetContext(row.locationName, '')) overtime = OFFSHORE_ALLOWANCE_HOURS;
+      if (overtime <= 0.001 && first && regular > 0 && isOffshoreTimesheetContext(row.locationName, '')) overtime = OFFSHORE_ALLOWANCE_HOURS;
       current.weekdayOvertimeHours = round1((current.weekdayOvertimeHours || 0) + overtime);
     }
     current.bookedHours = round1(current.bookedHours + booked);
-    if (night && first) {
+    if (night && !seenNight.has(dayKey)) {
+      seenNight.add(dayKey);
       current.nightDays = (current.nightDays || 0) + 1;
       current.nightHours = round1((current.nightHours || 0) + Math.max(booked, 8));
     }
@@ -169,6 +172,7 @@ export const loadPortalBookingsForPayrollPeriod = async (period: string) => {
   if (!bounds) return new Map<string, PortalPayrollHours>();
   const pool = await getDleEnterpriseDbPool();
   if (!pool) return new Map<string, PortalPayrollHours>();
+  await clearWeekendLeaveHours(pool).catch(() => undefined);
   const holidayDates = await getPayrollPublicHolidayDates().catch(() => [] as string[]);
   const result = await pool.request()
     .input('Start', sql.Date, bounds.start)
@@ -211,6 +215,7 @@ export const replaceContractHoursWithPortalFeed = (
 export const loadPortalProjectHours = async (): Promise<PortalProjectHourRow[]> => {
   const pool = await getDleEnterpriseDbPool();
   if (!pool) return [];
+  await clearWeekendLeaveHours(pool).catch(() => undefined);
   const result = await pool.request().query(`
     SELECT t.[Id] AS HeaderId, t.[WorkDate], l.[Id] AS LineId, l.[EmployeeCode], l.[EmployeeName],
       a.[ProjectCode], a.[ProjectName], a.[RegularHours], a.[OvtHours], a.[Activity]

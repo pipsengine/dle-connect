@@ -7,6 +7,8 @@ import { approvalBlocksRevision, openTimesheetApproval } from '@/lib/timesheet-a
 
 const text = (value: unknown) => String(value ?? '').trim();
 const isContractEmployee = (code: unknown) => /^C\d/i.test(text(code));
+const isAssignedSupervisor = (code: unknown, jobTitle?: unknown) => /^P\d/i.test(text(code)) && /supervisor/i.test(text(jobTitle));
+const isBookableCrewCode = (code: unknown) => isContractEmployee(code) || /^P\d/i.test(text(code));
 const dateOnly = (value: unknown) => {
   if (!value) return '';
   if (value instanceof Date && !Number.isNaN(value.getTime())) {
@@ -33,6 +35,128 @@ const approvedLeaveCodesForDate = async (connection: sql.ConnectionPool, workDat
   }
 };
 const newId = (prefix: string) => `${prefix}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+
+type CrewHourLine = {
+  employeeCode: string;
+  operationalStatus?: string;
+  attendanceStatus?: string;
+  allocations?: Array<{ regularHours?: number; ovtHours?: number }>;
+  nightSession?: boolean;
+  nightStart?: string;
+  nightEnd?: string;
+  nightNote?: string;
+};
+
+const bookedHourTotal = (line: CrewHourLine) => (line.allocations || []).reduce((sum, item) => sum + Number(item.regularHours || 0) + Number(item.ovtHours || 0), 0);
+
+const lineOnLeave = (line: CrewHourLine) => text(line.operationalStatus) === 'Approved Leave' || text(line.attendanceStatus) === 'Approved Leave';
+
+/** Day hours stay on the day line. Night-sheet hours open as a second band on that same person. */
+export const attachNightBand = <T extends CrewHourLine>(dayLines: T[], nightLines: T[]) => {
+  const nightByCode = new Map(nightLines.map((line) => [text(line.employeeCode).toUpperCase(), line]));
+  const merged = dayLines.map((line) => {
+    const night = nightByCode.get(text(line.employeeCode).toUpperCase());
+    if (!night) return { ...line, nightWork: false, nightAllocations: [] as T['allocations'] };
+    nightByCode.delete(text(line.employeeCode).toUpperCase());
+    const hasNight = !lineOnLeave(line) && !lineOnLeave(night) && (bookedHourTotal(night) > 0 || Boolean(night.nightSession));
+    return {
+      ...line,
+      nightWork: hasNight,
+      nightAllocations: hasNight ? (night.allocations || []) : [],
+      nightSession: hasNight ? Boolean(night.nightSession || line.nightSession) : Boolean(line.nightSession),
+      nightStart: hasNight ? (night.nightStart || line.nightStart || '') : (line.nightStart || ''),
+      nightEnd: hasNight ? (night.nightEnd || line.nightEnd || '') : (line.nightEnd || ''),
+      nightNote: hasNight ? (night.nightNote || line.nightNote || '') : (line.nightNote || ''),
+    };
+  });
+  for (const night of nightByCode.values()) {
+    const hasNight = !lineOnLeave(night) && (bookedHourTotal(night) > 0 || Boolean(night.nightSession));
+    if (!hasNight) continue;
+    merged.push({
+      ...night,
+      allocations: [],
+      nightWork: true,
+      nightAllocations: night.allocations || [],
+    });
+  }
+  return merged;
+};
+
+const nonWorkingTimesheetDate = `(
+  (DATEDIFF(DAY, CONVERT(date, '20000101'), t.[WorkDate]) % 7) IN (0, 1)
+  OR t.[DayKind] = N'Public Holiday'
+  OR EXISTS (
+    SELECT 1 FROM [tsmgmt].[PublicHolidays] h
+    WHERE h.[HolidayDate] = t.[WorkDate]
+      AND h.[Status] = N'Active'
+      AND ISNULL(h.[TimesheetApplicable], 1) = 1
+  )
+)`;
+
+const nonWorkingBookingDate = `(
+  (DATEDIFF(DAY, CONVERT(date, '20000101'), b.[WorkDate]) % 7) IN (0, 1)
+  OR EXISTS (
+    SELECT 1 FROM [tsmgmt].[PublicHolidays] h
+    WHERE h.[HolidayDate] = b.[WorkDate]
+      AND h.[Status] = N'Active'
+      AND ISNULL(h.[TimesheetApplicable], 1) = 1
+  )
+  OR EXISTS (
+    SELECT 1 FROM [tsmgmt].[Timesheets] t
+    WHERE t.[PeriodId] = b.[PeriodId] AND t.[WorkDate] = b.[WorkDate] AND t.[DayKind] = N'Public Holiday'
+  )
+)`;
+
+const approvedLeaveForTimesheet = `(
+  l.[OperationalStatus] = N'Approved Leave' OR l.[AttendanceStatus] = N'Approved Leave'
+  OR EXISTS (
+    SELECT 1 FROM [hris].[LeaveApplications] leave
+    WHERE leave.[EmployeeId] = l.[EmployeeCode]
+      AND leave.[StatusName] LIKE N'%Approved%'
+      AND leave.[StartDate] <= t.[WorkDate] AND leave.[EndDate] >= t.[WorkDate]
+  )
+)`;
+
+const approvedLeaveForBooking = `(
+  b.[AttendanceStatus] = N'Approved Leave'
+  OR EXISTS (
+    SELECT 1 FROM [hris].[LeaveApplications] leave
+    WHERE leave.[EmployeeId] = b.[EmployeeCode]
+      AND leave.[StatusName] LIKE N'%Approved%'
+      AND leave.[StartDate] <= b.[WorkDate] AND leave.[EndDate] >= b.[WorkDate]
+  )
+)`;
+
+/** Saturday, Sunday, and public-holiday leave must not stay on the books as worked hours. */
+export const clearWeekendLeaveHours = async (connection: sql.ConnectionPool, periodId = '') => {
+  const period = text(periodId);
+  const timesheetPeriod = period ? 'AND t.[PeriodId] = @PeriodId' : '';
+  const bookingPeriod = period ? 'AND b.[PeriodId] = @PeriodId' : '';
+  const lineRequest = connection.request();
+  const bookingRequest = connection.request();
+  if (period) {
+    lineRequest.input('PeriodId', sql.NVarChar(40), period);
+    bookingRequest.input('PeriodId', sql.NVarChar(40), period);
+  }
+  await lineRequest.query(`
+    DELETE a
+    FROM [tsmgmt].[TimesheetAllocations] a
+    INNER JOIN [tsmgmt].[TimesheetEntryLines] l ON l.[Id] = a.[LineId]
+    INNER JOIN [tsmgmt].[Timesheets] t ON t.[Id] = l.[TimesheetId]
+    WHERE ${nonWorkingTimesheetDate} AND ${approvedLeaveForTimesheet} ${timesheetPeriod};
+    DELETE l
+    FROM [tsmgmt].[TimesheetEntryLines] l
+    INNER JOIN [tsmgmt].[Timesheets] t ON t.[Id] = l.[TimesheetId]
+    WHERE ${nonWorkingTimesheetDate} AND ${approvedLeaveForTimesheet} ${timesheetPeriod};
+  `);
+  await bookingRequest.query(`
+    DELETE b
+    FROM [tsmgmt].[Bookings] b
+    WHERE ${nonWorkingBookingDate}
+      AND ${approvedLeaveForBooking}
+      ${bookingPeriod};
+  `);
+};
 
 export type ShiftSettings = {
   dayStart: string;
@@ -314,7 +438,19 @@ export const searchTimesheetEntry = async (kind: string, query: string, workDate
               FROM [hris].[SupervisorEmployeeAssignments] s
               INNER JOIN [hris].[EmployeeMasterView] ev ON ev.employee_code = s.employee_code
               WHERE ISNULL(s.matched_status, N'') <> N'Unresolved'
-                AND s.employee_code LIKE N'C[0-9]%'
+                AND (
+                  s.employee_code LIKE N'C[0-9]%'
+                  OR (
+                    s.employee_code LIKE N'P[0-9]%'
+                    AND EXISTS (
+                      SELECT 1 FROM [hris].[EmployeeMasterView] sv
+                      WHERE sv.employee_code = s.employee_code
+                        AND UPPER(ISNULL(sv.job_title, N'')) LIKE N'%SUPERVISOR%'
+                        AND ISNULL(sv.employment_status, N'') NOT LIKE N'%terminated%'
+                        AND ISNULL(sv.employment_status, N'') NOT LIKE N'%inactive%'
+                    )
+                  )
+                )
                 AND ISNULL(ev.employment_status, N'') NOT LIKE N'%terminated%'
                 AND ISNULL(ev.employment_status, N'') NOT LIKE N'%inactive%'
                 AND ISNULL(ev.employment_status, N'') NOT LIKE N'%resigned%'
@@ -328,7 +464,10 @@ export const searchTimesheetEntry = async (kind: string, query: string, workDate
               SELECT COUNT(DISTINCT r.employee_code)
               FROM [hris].[EmployeeMasterView] r
               WHERE r.employee_id <> v.employee_id
-                AND r.employee_code LIKE N'C[0-9]%'
+                AND (
+                  r.employee_code LIKE N'C[0-9]%'
+                  OR (r.employee_code LIKE N'P[0-9]%' AND UPPER(ISNULL(r.job_title, N'')) LIKE N'%SUPERVISOR%')
+                )
                 AND ISNULL(r.employment_status, N'') NOT LIKE N'%terminated%'
                 AND ISNULL(r.employment_status, N'') NOT LIKE N'%inactive%'
                 AND ISNULL(r.employment_status, N'') NOT LIKE N'%resigned%'
@@ -357,11 +496,11 @@ export const searchTimesheetEntry = async (kind: string, query: string, workDate
             SELECT 1 FROM [hris].[SupervisorEmployeeAssignments] s
             WHERE ISNULL(s.matched_status, N'') <> N'Unresolved' AND s.supervisor_employee_code = v.employee_code
           )
-          OR ISNULL(v.job_title, N'') LIKE N'%Supervisor%'
+          OR UPPER(ISNULL(v.job_title, N'')) LIKE N'%SUPERVISOR%'
           OR EXISTS (SELECT 1 FROM [Managers] m WHERE m.[code] = v.employee_code OR (alias.[code] <> N'' AND m.[code] = alias.[code]))
         )
         AND ${tokenSql}
-      ORDER BY CASE WHEN ISNULL(v.job_title, N'') LIKE N'%Supervisor%' THEN 0 ELSE 1 END, v.full_name
+      ORDER BY CASE WHEN UPPER(ISNULL(v.job_title, N'')) LIKE N'%SUPERVISOR%' THEN 0 ELSE 1 END, v.full_name
     `);
     return (result.recordset || []).map((row) => ({
       code: text(row.employee_code),
@@ -510,7 +649,7 @@ const loadTimesheet = async (connection: sql.ConnectionPool, timesheetId: string
     returnReason: text(header.ReturnReason),
     updatedAt: header.UpdatedAt ? new Date(String(header.UpdatedAt)).toISOString() : '',
     updatedBy: text(header.UpdatedBy),
-    lines: (lines.recordset || []).filter((row) => isContractEmployee(row.EmployeeCode)).map((row) => ({
+    lines: (lines.recordset || []).filter((row) => isBookableCrewCode(row.EmployeeCode)).map((row) => ({
       id: text(row.Id),
       employeeCode: text(row.EmployeeCode),
       employeeName: text(row.EmployeeName),
@@ -698,6 +837,14 @@ export const resolveTimesheetEntry = async (input: { periodId: string; workDate:
     .input('Shift', sql.NVarChar(80), shift)
     .query(`SELECT TOP 1 [Id] FROM [tsmgmt].[Timesheets] WHERE [PeriodId]=@PeriodId AND [WorkDate]=@WorkDate AND [SupervisorName]=@Supervisor AND [ShiftLabel]=@Shift ORDER BY [VersionNo] DESC`);
   const timesheet = existing.recordset?.[0] ? await loadTimesheet(connection, text(existing.recordset[0].Id)) : null;
+  const otherShiftName = shift === 'Night' ? 'Day' : 'Night';
+  const otherExisting = await connection.request()
+    .input('PeriodId', sql.NVarChar(40), periodId)
+    .input('WorkDate', sql.Date, workDate)
+    .input('Supervisor', sql.NVarChar(180), supervisor)
+    .input('Shift', sql.NVarChar(80), otherShiftName)
+    .query(`SELECT TOP 1 [Id] FROM [tsmgmt].[Timesheets] WHERE [PeriodId]=@PeriodId AND [WorkDate]=@WorkDate AND [SupervisorName]=@Supervisor AND [ShiftLabel]=@Shift ORDER BY [VersionNo] DESC`);
+  const otherSheet = otherExisting.recordset?.[0] ? await loadTimesheet(connection, text(otherExisting.recordset[0].Id)) : null;
   const classification = await classifyWorkDate(workDate, timesheet?.frozen ? { dayKind: timesheet.dayKind, holidayName: timesheet.holidayName } : null);
   const settings = await readShiftSettings();
   const dayHours = Number(settings.expectedHours || 8);
@@ -763,6 +910,7 @@ export const resolveTimesheetEntry = async (input: { periodId: string; workDate:
       const assigned = await request.query(`
         SELECT DISTINCT s.employee_code, ISNULL(s.employee_name, N'') AS employee_name,
           COALESCE(NULLIF(v.full_name, N''), NULLIF(s.employee_name, N''), s.employee_code) AS full_name,
+          ISNULL(v.job_title, N'') AS job_title,
           COALESCE(NULLIF(v.work_location, N''), NULLIF(j.office_location, N''), N'') AS location,
           COALESCE(NULLIF(j.work_center, N''), N'') AS work_center
         FROM [hris].[SupervisorEmployeeAssignments] s
@@ -787,6 +935,7 @@ export const resolveTimesheetEntry = async (input: { periodId: string; workDate:
       const reports = await managed.query(`
         SELECT DISTINCT r.employee_code,
           COALESCE(NULLIF(r.full_name, N''), r.employee_code) AS full_name,
+          ISNULL(r.job_title, N'') AS job_title,
           COALESCE(NULLIF(r.work_location, N''), NULLIF(rj.office_location, N''), N'') AS location,
           COALESCE(NULLIF(rj.work_center, N''), N'') AS work_center
         FROM [hris].[EmployeeMasterView] r
@@ -802,7 +951,8 @@ export const resolveTimesheetEntry = async (input: { periodId: string; workDate:
         : [...(reports.recordset || [])];
       for (const row of assignedRows) {
         const code = text(row.employee_code);
-        if (!isContractEmployee(code) || seen.has(code) || code.toUpperCase() === supervisorCode.toUpperCase()) continue;
+        const jobTitle = text(row.job_title);
+        if ((!isContractEmployee(code) && !isAssignedSupervisor(code, jobTitle)) || seen.has(code) || code.toUpperCase() === supervisorCode.toUpperCase()) continue;
         seen.add(code);
         let operationalStatus = 'Active on Crew';
         if (leaveCodes.has(code.toUpperCase())) operationalStatus = 'Approved Leave';
@@ -815,12 +965,13 @@ export const resolveTimesheetEntry = async (input: { periodId: string; workDate:
           operationalStatus,
           attendanceStatus: operationalStatus === 'Approved Leave' ? 'Approved Leave' : '',
           allocations: contractLeaveIdle(code),
+          jobTitle,
         });
       }
       }
     }
   } else {
-    timesheet.lines = timesheet.lines.filter((line) => isContractEmployee(line.employeeCode)).map((line) => {
+    timesheet.lines = timesheet.lines.filter((line) => isBookableCrewCode(line.employeeCode)).map((line) => {
       const idle = contractLeaveIdle(line.employeeCode);
       if (!idle.length) return withoutNonWorkingLeave({ ...line, nightSession: line.operationalStatus === 'Approved Leave' ? false : line.nightSession, nightStart: line.operationalStatus === 'Approved Leave' ? '' : line.nightStart, nightEnd: line.operationalStatus === 'Approved Leave' ? '' : line.nightEnd, nightNote: line.operationalStatus === 'Approved Leave' ? '' : line.nightNote });
       const already = (line.allocations || []).some((item) => text(item.projectCode).toUpperCase() === 'DL1949' && Number(item.regularHours) > 0);
@@ -835,16 +986,122 @@ export const resolveTimesheetEntry = async (input: { periodId: string; workDate:
         allocations: already ? line.allocations : [...idle, ...(line.allocations || [])],
       };
     });
+    timesheet.lines = timesheet.lines.map((line) => {
+      const onLeave = leaveCodes.has(text(line.employeeCode).toUpperCase()) || line.operationalStatus === 'Approved Leave' || line.attendanceStatus === 'Approved Leave';
+      if (leaveBookable || !onLeave) return line;
+      return { ...line, operationalStatus: 'Approved Leave', attendanceStatus: line.attendanceStatus || 'Approved Leave', allocations: [], nightWork: false, nightAllocations: [], nightSession: false, nightStart: '', nightEnd: '', nightNote: '' };
+    });
   }
+  if (timesheet && otherSheet && shift === 'Day') timesheet.lines = attachNightBand(timesheet.lines, otherSheet.lines);
   if (!timesheet && crew.length) {
     const removed = await confirmedRemovalEmployeeCodes(supervisor);
-    crew = crew.filter((row) => isContractEmployee(row.employeeCode) && !removed.has(text(row.employeeCode).toUpperCase()));
+    crew = crew.filter((row) => (isContractEmployee(row.employeeCode) || isAssignedSupervisor(row.employeeCode, row.jobTitle)) && !removed.has(text(row.employeeCode).toUpperCase()));
+  }
+  if (!timesheet && otherSheet && shift === 'Day') {
+    crew = attachNightBand(crew as CrewHourLine[], otherSheet.lines) as typeof crew;
+  }
+  {
+    const removedFromPeriod = await confirmedRemovalEmployeeCodes(supervisor);
+    const presentOnCrew = new Set((timesheet ? timesheet.lines : crew).map((row) => text(row.employeeCode).toUpperCase()));
+    const periodCrew = await connection.request()
+      .input('PeriodId', sql.NVarChar(40), periodId)
+      .input('Supervisor', sql.NVarChar(180), supervisor)
+      .input('WorkDate', sql.Date, workDate)
+      .query(`
+        SELECT [EmployeeCode], [EmployeeName], [LocationName], [WorkCenterName]
+        FROM (
+          SELECT l.[EmployeeCode], l.[EmployeeName], l.[LocationName], l.[WorkCenterName],
+            ROW_NUMBER() OVER (PARTITION BY l.[EmployeeCode] ORDER BY t.[WorkDate] DESC) AS [rn]
+          FROM [tsmgmt].[TimesheetEntryLines] l
+          INNER JOIN [tsmgmt].[Timesheets] t ON t.[Id] = l.[TimesheetId]
+          WHERE t.[PeriodId] = @PeriodId
+            AND t.[SupervisorName] = @Supervisor
+            AND t.[WorkDate] <> @WorkDate
+        ) ranked
+        WHERE ranked.[rn] = 1
+      `);
+    for (const row of periodCrew.recordset || []) {
+      const code = text(row.EmployeeCode);
+      if (!isBookableCrewCode(code) || presentOnCrew.has(code.toUpperCase()) || removedFromPeriod.has(code.toUpperCase()) || code.toUpperCase() === supervisorCode.toUpperCase()) continue;
+      presentOnCrew.add(code.toUpperCase());
+      const onLeave = leaveCodes.has(code.toUpperCase());
+      const person = {
+        id: '',
+        employeeCode: code,
+        employeeName: text(row.EmployeeName),
+        location: text(row.LocationName),
+        workCenter: text(row.WorkCenterName),
+        operationalStatus: onLeave ? 'Approved Leave' : 'Active on Crew',
+        attendanceStatus: onLeave ? 'Approved Leave' : '',
+        attendanceNote: '',
+        exceptional: false,
+        exceptionReason: '',
+        allocations: !leaveBookable && onLeave ? [] : contractLeaveIdle(code),
+        nightSession: false,
+        nightStart: '',
+        nightEnd: '',
+        nightNote: '',
+      };
+      if (timesheet) timesheet.lines.push(person);
+      else crew.push(person);
+    }
   }
   const offshoreCrew = await listActiveMobilizations(workDate).catch(() => []);
   const mobilizedCodes = new Set(offshoreCrew.map((row) => row.employeeCode.toUpperCase()));
   const siteMatches = (site: string) => Boolean(location) && text(site).toLowerCase() === location.toLowerCase();
   const locationIsOffshore = offshoreCrew.some((row) => siteMatches(row.site));
   const offshoreForSupervisor = offshoreCrew.filter((row) => siteMatches(row.site) && namesMatchSupervisor(row.supervisor, supervisor));
+  if (supervisorCode && !locationIsOffshore) {
+    const supervisorRequest = connection.request();
+    const supervisorVariants = supervisorCodeLookupVariants(supervisorCode).filter(Boolean);
+    if (supervisorVariants.length) {
+      supervisorVariants.forEach((variant, index) => supervisorRequest.input(`LeadCode${index}`, sql.NVarChar(50), variant));
+      const leadSupervisors = await supervisorRequest.query(`
+        SELECT DISTINCT s.employee_code,
+          COALESCE(NULLIF(v.full_name, N''), NULLIF(s.employee_name, N''), s.employee_code) AS full_name,
+          ISNULL(v.job_title, N'') AS job_title,
+          COALESCE(NULLIF(v.work_location, N''), NULLIF(j.office_location, N''), N'') AS location,
+          COALESCE(NULLIF(j.work_center, N''), N'') AS work_center
+        FROM [hris].[SupervisorEmployeeAssignments] s
+        LEFT JOIN [hris].[EmployeeMasterView] v ON v.employee_code = s.employee_code
+        LEFT JOIN [hris].[EmployeeJobInfo] j ON j.employee_id = v.employee_id
+        WHERE ISNULL(s.matched_status, N'') <> N'Unresolved'
+          AND s.employee_code LIKE N'P[0-9]%'
+          AND UPPER(ISNULL(v.job_title, N'')) LIKE N'%SUPERVISOR%'
+          AND ISNULL(v.employment_status, N'') NOT LIKE N'%terminated%'
+          AND ISNULL(v.employment_status, N'') NOT LIKE N'%inactive%'
+          AND s.supervisor_employee_code IN (${supervisorVariants.map((_, index) => `@LeadCode${index}`).join(', ')})
+      `);
+      const removedSupervisors = await confirmedRemovalEmployeeCodes(supervisor);
+      const present = new Set((timesheet ? timesheet.lines : crew).map((row) => text(row.employeeCode).toUpperCase()));
+      for (const row of leadSupervisors.recordset || []) {
+        const code = text(row.employee_code);
+        if (!isAssignedSupervisor(code, row.job_title) || present.has(code.toUpperCase()) || removedSupervisors.has(code.toUpperCase())) continue;
+        const onLeave = leaveCodes.has(code.toUpperCase());
+        const person = {
+          id: '',
+          employeeCode: code,
+          employeeName: text(row.full_name),
+          location: text(row.location),
+          workCenter: text(row.work_center),
+          operationalStatus: onLeave ? 'Approved Leave' : 'Active on Crew',
+          attendanceStatus: onLeave ? 'Approved Leave' : '',
+          attendanceNote: '',
+          exceptional: false,
+          exceptionReason: '',
+          allocations: !leaveBookable && onLeave ? [] : contractLeaveIdle(code),
+          jobTitle: text(row.job_title),
+          nightSession: false,
+          nightStart: '',
+          nightEnd: '',
+          nightNote: '',
+        };
+        if (timesheet) timesheet.lines.push(person);
+        else crew.push(person);
+        present.add(code.toUpperCase());
+      }
+    }
+  }
   let message = !dateAllowed ? `Work date ${workDate} is outside ${text(periodRow.Name)} (${start} to ${end}).` : !bookingAllowed ? `${text(periodRow.Name)} is ${periodStatus}. New booking is not open.` : '';
   if (!timesheet && locationIsOffshore) {
     crew = offshoreForSupervisor.map((row) => ({
@@ -861,6 +1118,14 @@ export const resolveTimesheetEntry = async (input: { periodId: string; workDate:
       : 'No employees are mobilized to this offshore site for this supervisor on this date.';
   } else if (!timesheet) {
     crew = crew.filter((row) => !mobilizedCodes.has(text(row.employeeCode).toUpperCase()) && !legacyOffshoreCodes.has(text(row.employeeCode).toUpperCase()));
+  }
+  if (!leaveBookable) {
+    const onNonWorkingLeave = (row: { employeeCode?: unknown; operationalStatus?: unknown; attendanceStatus?: unknown }) => {
+      const code = text(row.employeeCode).toUpperCase();
+      return leaveCodes.has(code) || text(row.operationalStatus) === 'Approved Leave' || text(row.attendanceStatus) === 'Approved Leave';
+    };
+    if (timesheet) timesheet.lines = timesheet.lines.filter((line) => !onNonWorkingLeave(line));
+    crew = crew.filter((row) => !onNonWorkingLeave(row));
   }
   return {
     period: { id: periodId, name: text(periodRow.Name), startDate: start, endDate: end, status: periodStatus },
@@ -890,7 +1155,195 @@ type SaveLine = {
   nightStart?: string;
   nightEnd?: string;
   nightNote?: string;
+  nightWork?: boolean;
   allocations?: Array<{ projectCode: string; projectName?: string; kind?: string; regularHours?: number; ovtHours?: number; activity?: string; chargeCode?: string; ovtReason?: string; comment?: string }>;
+  nightAllocations?: Array<{ projectCode: string; projectName?: string; kind?: string; regularHours?: number; ovtHours?: number; activity?: string; chargeCode?: string; ovtReason?: string; comment?: string }>;
+};
+
+const nightAllocationHours = (allocations: SaveLine['nightAllocations']) =>
+  (allocations || []).reduce((sum, item) => sum + hours(item.regularHours) + hours(item.ovtHours), 0);
+
+const nightSignature = (lines: Array<{ employeeCode?: string; nightStart?: string; nightEnd?: string; allocations?: Array<{ projectCode?: string; regularHours?: number; ovtHours?: number }> }>) =>
+  lines
+    .map((line) => {
+      const booked = (line.allocations || [])
+        .map((item) => `${text(item.projectCode).toUpperCase()}:${hours(item.regularHours)}:${hours(item.ovtHours)}`)
+        .filter((item) => !item.endsWith(':0:0'))
+        .sort()
+        .join(',');
+      return booked ? `${text(line.employeeCode).toUpperCase()}=${booked}@${text(line.nightStart)}-${text(line.nightEnd)}` : '';
+    })
+    .filter(Boolean)
+    .sort()
+    .join('|');
+
+const payloadSplitsNight = (shift: string | undefined, lines: SaveLine[]) =>
+  (text(shift) || 'Day') === 'Day' && lines.some((line) => Object.prototype.hasOwnProperty.call(line, 'nightWork'));
+
+const syncNightBand = async (
+  transaction: sql.Transaction,
+  input: { periodId: string; workDate: string; supervisor: string; location?: string; workCenter?: string; lines: SaveLine[] },
+  resolved: { settings?: { expectedHours?: number; nightStart?: string }; approvedLeaveCodes?: string[] },
+  classification: { dayKind: string; holidayName: string },
+  actor: string,
+) => {
+  const existing = await new sql.Request(transaction)
+    .input('PeriodId', sql.NVarChar(40), input.periodId)
+    .input('WorkDate', sql.Date, input.workDate)
+    .input('Supervisor', sql.NVarChar(180), input.supervisor)
+    .query(`SELECT TOP 1 [Id] FROM [tsmgmt].[Timesheets] WHERE [PeriodId]=@PeriodId AND [WorkDate]=@WorkDate AND [SupervisorName]=@Supervisor AND [ShiftLabel]=N'Night' ORDER BY [VersionNo] DESC`);
+  let nightId = text(existing.recordset?.[0]?.Id);
+  const dayHours = Number(resolved.settings?.expectedHours || 8);
+  const defaultStart = text(resolved.settings?.nightStart) || '18:00';
+  const blocked = (line: SaveLine) => {
+    const code = text(line.employeeCode).toUpperCase();
+    return (resolved.approvedLeaveCodes || []).includes(code) || text(line.operationalStatus) === 'Approved Leave' || text(line.attendanceStatus) === 'Approved Leave';
+  };
+  const writing = (input.lines || []).filter((line) => line.nightWork && !blocked(line) && isBookableCrewCode(line.employeeCode) && text(line.employeeName) && nightAllocationHours(line.nightAllocations) > 0);
+  if (!writing.length) {
+    if (!nightId) return;
+    const clearing = (input.lines || []).filter((line) => !line.nightWork && isBookableCrewCode(line.employeeCode)).map((line) => text(line.employeeCode));
+    if (!clearing.length) return;
+    const probe = new sql.Request(transaction).input('TimesheetId', sql.NVarChar(40), nightId);
+    clearing.forEach((code, index) => probe.input(`Code${index}`, sql.NVarChar(80), code));
+    const present = await probe.query(`SELECT TOP 1 1 AS [Hit] FROM [tsmgmt].[TimesheetEntryLines] WHERE [TimesheetId]=@TimesheetId AND [EmployeeCode] IN (${clearing.map((_, index) => `@Code${index}`).join(', ')})`);
+    if (!present.recordset?.length) return;
+  }
+  if (!nightId) {
+    nightId = newId('ts');
+    const reference = `TS-${input.workDate.slice(0, 7)}-${nightId.slice(-8).toUpperCase()}`;
+    await new sql.Request(transaction)
+      .input('Id', sql.NVarChar(40), nightId)
+      .input('Reference', sql.NVarChar(40), reference)
+      .input('PeriodId', sql.NVarChar(40), input.periodId)
+      .input('WorkDate', sql.Date, input.workDate)
+      .input('Supervisor', sql.NVarChar(180), input.supervisor)
+      .input('Location', sql.NVarChar(180), text(input.location))
+      .input('WorkCenter', sql.NVarChar(180), text(input.workCenter))
+      .input('DayKind', sql.NVarChar(20), classification.dayKind)
+      .input('HolidayName', sql.NVarChar(180), classification.holidayName)
+      .input('Actor', sql.NVarChar(120), actor)
+      .query(`
+        INSERT INTO [tsmgmt].[Timesheets] ([Id],[ReferenceCode],[PeriodId],[WorkDate],[SupervisorName],[LocationName],[WorkCenterName],[ShiftLabel],[Status],[VersionNo],[DayKind],[HolidayName],[CreatedBy],[UpdatedBy])
+        VALUES (@Id,@Reference,@PeriodId,@WorkDate,@Supervisor,@Location,@WorkCenter,N'Night',N'Draft',1,@DayKind,@HolidayName,@Actor,@Actor)
+      `);
+  } else {
+    await new sql.Request(transaction)
+      .input('Id', sql.NVarChar(40), nightId)
+      .input('DayKind', sql.NVarChar(20), classification.dayKind)
+      .input('HolidayName', sql.NVarChar(180), classification.holidayName)
+      .input('Actor', sql.NVarChar(120), actor)
+      .query(`UPDATE [tsmgmt].[Timesheets] SET [VersionNo]=[VersionNo]+1,[DayKind]=@DayKind,[HolidayName]=@HolidayName,[Status]=N'Draft',[UpdatedAt]=SYSUTCDATETIME(),[UpdatedBy]=@Actor WHERE [Id]=@Id`);
+  }
+  for (const line of input.lines || []) {
+    const code = text(line.employeeCode);
+    const name = text(line.employeeName);
+    if (!isBookableCrewCode(code) || !name) continue;
+    await new sql.Request(transaction)
+      .input('TimesheetId', sql.NVarChar(40), nightId)
+      .input('Code', sql.NVarChar(80), code)
+      .query(`
+        DELETE a FROM [tsmgmt].[TimesheetAllocations] a INNER JOIN [tsmgmt].[TimesheetEntryLines] l ON l.[Id]=a.[LineId] WHERE l.[TimesheetId]=@TimesheetId AND l.[EmployeeCode]=@Code;
+        DELETE FROM [tsmgmt].[TimesheetEntryLines] WHERE [TimesheetId]=@TimesheetId AND [EmployeeCode]=@Code;
+      `);
+    await new sql.Request(transaction)
+      .input('PeriodId', sql.NVarChar(40), input.periodId)
+      .input('WorkDate', sql.Date, input.workDate)
+      .input('Supervisor', sql.NVarChar(180), input.supervisor)
+      .input('Code', sql.NVarChar(80), code)
+      .query(`DELETE FROM [tsmgmt].[Bookings] WHERE [PeriodId]=@PeriodId AND [WorkDate]=@WorkDate AND [SupervisorName]=@Supervisor AND [ShiftLabel]=N'Night' AND [EmployeeCode]=@Code`);
+    if (!line.nightWork || blocked(line) || nightAllocationHours(line.nightAllocations) <= 0) continue;
+    const lineId = newId('ln');
+    const start = text(line.nightStart) || defaultStart;
+    await new sql.Request(transaction)
+      .input('Id', sql.NVarChar(40), lineId)
+      .input('TimesheetId', sql.NVarChar(40), nightId)
+      .input('EmployeeCode', sql.NVarChar(80), code)
+      .input('EmployeeName', sql.NVarChar(220), name)
+      .input('Location', sql.NVarChar(180), text(line.location))
+      .input('WorkCenter', sql.NVarChar(180), text(line.workCenter))
+      .input('OperationalStatus', sql.NVarChar(80), text(line.operationalStatus))
+      .input('AttendanceStatus', sql.NVarChar(40), text(line.attendanceStatus))
+      .input('AttendanceNote', sql.NVarChar(500), text(line.attendanceNote))
+      .input('Exceptional', sql.Bit, line.exceptional ? 1 : 0)
+      .input('ExceptionReason', sql.NVarChar(500), text(line.exceptionReason))
+      .input('NightStart', sql.NVarChar(8), start)
+      .input('NightEnd', sql.NVarChar(8), text(line.nightEnd))
+      .input('NightNote', sql.NVarChar(500), text(line.nightNote))
+      .query(`
+        INSERT INTO [tsmgmt].[TimesheetEntryLines] ([Id],[TimesheetId],[EmployeeCode],[EmployeeName],[LocationName],[WorkCenterName],[OperationalStatus],[AttendanceStatus],[AttendanceNote],[Exceptional],[ExceptionReason],[NightSession],[NightStart],[NightEnd],[NightNote])
+        VALUES (@Id,@TimesheetId,@EmployeeCode,@EmployeeName,@Location,@WorkCenter,@OperationalStatus,@AttendanceStatus,@AttendanceNote,@Exceptional,@ExceptionReason,1,@NightStart,@NightEnd,@NightNote)
+      `);
+    const projectHours: Record<string, number> = {};
+    let regular = 0;
+    let ovt = 0;
+    let regularRemaining = dayHours;
+    const nightAllocations = (line.nightAllocations || []).filter((item) => classification.dayKind === 'Weekday' || !(text(item.projectCode).toUpperCase() === 'DL1949' && /approved paid leave/i.test(`${text(item.comment)} ${text(item.ovtReason)}`)));
+    for (const allocation of nightAllocations) {
+      const projectCode = text(allocation.projectCode);
+      if (!projectCode) continue;
+      const regularHours = Math.min(hours(allocation.regularHours), regularRemaining);
+      regularRemaining -= regularHours;
+      const ovtHours = hours(allocation.ovtHours);
+      regular += regularHours;
+      ovt += ovtHours;
+      projectHours[projectCode] = (projectHours[projectCode] || 0) + regularHours;
+      await new sql.Request(transaction)
+        .input('Id', sql.NVarChar(40), newId('al'))
+        .input('LineId', sql.NVarChar(40), lineId)
+        .input('ProjectCode', sql.NVarChar(80), projectCode)
+        .input('ProjectName', sql.NVarChar(220), text(allocation.projectName))
+        .input('Kind', sql.NVarChar(20), text(allocation.kind) || 'Project')
+        .input('RegularHours', sql.Decimal(9, 2), regularHours)
+        .input('OvtHours', sql.Decimal(9, 2), ovtHours)
+        .input('Activity', sql.NVarChar(180), text(allocation.activity))
+        .input('ChargeCode', sql.NVarChar(80), text(allocation.chargeCode))
+        .input('OvtReason', sql.NVarChar(300), text(allocation.ovtReason))
+        .input('Comment', sql.NVarChar(500), text(allocation.comment))
+        .query(`
+          INSERT INTO [tsmgmt].[TimesheetAllocations] ([Id],[LineId],[ProjectCode],[ProjectName],[Kind],[RegularHours],[OvtHours],[Activity],[ChargeCode],[OvtReason],[Comment])
+          VALUES (@Id,@LineId,@ProjectCode,@ProjectName,@Kind,@RegularHours,@OvtHours,@Activity,@ChargeCode,@OvtReason,@Comment)
+        `);
+    }
+    await new sql.Request(transaction)
+      .input('Id', sql.NVarChar(40), newId('bk'))
+      .input('PeriodId', sql.NVarChar(40), input.periodId)
+      .input('WorkDate', sql.Date, input.workDate)
+      .input('Supervisor', sql.NVarChar(180), input.supervisor)
+      .input('Location', sql.NVarChar(180), text(line.location))
+      .input('WorkCenter', sql.NVarChar(180), text(line.workCenter))
+      .input('EmployeeCode', sql.NVarChar(80), code)
+      .input('EmployeeName', sql.NVarChar(220), name)
+      .input('ProjectHours', sql.NVarChar(sql.MAX), JSON.stringify(projectHours))
+      .input('RegularHours', sql.Decimal(9, 2), regular)
+      .input('OvtHours', sql.Decimal(9, 2), ovt)
+      .input('AttendanceStatus', sql.NVarChar(40), text(line.attendanceStatus))
+      .input('Actor', sql.NVarChar(120), actor)
+      .query(`
+        MERGE [tsmgmt].[Bookings] AS target
+        USING (SELECT @PeriodId AS PeriodId, @WorkDate AS WorkDate, @EmployeeCode AS EmployeeCode, N'Night' AS ShiftLabel) AS source
+        ON target.[PeriodId]=source.PeriodId AND target.[WorkDate]=source.WorkDate AND target.[EmployeeCode]=source.EmployeeCode AND target.[ShiftLabel]=source.ShiftLabel
+        WHEN MATCHED THEN UPDATE SET [SupervisorName]=@Supervisor,[LocationName]=@Location,[WorkCenterName]=@WorkCenter,[EmployeeName]=@EmployeeName,[ProjectHoursJson]=@ProjectHours,[RegularHours]=@RegularHours,[OvtHours]=@OvtHours,[NightHours]=1,[AttendanceStatus]=@AttendanceStatus,[Status]=N'Draft',[UpdatedAt]=SYSUTCDATETIME(),[UpdatedBy]=@Actor
+        WHEN NOT MATCHED THEN INSERT ([Id],[PeriodId],[WorkDate],[SupervisorName],[LocationName],[WorkCenterName],[ShiftLabel],[EmployeeCode],[EmployeeName],[ProjectHoursJson],[RegularHours],[OvtHours],[NightHours],[AttendanceStatus],[Status],[CreatedBy],[UpdatedBy])
+        VALUES (@Id,@PeriodId,@WorkDate,@Supervisor,@Location,@WorkCenter,N'Night',@EmployeeCode,@EmployeeName,@ProjectHours,@RegularHours,@OvtHours,1,@AttendanceStatus,N'Draft',@Actor,@Actor);
+      `);
+  }
+};
+
+const loadDaySheetWithNightBand = async (connection: sql.ConnectionPool, timesheetId: string, shift: string) => {
+  const saved = await loadTimesheet(connection, timesheetId);
+  if (!saved || shift !== 'Day') return saved;
+  const night = await connection.request()
+    .input('PeriodId', sql.NVarChar(40), saved.periodId)
+    .input('WorkDate', sql.Date, saved.workDate)
+    .input('Supervisor', sql.NVarChar(180), saved.supervisor)
+    .query(`SELECT TOP 1 [Id] FROM [tsmgmt].[Timesheets] WHERE [PeriodId]=@PeriodId AND [WorkDate]=@WorkDate AND [SupervisorName]=@Supervisor AND [ShiftLabel]=N'Night' ORDER BY [VersionNo] DESC`);
+  const nightId = text(night.recordset?.[0]?.Id);
+  if (!nightId) return saved;
+  const nightSheet = await loadTimesheet(connection, nightId);
+  if (!nightSheet) return saved;
+  saved.lines = attachNightBand(saved.lines, nightSheet.lines);
+  return saved;
 };
 
 export const saveTimesheetEntry = async (input: {
@@ -909,7 +1362,23 @@ export const saveTimesheetEntry = async (input: {
   if (!resolved.dateAllowed) throw new Error(resolved.message);
   if (!resolved.timesheet && !resolved.bookingAllowed) throw new Error(resolved.message);
   const connection = await pool();
+  await clearWeekendLeaveHours(connection).catch(() => undefined);
   if (resolved.timesheet && !(await canReviseTimesheet(connection, resolved.timesheet))) throw new Error('Approval has started for this timesheet. It can no longer be edited.');
+  const splitsNight = payloadSplitsNight(input.shift, input.lines || []);
+  let nightDirty = false;
+  if (splitsNight) {
+    const payloadCodes = new Set((input.lines || []).map((line) => text(line.employeeCode).toUpperCase()));
+    const payloadSig = nightSignature((input.lines || []).filter((line) => line.nightWork).map((line) => ({ employeeCode: line.employeeCode, nightStart: line.nightStart, nightEnd: line.nightEnd, allocations: line.nightAllocations })));
+    const nightRow = await connection.request()
+      .input('PeriodId', sql.NVarChar(40), input.periodId)
+      .input('WorkDate', sql.Date, input.workDate)
+      .input('Supervisor', sql.NVarChar(180), input.supervisor)
+      .query(`SELECT TOP 1 [Id] FROM [tsmgmt].[Timesheets] WHERE [PeriodId]=@PeriodId AND [WorkDate]=@WorkDate AND [SupervisorName]=@Supervisor AND [ShiftLabel]=N'Night' ORDER BY [VersionNo] DESC`);
+    const nightId = text(nightRow.recordset?.[0]?.Id);
+    const nightSheet = nightId ? await loadTimesheet(connection, nightId) : null;
+    nightDirty = payloadSig !== nightSignature((nightSheet?.lines || []).filter((line) => payloadCodes.has(text(line.employeeCode).toUpperCase())));
+    if (nightDirty && nightSheet && !(await canReviseTimesheet(connection, nightSheet))) throw new Error('Approval has started for the night timesheet. Night hours on this date can no longer be edited.');
+  }
   const actor = text(input.actor) || 'Timesheet User';
   const classification = resolved.timesheet?.frozen
     ? { dayKind: resolved.timesheet.dayKind, holidayName: resolved.timesheet.holidayName }
@@ -957,10 +1426,12 @@ export const saveTimesheetEntry = async (input: {
     for (const line of input.lines || []) {
       const code = text(line.employeeCode);
       const name = text(line.employeeName);
-      if (!isContractEmployee(code) || !name) continue;
+      if (!isBookableCrewCode(code) || !name) continue;
       const onLeave = classification.dayKind === 'Weekday' && ((resolved.approvedLeaveCodes || []).includes(code.toUpperCase()) || text(line.operationalStatus) === 'Approved Leave');
-      const nightOn = onLeave ? false : Boolean(line.nightSession);
-      const operationalStatus = onLeave ? 'Approved Leave' : text(line.operationalStatus);
+      const weekendLeave = classification.dayKind !== 'Weekday' && ((resolved.approvedLeaveCodes || []).includes(code.toUpperCase()) || text(line.operationalStatus) === 'Approved Leave' || text(line.attendanceStatus) === 'Approved Leave');
+      if (weekendLeave) continue;
+      const nightOn = onLeave || weekendLeave || line.nightWork ? false : Boolean(line.nightSession);
+      const operationalStatus = onLeave || weekendLeave ? 'Approved Leave' : text(line.operationalStatus);
       const lineId = newId('ln');
       await new sql.Request(transaction)
         .input('Id', sql.NVarChar(40), lineId)
@@ -987,7 +1458,9 @@ export const saveTimesheetEntry = async (input: {
       let ovt = 0;
       const dayHours = Number(resolved.settings?.expectedHours || 8);
       const lockedIdle = onLeave && /^C\d/i.test(code);
-      const allocations = (lockedIdle
+      const allocations = (weekendLeave
+        ? []
+        : lockedIdle
         ? [{ projectCode: 'DL1949', projectName: 'IDLE TIME', kind: 'Project', regularHours: dayHours, ovtHours: 0, comment: 'Approved paid leave' }, ...(line.allocations || []).filter((item) => text(item.projectCode).toUpperCase() !== 'DL1949')]
         : (line.allocations || [])
       ).filter((item) => classification.dayKind === 'Weekday' || !(text(item.projectCode).toUpperCase() === 'DL1949' && /approved paid leave/i.test(text(item.comment))));
@@ -1044,14 +1517,16 @@ export const saveTimesheetEntry = async (input: {
           VALUES (@Id,@PeriodId,@WorkDate,@Supervisor,@Location,@WorkCenter,@Shift,@EmployeeCode,@EmployeeName,@ProjectHours,@RegularHours,@OvtHours,@NightHours,@AttendanceStatus,N'Draft',@Actor,@Actor);
         `);
     }
+    if (nightDirty) await syncNightBand(transaction, input, resolved, classification, actor);
+    const nightBooked = nightDirty ? (input.lines || []).filter((line) => line.nightWork && nightAllocationHours(line.nightAllocations) > 0).length : 0;
     await new sql.Request(transaction)
       .input('TimesheetId', sql.NVarChar(40), timesheetId)
       .input('Action', sql.NVarChar(80), input.action === 'review' ? 'Review requested' : 'Draft saved')
-      .input('Detail', sql.NVarChar(1000), `${(input.lines || []).length} employees, version ${version}${(input.lines || []).some((line) => line.exceptional) ? `; exceptional: ${(input.lines || []).filter((line) => line.exceptional).map((line) => line.employeeCode).join(', ')}` : ''}`)
+      .input('Detail', sql.NVarChar(1000), `${(input.lines || []).length} employees, version ${version}${nightBooked ? `; night band ${nightBooked}` : ''}${(input.lines || []).some((line) => line.exceptional) ? `; exceptional: ${(input.lines || []).filter((line) => line.exceptional).map((line) => line.employeeCode).join(', ')}` : ''}`)
       .input('Actor', sql.NVarChar(120), actor)
       .query(`INSERT INTO [tsmgmt].[TimesheetEntryAudit] ([TimesheetId],[Action],[Detail],[Actor]) VALUES (@TimesheetId,@Action,@Detail,@Actor)`);
     await transaction.commit();
-    return withRevision(connection, await loadTimesheet(connection, timesheetId));
+    return withRevision(connection, await loadDaySheetWithNightBand(connection, timesheetId, text(input.shift) || 'Day'));
   } catch (error) {
     await transaction.rollback().catch(() => undefined);
     throw error;
@@ -1084,7 +1559,21 @@ export const listTimesheetEntrySheets = async (status: string) => {
 
 export const readTimesheetEntryById = async (id: string) => {
   const connection = await pool();
-  return withRevision(connection, await loadTimesheet(connection, text(id)));
+  const sheet = await loadTimesheet(connection, text(id));
+  if (!sheet) return null;
+  const codeResult = await connection.request().input('Name', sql.NVarChar(180), sheet.supervisor).query(`
+    SELECT TOP 1 [employee_code]
+    FROM [hris].[EmployeeMasterView]
+    WHERE [full_name] = @Name OR N'Mr ' + [full_name] = @Name OR N'Mrs ' + [full_name] = @Name
+  `);
+  const resolved = await resolveTimesheetEntry({
+    periodId: sheet.periodId,
+    workDate: sheet.workDate,
+    supervisor: sheet.supervisor,
+    supervisorCode: text(codeResult.recordset?.[0]?.employee_code),
+    shift: sheet.shift,
+  });
+  return withRevision(connection, resolved.timesheet?.id === sheet.id ? resolved.timesheet : sheet);
 };
 
 export const submitTimesheetEntry = async (id: string, actor: string) => {
@@ -1118,7 +1607,29 @@ export const submitTimesheetEntry = async (id: string, actor: string) => {
       INSERT INTO [tsmgmt].[TimesheetEntryAudit] ([TimesheetId],[Action],[Detail],[Actor]) VALUES (@Id, N'Submitted to supervisor', N'Classification frozen', @Actor);
     `));
   await openTimesheetApproval(sheet.id, text(actor) || 'Timesheet User');
-  return withRevision(connection, await loadTimesheet(connection, sheet.id));
+  if ((sheet.shift || 'Day') === 'Day') {
+    const paired = await connection.request()
+      .input('PeriodId', sql.NVarChar(40), sheet.periodId)
+      .input('WorkDate', sql.Date, sheet.workDate)
+      .input('Supervisor', sql.NVarChar(180), sheet.supervisor)
+      .query(`SELECT TOP 1 [Id] FROM [tsmgmt].[Timesheets] WHERE [PeriodId]=@PeriodId AND [WorkDate]=@WorkDate AND [SupervisorName]=@Supervisor AND [ShiftLabel]=N'Night' ORDER BY [VersionNo] DESC`);
+    const nightId = text(paired.recordset?.[0]?.Id);
+    if (nightId) {
+      const night = await loadTimesheet(connection, nightId);
+      const hasNightHours = Boolean(night?.lines.some((line) => line.allocations.some((item) => item.regularHours + item.ovtHours > 0) || line.nightSession));
+      if (night && hasNightHours && night.status !== 'Submitted' && await canReviseTimesheet(connection, night)) {
+        await connection.request()
+          .input('Id', sql.NVarChar(40), night.id)
+          .input('Actor', sql.NVarChar(120), text(actor) || 'Timesheet User')
+          .query(`
+            UPDATE [tsmgmt].[Timesheets] SET [Status]=N'Submitted', [ClassificationFrozen]=1, [UpdatedAt]=SYSUTCDATETIME(), [UpdatedBy]=@Actor WHERE [Id]=@Id;
+            INSERT INTO [tsmgmt].[TimesheetEntryAudit] ([TimesheetId],[Action],[Detail],[Actor]) VALUES (@Id, N'Submitted to supervisor', N'Night hours booked with the day timesheet', @Actor);
+          `);
+        await openTimesheetApproval(night.id, text(actor) || 'Timesheet User');
+      }
+    }
+  }
+  return withRevision(connection, await loadDaySheetWithNightBand(connection, sheet.id, sheet.shift || 'Day'));
 };
 
 export const listPublicHolidays = async () => {

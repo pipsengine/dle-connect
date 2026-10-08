@@ -42,6 +42,7 @@ type Props = {
   onClose: () => void;
   assets: ItAssetRecord[];
   preset?: ScheduleModalPreset;
+  initialAssetId?: string;
   onSubmit: (input: ScheduleMaintenanceBatchInput) => Promise<void>;
 };
 
@@ -69,7 +70,7 @@ const scopeIcons = {
   location: MapPin,
 };
 
-export function ScheduleMaintenanceModal({ open, onClose, assets, preset = 'default', onSubmit }: Props) {
+export function ScheduleMaintenanceModal({ open, onClose, assets, preset = 'default', initialAssetId, onSubmit }: Props) {
   const presetConfig = SCHEDULE_MODAL_PRESETS[preset];
   const [form, setForm] = useState(defaultForm);
   const [technician, setTechnician] = useState<EmployeeOption | null>(null);
@@ -104,17 +105,29 @@ export function ScheduleMaintenanceModal({ open, onClose, assets, preset = 'defa
   useEffect(() => {
     if (!open) return;
     const today = new Date().toISOString().slice(0, 10);
+    const asset = initialAssetId
+      ? hardwareAssets.find((row) => row.assetId === initialAssetId)
+      : undefined;
+    const scope = asset && presetConfig.allowedScopes.includes('individual') ? 'individual' : presetConfig.scope;
     setForm({
       ...defaultForm(),
-      scope: presetConfig.scope,
+      scope,
       intent: presetConfig.intent,
       maintenanceType: presetConfig.maintenanceType,
       priority: presetConfig.priority,
       scheduledDate: today,
+      assetId: asset?.assetId || '',
+      assignedTo: asset?.assignedEmployeeName || '',
     });
-    setTechnician(null);
+    setTechnician(asset?.assignedEmployeeName ? {
+      employeeCode: asset.assignedEmployeeId || '',
+      fullName: asset.assignedEmployeeName,
+      department: asset.department || '',
+      location: asset.location || '',
+      email: asset.assignedEmail || '',
+    } : null);
     setError('');
-  }, [open, preset, presetConfig.intent, presetConfig.maintenanceType, presetConfig.priority, presetConfig.scope]);
+  }, [hardwareAssets, initialAssetId, open, preset, presetConfig.allowedScopes, presetConfig.intent, presetConfig.maintenanceType, presetConfig.priority, presetConfig.scope]);
 
   useEffect(() => {
     if (!open) return;

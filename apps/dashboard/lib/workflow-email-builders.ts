@@ -422,12 +422,34 @@ export const buildTimesheetApprovalRequestEmail = (input: {
   actions: [{ href: input.workspaceLink, label: 'Open Timesheet Approval', tone: 'primary' }],
 }, input.baseUrl);
 
+export const buildCrewRemovalApprovalEmail = (input: {
+  recipientName: string;
+  lines: Array<{ employeeCode: string; employeeName: string; supervisor: string; requestedBy: string }>;
+  workspaceLink: string;
+  baseUrl?: string | null;
+}) => withBrand({
+  recipientName: input.recipientName,
+  subject: `Crew removal awaiting your approval — ${input.lines.length} employee${input.lines.length === 1 ? '' : 's'}`,
+  module: 'Timesheet Management',
+  headline: 'Crew removal approval required',
+  intro: `${input.lines.length} employee${input.lines.length === 1 ? ' is' : 's are'} waiting for you to approve removal from a supervisor crew. Each person stays on the crew until you confirm or reject the request.`,
+  tone: 'warning',
+  details: input.lines.map((line) => ({
+    label: line.employeeCode,
+    value: `${line.employeeName} · ${line.supervisor} · requested by ${line.requestedBy}`,
+  })),
+  note: 'The button opens Removal Requests, where you confirm or reject each employee.',
+  actions: [{ href: input.workspaceLink, label: 'Open Timesheet Management', tone: 'primary' }],
+  footerNote: 'This message was sent because crew removal requests are approved by you.',
+}, input.baseUrl);
+
 export const buildTelephoneAllowanceWorkflowEmail = (input: {
   recipientName: string;
   title: string;
   body: string;
   actorName?: string;
   workspaceLink: string;
+  actionLabel?: string;
   baseUrl?: string | null;
 }) => withBrand({
   recipientName: input.recipientName,
@@ -439,8 +461,10 @@ export const buildTelephoneAllowanceWorkflowEmail = (input: {
   details: [
     ...(input.actorName ? [{ label: 'From', value: input.actorName }] : []),
   ],
-  note: 'Sign in with your DLE Connect account to open the cycle and complete your step.',
-  actions: [{ href: input.workspaceLink, label: 'Open Telephone Allowance', tone: 'primary' }],
+  note: input.workspaceLink.includes('/approvals')
+    ? 'The button opens this cycle’s approval section so you can approve, authorize, or return it.'
+    : 'Sign in with your DLE Connect account to open the cycle and complete your step.',
+  actions: [{ href: input.workspaceLink, label: input.actionLabel || 'Open Telephone Allowance', tone: 'primary' }],
   footerNote: 'This message was sent because your role owns the next telephone allowance step.',
 }, input.baseUrl);
 

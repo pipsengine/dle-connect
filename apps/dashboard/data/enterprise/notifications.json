@@ -2,6 +2,75 @@
   "schemaVersion": 1,
   "notifications": [
     {
+      "id": "ntf-1791382234866-5gi5nk",
+      "recipientUserId": "L2782",
+      "recipientUsername": "L2782",
+      "recipientEmployeeCode": "L2782",
+      "recipientRoles": [],
+      "kind": "Notification",
+      "module": "Timesheet Management",
+      "title": "Crew removal awaiting your approval",
+      "body": "C0974 STEPHEN ETUERI is waiting for L2782 · Miss OREOLUWA MAFO to approve removal from P0044 - Mr OGONNAYA DAVID OGUDU. Requested by Mr. OGBETAH KAYODE.",
+      "severity": "info",
+      "status": "Unread",
+      "href": "/timesheet-management?section=crew-removal",
+      "createdAt": "2026-10-07T14:10:34.866Z",
+      "actor": "Timesheet Workflow",
+      "channels": [
+        "In-App"
+      ],
+      "metadata": {
+        "crewRemovalRequestId": "crew-muxxtfg4-cz10b9",
+        "backfill": true
+      }
+    },
+    {
+      "id": "ntf-1791382234829-x76noj",
+      "recipientUserId": "L2782",
+      "recipientUsername": "L2782",
+      "recipientEmployeeCode": "L2782",
+      "recipientRoles": [],
+      "kind": "Notification",
+      "module": "Timesheet Management",
+      "title": "Crew removal awaiting your approval",
+      "body": "C2756 Mr UGOCHUKWU OLOLO is waiting for L2782 · Miss OREOLUWA MAFO to approve removal from 0013 - Mr KARONWI. Requested by Mr. KARONWI SAMUEL.",
+      "severity": "info",
+      "status": "Unread",
+      "href": "/timesheet-management?section=crew-removal",
+      "createdAt": "2026-10-07T14:10:34.829Z",
+      "actor": "Timesheet Workflow",
+      "channels": [
+        "In-App"
+      ],
+      "metadata": {
+        "crewRemovalRequestId": "crew-muwp3cao-2ykuom",
+        "backfill": true
+      }
+    },
+    {
+      "id": "ntf-1791382234773-v32u1r",
+      "recipientUserId": "L2782",
+      "recipientUsername": "L2782",
+      "recipientEmployeeCode": "L2782",
+      "recipientRoles": [],
+      "kind": "Notification",
+      "module": "Timesheet Management",
+      "title": "Crew removal awaiting your approval",
+      "body": "C2755 Mr MARCUS TUOYO EKPEMINA is waiting for L2782 · Miss OREOLUWA MAFO to approve removal from P0013 - Mr SAMUEL KARONWI. Requested by Mr. KARONWI SAMUEL.",
+      "severity": "info",
+      "status": "Unread",
+      "href": "/timesheet-management?section=crew-removal",
+      "createdAt": "2026-10-07T14:10:34.773Z",
+      "actor": "Timesheet Workflow",
+      "channels": [
+        "In-App"
+      ],
+      "metadata": {
+        "crewRemovalRequestId": "crew-muwp3cad-dlza7f",
+        "backfill": true
+      }
+    },
+    {
       "id": "ntf-1791284702615-ibe05n",
       "recipientUserId": "P0432",
       "recipientUsername": "P0432",

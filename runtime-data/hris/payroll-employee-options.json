@@ -283,7 +283,8 @@
       "disablePensionPayeRelief": false,
       "annualRentRelief": 500000,
       "usdFlatRate": 0.22,
-      "monthlyPayeOverride": 967.51
+      "monthlyPayeOverride": 967.51,
+      "ngnMonthlyPayeOverride": 1289218.23
     }
   },
   {
@@ -467,7 +468,8 @@
       "disablePensionPayeRelief": false,
       "annualRentRelief": 500000,
       "usdFlatRate": 0.22,
-      "monthlyPayeOverride": 1020.55
+      "monthlyPayeOverride": 1020.55,
+      "ngnMonthlyPayeOverride": 1359887.56
     }
   },
   {
@@ -577,7 +579,8 @@
       "includeRefundInTaxable": false,
       "disablePensionPayeRelief": false,
       "usdFlatRate": 0,
-      "monthlyPayeOverride": 0
+      "monthlyPayeOverride": 0,
+      "ngnMonthlyPayeOverride": 443744.19
     }
   },
   {
@@ -592,7 +595,8 @@
       "disablePensionPayeRelief": false,
       "annualRentRelief": 500000,
       "usdFlatRate": 0.22,
-      "monthlyPayeOverride": 967.51
+      "monthlyPayeOverride": 967.51,
+      "ngnMonthlyPayeOverride": 1289218.23
     }
   },
   {

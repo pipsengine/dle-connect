@@ -26,6 +26,7 @@ import { explicitPayrollDayRate, isPayrollProfileTimesheetSourcePeriod, payrollE
 import { normalizeBankSortCode, withNormalizedBankCodes } from '@/lib/payroll-bank-constants';
 import { isDleUsdMdEmployee, isDleUsdPayrollEmployee } from '@/lib/payroll-bank-schedule-packs';
 import { applyLockedPayrollPackage, applyLockedPayrollPackageToRecords } from '@/lib/locked-payroll-package';
+import { applySeptemberExcelNairaPackage, septemberExcelNairaPackageFor } from '@/lib/september-excel-naira-package';
 import { resolvePayCurrency } from '@/lib/payroll-currency';
 import { payrollPeriodLabel } from '@/lib/payroll-period-store';
 import { findPayrollScheduleScope, resolvePayrollCompany, type PayrollCompany } from '@/lib/payroll-schedule-scope';
@@ -377,9 +378,14 @@ const applyDailyRateFromTimesheets = (
   const publicHolidayHours = excel ? Number(excel.publicHolidayHours || 0) : Number(timesheet?.publicHolidayHours || 0);
   const nightDays = excel && Number(excel.nightAmt || 0) > 0 ? 0 : Number(excel?.nightDays || timesheet?.nightDays || 0);
   const weekendHours = saturdayHours + sundayHours + publicHolidayHours;
+  const excelHasPay = Boolean(excel && (
+    dayrateBookedHours(excel) > 0
+    || Number(excel.excelWeekdayEarning || 0) > 0
+    || Number(excel.excelGross || 0) > 0
+  ));
   // Daily-rate staff are timesheet-driven only when no dayrate schedule is stored.
-  // A stored schedule can still pay OT/weekend hours when weekday days are zero.
-  if (weekdayDays <= 0 && weekendHours <= 0 && nightDays <= 0 && !(excel && dayrateBookedHours(excel) > 0)) {
+  // A stored schedule can still pay weekday earnings, OT, or weekend hours when weekday days are zero.
+  if (weekdayDays <= 0 && weekendHours <= 0 && nightDays <= 0 && !excelHasPay) {
     return {
       ...amounts,
       periodPackageGross: 0,
@@ -960,7 +966,7 @@ const computePayrollForPeriod = async (requestedPeriod: string): Promise<Payroll
 
   const payrollEmployees = employeeSource.employees
     .filter((employee) => !isEmployeeExcludedFromPayrollRun(employee as PayrollRunExclusionEmployee))
-    .map((employee) => applyLockedPayrollPackage(employee, requestedPeriod));
+    .map((employee) => applySeptemberExcelNairaPackage(applyLockedPayrollPackage(employee, requestedPeriod), requestedPeriod));
 
   type PayrollRunVariant = {
     runKey: string;
@@ -1041,13 +1047,15 @@ const computePayrollForPeriod = async (requestedPeriod: string): Promise<Payroll
     const amounts = applyDailyRateFromTimesheets(employee, baseAmounts, timesheetHours, requestedPeriod);
     const dailyRatePreview = isTimesheetWagePayrollEmployee(employee, amounts.profileId);
     const dailyRateEmployee = dailyRatePreview;
+    const scheduleRow = dailyRateEmployee ? findDayrateScheduleOverrideRow(requestedPeriod, employee) : null;
     const timesheetPreview = resolveTimesheetHoursForEmployee(employee, timesheetHours);
     const hasBookedTimesheet = Boolean(
       timesheetPreview && (Number(timesheetPreview.daysWorked || 0) > 0 || Number(timesheetPreview.bookedHours || 0) > 0),
     );
-    // Daily-rate with no booked timesheet is not in this run. Missing rate with
-    // timesheet days stays in the run as Blocked instead of inventing a salary rate.
-    if (dailyRatePreview && !hasBookedTimesheet) {
+    // Daily-rate with no booked timesheet is not in this run, unless the applied
+    // dayrate schedule lists them. Missing rate with timesheet days stays in the
+    // run as Blocked instead of inventing a salary rate.
+    if (dailyRatePreview && !hasBookedTimesheet && !scheduleRow) {
       return [];
     }
     const pension = calculatePension(pensionInputFromEmployee(calculationEmployee, calculationOptions), pensionVersion);
@@ -1093,7 +1101,9 @@ const computePayrollForPeriod = async (requestedPeriod: string): Promise<Payroll
     const statutoryEmployeeDeductions = roundMoney(Math.max(0, statutoryEmployee - (nhf > 0 && nhfFundDeduction > 0 ? nhfFundDeduction : 0)));
     const unionDues = skipFunds ? 0 : roundMoney(taxComponentMonthly('union-dues'));
     const otherStatutory = skipFunds ? 0 : roundMoney(taxComponentMonthly('other-statutory'));
-    const otherDeductions = roundMoney(unionDues + otherStatutory);
+    const excelNaira = usdRun ? null : septemberExcelNairaPackageFor(employee, requestedPeriod);
+    const excelOtherDeduction = roundMoney(excelNaira?.otherDeduction || 0);
+    const otherDeductions = roundMoney(unionDues + otherStatutory + excelOtherDeduction);
     const pensionExact = skipPension
       ? 0
       : Number(pension.unroundedEmployeeContribution || 0) + additionalPension;
@@ -1114,8 +1124,9 @@ const computePayrollForPeriod = async (requestedPeriod: string): Promise<Payroll
     const stipendEmployee = amounts.profileId === 'stipend-non-taxable';
     const rates = dailyRateValues(employee, dailyRateEmployee);
     const timesheet = resolveTimesheetHoursForEmployee(employee, timesheetHours);
+    const sheetRate = scheduleRow && Number(scheduleRow.excelDailyRate || 0) > 0 ? Number(scheduleRow.excelDailyRate) : 0;
     const weekdayDays = dailyRateEmployee
-      ? Number(timesheet?.weekdayDays ?? timesheet?.daysWorked ?? 0)
+      ? (scheduleRow ? Number(scheduleRow.weekdayDays || 0) : Number(timesheet?.weekdayDays ?? timesheet?.daysWorked ?? 0))
       : 0;
     const saturdayDays = dailyRateEmployee ? Number(timesheet?.saturdayDays || 0) : 0;
     const sundayDays = dailyRateEmployee ? Number(timesheet?.sundayDays || 0) : 0;
@@ -1141,8 +1152,8 @@ const computePayrollForPeriod = async (requestedPeriod: string): Promise<Payroll
       ...!compact(variant.payrollGroup) ? ['Payroll group is missing'] : [],
       ...!compact(variant.payCurrency) ? ['Pay currency is missing'] : [],
       ...!activeStatus(employee.status) ? ['Employee is not payroll active'] : [],
-      ...dailyRateEmployee && !timesheet ? ['Approved timesheet hours are not available for daily-rate payroll'] : [],
-      ...dailyRateEmployee && timesheet && Number(timesheet.weekdayDays ?? timesheet.daysWorked ?? 0) <= 0
+      ...dailyRateEmployee && !timesheet && !scheduleRow ? ['Approved timesheet hours are not available for daily-rate payroll'] : [],
+      ...dailyRateEmployee && !scheduleRow && timesheet && Number(timesheet.weekdayDays ?? timesheet.daysWorked ?? 0) <= 0
         && Number(timesheet.bookedHours || 0) <= 0
         && Number(timesheet.saturdayHours || 0) <= 0
         && Number(timesheet.sundayHours || 0) <= 0
@@ -1232,7 +1243,9 @@ const computePayrollForPeriod = async (requestedPeriod: string): Promise<Payroll
       deductions: totalDeductions,
       pension: roundMoney(employeePension),
       isDailyRate: dailyRateEmployee,
-      ratePerDay: rates.ratePerDay || null,
+      companyCode: scheduleRow?.company,
+      companyName: scheduleRow?.company,
+      ratePerDay: sheetRate || rates.ratePerDay || null,
       ratePerHour: rates.ratePerHour || null,
       hoursPerDay: rates.hoursPerDay,
       bankName: employee.bankName,
@@ -1266,7 +1279,7 @@ const computePayrollForPeriod = async (requestedPeriod: string): Promise<Payroll
             { code: 'NHF', label: 'NHF', amount: roundMoney(nhf) },
             { code: 'LOAN', label: 'Loan Recovery', amount: roundMoney(loanRecovery) },
             { code: 'SNR_UNION', label: 'Union Dues', amount: roundMoney(unionDues) },
-            { code: 'OTHER', label: 'Other Deductions', amount: roundMoney(otherStatutory) },
+            { code: 'OTHER', label: 'Other Deductions', amount: roundMoney(otherStatutory + excelOtherDeduction) },
           ].filter((line) => line.amount > 0),
     };
     });

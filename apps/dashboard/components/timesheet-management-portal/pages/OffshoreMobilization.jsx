@@ -1,6 +1,6 @@
 'use client';
 import React, { useEffect, useMemo, useState } from 'react';
-import { Badge, Button, Field, Modal, SearchCombo, personDetail, personLabel } from '../components/UI';
+import { Badge, Button, DetailModal, Field, Modal, SearchCombo, personDetail, personLabel } from '../components/UI';
 import { formatDisplayDate, usePortalData } from '../portal-data';
 
 const TABS = ['Mobilized Crew', 'New Mobilization', 'Demobilization', 'Returning Crew', 'History', 'Exceptions'];
@@ -42,6 +42,7 @@ export default function OffshoreMobilization() {
   const [page, setPage] = useState(1);
   const [sort, setSort] = useState({ key: 'employeeName', dir: 1 });
   const [returnWindow, setReturnWindow] = useState('All');
+  const [card, setCard] = useState(null);
 
   const load = async () => {
     setLoading(true);
@@ -101,12 +102,12 @@ export default function OffshoreMobilization() {
     {(error || notice) && <div className="success" style={error ? { background: '#fef2f2', color: '#991b1b' } : undefined}>{error || notice} <button onClick={() => { setError(''); setNotice(''); }}>×</button></div>}
     <div className="tabs">{TABS.map((item) => <button key={item} className={tab === item ? 'active' : ''} onClick={() => { setTab(item); setPage(1); if (item === 'New Mobilization') setModal('create'); }}>{item}</button>)}</div>
     <section className="metricGrid offshoreMetrics">
-      <div className="metric"><span>Currently Mobilized</span><b>{loading ? '…' : kpis.mobilized || 0}</b><small>Authorized offshore on {formatDisplayDate(date)}</small></div>
-      <div className="metric"><span>Mobilizing Today</span><b>{kpis.mobilizingToday || 0}</b><small>Effective from this date</small></div>
-      <div className="metric"><span>Returning Today</span><b>{kpis.returningToday || 0}</b><small>Expected back today</small></div>
-      <div className="metric"><span>Overdue Return</span><b>{kpis.overdue || 0}</b><small>Still offshore after the expected return</small></div>
-      <div className="metric"><span>Active Offshore Projects</span><b>{kpis.projects || 0}</b><small>Projects with mobilized crew</small></div>
-      <div className="metric"><span>Exceptions</span><b>{kpis.exceptions || 0}</b><small>Open conflicts on this date</small></div>
+      <button type="button" className="metric" onClick={() => setCard('mobilized')}><span>Currently Mobilized</span><b>{loading ? '…' : kpis.mobilized || 0}</b><small>Authorized offshore on {formatDisplayDate(date)}</small></button>
+      <button type="button" className="metric" onClick={() => setCard('mobilizingToday')}><span>Mobilizing Today</span><b>{kpis.mobilizingToday || 0}</b><small>Effective from this date</small></button>
+      <button type="button" className="metric" onClick={() => setCard('returningToday')}><span>Returning Today</span><b>{kpis.returningToday || 0}</b><small>Expected back today</small></button>
+      <button type="button" className="metric" onClick={() => setCard('overdue')}><span>Overdue Return</span><b>{kpis.overdue || 0}</b><small>Still offshore after the expected return</small></button>
+      <button type="button" className="metric" onClick={() => setCard('projects')}><span>Active Offshore Projects</span><b>{kpis.projects || 0}</b><small>Projects with mobilized crew</small></button>
+      <button type="button" className="metric" onClick={() => setCard('exceptions')}><span>Exceptions</span><b>{kpis.exceptions || 0}</b><small>Open conflicts on this date</small></button>
     </section>
     {tab === 'History' ? <HistoryTable rows={history} onOpen={(id) => setModal({ type: 'batch', id })} /> : tab === 'Exceptions' ? <ExceptionTable rows={exceptions} onAcknowledge={(row) => run({ action: 'acknowledge', employeeRowId: row.employeeRowId, issue: row.key }, () => `${row.issue} acknowledged. Timesheet and payroll rows were not changed.`)} /> : <>
       <section className="panel">
@@ -141,6 +142,7 @@ export default function OffshoreMobilization() {
         <div className="pager"><span>{view.length} employees</span><button className="link" disabled={page <= 1} onClick={() => setPage((current) => current - 1)}>Previous</button><span>{page} / {pageCount}</span><button className="link" disabled={page >= pageCount} onClick={() => setPage((current) => current + 1)}>Next</button></div>
       </section>
     </>}
+    {card && <OffshoreCardDetail kind={card} cards={workspace.cards || {}} onClose={() => setCard(null)} />}
     {modal === 'create' && <CreateModal periods={snapshot.periods} onClose={() => setModal(null)} onCreated={async (result) => { setNotice(`${result.mobilizationNo} created successfully for ${result.employees} employee${result.employees === 1 ? '' : 's'}.`); setModal(null); setTab('Mobilized Crew'); await load(); }} />}
     {modal?.type === 'demobilize' && <ActionModal title="Demobilize" onClose={() => setModal(null)} onSave={(form) => run({ action: 'demobilize', employeeRowIds: modal.ids, ...form }, (result) => `${result.updated} employee${result.updated === 1 ? '' : 's'} demobilized. Home crew is unchanged and no hours were created.`)} fields={[{ name: 'demobilizationDate', label: 'Actual demobilization date', type: 'date' }, { name: 'returnDate', label: 'Actual return date', type: 'date' }, { name: 'destination', label: 'Destination / home location' }, { name: 'reason', label: 'Reason' }, { name: 'notes', label: 'Notes' }]} />}
     {modal?.type === 'extend' && <ActionModal title="Extend mobilization" onClose={() => setModal(null)} onSave={(form) => run({ action: 'extend', employeeRowIds: modal.ids, ...form }, (result) => `${result.updated} mobilization${result.updated === 1 ? '' : 's'} extended. The previous return date stays in history.`)} fields={[{ name: 'expectedReturn', label: `New expected return${modal.current ? ` (current ${formatDisplayDate(modal.current)})` : ''}`, type: 'date' }, { name: 'reason', label: 'Extension reason' }, { name: 'authorizationRef', label: 'Authorization / reference' }, { name: 'notes', label: 'Notes' }]} />}
@@ -148,6 +150,22 @@ export default function OffshoreMobilization() {
     {modal?.type === 'status' && <ActionModal title="Exceptional status" onClose={() => setModal(null)} onSave={(form) => run({ action: 'status', employeeRowIds: modal.ids, ...form }, (result) => `${result.updated} employee${result.updated === 1 ? '' : 's'} marked ${result.status}. The mobilization record is kept.`)} fields={[{ name: 'status', label: 'Status', type: 'select', options: ['Cancelled', 'Medical Return', 'Transferred'] }, { name: 'effectiveDate', label: 'Effective date', type: 'date' }, { name: 'reason', label: 'Reason' }]} />}
     {modal?.type === 'batch' && <BatchModal id={modal.id} onClose={() => setModal(null)} />}
   </>;
+}
+
+const CREW_HEADERS = ['Code', 'Employee', 'Project', 'Site', 'From', 'Expected return', 'Status'];
+const crewRows = (list) => (list || []).map((row) => [row.code, row.name, row.project, row.site, formatDisplayDate(row.from), formatDisplayDate(row.expected), row.status]);
+
+function OffshoreCardDetail({ kind, cards, onClose }) {
+  const views = {
+    mobilized: { title: 'Currently mobilized', headers: CREW_HEADERS, rows: crewRows(cards.mobilized) },
+    mobilizingToday: { title: 'Mobilizing today', headers: CREW_HEADERS, rows: crewRows(cards.mobilizingToday) },
+    returningToday: { title: 'Returning today', headers: CREW_HEADERS, rows: crewRows(cards.returningToday) },
+    overdue: { title: 'Overdue return', headers: CREW_HEADERS, rows: crewRows(cards.overdue) },
+    projects: { title: 'Active offshore projects', headers: ['Project', 'Name', 'Crew'], rows: (cards.projects || []).map((row) => [row.code, row.name, row.crew]) },
+    exceptions: { title: 'Mobilization exceptions', headers: CREW_HEADERS, rows: crewRows(cards.exceptions) },
+  };
+  const view = views[kind] || { title: 'Details', headers: [], rows: [] };
+  return <DetailModal title={view.title} headers={view.headers} rows={view.rows} onClose={onClose} />;
 }
 
 function CreateModal({ periods, onClose, onCreated }) {

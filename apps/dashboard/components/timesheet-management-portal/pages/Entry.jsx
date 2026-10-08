@@ -1,6 +1,7 @@
 'use client';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { AnchoredMenu, Badge, Button, Field, Modal, Table } from '../components/UI';
+import { AnchoredMenu, Badge, Button, DetailModal, Field, Modal, Table } from '../components/UI';
+import { timesheetCrewMatchesWorkCenter, timesheetLocationsMatch } from '@/lib/timesheet-agege-blasting';
 import { formatDisplayDate, usePortalData } from '../portal-data';
 
 const emptyLine = (employee) => ({
@@ -17,6 +18,8 @@ const emptyLine = (employee) => ({
   nightStart: (employee.operationalStatus || '') === 'Approved Leave' ? '' : (employee.nightStart || ''),
   nightEnd: (employee.operationalStatus || '') === 'Approved Leave' ? '' : (employee.nightEnd || ''),
   nightNote: (employee.operationalStatus || '') === 'Approved Leave' ? '' : (employee.nightNote || ''),
+  nightWork: (employee.operationalStatus || '') === 'Approved Leave' ? false : Boolean(employee.nightWork),
+  nightAllocations: (employee.operationalStatus || '') === 'Approved Leave' || !Array.isArray(employee.nightAllocations) ? [] : employee.nightAllocations,
   allocations: Array.isArray(employee.allocations) ? employee.allocations : [],
 });
 
@@ -41,6 +44,7 @@ export default function Entry({ setPage }) {
   const [modal, setModal] = useState(null);
   const [sheets, setSheets] = useState([]);
   const [employeeQuery, setEmployeeQuery] = useState('');
+  const [stripDetail, setStripDetail] = useState(null);
   const loadedKey = useRef('');
 
   const periods = Array.isArray(snapshot?.periods) ? snapshot.periods : [];
@@ -68,11 +72,11 @@ export default function Entry({ setPage }) {
         if (body.status === 'error') throw new Error(body.error);
         const data = body.data;
         setContext(data);
-        const nextLines = (data.timesheet ? data.timesheet.lines : (data.crew || [])).map(emptyLine).filter((line) => /^C\d/i.test(line.employeeCode || ''));
+        const nextLines = (data.timesheet ? data.timesheet.lines : (data.crew || [])).map(emptyLine).filter((line) => /^(C|P)\d/i.test(line.employeeCode || ''));
         setLines(nextLines);
         setOffshoreCrew(Array.isArray(data.offshoreCrew) ? data.offshoreCrew : []);
         const codes = new Map();
-        nextLines.forEach((line) => (Array.isArray(line.allocations) ? line.allocations : []).forEach((item) => {
+        nextLines.forEach((line) => [...(Array.isArray(line.allocations) ? line.allocations : []), ...(Array.isArray(line.nightAllocations) ? line.nightAllocations : [])].forEach((item) => {
           const code = item && typeof item === 'object' ? String(item.projectCode || '') : '';
           if (code) codes.set(code, { code, name: String(item.projectName || code), kind: String(item.kind || 'Project') });
         }));
@@ -95,6 +99,7 @@ export default function Entry({ setPage }) {
   }, [workspace]);
 
   const onApprovedLeave = (line) => line?.operationalStatus === 'Approved Leave' || line?.attendanceStatus === 'Approved Leave';
+  const weekendLeave = (line) => (context?.classification?.dayKind === 'Saturday' || context?.classification?.dayKind === 'Sunday' || context?.classification?.dayKind === 'Public Holiday') && onApprovedLeave(line);
   const regularLimit = (line) => onApprovedLeave(line) && !/^C\d/i.test(line?.employeeCode || '') ? 0 : (context?.settings?.expectedHours || 8);
   const leaveIdleLocked = (line) => onApprovedLeave(line) && /^C\d/i.test(line?.employeeCode || '');
   const capAllocations = (allocations, limit) => {
@@ -129,26 +134,44 @@ export default function Entry({ setPage }) {
         allocations: onLeave ? [{ projectCode: 'DL1949', projectName: 'IDLE TIME', kind: 'Project', regularHours: expected, ovtHours: 0, comment: 'Approved paid leave' }] : [],
       });
     })
-    : lines.filter((line) => (!location || line.location === location) && (!workCenter || line.workCenter === workCenter))
-  ).filter((line) => /^C\d/i.test(line.employeeCode || ''));
+    : lines.filter((line) => (!location || timesheetLocationsMatch(line.location, location)) && timesheetCrewMatchesWorkCenter(line.workCenter, workCenter))
+  ).filter((line) => /^(C|P)\d/i.test(line.employeeCode || ''));
   const employeeNeedle = employeeQuery.trim().toLowerCase();
   const shown = employeeNeedle
     ? visible.filter((line) => `${line.employeeName} ${line.employeeCode}`.toLowerCase().includes(employeeNeedle))
     : visible;
-  const totals = useMemo(() => visible.reduce((sum, line) => {
+  const measured = useMemo(() => visible.map((line) => {
     const limit = onApprovedLeave(line) && !/^C\d/i.test(line?.employeeCode || '') ? 0 : (context?.settings?.expectedHours || 8);
     const regular = capAllocations(line.allocations, limit).reduce((inner, item) => inner + Number(item.regularHours || 0), 0);
     const ovt = line.allocations.reduce((inner, item) => inner + Number(item.ovtHours || 0), 0);
+    const nightHours = (line.nightAllocations || []).reduce((inner, item) => inner + Number(item.regularHours || 0) + Number(item.ovtHours || 0), 0);
     return {
-      regular: sum.regular + regular,
-      ovt: sum.ovt + ovt,
-      night: sum.night + (line.nightSession && line.operationalStatus !== 'Approved Leave' ? 1 : 0),
-      leave: sum.leave + (onApprovedLeave(line) ? 1 : 0),
-      offshore: sum.offshore + (line.operationalStatus === 'Mobilized Offshore' ? 1 : 0),
-      missing: sum.missing + (!line.attendanceStatus && line.operationalStatus !== 'Approved Leave' ? 1 : 0),
-      unallocated: sum.unallocated + Math.max(0, limit - regular),
+      line,
+      regular,
+      ovt,
+      nightHours,
+      night: Boolean((line.nightWork || line.nightSession) && line.operationalStatus !== 'Approved Leave'),
+      leave: onApprovedLeave(line),
+      offshore: line.operationalStatus === 'Mobilized Offshore',
+      missing: !line.attendanceStatus && line.operationalStatus !== 'Approved Leave',
+      unallocated: Math.max(0, limit - regular),
     };
-  }, { regular: 0, ovt: 0, night: 0, leave: 0, offshore: 0, missing: 0, unallocated: 0 }), [visible, context]);
+  }), [visible, context]);
+  const totals = useMemo(() => measured.reduce((sum, item) => ({
+    regular: sum.regular + item.regular,
+    ovt: sum.ovt + item.ovt,
+    night: sum.night + (item.night ? 1 : 0),
+    nightHours: sum.nightHours + item.nightHours,
+    leave: sum.leave + (item.leave ? 1 : 0),
+    offshore: sum.offshore + (item.offshore ? 1 : 0),
+    missing: sum.missing + (item.missing ? 1 : 0),
+    unallocated: sum.unallocated + item.unallocated,
+  }), { regular: 0, ovt: 0, night: 0, nightHours: 0, leave: 0, offshore: 0, missing: 0, unallocated: 0 }), [measured]);
+  const openStrip = (title, match) => setStripDetail({
+    title,
+    headers: ['Code', 'Employee', 'Attendance', 'REG', 'OVT', 'Night'],
+    rows: measured.filter(match).map((item) => [item.line.employeeCode, item.line.employeeName, item.line.attendanceStatus || item.line.operationalStatus || '—', item.regular, item.ovt, item.night ? (item.nightHours || 'Yes') : '']),
+  });
 
   const persist = async (intent) => {
     setSaving(true);
@@ -157,7 +180,16 @@ export default function Entry({ setPage }) {
       const response = await fetch('/api/timesheet-management/entry', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'save', intent, periodId, workDate, supervisor: supervisor?.name, location, workCenter, shift, lines: lines.map((line) => ({ ...line, allocations: capAllocations(line.allocations, regularLimit(line)) })) }),
+        body: JSON.stringify({ action: 'save', intent, periodId, workDate, supervisor: supervisor?.name, location, workCenter, shift, lines: lines.map((line) => {
+          const next = { ...line, nightSession: weekendLeave(line) ? false : line.nightSession, allocations: weekendLeave(line) ? [] : capAllocations(line.allocations, regularLimit(line)) };
+          if (shift !== 'Day') {
+            delete next.nightWork;
+            delete next.nightAllocations;
+            return next;
+          }
+          const nightOn = !weekendLeave(line) && !onApprovedLeave(line) && Boolean(line.nightWork);
+          return { ...next, nightWork: nightOn, nightAllocations: nightOn ? capAllocations(line.nightAllocations, regularLimit(line)) : [] };
+        }) }),
       });
       const body = await response.json();
       if (!response.ok || body.status === 'error') throw new Error(body.error || 'Save failed.');
@@ -208,9 +240,57 @@ export default function Entry({ setPage }) {
     });
   };
 
+  const updateNightAllocation = (employeeCode, projectCode, patch) => {
+    const currentLine = lines.find((line) => line.employeeCode === employeeCode) || visible.find((line) => line.employeeCode === employeeCode);
+    if (leaveIdleLocked(currentLine) || onApprovedLeave(currentLine)) return;
+    setDirty(true);
+    setLines((current) => {
+      const base = current.some((line) => line.employeeCode === employeeCode) ? current : [...current, emptyLine(currentLine || { employeeCode, operationalStatus: 'Mobilized Offshore', location })];
+      return base.map((line) => {
+        if (line.employeeCode !== employeeCode || onApprovedLeave(line)) return line;
+        const nightAllocations = Array.isArray(line.nightAllocations) ? line.nightAllocations : [];
+        const nextPatch = Object.prototype.hasOwnProperty.call(patch, 'regularHours')
+          ? { ...patch, regularHours: Math.min(Math.max(0, Number(patch.regularHours) || 0), regularLimit(line)) }
+          : patch;
+        const existing = nightAllocations.find((item) => item.projectCode === projectCode);
+        const next = existing
+          ? nightAllocations.map((item) => item.projectCode === projectCode ? { ...item, ...nextPatch } : item)
+          : [...nightAllocations, { projectCode, projectName: projectCode, kind: 'Project', regularHours: 0, ovtHours: 0, ...nextPatch }];
+        return { ...line, nightWork: true, nightAllocations: Object.prototype.hasOwnProperty.call(patch, 'regularHours') ? capAllocations(next, regularLimit(line)) : next };
+      });
+    });
+  };
+
+  const toggleNightWork = (employeeCode) => {
+    const currentLine = lines.find((line) => line.employeeCode === employeeCode) || visible.find((line) => line.employeeCode === employeeCode);
+    if (!currentLine || onApprovedLeave(currentLine)) return;
+    const turningOff = Boolean(currentLine.nightWork);
+    const booked = (currentLine.nightAllocations || []).reduce((sum, item) => sum + Number(item.regularHours || 0) + Number(item.ovtHours || 0), 0);
+    if (turningOff && booked > 0 && !window.confirm(`Clear the night hours for ${currentLine.employeeName}?`)) return;
+    setDirty(true);
+    setLines((current) => {
+      const base = current.some((line) => line.employeeCode === employeeCode) ? current : [...current, emptyLine(currentLine)];
+      return base.map((line) => {
+        if (line.employeeCode !== employeeCode) return line;
+        if (turningOff) return { ...line, nightWork: false, nightAllocations: [] };
+        return { ...line, nightWork: true, nightAllocations: line.nightAllocations || [] };
+      });
+    });
+  };
+
   const addColumn = (project) => {
     setColumns((current) => current.some((item) => item.code === project.code) ? current : [...current, project]);
     setModal(null);
+  };
+
+  const removeColumn = (code) => {
+    setColumns((current) => current.filter((item) => item.code !== code));
+    setLines((current) => current.map((line) => ({
+      ...line,
+      allocations: (line.allocations || []).filter((item) => item.projectCode !== code),
+      nightAllocations: (line.nightAllocations || []).filter((item) => item.projectCode !== code),
+    })));
+    setDirty(true);
   };
 
   return <>
@@ -242,9 +322,20 @@ export default function Entry({ setPage }) {
       {period && <div className="periodBanner"><div><span>PERIOD</span><b>{period.name?.replace(' Period', '')}</b><small>{formatDisplayDate(period.startDate)} – {formatDisplayDate(period.endDate)}</small></div><Badge tone={period.status === 'Open' ? 'green' : 'slate'}>{period.status}</Badge>{context?.classification?.dayKind === 'Public Holiday' && <div><span>PUBLIC HOLIDAY</span><b>{context.classification.holidayName}</b></div>}{context?.classification && context.classification.dayKind !== 'Public Holiday' && <div><span>DAY TYPE</span><b>{context.classification.dayKind}</b></div>}{context?.timesheet && <div><span>SAVED TIMESHEET</span><b>{context.timesheet.reference} · v{context.timesheet.version}</b><small>{context.timesheet.status} · {context.timesheet.updatedBy || ''}</small></div>}</div>}
       {context?.message && <div className="infoBox">{context.message}</div>}
       {viewingOffshore && <div className="infoBox">These employees are mobilized to this offshore site. Hours stay empty until they are booked here. Mobilization does not create attendance or payable hours, and the Nigeria calendar classification is unchanged.</div>}
-      <div className="summaryStrip"><span><b>{visible.length}</b> Crew</span><span><b>{visible.length - totals.missing}</b> With status</span><span><b>{totals.missing}</b> Missing evidence</span><span><b>{totals.leave}</b> Leave</span><span><b>{totals.offshore}</b> Offshore</span><span><b>{totals.regular}h</b> REG</span><span><b>{totals.ovt}h</b> {context?.classification?.dayKind === 'Public Holiday' ? 'PH OVT' : context?.classification?.dayKind === 'Saturday' ? 'Sat OVT' : context?.classification?.dayKind === 'Sunday' ? 'Sun OVT' : 'OVT'}</span><span><b>{totals.night}</b> Night</span><span><b>{totals.unallocated}h</b> Unallocated</span></div>
+      <div className="summaryStrip">
+        <button type="button" className="summaryChip" onClick={() => openStrip('Crew', () => true)}><b>{visible.length}</b> Crew</button>
+        <button type="button" className="summaryChip" onClick={() => openStrip('With status', (item) => !item.missing)}><b>{visible.length - totals.missing}</b> With status</button>
+        <button type="button" className="summaryChip" onClick={() => openStrip('Missing evidence', (item) => item.missing)}><b>{totals.missing}</b> Missing evidence</button>
+        <button type="button" className="summaryChip" onClick={() => openStrip('Leave', (item) => item.leave)}><b>{totals.leave}</b> Leave</button>
+        <button type="button" className="summaryChip" onClick={() => openStrip('Offshore', (item) => item.offshore)}><b>{totals.offshore}</b> Offshore</button>
+        <button type="button" className="summaryChip" onClick={() => openStrip('Regular hours', (item) => item.regular > 0)}><b>{totals.regular}h</b> REG</button>
+        <button type="button" className="summaryChip" onClick={() => openStrip('Overtime', (item) => item.ovt > 0)}><b>{totals.ovt}h</b> {context?.classification?.dayKind === 'Public Holiday' ? 'PH OVT' : context?.classification?.dayKind === 'Saturday' ? 'Sat OVT' : context?.classification?.dayKind === 'Sunday' ? 'Sun OVT' : 'OVT'}</button>
+        <button type="button" className="summaryChip" onClick={() => openStrip('Night', (item) => item.night)}><b>{totals.night}</b> Night{totals.nightHours ? ` · ${totals.nightHours}h` : ''}</button>
+        <button type="button" className="summaryChip" onClick={() => openStrip('Unallocated', (item) => item.unallocated > 0)}><b>{totals.unallocated}h</b> Unallocated</button>
+      </div>
+      {shift === 'Day' && <div className="infoBox">Tick Also night on a person who worked the day and the night. A second set of hours opens under that row and is saved on the night timesheet for this date.</div>}
       <div className="toolbar"><input className="searchInput" value={employeeQuery} onChange={(event) => setEmployeeQuery(event.target.value)} placeholder="Search employee code or name" aria-label="Search employee" /><div className="actions"><Button kind="secondary" onClick={() => setModal('project')}>+ Add Project</Button><Button kind="secondary" onClick={() => setModal('activity')}>+ Internal Activity</Button><Button kind="secondary" onClick={() => setModal('ovt')}>Bulk Project OVT</Button><Button kind="secondary" onClick={() => setModal('night')}>Book Night Work</Button><Button kind="secondary" onClick={() => setModal('employee')}>+ Add Employee</Button></div></div>
-      <div className="panel matrix"><div className="tableWrap"><table><thead><tr><th>Employee</th><th>Attendance</th>{columns.map((column) => <th key={column.code}><span className="hourHead">{column.code}<small>{column.name && column.name !== column.code ? column.name : 'REG · OVT'}</small></span></th>)}<th>REG</th><th>OVT</th><th>Night</th><th>Total</th><th>Expected</th><th>Unallocated</th><th>Status</th></tr></thead><tbody>
+      <div className="panel matrix"><div className="tableWrap bookingMatrix"><table><thead><tr><th>Employee</th><th>Attendance</th>{columns.map((column) => <th key={column.code}><span className="hourHead">{column.code}<small>{column.name && column.name !== column.code ? column.name : 'REG · OVT'}</small><button type="button" className="link" aria-label={`Remove ${column.code}`} onClick={() => removeColumn(column.code)}>Remove</button></span></th>)}<th>REG</th><th>OVT</th><th>Night</th><th>Total</th><th>Expected</th><th>Unallocated</th><th>Status</th></tr></thead><tbody>
         {loading && <tr><td colSpan={8 + columns.length}>Resolving crew for this supervisor and date…</td></tr>}
         {!loading && shown.map((line, rowIndex) => {
           const expected = regularLimit(line);
@@ -253,6 +344,12 @@ export default function Entry({ setPage }) {
           const ovt = line.allocations.reduce((sum, item) => sum + Number(item.ovtHours || 0), 0);
           const unallocated = Math.max(0, expected - regular);
           const status = line.operationalStatus === 'Approved Leave' && regular > 0 && !/^C\d/i.test(line.employeeCode || '') ? 'Leave Conflict' : regular > expected ? 'Overbooked' : unallocated > 0 && expected > 0 ? 'Underbooked' : 'Balanced';
+          const showNightBand = shift === 'Day' && Boolean(line.nightWork) && !onApprovedLeave(line);
+          const nightCapped = capAllocations(line.nightAllocations || [], expected);
+          const nightRegular = nightCapped.reduce((sum, item) => sum + Number(item.regularHours || 0), 0);
+          const nightOvt = (line.nightAllocations || []).reduce((sum, item) => sum + Number(item.ovtHours || 0), 0);
+          const nightUnallocated = Math.max(0, expected - nightRegular);
+          const nightStatus = nightRegular > expected ? 'Overbooked' : nightUnallocated > 0 && expected > 0 ? 'Underbooked' : 'Balanced';
           const focusHours = (employeeCode, projectCode, field) => {
             const node = document.querySelector(`[data-hour="${employeeCode}|${projectCode}|${field}"]`);
             if (node instanceof HTMLInputElement) { node.focus(); node.select(); }
@@ -276,7 +373,7 @@ export default function Entry({ setPage }) {
             event.preventDefault();
             focusHours(next[0], next[1], next[2]);
           };
-          return <tr key={line.employeeCode}><td><b>{line.employeeName}</b><small className="block">{line.employeeCode}{line.exceptional ? ' · exception' : ''}</small></td><td><Badge tone={line.attendanceStatus ? 'green' : line.operationalStatus === 'Approved Leave' ? 'blue' : 'amber'}>{line.attendanceStatus || line.operationalStatus || 'Missing Evidence'}</Badge></td>{columns.map((column, columnIndex) => {
+          return <React.Fragment key={line.employeeCode}><tr><td><b>{line.employeeName}</b><small className="block">{line.employeeCode}{line.exceptional ? ' · exception' : ''}</small>{shift === 'Day' && !onApprovedLeave(line) && <label className="alsoNight"><input type="checkbox" checked={Boolean(line.nightWork)} onChange={() => toggleNightWork(line.employeeCode)} /> Also night</label>}</td><td><Badge tone={line.attendanceStatus ? 'green' : line.operationalStatus === 'Approved Leave' ? 'blue' : 'amber'}>{line.attendanceStatus || line.operationalStatus || 'Missing Evidence'}</Badge></td>{columns.map((column, columnIndex) => {
             const allocation = line.allocations.find((item) => item.projectCode === column.code);
             const capped = cappedAllocations.find((item) => item.projectCode === column.code);
             const regularValue = Number(capped?.regularHours || 0);
@@ -284,7 +381,16 @@ export default function Entry({ setPage }) {
             const locked = leaveIdleLocked(line);
             const setHours = (field, value) => updateAllocation(line.employeeCode, column.code, { [field]: value, projectName: column.name, kind: column.kind || 'Project' });
             return <td key={column.code}><div className="hourPair"><label>REG<input className={locked ? 'locked' : undefined} data-hour={`${line.employeeCode}|${column.code}|reg`} type="number" min="0" max={regularRoom} step="0.5" inputMode="decimal" readOnly={locked} aria-label={`${column.code} regular hours for ${line.employeeName}${locked ? ', approved leave, read only' : `, maximum ${regularRoom}`}`} title={locked ? 'Approved leave hours cannot be changed' : `Regular hours cannot pass ${expected} for this day`} value={locked ? regularValue : (regularValue || '')} onChange={(event) => { if (!locked) setHours('regularHours', Number(event.target.value) || 0); }} onKeyDown={(event) => moveHours(event, columnIndex, 'reg')} /></label><label>OVT<input className={locked ? 'locked' : undefined} data-hour={`${line.employeeCode}|${column.code}|ovt`} type="number" min="0" step="0.5" inputMode="decimal" readOnly={locked} aria-label={`${column.code} overtime hours for ${line.employeeName}${locked ? ', approved leave, read only' : ''}`} title={locked ? 'Approved leave hours cannot be changed' : undefined} value={locked ? Number(allocation?.ovtHours || 0) : (allocation?.ovtHours || '')} onChange={(event) => { if (!locked) setHours('ovtHours', Number(event.target.value) || 0); }} onKeyDown={(event) => moveHours(event, columnIndex, 'ovt')} /></label></div></td>;
-          })}<td>{regular}</td><td>{ovt}</td><td>{line.nightSession && line.operationalStatus !== 'Approved Leave' ? `${line.nightStart || context?.settings?.nightStart || '18:00'}–${line.nightEnd || ''}` : '—'}</td><td>{regular + ovt}</td><td>{expected}</td><td className={unallocated ? 'red' : ''}>{unallocated}</td><td><Badge tone={status === 'Balanced' ? 'green' : 'amber'}>{status}</Badge></td></tr>;
+          })}<td>{regular}</td><td>{ovt}</td><td>{line.nightSession && line.operationalStatus !== 'Approved Leave' ? `${line.nightStart || context?.settings?.nightStart || '18:00'}–${line.nightEnd || ''}` : '—'}</td><td>{regular + ovt}</td><td>{expected}</td><td className={unallocated ? 'red' : ''}>{unallocated}</td><td><Badge tone={status === 'Balanced' ? 'green' : 'amber'}>{status}</Badge></td></tr>
+          {showNightBand && <tr className="nightBand"><td><span className="nightTag">Night</span></td><td />{columns.map((column) => {
+            const allocation = (line.nightAllocations || []).find((item) => item.projectCode === column.code);
+            const capped = nightCapped.find((item) => item.projectCode === column.code);
+            const regularValue = Number(capped?.regularHours || 0);
+            const regularRoom = regularValue + Math.max(0, expected - nightRegular);
+            const setHours = (field, value) => updateNightAllocation(line.employeeCode, column.code, { [field]: value, projectName: column.name, kind: column.kind || 'Project' });
+            return <td key={column.code}><div className="hourPair"><label>REG<input data-hour={`${line.employeeCode}|${column.code}|nreg`} type="number" min="0" max={regularRoom} step="0.5" inputMode="decimal" aria-label={`${column.code} night regular hours for ${line.employeeName}, maximum ${regularRoom}`} title={`Night regular hours cannot pass ${expected} for this day`} value={regularValue || ''} onChange={(event) => setHours('regularHours', Number(event.target.value) || 0)} /></label><label>OVT<input data-hour={`${line.employeeCode}|${column.code}|novt`} type="number" min="0" step="0.5" inputMode="decimal" aria-label={`${column.code} night overtime hours for ${line.employeeName}`} value={allocation?.ovtHours || ''} onChange={(event) => setHours('ovtHours', Number(event.target.value) || 0)} /></label></div></td>;
+          })}<td>{nightRegular}</td><td>{nightOvt}</td><td>{`${line.nightStart || context?.settings?.nightStart || '18:00'}–${line.nightEnd || ''}`}</td><td>{nightRegular + nightOvt}</td><td>{expected}</td><td className={nightUnallocated ? 'red' : ''}>{nightUnallocated}</td><td><Badge tone={nightStatus === 'Balanced' ? 'green' : 'amber'}>{nightStatus}</Badge></td></tr>}
+          </React.Fragment>;
         })}
         {!loading && !shown.length && <tr><td colSpan={8 + columns.length}>{employeeNeedle ? 'No employee matches that search.' : supervisor ? 'No eligible crew for this supervisor on the selected date.' : 'Search for a supervisor to load the crew.'}</td></tr>}
       </tbody></table></div></div>
@@ -316,6 +422,7 @@ export default function Entry({ setPage }) {
       setDirty(true);
       setModal(null);
     }} />}
+    {stripDetail && <DetailModal title={stripDetail.title} headers={stripDetail.headers} rows={stripDetail.rows} onClose={() => setStripDetail(null)} />}
   </>;
 }
 
@@ -399,7 +506,7 @@ function NightModal({ employees, workDate, location, workCenter, nightStart, all
     setPicked((current) => current.filter((code) => code !== person.code));
     if (person.added) setRoster((current) => current.filter((item) => item.code !== person.code));
   };
-  return <Modal wide title="Book night work" onClose={onClose} footer={<><Button kind="secondary" onClick={onClose}>Cancel</Button><Button onClick={() => onApply({ picked, added: roster.filter((person) => person.added), start, end, note })}>Apply</Button></>}><div className="formGrid"><Field label="Note"><input value={note} onChange={(event) => setNote(event.target.value)} /></Field><Field label="Start"><input type="time" value={start} onChange={(event) => setStart(event.target.value)} /></Field><Field label="Expected end"><input type="time" value={end} onChange={(event) => setEnd(event.target.value)} /></Field></div><div className="infoBox">Night work from {nightStart}. The allowance is ₦{Number(allowance).toLocaleString()} per eligible session, not per hour. Tick a person to book the session and remove them to take it off. Someone on approved leave cannot be booked.</div><Field label="Add employee"><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search an active C-code to add" /></Field>{needle && <div className="pickerList">{matches.slice(0, 12).map((item) => <button key={item.code} type="button" onClick={() => addPerson(item)}><b>{item.code}</b><span>{item.name}</span></button>)}{!matches.length && <span>No active C-code employees match, or they are already listed or on leave.</span>}</div>}<div className="nightList">{roster.map((person) => <div className="nightRow" key={person.code}><label><input type="checkbox" checked={picked.includes(person.code)} onChange={() => toggle(person.code)} /> {person.code} · {person.name}{person.added ? ' · added' : ''}</label><button type="button" className="link" onClick={() => removePerson(person)}>Remove</button></div>)}{!roster.length && <span>No employees can be booked for night work on this date.</span>}</div></Modal>;
+  return <Modal wide title="Book night work" onClose={onClose} footer={<><Button kind="secondary" onClick={onClose}>Cancel</Button><Button onClick={() => onApply({ picked, added: roster.filter((person) => person.added), start, end, note })}>Apply</Button></>}><div className="formGrid"><Field label="Note"><input value={note} onChange={(event) => setNote(event.target.value)} /></Field><Field label="Start"><input type="time" value={start} onChange={(event) => setStart(event.target.value)} /></Field><Field label="Expected end"><input type="time" value={end} onChange={(event) => setEnd(event.target.value)} /></Field></div><div className="infoBox">Night work from {nightStart}. The allowance is ₦{Number(allowance).toLocaleString()} per eligible session, not per hour. Day hours already booked for this date stay. Tick a person to add the night and remove the tick to take the night off. Someone on approved leave cannot be booked.</div><Field label="Add employee"><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search an active C-code to add" /></Field>{needle && <div className="pickerList">{matches.slice(0, 12).map((item) => <button key={item.code} type="button" onClick={() => addPerson(item)}><b>{item.code}</b><span>{item.name}</span></button>)}{!matches.length && <span>No active C-code employees match, or they are already listed or on leave.</span>}</div>}<div className="nightList">{roster.map((person) => <div className="nightRow" key={person.code}><label><input type="checkbox" checked={picked.includes(person.code)} onChange={() => toggle(person.code)} /> {person.code} · {person.name}{person.added ? ' · added' : ''}</label><button type="button" className="link" onClick={() => removePerson(person)}>Remove</button></div>)}{!roster.length && <span>No employees can be booked for night work on this date.</span>}</div></Modal>;
 }
 
 function BulkModal({ title, columns, employees, onClose, onApply }) {

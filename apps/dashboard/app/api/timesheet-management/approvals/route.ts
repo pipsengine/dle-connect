@@ -13,11 +13,12 @@ const allowed = (request: Request) => {
 
 const viewerFrom = (request: Request) => {
   const access = resolveAccessContext(request);
-  const roles = `${request.headers.get('x-auth-roles') || ''} ${access.role}`.toLowerCase();
+  const roles = `${request.headers.get('x-auth-roles') || ''} ${access.role}`;
   return {
     actor: access.actor,
+    employeeCode: request.headers.get('x-auth-employee-code')?.trim() || '',
     role: access.role,
-    isAdmin: request.headers.get('x-auth-global-admin') === '1' || /timesheet administrator|organization admin|super administrator|hr manager|hr administrator/.test(roles),
+    canSeeAll: request.headers.get('x-auth-global-admin') === '1' || /\bsuper administrator\b/i.test(roles) || /\bit administrator\b/i.test(roles),
   };
 };
 
@@ -25,7 +26,7 @@ export async function GET(request: Request) {
   if (!allowed(request)) return err(403, 'You do not have permission to view timesheet approvals.');
   const url = new URL(request.url);
   try {
-    if (url.searchParams.get('id')) return ok(await readApprovalDetail(url.searchParams.get('id') || ''));
+    if (url.searchParams.get('id')) return ok(await readApprovalDetail(url.searchParams.get('id') || '', viewerFrom(request)));
     return ok(await listApprovalQueue({
       stage: url.searchParams.get('stage') || 'Supervisor',
       periodId: url.searchParams.get('periodId') || '',
@@ -54,8 +55,9 @@ export async function POST(request: Request) {
       reason: String(body.reason || ''),
       comment: String(body.comment || ''),
       actor: viewer.actor,
+      employeeCode: viewer.employeeCode,
       role: viewer.role,
-      isAdmin: viewer.isAdmin,
+      canSeeAll: viewer.canSeeAll,
     }));
   } catch (error) {
     return err(400, error instanceof Error ? error.message : 'Unable to update the approval.');

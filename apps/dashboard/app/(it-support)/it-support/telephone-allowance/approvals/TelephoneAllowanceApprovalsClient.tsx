@@ -1,6 +1,7 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useSearchParams } from 'next/navigation';
 import { Bell, CheckCircle2, RefreshCw, Undo2 } from 'lucide-react';
 import {
   moneyNgn,
@@ -42,6 +43,9 @@ type ApprovalsPayload = {
 const tabs = ['Pending My Action', 'In Progress', 'Completed'] as const;
 
 export default function TelephoneAllowanceApprovalsClient() {
+  const searchParams = useSearchParams();
+  const requestedCycle = (searchParams.get('cycleId') || searchParams.get('cycle') || '').trim();
+  const openedFor = useRef('');
   const { get, post, busy, toast, error } = useTelephoneAllowanceApi();
   const [tab, setTab] = useState<(typeof tabs)[number]>('Pending My Action');
   const [data, setData] = useState<ApprovalsPayload | null>(null);
@@ -65,12 +69,43 @@ export default function TelephoneAllowanceApprovalsClient() {
     return data.completed || [];
   }, [data, tab]);
 
-  const openDetail = async (card: ApprovalCard) => {
+  const openDetail = useCallback(async (card: ApprovalCard) => {
     setSelected(card);
     setDetailTab('Summary');
     const res = await get<{ cycle: any }>('cycle', { cycleId: card.id });
     setDetail(res.cycle);
-  };
+  }, [get]);
+
+  useEffect(() => {
+    if (!data) return;
+    const pools = {
+      'Pending My Action': data.pendingMyAction || [],
+      'In Progress': data.inProgress || [],
+      Completed: data.completed || [],
+    } as const;
+    const all = [...pools['Pending My Action'], ...pools['In Progress'], ...pools.Completed];
+    const requested = requestedCycle
+      ? all.find((row) => row.id === requestedCycle || row.cycleCode.toLowerCase() === requestedCycle.toLowerCase())
+      : undefined;
+    const card = requested || (!requestedCycle && pools['Pending My Action'].length === 1 ? pools['Pending My Action'][0] : undefined);
+    const key = card?.id || (requestedCycle ? `lookup:${requestedCycle}` : '');
+    if (!key || openedFor.current === key) return;
+    openedFor.current = key;
+    if (card) {
+      const tabName = (Object.keys(pools) as Array<keyof typeof pools>).find((name) => pools[name].some((row) => row.id === card.id));
+      if (tabName) setTab(tabName);
+      void openDetail(card);
+      return;
+    }
+    void get<{ cycle: (ApprovalCard & { id?: string }) | null }>('cycle', { cycleId: requestedCycle })
+      .then((res) => {
+        if (!res.cycle?.id) return;
+        setSelected(res.cycle);
+        setDetailTab('Summary');
+        setDetail(res.cycle);
+      })
+      .catch(() => undefined);
+  }, [data, get, openDetail, requestedCycle]);
 
   const awaitingApproval = (status: string) => ['PENDING_HR_APPROVAL', 'PENDING_MD_APPROVAL', 'PENDING_CFO_AUTHORIZATION'].includes(status);
 

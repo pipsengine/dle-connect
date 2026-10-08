@@ -164,6 +164,11 @@ export default function Review() {
       setSheet={setSheet}
       onBack={() => { if (dirty && !window.confirm('Leave this timesheet with unsaved changes?')) return; setSheet(null); setDirty(false); }}
       onAddProject={() => setAddingProject(true)}
+      onRemoveProject={(code) => {
+        setColumns((current) => current.filter((item) => item.code !== code));
+        setLines((current) => current.map((line) => ({ ...line, allocations: (Array.isArray(line.allocations) ? line.allocations : []).filter((item) => item.projectCode !== code) })));
+        setDirty(true);
+      }}
     /> : <div className="panel">
       <div className="panelHead"><div><h3>{workDate ? formatDisplayDate(workDate) : 'Saved timesheets'}</h3><p>{searched ? `${visible.length} timesheet${visible.length === 1 ? '' : 's'} for this date.` : 'Choose a work date and find the timesheet.'}</p></div></div>
       <Table headers={['Reference', 'Supervisor', 'Shift', 'Crew', 'REG', 'OVT', 'Version', 'Status', '']} rows={visible.filter(Boolean).map((item) => [
@@ -182,7 +187,7 @@ export default function Review() {
   </>;
 }
 
-function SheetEditor({ sheet, lines, setLines, columns, settings, dirty, setDirty, saving, setSaving, setNotice, setPageError, setSheet, onBack, onAddProject }) {
+function SheetEditor({ sheet, lines, setLines, columns, settings, dirty, setDirty, saving, setSaving, setNotice, setPageError, setSheet, onBack, onAddProject, onRemoveProject }) {
   const editable = Boolean(sheet.editable);
   const alreadySent = sheet.status === 'Submitted' || sheet.status === 'Returned';
   const sendLabel = alreadySent ? 'Resubmit' : 'Submit';
@@ -236,7 +241,10 @@ function SheetEditor({ sheet, lines, setLines, columns, settings, dirty, setDirt
           location: sheet.location,
           workCenter: sheet.workCenter,
           shift: sheet.shift,
-          lines: lines.map((line) => ({ ...line, allocations: capAllocations(line.allocations, expectedFor(line)) })),
+          lines: lines.map((line) => {
+            const nonWorkingLeave = (sheet.dayKind === 'Saturday' || sheet.dayKind === 'Sunday' || sheet.dayKind === 'Public Holiday') && onApprovedLeave(line);
+            return { ...line, nightSession: nonWorkingLeave ? false : line.nightSession, allocations: nonWorkingLeave ? [] : capAllocations(line.allocations, expectedFor(line)) };
+          }),
         }),
       });
       const body = await response.json();
@@ -270,7 +278,7 @@ function SheetEditor({ sheet, lines, setLines, columns, settings, dirty, setDirt
     {!editable && <div className="infoBox">Approval has started for this timesheet. The hours are read only.</div>}
     {editable && sheet.status === 'Submitted' && !dirty && <div className="infoBox">This timesheet is already submitted. Change the hours only if a correction is needed, then resubmit before approval starts.</div>}
     {editable && <div className="toolbar"><div /><div className="actions"><Button kind="secondary" onClick={onAddProject}>+ Add Project</Button></div></div>}
-    <div className="tableWrap"><table><thead><tr><th>Employee</th><th>Attendance</th>{hourColumns.map((column) => <th key={column.code}><span className="hourHead">{show(column.code)}<small>{column.name && column.name !== column.code ? show(column.name) : 'REG · OVT'}</small></span></th>)}<th>REG</th><th>OVT</th><th>Expected</th><th>Status</th></tr></thead><tbody>
+    <div className="tableWrap bookingMatrix"><table><thead><tr><th>Employee</th><th>Attendance</th>{hourColumns.map((column) => <th key={column.code}><span className="hourHead">{show(column.code)}<small>{column.name && column.name !== column.code ? show(column.name) : 'REG · OVT'}</small>{editable && <button type="button" className="link" aria-label={`Remove ${show(column.code)}`} onClick={() => onRemoveProject(column.code)}>Remove</button>}</span></th>)}<th>REG</th><th>OVT</th><th>Expected</th><th>Status</th></tr></thead><tbody>
       {(Array.isArray(lines) ? lines : []).map((line) => {
         const allocations = Array.isArray(line?.allocations) ? line.allocations : [];
         const expected = expectedFor(line);

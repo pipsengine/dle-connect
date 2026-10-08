@@ -2,6 +2,7 @@ import sql from 'mssql';
 import { getDleEnterpriseDbPool } from '@/lib/dle-enterprise-db';
 import { createEnterpriseNotification } from '@/lib/enterprise-notifications-store';
 import type { SessionPayload } from '@/lib/auth/session';
+import { extractSupervisorEmployeeCode, supervisorCodeLookupVariants, supervisorCodesMatch } from '@/lib/timesheet-agege-blasting';
 
 export const APPROVAL_STAGES = ['Supervisor', 'Cost Control', 'Project Manager', 'Consolidation', 'HR', 'Payroll Readiness'] as const;
 export const APPROVAL_SLA_DAYS = 3;
@@ -22,12 +23,49 @@ const dateOnly = (value: unknown) => {
   return /^\d{4}-\d{2}-\d{2}/.test(raw) ? raw.slice(0, 10) : '';
 };
 const newId = () => `apv-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
-const namesMatch = (left: string, right: string) => {
-  const a = text(left).toLowerCase();
-  const b = text(right).toLowerCase();
-  if (!a || !b) return false;
-  return a === b || a.includes(b) || b.includes(a);
+/** Letters-only name, without a leading employee code or courtesy title. */
+export const approvalPersonNameKey = (value: string) => {
+  let raw = text(value);
+  const code = extractSupervisorEmployeeCode(raw);
+  if (code) {
+    const rest = raw.replace(new RegExp(`^${code}\\s*-\\s*`, 'i'), '').trim();
+    if (rest && rest.toUpperCase() !== raw.toUpperCase()) raw = rest;
+  }
+  return raw.toUpperCase().replace(/\./g, '').replace(/^(MR|MRS|MISS|MS|DR|ENGR)\s+/, '').replace(/[^A-Z]/g, '');
 };
+
+export const approvalViewerCodes = (viewer: { actor?: string; employeeCode?: string }) => {
+  const variants = new Set<string>();
+  for (const seed of [text(viewer.employeeCode), extractSupervisorEmployeeCode(viewer.actor)]) {
+    if (!seed) continue;
+    for (const variant of supervisorCodeLookupVariants(seed)) variants.add(variant.toUpperCase());
+  }
+  return [...variants];
+};
+
+const storedMatchesCode = (stored: string, code: string) => {
+  const upper = text(stored).toUpperCase();
+  const token = code.toUpperCase();
+  return upper === token || upper.startsWith(`${token} - `);
+};
+
+/** Signed-in person against the supervisor or project manager stored on the item. */
+export const approvalViewerOwns = (viewer: { actor?: string; employeeCode?: string }, stored: string) => {
+  const storedCode = extractSupervisorEmployeeCode(stored);
+  if (approvalViewerCodes(viewer).some((code) => storedMatchesCode(stored, code) || (storedCode && supervisorCodesMatch(code, storedCode)))) return true;
+  const left = approvalPersonNameKey(text(viewer.actor));
+  const right = approvalPersonNameKey(stored);
+  return Boolean(left && right && left === right);
+};
+
+const approvalNameSql = (column: string) => `REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(UPPER(
+  CASE
+    WHEN CHARINDEX(N' - ', ${column}) > 1
+     AND LEFT(LTRIM(${column}), CHARINDEX(N' - ', ${column}) - 1) LIKE N'%[0-9]%'
+    THEN LTRIM(SUBSTRING(${column}, CHARINDEX(N' - ', ${column}) + 3, 200))
+    ELSE ${column}
+  END
+), N'.', N''), N'MR ', N''), N'MRS ', N''), N'MISS ', N''), N'MS ', N''), N'DR ', N''), N'ENGR ', N''), N' ', N'')`;
 
 let ensured = false;
 const pool = async () => {
@@ -290,13 +328,21 @@ const mapItem = (row: Record<string, unknown>) => {
   };
 };
 
-export type ApprovalViewer = { actor: string; role: string; isAdmin: boolean };
+export type ApprovalViewer = { actor: string; employeeCode: string; role: string; canSeeAll: boolean };
+
+const bindApprovalViewer = (request: sql.Request, viewer: ApprovalViewer) => {
+  request.input('ApprovalNameKey', sql.NVarChar(180), approvalPersonNameKey(viewer.actor));
+  approvalViewerCodes(viewer).forEach((code, index) => request.input(`ApprovalCode${index}`, sql.NVarChar(50), code));
+};
 
 const stageClause = (viewer: ApprovalViewer, stage: string) => {
-  if (viewer.isAdmin) return { sql: '', bind: false };
-  if (stage === 'Supervisor') return { sql: ` AND ([SupervisorName] = @Actor OR [SupervisorName] LIKE N'%' + @Actor + N'%' OR @Actor LIKE N'%' + [SupervisorName] + N'%')`, bind: true };
-  if (stage === 'Project Manager') return { sql: ` AND ([ProjectManager] = @Actor OR [ProjectManager] LIKE N'%' + @Actor + N'%' OR @Actor LIKE N'%' + [ProjectManager] + N'%')`, bind: true };
-  return { sql: '', bind: false };
+  if (viewer.canSeeAll || (stage !== 'Supervisor' && stage !== 'Project Manager')) return { sql: '', scoped: false };
+  const column = stage === 'Project Manager' ? '[ProjectManager]' : '[SupervisorName]';
+  const codes = approvalViewerCodes(viewer);
+  const codeSql = codes.map((_, index) => `UPPER(LTRIM(RTRIM(${column}))) = UPPER(@ApprovalCode${index}) OR UPPER(${column}) LIKE UPPER(@ApprovalCode${index}) + N' - %'`).join(' OR ');
+  const nameSql = `@ApprovalNameKey <> N'' AND ${approvalNameSql(column)} = @ApprovalNameKey`;
+  const identity = [codeSql, nameSql].filter(Boolean).join(' OR ');
+  return { sql: identity ? ` AND (${identity})` : ' AND 1 = 0', scoped: true };
 };
 
 export const listApprovalQueue = async (filters: { stage: string; periodId?: string; supervisor?: string; location?: string; status?: string; q?: string; workDate?: string; project?: string; page?: number; pageSize?: number }, viewer: ApprovalViewer) => {
@@ -320,7 +366,7 @@ export const listApprovalQueue = async (filters: { stage: string; periodId?: str
     .input('Project', sql.NVarChar(80), text(filters.project))
     .input('Q', sql.NVarChar(80), `%${text(filters.q)}%`)
     .input('Sla', sql.Int, APPROVAL_SLA_DAYS);
-  if (scope.bind) request.input('Actor', sql.NVarChar(180), viewer.actor);
+  if (scope.scoped) bindApprovalViewer(request, viewer);
   const where = `
     WHERE [Stage]=@Stage
       AND [Status] <> N'Superseded'
@@ -360,7 +406,7 @@ export const listApprovalQueue = async (filters: { stage: string; periodId?: str
     .input('Sla', sql.Int, APPROVAL_SLA_DAYS)
     .input('Offset', sql.Int, (page - 1) * pageSize)
     .input('PageSize', sql.Int, pageSize);
-  if (scope.bind) pageRequest.input('Actor', sql.NVarChar(180), viewer.actor);
+  if (scope.scoped) bindApprovalViewer(pageRequest, viewer);
   if (status && status !== 'All Statuses' && status !== 'Overdue') pageRequest.input('Status', sql.NVarChar(30), status);
   const rows = await pageRequest.query(`SELECT * FROM [tsmgmt].[ApprovalItems] ${filtered} ORDER BY [EnteredAt] DESC OFFSET @Offset ROWS FETCH NEXT @PageSize ROWS ONLY`);
   const totalRequest = connection.request()
@@ -372,7 +418,7 @@ export const listApprovalQueue = async (filters: { stage: string; periodId?: str
     .input('Project', sql.NVarChar(80), text(filters.project))
     .input('Q', sql.NVarChar(80), `%${text(filters.q)}%`)
     .input('Sla', sql.Int, APPROVAL_SLA_DAYS);
-  if (scope.bind) totalRequest.input('Actor', sql.NVarChar(180), viewer.actor);
+  if (scope.scoped) bindApprovalViewer(totalRequest, viewer);
   if (status && status !== 'All Statuses' && status !== 'Overdue') totalRequest.input('Status', sql.NVarChar(30), status);
   const total = await totalRequest.query(`SELECT COUNT(1) AS Total FROM [tsmgmt].[ApprovalItems] ${filtered}`);
   const kpi = counts.recordset?.[0] || {};
@@ -491,7 +537,14 @@ const advanceAfter = async (connection: sql.ConnectionPool, item: ReturnType<typ
   await notify(`Timesheet awaiting ${next}`, `${item.reference} moved to ${next}.`);
 };
 
-export const actOnApprovals = async (input: { ids: string[]; action: 'approve' | 'return'; reason?: string; comment?: string; actor: string; role?: string; isAdmin?: boolean }) => {
+const assertApprovalAccess = (viewer: ApprovalViewer, item: ReturnType<typeof mapItem>) => {
+  if (viewer.canSeeAll || (item.stage !== 'Supervisor' && item.stage !== 'Project Manager')) return;
+  const stored = item.stage === 'Project Manager' ? item.projectManager : item.supervisor;
+  if (approvalViewerOwns(viewer, stored)) return;
+  throw new Error(item.stage === 'Supervisor' ? 'You can only open timesheets awaiting you for your own team.' : 'You can only open project items assigned to you.');
+};
+
+export const actOnApprovals = async (input: { ids: string[]; action: 'approve' | 'return'; reason?: string; comment?: string; actor: string; employeeCode?: string; role?: string; canSeeAll?: boolean }) => {
   const connection = await pool();
   const items = await loadItems(connection, input.ids || []);
   if (!items.length) throw new Error('Select an approval item.');
@@ -501,7 +554,8 @@ export const actOnApprovals = async (input: { ids: string[]; action: 'approve' |
   if (input.action === 'return' && !text(input.reason)) throw new Error('A return reason is required.');
   if (input.action === 'approve' && items.some((item) => item.exceptions > 0 && item.kind === 'Timesheet')) throw new Error('A selected timesheet has exceptions. Open it and return the exception instead of approving the whole item.');
   const actor = text(input.actor) || 'Timesheet User';
-  if (!input.isAdmin && stage === 'Supervisor' && items.some((item) => namesMatch(item.supervisor, actor))) throw new Error('You cannot approve a timesheet you captured as the supervisor unless an administrator is authorised to do so.');
+  const viewer: ApprovalViewer = { actor, employeeCode: text(input.employeeCode), role: text(input.role), canSeeAll: Boolean(input.canSeeAll) };
+  for (const item of items) assertApprovalAccess(viewer, item);
   for (const item of items) {
     const nextStatus = input.action === 'approve' ? (item.stage === 'Payroll Readiness' ? 'Payroll Ready' : 'Approved') : 'Returned';
     const updated = await connection.request()
@@ -526,11 +580,12 @@ export const actOnApprovals = async (input: { ids: string[]; action: 'approve' |
   return { updated: items.length, stage, action: input.action };
 };
 
-export const readApprovalDetail = async (id: string) => {
+export const readApprovalDetail = async (id: string, viewer?: ApprovalViewer) => {
   const connection = await pool();
   const items = await loadItems(connection, [id]);
   const item = items[0];
   if (!item) throw new Error('Approval item was not found.');
+  if (viewer) assertApprovalAccess(viewer, item);
   const events = await connection.request().input('Id', sql.NVarChar(40), item.timesheetId).query(`SELECT * FROM [tsmgmt].[ApprovalEvents] WHERE [TimesheetId]=@Id ORDER BY [CreatedAt]`);
   const history = (events.recordset || []).map((row) => ({ id: text(row.Id), action: text(row.Action), stage: text(row.Stage), actor: text(row.Actor), role: text(row.ActorRole), at: row.CreatedAt ? new Date(String(row.CreatedAt)).toISOString() : '', reason: text(row.Reason), comment: text(row.Comment), previousStatus: text(row.PreviousStatus), newStatus: text(row.NewStatus) }));
   if (item.kind === 'Mobilization') {

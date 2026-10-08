@@ -35,6 +35,17 @@ assert.equal(ada?.weekdayOvertimeHours, 2);
 assert.equal(ada?.nightDays, 1);
 assert.equal(hours.has('P0013'), false);
 
+const splitDay = aggregatePortalBookingsForPayroll([
+  { employeeCode: 'C2002', employeeName: 'Bo', workDate: '2026-10-05', regularHours: 8, ovtHours: 0, nightHours: 1, locationName: 'AGEGE' },
+  { employeeCode: 'C2002', employeeName: 'Bo', workDate: '2026-10-05', regularHours: 8, ovtHours: 2, nightHours: 0, locationName: 'AGEGE' },
+], []);
+const bo = splitDay.get('C2002');
+assert.equal(bo?.weekdayDays, 1);
+assert.equal(bo?.daysWorked, 1);
+assert.equal(bo?.nightDays, 1);
+assert.equal(bo?.nightHours, 8);
+assert.equal(bo?.weekdayOvertimeHours, 2);
+
 const merged = replaceContractHoursWithPortalFeed(new Map([
   ['C1001', { daysWorked: 21, bookedHours: 168, employeeNo: 'C1001', employeeName: 'Old Register' }],
   ['Old Register', { daysWorked: 21, bookedHours: 168, employeeNo: 'C1001', employeeName: 'Old Register' }],

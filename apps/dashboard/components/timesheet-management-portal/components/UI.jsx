@@ -2,7 +2,16 @@ import React, { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 export const Badge=({children,tone='blue'})=><span className={'badge '+tone}>{children}</span>;
 export const Button=({children,kind='primary',onClick,disabled})=><button type="button" disabled={disabled} onClick={onClick} className={'btn '+kind}>{children}</button>;
-export const Card=({label,value,sub,tone=''})=><div className={'kpi '+tone}><span>{label}</span><strong>{value}</strong><small>{sub}</small></div>;
+export const Card=({label,value,sub,tone='',onClick})=>onClick
+  ? <button type="button" className={`kpi ${tone}`.trim()} onClick={onClick}><span>{label}</span><strong>{value}</strong><small>{sub}</small></button>
+  : <div className={`kpi ${tone}`.trim()}><span>{label}</span><strong>{value}</strong><small>{sub}</small></div>;
+export function DetailModal({ title, note, headers, rows, onClose }) {
+  const count = Array.isArray(rows) ? rows.length : 0;
+  return <Modal wide title={title} onClose={onClose} footer={<Button kind="secondary" onClick={onClose}>Close</Button>}>
+    <p className="detailNote">{note || `${count} record${count === 1 ? '' : 's'}`}</p>
+    <Table headers={headers} rows={rows} empty="Nothing is included in this total." />
+  </Modal>;
+}
 export const Tabs=({items,active,setActive})=><div className="tabs">{items.map(x=><button type="button" key={x} onClick={()=>setActive(x)} className={active===x?'active':''}>{x}</button>)}</div>;
 export const Modal=({title,children,onClose,footer,wide=false})=><div className="overlay"><div className={wide?'modal wide':'modal'}><div className="modalHead"><h3>{title}</h3><button type="button" onClick={onClose}>×</button></div><div className="modalBody">{children}</div><div className="modalFoot">{footer}</div></div></div>;
 export const Field=({label,required=false,children})=><label className="field"><span>{label}{required ? ' *' : ''}</span>{children}</label>;

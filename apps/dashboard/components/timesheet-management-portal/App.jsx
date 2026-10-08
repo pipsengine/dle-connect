@@ -1,5 +1,6 @@
 'use client';
-import React, { Component, useEffect, useState } from 'react';
+import React, { Component, Suspense, useEffect } from 'react';
+import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import Layout from './components/Layout';
 import { PortalDataProvider, usePortalData } from './portal-data';
 import Dashboard from './pages/Dashboard';
@@ -30,6 +31,29 @@ const pages = {
   Configuration,
 };
 
+const pageSlugs = {
+  Dashboard: 'dashboard',
+  'Timesheet Entry': 'entry',
+  'Timesheet Review': 'review',
+  'Timesheet Periods': 'periods',
+  'Crew & Assignments': 'crew',
+  'Attendance Reconciliation': 'attendance',
+  'OVT & Night Work': 'overtime',
+  'Offshore & Mobilization': 'offshore',
+  Approvals: 'approvals',
+  'Corrections & Adjustments': 'corrections',
+  Reports: 'reports',
+  Configuration: 'configuration',
+};
+
+const pageFromSlug = Object.fromEntries(Object.entries(pageSlugs).map(([name, slug]) => [slug, name]));
+
+const pageFromSearch = (params) => {
+  if (params.get('section') === 'crew-removal') return 'Crew & Assignments';
+  const requested = params.get('page') || '';
+  return pages[requested] ? requested : (pageFromSlug[requested] || 'Dashboard');
+};
+
 class PortalErrorBoundary extends Component {
   constructor(props) { super(props); this.state = { error: null }; }
   static getDerivedStateFromError(error) { return { error }; }
@@ -41,8 +65,21 @@ class PortalErrorBoundary extends Component {
 }
 
 function PortalShell() {
-  const [page, setPage] = useState('Dashboard');
+  const searchParams = useSearchParams();
+  const pathname = usePathname();
+  const router = useRouter();
   const { snapshot } = usePortalData();
+  const page = pageFromSearch(searchParams);
+  const setPage = (next) => {
+    const resolved = pages[next] ? next : 'Dashboard';
+    if (resolved === page) return;
+    const params = new URLSearchParams(searchParams.toString());
+    if (resolved === 'Dashboard') params.delete('page');
+    else params.set('page', pageSlugs[resolved]);
+    if (params.get('section') === 'crew-removal' && resolved !== 'Crew & Assignments') params.delete('section');
+    const query = params.toString();
+    router.push(query ? `${pathname}?${query}` : pathname, { scroll: false });
+  };
   useEffect(() => {
     if (snapshot?.viewer && page === 'Timesheet Periods' && !snapshot.viewer.canManagePeriods) setPage('Dashboard');
   }, [snapshot, page]);
@@ -55,5 +92,5 @@ function PortalShell() {
 }
 
 export default function App() {
-  return <PortalDataProvider><PortalShell /></PortalDataProvider>;
+  return <PortalDataProvider><Suspense fallback={null}><PortalShell /></Suspense></PortalDataProvider>;
 }

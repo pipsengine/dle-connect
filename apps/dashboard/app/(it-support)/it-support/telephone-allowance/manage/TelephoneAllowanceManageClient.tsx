@@ -157,8 +157,9 @@ export default function TelephoneAllowanceManageClient() {
   });
 
   const load = useCallback(async () => {
+    const cycleId = new URLSearchParams(window.location.search).get('cycleId') || '';
     const [cycleRes, cyclesRes, entRes] = await Promise.all([
-      get<{ cycle: Cycle | null; validation?: Validation; capabilities: TaCapabilities }>('cycle'),
+      get<{ cycle: Cycle | null; validation?: Validation; capabilities: TaCapabilities }>('cycle', cycleId ? { cycleId } : undefined),
       get<{ cycles: Cycle[]; capabilities: TaCapabilities }>('cycles'),
       get<{ entitlements: Entitlement[]; capabilities: TaCapabilities }>('entitlements'),
     ]);

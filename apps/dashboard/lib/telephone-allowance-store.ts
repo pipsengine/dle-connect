@@ -181,6 +181,11 @@ type SqlMode = { kind: 'sql'; pool: sql.ConnectionPool } | { kind: 'json' };
 
 const ROW_CHANGED_MSG = 'This schedule has changed. Refresh and try again.';
 const MODULE_HREF = '/it-support/telephone-allowance';
+const cycleHref = (section: 'manage' | 'approvals' | 'payment-reporting', cycleId: string) =>
+  `${MODULE_HREF}/${section}?cycleId=${encodeURIComponent(cycleId)}`;
+const approvalHref = (cycleId: string) => cycleHref('approvals', cycleId);
+const manageHref = (cycleId: string) => cycleHref('manage', cycleId);
+const paymentHref = (cycleId: string) => cycleHref('payment-reporting', cycleId);
 const schemaReady = { value: false };
 
 const nowIso = () => new Date().toISOString();
@@ -489,6 +494,11 @@ export const deliverTelephoneAllowanceNotice = async (opts: {
       continue;
     }
 
+    const actionLabel = href.includes('/approvals')
+      ? 'Open approval'
+      : href.includes('/payment-reporting')
+        ? 'Open payment'
+        : 'Open cycle';
     try {
       const result = await sendTelephoneAllowanceWorkflowEmail({
         recipientName: recipient.fullName,
@@ -497,6 +507,7 @@ export const deliverTelephoneAllowanceNotice = async (opts: {
         body: opts.body,
         actorName: opts.actor,
         workspaceLink,
+        actionLabel,
       });
       deliveries.push({
         employeeCode: recipient.employeeCode,
@@ -1599,7 +1610,7 @@ export const sendToHrReview = async (
     actor,
     title: `Telephone allowance ready for HR review`,
     body: `${cycle.cycleCode} (${cycle.pairLabel} ${cycle.year}) was sent for HR review by ${actor}.`,
-    href: `${MODULE_HREF}/manage`,
+    href: manageHref(cycle.id),
     roles: ['HR Manager'],
     recipientEmployeeCode: 'P0432',
     severity: 'warning',
@@ -1878,7 +1889,7 @@ export const completeHrReview = async (
     actor,
     title: `HR review completed — ${cycle.cycleCode}`,
     body: `${actor} completed HR review${comment ? `: ${comment}` : ''}. IT validation can proceed.`,
-    href: `${MODULE_HREF}/manage`,
+    href: manageHref(cycle.id),
     roles: ['Super Administrator'],
     preparedBy: cycle.preparedBy,
     severity: 'success',
@@ -1924,7 +1935,7 @@ export const initiateApproval = async (
     actor,
     title: `Approval initiated — ${cycle.cycleCode}`,
     body: `${cycle.cycleCode} is locked and pending HR formal approval.`,
-    href: `${MODULE_HREF}/approvals`,
+    href: approvalHref(cycle.id),
     roles: ['HR Manager', 'HR Approver'],
   });
   return cycle;
@@ -1997,7 +2008,7 @@ export const approveHr = async (
     actor,
     title: `HR approved — ${cycle.cycleCode}`,
     body: `Awaiting MD approval.`,
-    href: `${MODULE_HREF}/approvals`,
+    href: approvalHref(cycle.id),
     roles: ['MD', 'CEO', 'Executive'],
     severity: 'success',
   });
@@ -2037,7 +2048,7 @@ export const approveMd = async (
     actor,
     title: `MD approved — ${cycle.cycleCode}`,
     body: `Awaiting CFO authorization for payment.`,
-    href: `${MODULE_HREF}/approvals`,
+    href: approvalHref(cycle.id),
     roles: ['CFO'],
     severity: 'success',
   });
@@ -2077,7 +2088,7 @@ export const authorizeCfo = async (
     actor,
     title: `Authorized for payment — ${cycle.cycleCode}`,
     body: `CFO authorized ${cycle.cycleCode}. Treasury can generate the payment schedule.`,
-    href: `${MODULE_HREF}/payment-reporting`,
+    href: paymentHref(cycle.id),
     roles: ['Treasury', 'Treasury Officer', 'Finance'],
     severity: 'success',
   });
@@ -2122,7 +2133,7 @@ export const returnForCorrection = async (
     actor,
     title: `Returned for correction — ${cycle.cycleCode}`,
     body: reason,
-    href: `${MODULE_HREF}/manage`,
+    href: manageHref(cycle.id),
     roles: ['Super Administrator'],
     preparedBy: cycle.preparedBy,
     severity: 'warning',
@@ -2421,7 +2432,7 @@ export const remindTelephoneAllowanceApproval = async (cycleId: string, actor: T
     actor,
     title: `Reminder: ${cycle.cycleCode} is awaiting ${stage}`,
     body: `${actor} sent a reminder. ${cycle.pairLabel} ${cycle.year} telephone allowance (${cycle.cycleCode}) is still waiting for ${stage}.`,
-    href: `${MODULE_HREF}/approvals`,
+    href: approvalHref(cycle.id),
     roles: reminderRolesForStatus(cycle.status),
     severity: 'warning',
   });
@@ -2466,22 +2477,22 @@ export const buildDashboardPayload = async (
 
   for (const cycle of cycles) {
     if (capabilities.canPrepare && ['DRAFT', 'RETURNED_TO_IT', 'RETURNED_FOR_CORRECTION', 'IT_VALIDATION'].includes(cycle.status)) {
-      pendingMine.push({ cycleId: cycle.id, cycleCode: cycle.cycleCode, status: cycle.status, href: `${MODULE_HREF}/manage` });
+      pendingMine.push({ cycleId: cycle.id, cycleCode: cycle.cycleCode, status: cycle.status, href: manageHref(cycle.id) });
     }
     if (capabilities.canHrReview && cycle.status === 'PENDING_HR_REVIEW') {
-      pendingMine.push({ cycleId: cycle.id, cycleCode: cycle.cycleCode, status: cycle.status, href: `${MODULE_HREF}/manage` });
+      pendingMine.push({ cycleId: cycle.id, cycleCode: cycle.cycleCode, status: cycle.status, href: manageHref(cycle.id) });
     }
     if (capabilities.canHrApprove && cycle.status === 'PENDING_HR_APPROVAL') {
-      pendingMine.push({ cycleId: cycle.id, cycleCode: cycle.cycleCode, status: cycle.status, href: `${MODULE_HREF}/approvals` });
+      pendingMine.push({ cycleId: cycle.id, cycleCode: cycle.cycleCode, status: cycle.status, href: approvalHref(cycle.id) });
     }
     if (capabilities.canMdApprove && cycle.status === 'PENDING_MD_APPROVAL') {
-      pendingMine.push({ cycleId: cycle.id, cycleCode: cycle.cycleCode, status: cycle.status, href: `${MODULE_HREF}/approvals` });
+      pendingMine.push({ cycleId: cycle.id, cycleCode: cycle.cycleCode, status: cycle.status, href: approvalHref(cycle.id) });
     }
     if (capabilities.canCfoAuthorize && cycle.status === 'PENDING_CFO_AUTHORIZATION') {
-      pendingMine.push({ cycleId: cycle.id, cycleCode: cycle.cycleCode, status: cycle.status, href: `${MODULE_HREF}/approvals` });
+      pendingMine.push({ cycleId: cycle.id, cycleCode: cycle.cycleCode, status: cycle.status, href: approvalHref(cycle.id) });
     }
     if (capabilities.canTreasury && ['AUTHORIZED_FOR_PAYMENT', 'PAYMENT_PROCESSING', 'PARTIALLY_PAID'].includes(cycle.status)) {
-      pendingMine.push({ cycleId: cycle.id, cycleCode: cycle.cycleCode, status: cycle.status, href: `${MODULE_HREF}/payment-reporting` });
+      pendingMine.push({ cycleId: cycle.id, cycleCode: cycle.cycleCode, status: cycle.status, href: paymentHref(cycle.id) });
     }
   }
 

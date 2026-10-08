@@ -75,6 +75,7 @@ export default function TelephoneAllowancePaymentReportingClient() {
   const { get, post, busy, toast, error } = useTelephoneAllowanceApi();
   const [tab, setTab] = useState<(typeof tabs)[number]>('Payment');
   const [data, setData] = useState<PaymentPayload | null>(null);
+  const [focusCycleId, setFocusCycleId] = useState('');
 
   const load = useCallback(async () => {
     const [payment, exceptions, audits] = await Promise.all([
@@ -91,8 +92,14 @@ export default function TelephoneAllowancePaymentReportingClient() {
   }, [get]);
 
   useEffect(() => {
+    setFocusCycleId(new URLSearchParams(window.location.search).get('cycleId') || '');
     void load().catch(console.error);
   }, [load]);
+
+  useEffect(() => {
+    if (!data || !focusCycleId) return;
+    document.getElementById(`ta-cycle-${focusCycleId}`)?.scrollIntoView({ block: 'center' });
+  }, [data, focusCycleId]);
 
   const caps = data?.capabilities;
   const payments = data?.payments || [];
@@ -118,7 +125,7 @@ export default function TelephoneAllowancePaymentReportingClient() {
       {tab === 'Payment' ? (
         <div className="space-y-4">
           {(data?.treasuryReady || []).filter((c) => !payments.some((p) => p.cycleId === c.id)).map((cycle) => (
-            <section key={cycle.id} className="rounded-2xl border border-indigo-200 bg-indigo-50 p-4">
+            <section id={`ta-cycle-${cycle.id}`} key={cycle.id} className={`rounded-2xl border bg-indigo-50 p-4 ${focusCycleId === cycle.id ? 'border-indigo-500 ring-2 ring-indigo-300' : 'border-indigo-200'}`}>
               <p className="text-xs font-black uppercase text-indigo-800">Authorized for payment</p>
               <h3 className="mt-1 text-lg font-black text-slate-950">{cycle.cycleCode}</h3>
               <p className="mt-1 text-sm font-semibold text-slate-700">{cycle.beneficiaryCount} beneficiaries · {moneyNgn(cycle.bimonthlyTotal)}</p>
@@ -140,7 +147,7 @@ export default function TelephoneAllowancePaymentReportingClient() {
             </p>
           ) : null}
           {payments.map((payment) => (
-            <section key={payment.id} className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+            <section id={`ta-cycle-${payment.cycleId}`} key={payment.id} className={`rounded-2xl border bg-white p-4 shadow-sm ${focusCycleId === payment.cycleId ? 'border-indigo-500 ring-2 ring-indigo-300' : 'border-slate-200'}`}>
               <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
                 <div>
                   <p className="text-xs font-black uppercase text-teal-700">Telephone Allowance — {payment.cycleCode}</p>

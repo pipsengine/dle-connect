@@ -8,6 +8,8 @@ const emptySnapshot = {
   periods: [],
   bookings: [],
   records: [],
+  publicHolidays: [],
+  standardHours: 8,
   crewAssignments: [],
   crewEvents: [],
   crewRemovals: [],
@@ -68,6 +70,23 @@ export const formatDisplayDate = (value) => {
 export const openPeriod = (periods) => periods.find((period) => period.status === 'Open') || periods[0] || null;
 
 export const bookingHasHours = (booking) => Number(booking?.regularHours || 0) + Number(booking?.ovtHours || 0) + Number(booking?.nightHours || 0) > 0;
+
+export const bookingGroupStatus = (lines) => {
+  if ((lines || []).some((line) => line.status === 'Exception')) return 'Exception';
+  if ((lines || []).some((line) => line.status === 'Draft')) return 'Draft';
+  if ((lines || []).every((line) => line.status === 'Approved')) return 'Approved';
+  if ((lines || []).every((line) => line.status === 'Submitted' || line.status === 'Approved')) return 'Submitted';
+  return 'Saved';
+};
+
+export const bookingGroupRows = (groups) => (groups || []).map((lines) => {
+  const first = lines[0] || {};
+  const regular = lines.reduce((sum, line) => sum + Number(line.regularHours || 0), 0);
+  const ovt = lines.reduce((sum, line) => sum + Number(line.ovtHours || 0), 0);
+  return [first.employeeCode || '', first.employeeName || '', new Set(lines.map((line) => line.workDate)).size, regular, ovt, bookingGroupStatus(lines)];
+});
+
+export const EMPLOYEE_HOUR_HEADERS = ['Code', 'Employee', 'Dates', 'REG', 'OVT', 'Status'];
 
 export const bookedEmployeeGroups = (bookings) => {
   const byCode = new Map();

@@ -1,6 +1,6 @@
 'use client';
 import React, { useMemo, useState } from 'react';
-import { Badge, Button, Field, Modal, Table, Tabs } from './UI';
+import { Badge, Button, DetailModal, Field, Modal, Table, Tabs } from './UI';
 import { formatDisplayDate, usePortalData } from '../portal-data';
 
 const toneFor = (status) => {
@@ -22,6 +22,7 @@ export default function RecordWorkspace({ area, title, description, tabs, header
   const [status, setStatus] = useState('');
   const [saving, setSaving] = useState(false);
   const [formError, setFormError] = useState('');
+  const [detail, setDetail] = useState(null);
   const directory = snapshot.directory;
   const records = snapshot.records.filter((record) => record.area === area && record.tab === activeTab);
   const filtered = useMemo(() => records.filter((record) => {
@@ -33,8 +34,13 @@ export default function RecordWorkspace({ area, title, description, tabs, header
     if (status && record.status !== status) return false;
     return true;
   }), [records, query, periodId, supervisor, location, status]);
-  const actionCount = filtered.filter((record) => /pending|review|open|draft|exception/i.test(record.status)).length;
-  const exceptionCount = filtered.filter((record) => /exception/i.test(record.status)).length;
+  const needsAction = (record) => /pending|review|open|draft|exception/i.test(record.status);
+  const actionRecords = filtered.filter(needsAction);
+  const completedRecords = filtered.filter((record) => !needsAction(record));
+  const exceptionRecords = filtered.filter((record) => /exception/i.test(record.status));
+  const actionCount = actionRecords.length;
+  const exceptionCount = exceptionRecords.length;
+  const present = (list, title) => setDetail({ title, headers, rows: list.map((record) => mapRow(record, { formatDisplayDate, badge: (value) => <Badge tone={toneFor(value)}>{value || '—'}</Badge> })) });
 
   return <>
     <div className="pageTitle"><div><span className="eyebrow">TIMESHEET MANAGEMENT</span><h1>{title}</h1><p>{description}</p></div><div className="actions"><Button onClick={() => { setFormError(''); setModal(true); }}>+ New {activeTab}</Button></div></div>
@@ -42,10 +48,10 @@ export default function RecordWorkspace({ area, title, description, tabs, header
     {notice && <div className="success">{notice} <button onClick={() => setNotice('')}>×</button></div>}
     <Tabs items={tabs} active={activeTab} setActive={setActiveTab} />
     <section className="metricGrid">
-      <div className="metric"><span>Total Records</span><b>{loading ? '…' : filtered.length}</b><small>Saved in DLE Enterprise</small></div>
-      <div className="metric"><span>Requires Action</span><b>{actionCount}</b><small>Open, draft, or review</small></div>
-      <div className="metric"><span>Completed</span><b>{Math.max(0, filtered.length - actionCount)}</b><small>No action outstanding</small></div>
-      <div className="metric"><span>Exceptions</span><b>{exceptionCount}</b><small>Marked exception</small></div>
+      <button type="button" className="metric" onClick={() => present(filtered, 'Total records')}><span>Total Records</span><b>{loading ? '…' : filtered.length}</b><small>Saved in DLE Enterprise</small></button>
+      <button type="button" className="metric" onClick={() => present(actionRecords, 'Requires action')}><span>Requires Action</span><b>{actionCount}</b><small>Open, draft, or review</small></button>
+      <button type="button" className="metric" onClick={() => present(completedRecords, 'Completed')}><span>Completed</span><b>{Math.max(0, filtered.length - actionCount)}</b><small>No action outstanding</small></button>
+      <button type="button" className="metric" onClick={() => present(exceptionRecords, 'Exceptions')}><span>Exceptions</span><b>{exceptionCount}</b><small>Marked exception</small></button>
     </section>
     <section className="panel">
       <div className="panelHead"><div><h3>{activeTab}</h3><p>{snapshot.periods[0]?.name || 'No period created yet'} · records stored in DLE Enterprise</p></div><input className="searchInput" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search employee, project, reference..." /></div>
@@ -57,6 +63,7 @@ export default function RecordWorkspace({ area, title, description, tabs, header
       </div>
       <Table headers={headers} rows={filtered.map((record) => mapRow(record, { formatDisplayDate, badge: (value) => <Badge tone={toneFor(value)}>{value || '—'}</Badge> }))} empty={loading ? 'Loading records from DLE Enterprise…' : 'No records saved yet. Use New to write the first one.'} />
     </section>
+    {detail && <DetailModal title={detail.title} headers={detail.headers} rows={detail.rows} onClose={() => setDetail(null)} />}
     {modal && <RecordModal
       title={`New ${activeTab}`}
       directory={directory}

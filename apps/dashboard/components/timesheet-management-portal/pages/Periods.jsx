@@ -1,7 +1,7 @@
 'use client';
 import React, { useState } from 'react';
-import { Badge, Button, Card, Field, Modal, Table } from '../components/UI';
-import { bookedEmployeeGroups, formatDisplayDate, usePortalData } from '../portal-data';
+import { Badge, Button, Card, DetailModal, Field, Modal, Table } from '../components/UI';
+import { EMPLOYEE_HOUR_HEADERS, bookedEmployeeGroups, bookingGroupRows, formatDisplayDate, usePortalData } from '../portal-data';
 
 const STATES = ['Planned', 'Open', 'Capture Closed', 'Approval in Progress', 'Payroll Locked', 'Closed'];
 
@@ -9,6 +9,7 @@ export default function Periods() {
   const { snapshot, error, notice, setNotice, save } = usePortalData();
   const [modal, setModal] = useState(null);
   const [selected, setSelected] = useState(null);
+  const [detail, setDetail] = useState(null);
   const current = snapshot.periods.find((period) => period.status === 'Open') || snapshot.periods[0];
   const bookings = current ? snapshot.bookings.filter((booking) => booking.periodId === current.id) : [];
   const booked = bookedEmployeeGroups(bookings);
@@ -21,11 +22,11 @@ export default function Periods() {
     {(error || notice) && <div className="success">{error || notice} <button onClick={() => setNotice('')}>×</button></div>}
     <div className="lifecycle">{STATES.map((state) => <Step key={state} t={state} on={current?.status === state} />)}</div>
     <div className="kpis compact">
-      <Card label="Current Period" value={current?.name || 'None'} sub={current ? `${formatDisplayDate(current.startDate)} — ${formatDisplayDate(current.endDate)}` : 'Create the first period'} />
-      <Card label="Booked" value={String(booked.length)} sub="Employees with hours" />
-      <Card label="Draft" value={String(drafts)} sub="Not submitted" tone={drafts ? 'warn' : ''} />
-      <Card label="Exceptions" value={String(exceptions)} sub="Marked exception" tone={exceptions ? 'bad' : ''} />
-      <Card label="Submitted" value={String(submitted)} sub="Submitted or later" tone="good" />
+      <Card label="Current Period" value={current?.name || 'None'} sub={current ? `${formatDisplayDate(current.startDate)} — ${formatDisplayDate(current.endDate)}` : 'Create the first period'} onClick={() => setDetail({ title: current?.name || 'Current period', headers: ['Period', 'From', 'To', 'Status', 'Notes'], rows: current ? [[current.name, formatDisplayDate(current.startDate), formatDisplayDate(current.endDate), current.status, current.notes || '—']] : [] })} />
+      <Card label="Booked" value={String(booked.length)} sub="Employees with hours" onClick={() => setDetail({ title: 'Booked employees', headers: EMPLOYEE_HOUR_HEADERS, rows: bookingGroupRows(booked) })} />
+      <Card label="Draft" value={String(drafts)} sub="Not submitted" tone={drafts ? 'warn' : ''} onClick={() => setDetail({ title: 'Draft employees', headers: EMPLOYEE_HOUR_HEADERS, rows: bookingGroupRows(booked.filter((lines) => lines.some((line) => line.status === 'Draft'))) })} />
+      <Card label="Exceptions" value={String(exceptions)} sub="Marked exception" tone={exceptions ? 'bad' : ''} onClick={() => setDetail({ title: 'Exception employees', headers: EMPLOYEE_HOUR_HEADERS, rows: bookingGroupRows(booked.filter((lines) => lines.some((line) => line.status === 'Exception'))) })} />
+      <Card label="Submitted" value={String(submitted)} sub="Submitted or later" tone="good" onClick={() => setDetail({ title: 'Submitted employees', headers: EMPLOYEE_HOUR_HEADERS, rows: bookingGroupRows(booked.filter((lines) => lines.every((line) => line.status !== 'Draft'))) })} />
     </div>
     <div className="panel"><div className="panelHead"><div><h3>Period Register</h3><p>Status changes are written back to DLE Enterprise.</p></div></div>
       <Table headers={['Period', 'Date Range', 'Status', 'Booked', 'Draft', 'Submitted', 'Exceptions', 'Actions']} rows={snapshot.periods.map((period) => {
@@ -33,6 +34,7 @@ export default function Periods() {
         return [period.name, `${formatDisplayDate(period.startDate)} — ${formatDisplayDate(period.endDate)}`, <Badge tone={period.status === 'Open' ? 'green' : 'slate'}>{period.status}</Badge>, groups.length, groups.filter((lines) => lines.some((line) => line.status === 'Draft')).length, groups.filter((lines) => lines.every((line) => line.status !== 'Draft')).length, groups.filter((lines) => lines.some((line) => line.status === 'Exception')).length, <button onClick={() => { setSelected(period); setModal('manage'); }}>Manage</button>];
       })} empty="No timesheet periods have been created." />
     </div>
+    {detail && <DetailModal title={detail.title} headers={detail.headers} rows={detail.rows} onClose={() => setDetail(null)} />}
     {modal === 'create' && <CreatePeriod onClose={() => setModal(null)} onSave={async (form) => { await save({ action: 'create-period', ...form }); setNotice('Period created in DLE Enterprise.'); setModal(null); }} />}
     {modal === 'manage' && selected && <ManagePeriod period={selected} onClose={() => setModal(null)} onSave={async (status) => { await save({ action: 'update-period', id: selected.id, status }); setNotice('Period status updated.'); setModal(null); }} />}
   </>;

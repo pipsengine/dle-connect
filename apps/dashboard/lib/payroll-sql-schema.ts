@@ -137,8 +137,11 @@ CREATE TABLE [hris].[DayrateScheduleUploadRows] (
   [arrears] DECIMAL(19, 4) NOT NULL DEFAULT (0),
   [excel_gross] DECIMAL(19, 4) NOT NULL DEFAULT (0),
   [excel_net] DECIMAL(19, 4) NOT NULL DEFAULT (0),
+  [excel_weekday_earning] DECIMAL(19, 4) NULL,
   CONSTRAINT [PK_DayrateScheduleUploadRows] PRIMARY KEY ([upload_id], [row_no])
 );
+IF COL_LENGTH(N'hris.DayrateScheduleUploadRows', N'excel_weekday_earning') IS NULL
+  ALTER TABLE [hris].[DayrateScheduleUploadRows] ADD [excel_weekday_earning] DECIMAL(19, 4) NULL;
 IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'IX_DayrateScheduleUploadRows_Upload' AND object_id = OBJECT_ID(N'[hris].[DayrateScheduleUploadRows]'))
   CREATE INDEX [IX_DayrateScheduleUploadRows_Upload] ON [hris].[DayrateScheduleUploadRows] ([upload_id], [employee_code]);
 IF OBJECT_ID(N'[hris].[SalaryScheduleUploads]', N'U') IS NULL

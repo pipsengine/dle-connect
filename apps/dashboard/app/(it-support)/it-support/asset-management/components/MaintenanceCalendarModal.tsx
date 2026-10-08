@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { ChevronLeft, ChevronRight, X } from 'lucide-react';
+import { departmentsMatch } from '@/lib/it-asset-department';
 import type { EnrichedMaintenanceRecord } from '../lib/maintenance-dashboard-utils';
 import { formatScheduledRelative, priorityTone, statusDotTone } from '../lib/maintenance-dashboard-utils';
 import { maintenanceStatusClass } from '../lib/maintenance-utils';
@@ -41,7 +42,7 @@ export function MaintenanceCalendarModal({ open, onClose, records, departments, 
   const [error, setError] = useState('');
 
   const filtered = useMemo(() => records.filter((row) => {
-    if (departmentFilter && (row.department || '').toLowerCase() !== departmentFilter.toLowerCase()) return false;
+    if (departmentFilter && !departmentsMatch(row.department, departmentFilter)) return false;
     if (locationFilter && (row.location || '').toLowerCase() !== locationFilter.toLowerCase()) return false;
     return Boolean(row.scheduledDate);
   }), [departmentFilter, locationFilter, records]);
