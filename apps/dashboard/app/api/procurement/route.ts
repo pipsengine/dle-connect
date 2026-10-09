@@ -74,6 +74,20 @@ export async function GET(request: NextRequest) {
         return ok(await buildProcurementDashboard());
       case 'suppliers':
         return ok(await listSuppliers());
+      case 'products': {
+        const { listProcurementProducts } = await import('@/lib/procurement/product-store');
+        const management = searchParams.get('management') || '';
+        const page = searchParams.get('page');
+        return ok(await listProcurementProducts({
+          q: searchParams.get('q') || '',
+          management,
+          activeOnly: searchParams.get('active') !== '0',
+          purchasedOnly: searchParams.get('purchased') === '1',
+          limit: Number(searchParams.get('limit') || 300),
+          page: page ? Number(page) : undefined,
+          pageSize: Number(searchParams.get('pageSize') || 25),
+        }));
+      }
       case 'next-supplier-code':
         return ok({ code: await nextSupplierCode() });
       case 'purchase-requisitions':
@@ -105,6 +119,16 @@ export async function GET(request: NextRequest) {
         return ok(await buildProcurementReports());
       case 'approvals-queue':
         return ok(await listApprovalsQueue());
+      case 'single-source-justifications': {
+        const { listSingleSourceJustifications } = await import('@/lib/procurement/ssj-store');
+        return ok(await listSingleSourceJustifications(session));
+      }
+      case 'single-source-justification': {
+        const id = searchParams.get('id');
+        if (!id) return err(400, 'id required');
+        const { getSingleSourceJustification } = await import('@/lib/procurement/ssj-store');
+        return ok(await getSingleSourceJustification(id, session));
+      }
       case 'lookups': {
         const kind = searchParams.get('kind') || 'employees';
         if (kind === 'departments') return ok(await listProcurementLookupDepartments());
@@ -150,8 +174,31 @@ export async function POST(request: NextRequest) {
         return ok(await upsertSupplier(body.payload || body, actor));
       case 'sync-sage-suppliers':
         return ok(await syncSageSuppliersFromX3(actor));
+      case 'sync-sage-products': {
+        const { syncSageProducts } = await import('@/lib/procurement/product-store');
+        return ok(await syncSageProducts(actor));
+      }
       case 'upsert-pr':
         return ok(await upsertPurchaseRequisition(body.payload || body, actor));
+      case 'upsert-ssj': {
+        const { upsertSingleSourceJustification } = await import('@/lib/procurement/ssj-store');
+        return ok(await upsertSingleSourceJustification(body.payload || body, session));
+      }
+      case 'submit-ssj': {
+        const { submitSingleSourceJustification } = await import('@/lib/procurement/ssj-store');
+        return ok(await submitSingleSourceJustification(body.payload || body, session, body.comment ? String(body.comment) : undefined));
+      }
+      case 'action-ssj': {
+        const payload = (body.payload || body) as Record<string, unknown>;
+        const ssjId = String(payload.ssjId || '');
+        if (!ssjId) return err(400, 'ssjId required');
+        const { actionSingleSourceJustification } = await import('@/lib/procurement/ssj-store');
+        return ok(await actionSingleSourceJustification({
+          ssjId,
+          decision: String(payload.decision || ''),
+          comment: payload.comment ? String(payload.comment) : undefined,
+        }, session));
+      }
       case 'submit-pr': {
         const prId = String(body.prId || body.payload?.prId || '');
         if (!prId) return err(400, 'prId required');

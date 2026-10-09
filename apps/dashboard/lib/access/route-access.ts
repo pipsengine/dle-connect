@@ -31,6 +31,8 @@ const routePathFromRequestPath = (pathname: string) => {
   if (path === '/api/procurement') return '/procurement';
   if (path.startsWith('/api/projects-engineering/')) return path.replace(/^\/api\/projects-engineering/, '/projects-engineering');
   if (path === '/api/projects-engineering') return '/projects-engineering';
+  if (path.startsWith('/api/commercial/')) return path.replace(/^\/api\/commercial/, '/commercial');
+  if (path === '/api/commercial') return '/commercial';
   return path;
 };
 
@@ -501,6 +503,14 @@ export const itSupportRoutePermissionOptions = (pathname: string): string[] | nu
       'hris.view',
     ];
   }
+  if (path.startsWith('/it-support/inspection-management') || path.startsWith('/api/it-support/inspection-management')) {
+    return [
+      'page.it-support.inspection-management.view',
+      'view_it_support',
+      'it.view',
+      'it.*',
+    ];
+  }
   if (path.startsWith('/it-support/asset-management')) {
     return [
       'view_it_assets',
@@ -563,6 +573,17 @@ export const canAccessRoute = (session: SessionLike, pathname: string) => {
     if (clean === '/finance' || clean === '/api/finance') return true;
     if (clean.startsWith('/finance/approvals') || clean.startsWith('/api/finance/payment')) return true;
     return false;
+  }
+  if (path.startsWith('/commercial') || path.startsWith('/api/commercial')) {
+    if (session.isGlobalAdmin || (session.roles || []).includes('Super Administrator')) return true;
+    return hasAnyPermission(session.permissions || [], [
+      'view_sales_crm',
+      'commercial.view',
+      'commercial.*',
+      'commercial.edit',
+      'commercial.create',
+      'enterprise.view',
+    ]);
   }
   if (path.startsWith('/procurement') || path.startsWith('/api/procurement')) {
     if (session.isGlobalAdmin || (session.roles || []).includes('Super Administrator')) return true;

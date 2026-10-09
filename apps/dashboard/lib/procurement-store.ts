@@ -130,11 +130,27 @@ const touchCbe = async (pool: sql.ConnectionPool, cbeId: string, actor: string) 
     `);
 };
 
+const sqlErrorNumber = (error: unknown) => {
+  if (!error || typeof error !== 'object') return 0;
+  const value = (error as { number?: unknown }).number;
+  return typeof value === 'number' ? value : 0;
+};
+
+const applyProcurementSchema = async (pool: sql.ConnectionPool) => {
+  try {
+    await pool.request().query(ensureProcurementSchemaSql);
+  } catch (error) {
+    // Two requests can both pass IF OBJECT_ID and one CREATE TABLE then fails with 2714.
+    if (sqlErrorNumber(error) !== 2714) throw error;
+    await pool.request().query(ensureProcurementSchemaSql);
+  }
+};
+
 export const ensureProcurementDb = async () => {
   const pool = await getDleEnterpriseDbPool();
   if (!pool) throw new Error('DLE_Enterprise database is not configured. Procurement requires SQL persistence.');
   if (!dbReady.value) {
-    await pool.request().query(ensureProcurementSchemaSql);
+    await applyProcurementSchema(pool);
     await seedDefaults(pool);
     dbReady.value = true;
   }
@@ -2442,6 +2458,26 @@ export const listApprovalsQueue = async () => {
       updatedAt: r.updatedAt,
       href: '/procurement/contracts',
     }));
+  const pool = await ensureProcurementDb();
+  const ssjResult = await pool.request().query(`
+    SELECT [SsjId], [Title], [Status], [CurrentWith], [RequesterName], [EstimatedAmount], [Currency], [Project], [UpdatedAt]
+    FROM [procurement].[SingleSourceJustifications]
+    WHERE [Status] <> N'Draft'
+    ORDER BY [UpdatedAt] DESC
+  `);
+  const fromSsj = (ssjResult.recordset as Record<string, unknown>[]).map((row) => ({
+    id: String(row.SsjId),
+    reference: String(row.SsjId),
+    title: String(row.Title || ''),
+    status: String(row.Status || ''),
+    transactionType: 'Single Source',
+    owner: row.CurrentWith == null ? String(row.RequesterName || '') : String(row.CurrentWith),
+    amount: Number(row.EstimatedAmount || 0),
+    currency: String(row.Currency || 'NGN'),
+    project: row.Project == null ? null : String(row.Project),
+    updatedAt: row.UpdatedAt instanceof Date ? row.UpdatedAt.toISOString() : String(row.UpdatedAt || ''),
+    href: `/procurement/purchase-requisitions/single-sourced-justification?id=${encodeURIComponent(String(row.SsjId))}`,
+  }));
   const manual = domainApprovals.map((r) => ({
     id: r.recordId,
     reference: r.reference,
@@ -2455,7 +2491,7 @@ export const listApprovalsQueue = async () => {
     updatedAt: r.updatedAt,
     href: '/procurement/approvals',
   }));
-  return [...fromPrs, ...fromRfqs, ...fromCbes, ...fromPos, ...fromContracts, ...manual].sort((a, b) =>
+  return [...fromPrs, ...fromRfqs, ...fromCbes, ...fromPos, ...fromContracts, ...fromSsj, ...manual].sort((a, b) =>
     String(b.updatedAt).localeCompare(String(a.updatedAt)),
   );
 };

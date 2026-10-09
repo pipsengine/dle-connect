@@ -35,7 +35,7 @@ type QueueRow = {
   href?: string;
 };
 
-const TABS = ['My Queue', 'PR', 'Sourcing', 'Award', 'PO / Contract', 'Waivers', 'Escalations'];
+const TABS = ['My Queue', 'PR', 'Single Source', 'Sourcing', 'Award', 'PO / Contract', 'Waivers', 'Escalations'];
 
 export function ApprovalsQueueClient() {
   const spec = domainById('approvals')!;
@@ -76,7 +76,14 @@ export function ApprovalsQueueClient() {
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
     return rows.filter((row) => {
-      if (tab !== 'My Queue' && tab !== 'Escalations') {
+      if (tab === 'Escalations' && row.transactionType === 'Single Source') return false;
+      if (tab === 'My Queue' && row.transactionType === 'Single Source') {
+        const status = String(row.status || '').toLowerCase();
+        if (!status.includes('pending') && !status.includes('return')) return false;
+      }
+      if (tab === 'Single Source') {
+        if (row.transactionType !== 'Single Source') return false;
+      } else if (tab !== 'My Queue' && tab !== 'Escalations') {
         if (!String(row.transactionType).toLowerCase().includes(tab.toLowerCase().replace(' / contract', '').replace('po', 'po'))) {
           if (tab === 'PO / Contract' && row.transactionType !== 'PO / Contract') return false;
           if (tab !== 'PO / Contract' && row.transactionType !== tab) return false;

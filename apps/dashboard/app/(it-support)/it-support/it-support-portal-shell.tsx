@@ -193,10 +193,13 @@ export function ItSupportPortalShell({ children, employee }: Props) {
               {!railCollapsed && isOpen && section.children.length > 0 ? (
                 <div className="mt-0.5 space-y-0.5 border-l border-slate-100 ml-4 pl-2">
                   {section.children.map((child) => {
-                    const active =
-                      child.href === '/it-support'
+                    const matches = section.children.filter((candidate) =>
+                      candidate.href === '/it-support'
                         ? pathname === '/it-support' || pathname === '/it-support/'
-                        : pathname === child.href || pathname.startsWith(`${child.href}/`);
+                        : pathname === candidate.href || pathname.startsWith(`${candidate.href}/`),
+                    );
+                    const best = matches.sort((left, right) => right.href.length - left.href.length)[0];
+                    const active = best?.id === child.id;
                     const childStatus = statusTone(child.status);
                     return (
                       <Link

@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import Link from 'next/link';
 import {
   CheckCircle2,
   Eye,
@@ -446,6 +447,9 @@ export function PurchaseRequisitionsClient() {
           <p className="mt-1 text-sm text-slate-600">
             Raise, submit and approve purchase requests. Line manager approves first; Procurement Manager then assigns a buyer and acknowledges.
           </p>
+          <Link href="/procurement/purchase-requisitions/single-sourced-justification" className="mt-2 inline-flex text-sm font-semibold text-blue-700 hover:underline">
+            Single Sourced Justification
+          </Link>
         </div>
         <div className="flex flex-wrap gap-2">
           <button type="button" onClick={() => void load()} className={secondaryBtnClass}>

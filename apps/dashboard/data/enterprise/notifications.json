@@ -2,6 +2,60 @@
   "schemaVersion": 1,
   "notifications": [
     {
+      "id": "ntf-1791564964382-7c768r",
+      "recipientUserId": "P0429",
+      "recipientUsername": "P0429",
+      "recipientEmployeeCode": "P0429",
+      "recipientRoles": [],
+      "kind": "Approval",
+      "module": "Payroll Management",
+      "title": "Payroll approval required — September 2026 · DLE · Day-rate",
+      "body": "Finance Manager review is required for September 2026 · DLE · Day-rate. Gross ₦62,735,448.31, Net ₦59,598,675.82, 177 employees. Approvals are pack-specific (Salaries vs Wages).",
+      "severity": "warning",
+      "status": "Unread",
+      "href": "https://dleconnect.dormanlongeng.com:1432/hris/payroll/payroll-approval/authorize?token=eyJydW5JZCI6InBheXJvbGwtMjAyNi0wOS1kYWlseS1yYXRlLURMRSIsInBlcmlvZCI6IjIwMjYtMDkiLCJzdGFnZUlkIjoiZmluYW5jZS1tYW5hZ2VyIiwiZGVjaXNpb24iOiJhcHByb3ZlIiwicmVjaXBpZW50RW1haWwiOiJyYXBoZWFsaXlhbmRhQGRvcm1hbmxvbmdlbmcuY29tIiwicmVjaXBpZW50VXNlcm5hbWUiOiJwMDQyOSIsImV4cCI6MTc5MjE2OTc2NDM3OX0.52NpqnfTN4VzNlAJuzBnhHYklzrYoxaaLMOGC2DLVe8",
+      "createdAt": "2026-10-09T16:56:04.382Z",
+      "actor": "Payroll Approval Reminder",
+      "channels": [
+        "In-App",
+        "Email"
+      ],
+      "metadata": {
+        "runId": "payroll-2026-09-daily-rate-DLE",
+        "period": "2026-09",
+        "pack": "daily-rate",
+        "stageId": "finance-manager",
+        "audience": "named-recipient"
+      }
+    },
+    {
+      "id": "ntf-1791546964495-bytvd6",
+      "recipientUserId": "P0429",
+      "recipientUsername": "P0429",
+      "recipientEmployeeCode": "P0429",
+      "recipientRoles": [],
+      "kind": "Approval",
+      "module": "Finance Approvals",
+      "title": "Payment approval required",
+      "body": "Mr NNAMDI FRANKLYN AGHANYA submitted Supplier Invoice Payment DLE2609109 (NGN 916,500.88) for Finance Manager approval.",
+      "severity": "warning",
+      "status": "Unread",
+      "href": "/finance/approvals/request/PREQ-1789739050888",
+      "createdAt": "2026-10-09T11:56:04.495Z",
+      "actor": "Payment Approval Reminder",
+      "channels": [
+        "In-App",
+        "Email"
+      ],
+      "metadata": {
+        "requestId": "PREQ-1789739050888",
+        "requestNumber": "DLE2609109",
+        "stage": "Finance Manager",
+        "recipientCode": "P0429",
+        "recipientName": "IYANDA OLAITAN RAPHEAL"
+      }
+    },
+    {
       "id": "ntf-1791382234866-5gi5nk",
       "recipientUserId": "L2782",
       "recipientUsername": "L2782",

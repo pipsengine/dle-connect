@@ -81,14 +81,16 @@ const sageX3Attempts = (): sql.config[] => {
   const user = process.env.SAGE_X3_DB_USER || 'sage';
   const password = process.env.SAGE_X3_DB_PASSWORD || '';
   const instance = process.env.SAGE_X3_DB_INSTANCE || 'SAGEX3';
+  const port = Number(process.env.SAGE_X3_DB_PORT || 0);
   const configuredHosts = (process.env.SAGE_X3_DB_HOST || '')
     .split(',')
     .map((value) => value.trim())
     .filter(Boolean);
-  const hosts = [...new Set(['DLESGENT', ...configuredHosts, '192.168.5.5'])];
+  const hosts = configuredHosts.length ? configuredHosts : ['192.168.5.8', 'DLESGENT', '192.168.5.5'];
+  const instances = [...new Set([instance, 'SAGEX3', 'SAGEX3V11'])];
   if (!password) {
     throw new Error(
-      'Sage X3 credentials are not configured. Set SAGE_X3_DB_PASSWORD in apps/dashboard/.env (instance DLESGENT\\SAGEX3, database x3data).',
+      'Sage X3 credentials are not configured. Set SAGE_X3_DB_PASSWORD in apps/dashboard/.env (192.168.5.8, instance SAGEX3, database x3data).',
     );
   }
   const attempts: sql.config[] = [];
@@ -97,34 +99,35 @@ const sageX3Attempts = (): sql.config[] => {
       database,
       user,
       password,
-      connectionTimeout: Number(process.env.SAGE_X3_DB_CONNECT_TIMEOUT || 20000),
+      connectionTimeout: Number(process.env.SAGE_X3_DB_CONNECT_TIMEOUT || 10000),
       requestTimeout: Number(process.env.SAGE_X3_DB_REQUEST_TIMEOUT || 60000),
     };
-    attempts.push({
-      ...base,
-      server: host,
-      options: {
-        instanceName: instance,
+    const optionSets = [
+      {
         encrypt: boolEnv(process.env.SAGE_X3_DB_ENCRYPT, false),
         trustServerCertificate: boolEnv(process.env.SAGE_X3_DB_TRUST_SERVER_CERTIFICATE, true),
         enableArithAbort: true,
       },
-    });
-    attempts.push({
-      ...base,
-      server: host,
-      options: {
-        instanceName: instance,
+      {
         encrypt: true,
         trustServerCertificate: true,
         enableArithAbort: true,
       },
-    });
+    ];
+    for (const options of optionSets) {
+      if (port > 0) {
+        attempts.push({ ...base, server: host, port, options });
+        continue;
+      }
+      for (const instanceName of instances) {
+        attempts.push({ ...base, server: host, options: { ...options, instanceName } });
+      }
+    }
   }
   return attempts;
 };
 
-const connectSageX3 = async () => {
+export const connectSageX3 = async () => {
   const attempts = sageX3Attempts();
   let lastError: unknown = null;
   for (const config of attempts) {
@@ -132,13 +135,18 @@ const connectSageX3 = async () => {
       return await new sql.ConnectionPool(config).connect();
     } catch (error) {
       lastError = error;
+      const text = error instanceof Error ? error.message : '';
+      if (/Failed to connect|ETIMEDOUT|ECONNREFUSED|ENOTFOUND|getaddrinfo/i.test(text)) break;
     }
   }
   const first = attempts[0];
-  const message = lastError instanceof Error ? lastError.message : 'Sage X3 connection failed';
-  throw new Error(
-    `Unable to read suppliers from Sage X3 (${first?.database} on ${first?.server}\\SAGEX3): ${message}`,
-  );
+  let message = lastError instanceof Error ? lastError.message : 'Sage X3 connection failed';
+  const target = first?.port ? `${first.server}:${first.port}` : `${first?.server}\\${process.env.SAGE_X3_DB_INSTANCE || 'SAGEX3'}`;
+  if (/Failed to connect|ETIMEDOUT|timeout/i.test(message)) {
+    const portLabel = first?.port ? String(first.port) : 'the SQL port';
+    message += `. DLESGENT answers ping and SQL Browser, but TCP ${portLabel} is not reachable from this server. On 192.168.5.8 allow inbound TCP ${portLabel} from 192.168.5.5 for instance SAGEX3.`;
+  }
+  throw new Error(`Unable to read Sage X3 (${first?.database} on ${target}): ${message}`);
 };
 
 const listCandidateTables = async (pool: sql.ConnectionPool) => {

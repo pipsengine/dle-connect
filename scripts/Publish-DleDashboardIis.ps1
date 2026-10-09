@@ -744,7 +744,8 @@ try {
   if (Test-Path -LiteralPath $ExistingRuntimeData) {
     Copy-DirectoryContents -SourcePath $ExistingRuntimeData -DestinationPath $RuntimeDataBackupPath
   } elseif (Test-Path -LiteralPath $RuntimeDataBackupPath) {
-    Remove-PathWithRetry -TargetDirectory $RuntimeDataBackupPath
+    # A partial wipe can delete site\data while the backup is the only remaining copy.
+    Write-Warning "Live site data folder is missing. Keeping $RuntimeDataBackupPath so publish can restore it."
   }
   # Preserve payment attachments previously stored under apps/dashboard/data/finance (pre-durable-root).
   if (Test-Path -LiteralPath $ExistingNestedFinanceData) {

@@ -1,9 +1,10 @@
 'use client';
 
-import { useRef, useState, type KeyboardEvent } from 'react';
+import { useEffect, useRef, useState, type KeyboardEvent } from 'react';
 import { Download, FileSpreadsheet, Loader2, Plus, Trash2 } from 'lucide-react';
 import { inputClass, secondaryBtnClass } from './proc-ui';
-import { procurementPost } from '../lib/procurement-api';
+import { SearchableSelect } from './proc-lookups';
+import { procurementGet, procurementPost } from '../lib/procurement-api';
 import type { ProcLineItem } from '@/lib/procurement/catalog';
 import { PROCUREMENT_UOMS, lineAmount } from '@/lib/procurement/catalog';
 import { parsePrImportText, prLineImportTemplateCsv, type PrImportResult } from '@/lib/procurement/pr-line-import';
@@ -41,13 +42,46 @@ export function LineItemsEditor({
   allowImport?: boolean;
 }) {
   const importRef = useRef<HTMLInputElement | null>(null);
+  const [products, setProducts] = useState<Array<{ itemCode: string; description: string; uom: string; stockManagement: string }>>([]);
   const [importing, setImporting] = useState(false);
   const [importError, setImportError] = useState('');
   const [consolidate, setConsolidate] = useState(false);
   const [importNote, setImportNote] = useState('');
 
+  useEffect(() => {
+    let cancelled = false;
+    procurementGet<{ products: Array<{ itemCode: string; description: string; uom: string; stockManagement: string }> }>('products', {
+      active: '1',
+      purchased: '1',
+      limit: '8000',
+    })
+      .then((payload) => {
+        if (!cancelled) setProducts(payload.products || []);
+      })
+      .catch(() => {
+        if (!cancelled) setProducts([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   const patch = (index: number, key: keyof ProcLineItem, value: string | number) =>
     onChange(lines.map((line, i) => (i === index ? { ...line, [key]: value } : line)));
+
+  const chooseProduct = (index: number, itemCode: string) => {
+    const product = products.find((row) => row.itemCode === itemCode);
+    onChange(lines.map((line, i) => {
+      if (i !== index) return line;
+      if (!product) return { ...line, itemCode: '' };
+      return {
+        ...line,
+        itemCode: product.itemCode,
+        description: product.description,
+        uom: product.uom || line.uom || 'EA',
+      };
+    }));
+  };
 
   const addRowAndFocus = () => {
     const next = emptyLine();
@@ -118,7 +152,7 @@ export function LineItemsEditor({
         <div>
           <div className="text-sm font-black text-slate-900">Line items</div>
           <p className="text-xs text-slate-500">
-            Tab from the last Required date cell to add a row. Import an MTO or Excel file to fill detailed descriptions.
+            Select a Sage product for each line. Managed products are stocked; unmanaged products are non-stock. Import an MTO or Excel file when the lines are already coded.
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
@@ -158,7 +192,7 @@ export function LineItemsEditor({
         <table className="min-w-full text-xs">
           <thead className="bg-slate-50 text-slate-500">
             <tr>
-              {['Description / specification', 'Qty', 'UOM', 'Unit price', 'Tax %', 'Required', 'Line total', ''].map((h) => (
+              {['Product', 'Description / specification', 'Qty', 'UOM', 'Unit price', 'Tax %', 'Required', 'Line total', ''].map((h) => (
                 <th key={h} className="px-3 py-2 text-left font-bold uppercase tracking-wide">
                   {h}
                 </th>
@@ -169,6 +203,18 @@ export function LineItemsEditor({
             {rows.length ? (
               rows.map((line, i) => (
                 <tr key={line.id || line.lineId || i} className="border-t border-slate-100">
+                  <td className="p-2 min-w-64">
+                    <SearchableSelect
+                      value={line.itemCode || ''}
+                      placeholder={products.length ? 'Search product code or name' : 'Sync products from Sage'}
+                      options={products.map((product) => ({
+                        value: product.itemCode,
+                        label: `${product.itemCode} — ${product.description}`,
+                        sub: `${product.stockManagement} · ${product.uom}`,
+                      }))}
+                      onChange={(itemCode) => chooseProduct(i, itemCode)}
+                    />
+                  </td>
                   <td className="p-2">
                     <textarea
                       data-pr-line={line.id || line.lineId || i}
@@ -235,7 +281,7 @@ export function LineItemsEditor({
               ))
             ) : (
               <tr>
-                <td colSpan={8} className="px-4 py-8 text-center text-slate-500">
+                <td colSpan={9} className="px-4 py-8 text-center text-slate-500">
                   No lines yet. Tab or add a line, or import an MTO / Excel file.
                 </td>
               </tr>

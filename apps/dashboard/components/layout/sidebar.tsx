@@ -12,6 +12,7 @@ import {
   ChevronDown
 } from 'lucide-react';
 import { navigationConfig, NavItem } from '@/lib/config/navigation';
+import { canAccessCommercial } from '@/lib/access/commercial-access';
 import { canAccessAdministrationCentre, hasPermission } from '@/lib/auth/permission-match';
 import { canAccessCrewMobilization, canAccessHrManagementNav, isGlobalSuperAdministrator, isLegacyWorkforceTimesheetPage, isSecurityAuditTrailPath } from '@/lib/access/route-access';
 import { canAccessTimesheetEntryAndApproval } from '@/lib/access/timesheet-access';
@@ -85,6 +86,7 @@ const requiredPermission = (route?: string) => {
   if (route.startsWith('/document-management')) return 'documents.view';
   if (route.startsWith('/it-support/asset-management')) return 'view_it_assets';
   if (route.startsWith('/it-support')) return 'view_it_support';
+  if (route.startsWith('/commercial')) return 'view_sales_crm';
   return 'enterprise.view';
 };
 
@@ -194,6 +196,9 @@ export function Sidebar({
           ) {
             return canAccessTimesheetEntryAndApproval(sessionLike);
           }
+          if (sub.route?.startsWith('/commercial')) {
+            return canAccessCommercial(permissions, sessionContext.isGlobalAdmin);
+          }
           if (sub.route?.startsWith('/hris/') && platformOnly && !sessionContext.isGlobalAdmin && !sessionContext.roles.includes('Super Administrator')) {
             return false;
           }
@@ -207,7 +212,9 @@ export function Sidebar({
               ? canAccessSecurityPortal(permissions, sessionContext.isGlobalAdmin)
               : item.id === 'it-support'
                 ? canAccessItSupportPortal(permissions, sessionContext.isGlobalAdmin)
-                : (item.route === '/finance' || item.route?.startsWith('/finance')
+                : item.id === 'sales-crm'
+                  ? canAccessCommercial(permissions, sessionContext.isGlobalAdmin)
+                  : (item.route === '/finance' || item.route?.startsWith('/finance')
                   ? canAccessFullFinanceIntelligence(permissions, sessionContext.isGlobalAdmin)
                   : canAccess(permissions, requiredPermission(item.route)))
             || !!subItems?.length;

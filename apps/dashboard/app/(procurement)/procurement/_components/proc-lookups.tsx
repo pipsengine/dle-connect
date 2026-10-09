@@ -122,7 +122,7 @@ export function SearchableSelect({
       {open ? (
         <div className="absolute z-50 mt-1 max-h-52 w-full overflow-auto rounded-xl border border-slate-200 bg-white shadow-lg">
           {filtered.length ? (
-            filtered.map((option) => (
+            filtered.slice(0, 40).map((option) => (
               <button
                 key={option.value}
                 type="button"
@@ -276,11 +276,13 @@ export function DepartmentLookup({
   value,
   onChange,
   required,
+  disabled,
 }: {
   label?: string;
   value: string;
   onChange: (name: string) => void;
   required?: boolean;
+  disabled?: boolean;
 }) {
   const [rows, setRows] = useState<DepartmentLookupRow[]>([]);
   const [loaded, setLoaded] = useState(false);
@@ -323,7 +325,7 @@ export function DepartmentLookup({
       options={options}
       placeholder={loaded ? 'Search departments…' : 'Loading departments…'}
       onChange={(v) => onChange(v)}
-      disabled={!loaded && !options.length}
+      disabled={disabled || (!loaded && !options.length)}
     />
   );
 }
@@ -333,11 +335,13 @@ export function LocationLookup({
   value,
   onChange,
   required,
+  disabled,
 }: {
   label?: string;
   value: string;
   onChange: (name: string) => void;
   required?: boolean;
+  disabled?: boolean;
 }) {
   const [rows, setRows] = useState<LocationLookupRow[]>([]);
   const [loaded, setLoaded] = useState(false);
@@ -379,6 +383,7 @@ export function LocationLookup({
       placeholder={loaded ? 'Search or type a city / site' : 'Type a city or site — suggestions load in the background'}
       onChange={(v) => onChange(v)}
       allowCustom
+      disabled={disabled}
     />
   );
 }
@@ -388,11 +393,13 @@ export function ProjectLookup({
   value,
   onChange,
   required,
+  disabled,
 }: {
   label?: string;
   value: string;
   onChange: (value: string, project?: ProjectLookupRow) => void;
   required?: boolean;
+  disabled?: boolean;
 }) {
   const [rows, setRows] = useState<ProjectLookupRow[]>([]);
   const [loaded, setLoaded] = useState(false);
@@ -450,7 +457,7 @@ export function ProjectLookup({
         void option;
       }}
       allowCustom
-      disabled={!loaded && !options.length}
+      disabled={disabled || (!loaded && !options.length)}
     />
   );
 }

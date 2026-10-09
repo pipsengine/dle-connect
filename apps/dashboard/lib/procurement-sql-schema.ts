@@ -478,4 +478,83 @@ BEGIN TRY
   )
     EXEC(N'CREATE INDEX [IX_ProcDomain_DomainUpdated] ON [procurement].[DomainRecords]([Domain], [UpdatedAt] DESC)');
 END TRY BEGIN CATCH END CATCH;
+
+IF OBJECT_ID(N'[procurement].[SingleSourceJustifications]', N'U') IS NULL
+CREATE TABLE [procurement].[SingleSourceJustifications] (
+  [SsjId] NVARCHAR(40) NOT NULL CONSTRAINT [PK_ProcSsj] PRIMARY KEY,
+  [PrId] NVARCHAR(40) NULL,
+  [Title] NVARCHAR(300) NOT NULL,
+  [Department] NVARCHAR(180) NULL,
+  [Project] NVARCHAR(180) NULL,
+  [Site] NVARCHAR(180) NULL,
+  [RequesterName] NVARCHAR(220) NULL,
+  [RequesterCode] NVARCHAR(80) NULL,
+  [SupplierId] NVARCHAR(40) NULL,
+  [SupplierName] NVARCHAR(220) NULL,
+  [Currency] NVARCHAR(10) NOT NULL CONSTRAINT [DF_ProcSsj_Currency] DEFAULT N'NGN',
+  [EstimatedAmount] DECIMAL(19,2) NOT NULL CONSTRAINT [DF_ProcSsj_Amount] DEFAULT 0,
+  [ReasonCategory] NVARCHAR(80) NULL,
+  [Justification] NVARCHAR(MAX) NULL,
+  [AlternativesConsidered] NVARCHAR(MAX) NULL,
+  [MarketSearch] NVARCHAR(MAX) NULL,
+  [TechnicalBasis] NVARCHAR(MAX) NULL,
+  [Consequence] NVARCHAR(MAX) NULL,
+  [Status] NVARCHAR(40) NOT NULL,
+  [CurrentStage] NVARCHAR(40) NOT NULL,
+  [CurrentWith] NVARCHAR(220) NULL,
+  [LineManagerName] NVARCHAR(220) NULL,
+  [LineManagerCode] NVARCHAR(80) NULL,
+  [MdName] NVARCHAR(220) NULL,
+  [MdCode] NVARCHAR(80) NULL,
+  [CheckedBy] NVARCHAR(220) NULL,
+  [CheckedAt] DATETIME2(0) NULL,
+  [CheckComment] NVARCHAR(MAX) NULL,
+  [ApprovedBy] NVARCHAR(220) NULL,
+  [ApprovedAt] DATETIME2(0) NULL,
+  [ApprovalComment] NVARCHAR(MAX) NULL,
+  [WorkflowJson] NVARCHAR(MAX) NULL,
+  [CreatedAt] DATETIME2(0) NOT NULL CONSTRAINT [DF_ProcSsj_CreatedAt] DEFAULT SYSUTCDATETIME(),
+  [UpdatedAt] DATETIME2(0) NOT NULL CONSTRAINT [DF_ProcSsj_UpdatedAt] DEFAULT SYSUTCDATETIME(),
+  [CreatedBy] NVARCHAR(120) NULL,
+  [UpdatedBy] NVARCHAR(120) NULL
+);
+
+BEGIN TRY
+  IF NOT EXISTS (
+    SELECT 1 FROM sys.indexes WHERE name = N'IX_ProcSsj_StatusUpdated' AND object_id = OBJECT_ID(N'[procurement].[SingleSourceJustifications]')
+  )
+    EXEC(N'CREATE INDEX [IX_ProcSsj_StatusUpdated] ON [procurement].[SingleSourceJustifications]([Status], [UpdatedAt] DESC)');
+END TRY BEGIN CATCH END CATCH;
+
+IF OBJECT_ID(N'[procurement].[Products]', N'U') IS NULL
+CREATE TABLE [procurement].[Products] (
+  [ProductId] NVARCHAR(40) NOT NULL CONSTRAINT [PK_ProcProducts] PRIMARY KEY,
+  [ItemCode] NVARCHAR(80) NOT NULL,
+  [Description] NVARCHAR(300) NOT NULL,
+  [Description2] NVARCHAR(300) NULL,
+  [Category] NVARCHAR(80) NULL,
+  [Uom] NVARCHAR(20) NULL,
+  [StockManagement] NVARCHAR(20) NOT NULL,
+  [Status] NVARCHAR(40) NULL,
+  [IsPurchased] BIT NOT NULL CONSTRAINT [DF_ProcProducts_Purchased] DEFAULT 1,
+  [IsActive] BIT NOT NULL CONSTRAINT [DF_ProcProducts_Active] DEFAULT 1,
+  [Source] NVARCHAR(20) NOT NULL CONSTRAINT [DF_ProcProducts_Source] DEFAULT N'SAGE',
+  [SyncBatch] NVARCHAR(40) NULL,
+  [SyncedAt] DATETIME2(0) NULL,
+  [CreatedAt] DATETIME2(0) NOT NULL CONSTRAINT [DF_ProcProducts_CreatedAt] DEFAULT SYSUTCDATETIME(),
+  [UpdatedAt] DATETIME2(0) NOT NULL CONSTRAINT [DF_ProcProducts_UpdatedAt] DEFAULT SYSUTCDATETIME()
+);
+
+BEGIN TRY
+  IF NOT EXISTS (
+    SELECT 1 FROM sys.indexes WHERE name = N'UX_ProcProducts_ItemCode' AND object_id = OBJECT_ID(N'[procurement].[Products]')
+  )
+    EXEC(N'CREATE UNIQUE INDEX [UX_ProcProducts_ItemCode] ON [procurement].[Products]([ItemCode])');
+END TRY BEGIN CATCH END CATCH;
+BEGIN TRY
+  IF NOT EXISTS (
+    SELECT 1 FROM sys.indexes WHERE name = N'IX_ProcProducts_Management' AND object_id = OBJECT_ID(N'[procurement].[Products]')
+  )
+    EXEC(N'CREATE INDEX [IX_ProcProducts_Management] ON [procurement].[Products]([StockManagement], [IsActive], [ItemCode])');
+END TRY BEGIN CATCH END CATCH;
 `;

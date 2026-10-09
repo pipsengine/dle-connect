@@ -1,7 +1,17 @@
 export type ProcurementApiResponse<T> = { status: 'success'; data: T } | { status: 'error'; error: string };
 
 async function parseJson<T>(res: Response): Promise<T> {
-  const json = (await res.json()) as ProcurementApiResponse<T>;
+  const text = await res.text();
+  let json: ProcurementApiResponse<T>;
+  try {
+    json = JSON.parse(text) as ProcurementApiResponse<T>;
+  } catch {
+    throw new Error(
+      res.status >= 500
+        ? 'Procurement could not finish that request. Refresh the page and try again.'
+        : `Procurement returned an unexpected response (${res.status || 'unknown'}).`,
+    );
+  }
   if (!res.ok || json.status === 'error') {
     throw new Error((json as { error?: string }).error || `Request failed (${res.status})`);
   }

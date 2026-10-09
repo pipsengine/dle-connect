@@ -15,6 +15,7 @@ import { useViewportRailCollapsed } from '@/lib/use-viewport-sidebar';
 type Props = { children: ReactNode };
 
 function searchPlaceholder(pathname: string) {
+  if (pathname.includes('/single-sourced-justification')) return 'Search single sourced justifications…';
   if (pathname.includes('/purchase-requisitions')) return 'Search purchase requisitions…';
   if (pathname.includes('/sourcing') || pathname.includes('/rfqs')) return 'Search sourcing events…';
   if (pathname.includes('/cbe')) return 'Search CBEs…';
@@ -121,17 +122,41 @@ export function ProcurementPortalShell({ children }: Props) {
           <nav className="space-y-1">
             {nav.map((item) => {
               const Icon = item.icon;
-              const selected = active(item.href);
+              const children = item.children || [];
+              const sectionOn = children.length
+                ? pathname === item.href || pathname.startsWith(`${item.href}/`)
+                : active(item.href);
+              const parentSelected = children.length ? pathname === item.href : sectionOn;
+              const parentClass = parentSelected
+                ? navLinkClass(true, railCollapsed)
+                : sectionOn
+                  ? `flex items-center gap-3 rounded-md bg-white/10 px-3 py-2.5 text-sm font-semibold text-white ${railCollapsed ? 'justify-center px-2' : ''}`
+                  : navLinkClass(false, railCollapsed);
               return (
-                <Link
-                  key={item.id}
-                  href={item.href}
-                  title={item.label}
-                  className={navLinkClass(selected, railCollapsed)}
-                >
-                  <Icon className="h-4 w-4 shrink-0" />
-                  {!railCollapsed ? <span className="truncate">{item.label}</span> : null}
-                </Link>
+                <div key={item.id}>
+                  <Link href={item.href} title={item.label} className={parentClass}>
+                    <Icon className="h-4 w-4 shrink-0" />
+                    {!railCollapsed ? <span className="truncate">{item.label}</span> : null}
+                  </Link>
+                  {!railCollapsed && children.length ? (
+                    <div className="ml-4 mt-0.5 space-y-0.5 border-l border-white/15 pl-2">
+                      {children.map((child) => {
+                        const childOn = pathname === child.href || pathname.startsWith(`${child.href}/`);
+                        return (
+                          <Link
+                            key={child.id}
+                            href={child.href}
+                            className={`block truncate rounded-md px-2.5 py-2 text-[13px] font-semibold ${
+                              childOn ? 'bg-blue-600 text-white' : 'text-white/70 hover:bg-white/10 hover:text-white'
+                            }`}
+                          >
+                            {child.label}
+                          </Link>
+                        );
+                      })}
+                    </div>
+                  ) : null}
+                </div>
               );
             })}
           </nav>
@@ -163,16 +188,41 @@ export function ProcurementPortalShell({ children }: Props) {
             <nav className="space-y-1 p-2">
               {nav.map((item) => {
                 const Icon = item.icon;
+                const children = item.children || [];
+                const sectionOn = children.length
+                  ? pathname === item.href || pathname.startsWith(`${item.href}/`)
+                  : active(item.href);
+                const parentSelected = children.length ? pathname === item.href : sectionOn;
                 return (
-                  <Link
-                    key={item.id}
-                    href={item.href}
-                    onClick={() => setMobileOpen(false)}
-                    className={navLinkClass(active(item.href), false)}
-                  >
-                    <Icon className="h-4 w-4" />
-                    {item.label}
-                  </Link>
+                  <div key={item.id}>
+                    <Link
+                      href={item.href}
+                      onClick={() => setMobileOpen(false)}
+                      className={navLinkClass(parentSelected, false)}
+                    >
+                      <Icon className="h-4 w-4" />
+                      {item.label}
+                    </Link>
+                    {children.length ? (
+                      <div className="ml-4 mt-0.5 space-y-0.5 border-l border-white/15 pl-2">
+                        {children.map((child) => {
+                          const childOn = pathname === child.href || pathname.startsWith(`${child.href}/`);
+                          return (
+                            <Link
+                              key={child.id}
+                              href={child.href}
+                              onClick={() => setMobileOpen(false)}
+                              className={`block truncate rounded-md px-2.5 py-2 text-[13px] font-semibold ${
+                                childOn ? 'bg-blue-600 text-white' : 'text-white/70 hover:bg-white/10 hover:text-white'
+                              }`}
+                            >
+                              {child.label}
+                            </Link>
+                          );
+                        })}
+                      </div>
+                    ) : null}
+                  </div>
                 );
               })}
             </nav>

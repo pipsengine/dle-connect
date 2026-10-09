@@ -134,12 +134,15 @@ export const navigationConfig: NavItem[] = [
   },
   {
     id: 'sales-crm',
-    label: 'Sales & CRM',
-    slug: 'sales-crm',
+    label: 'Commercial',
+    slug: 'commercial',
     icon: Megaphone,
     group: 'main',
-    route: '/sales-crm',
-    permissionKey: 'view_sales_crm'
+    route: '/commercial/tenders',
+    permissionKey: 'view_sales_crm',
+    subItems: [
+      { title: 'Tenders Management', slug: 'tenders-management', route: '/commercial/tenders', permissionKey: 'view_sales_crm' },
+    ],
   },
   {
     id: 'inventory-management',

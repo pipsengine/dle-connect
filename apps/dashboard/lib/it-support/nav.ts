@@ -6,6 +6,7 @@ import {
   Headphones,
   KeyRound,
   LayoutDashboard,
+  ClipboardCheck,
   MonitorSmartphone,
   Package,
   Phone,
@@ -236,6 +237,84 @@ export const IT_SUPPORT_NAV_SECTIONS: ItSupportNavSection[] = [
     ],
   },
   {
+    id: 'inspection-management',
+    label: 'Inspection Management',
+    href: '/it-support/inspection-management',
+    icon: ClipboardCheck,
+    status: 'live',
+    permissionKeys: [
+      'page.it-support.inspection-management.view',
+      'view_it_support',
+      'it.view',
+      'it.*',
+    ],
+    children: [
+      {
+        id: 'inspection-dashboard',
+        label: 'Dashboard',
+        href: '/it-support/inspection-management',
+        status: 'live',
+        permissionKeys: ['page.it-support.inspection-management.view', 'view_it_support', 'it.view', 'it.*'],
+      },
+      {
+        id: 'inspection-register',
+        label: 'Inspections',
+        href: '/it-support/inspection-management/inspections',
+        status: 'live',
+        permissionKeys: ['page.it-support.inspection-management.view', 'view_it_support', 'it.view', 'it.*'],
+      },
+      {
+        id: 'inspection-schedules',
+        label: 'Schedules',
+        href: '/it-support/inspection-management/schedules',
+        status: 'live',
+        permissionKeys: ['page.it-support.inspection-management.view', 'view_it_support', 'it.view', 'it.*'],
+      },
+      {
+        id: 'inspection-actions',
+        label: 'Corrective Actions',
+        href: '/it-support/inspection-management/corrective-actions',
+        status: 'live',
+        permissionKeys: ['page.it-support.inspection-management.view', 'view_it_support', 'it.view', 'it.*'],
+      },
+      {
+        id: 'inspection-hazid',
+        label: 'HAZID',
+        href: '/it-support/inspection-management/hazid',
+        status: 'live',
+        permissionKeys: ['page.it-support.inspection-management.view', 'view_it_support', 'it.view', 'it.*'],
+      },
+      {
+        id: 'inspection-bbs',
+        label: 'BBS',
+        href: '/it-support/inspection-management/bbs',
+        status: 'live',
+        permissionKeys: ['page.it-support.inspection-management.view', 'view_it_support', 'it.view', 'it.*'],
+      },
+      {
+        id: 'inspection-drills',
+        label: 'Emergency Drills',
+        href: '/it-support/inspection-management/emergency-drills',
+        status: 'live',
+        permissionKeys: ['page.it-support.inspection-management.view', 'view_it_support', 'it.view', 'it.*'],
+      },
+      {
+        id: 'inspection-ewaste',
+        label: 'E-Waste',
+        href: '/it-support/inspection-management/ewaste',
+        status: 'live',
+        permissionKeys: ['page.it-support.inspection-management.view', 'view_it_support', 'it.view', 'it.*'],
+      },
+      {
+        id: 'inspection-records',
+        label: 'Records',
+        href: '/it-support/inspection-management/records',
+        status: 'live',
+        permissionKeys: ['page.it-support.inspection-management.view', 'view_it_support', 'it.view', 'it.*'],
+      },
+    ],
+  },
+  {
     id: 'security-ops',
     label: 'Security & Operations',
     href: '/it-support/cybersecurity-center',
@@ -333,6 +412,20 @@ export const IT_SUPPORT_MODULE_CARDS = [
     permissionKeys: ['view_system_monitoring', 'infrastructure.view', 'view_it_support', 'it.view', 'it.*'],
   },
   {
+    id: 'inspection-management',
+    title: 'Inspection Management',
+    description: 'Checklist inspections, corrective actions, HAZID, BBS, drills, and e-waste stored in DLE_Enterprise.',
+    href: '/it-support/inspection-management',
+    icon: ClipboardCheck,
+    status: 'live' as const,
+    permissionKeys: [
+      'page.it-support.inspection-management.view',
+      'view_it_support',
+      'it.view',
+      'it.*',
+    ],
+  },
+  {
     id: 'telephone-allowance',
     title: 'Telephone Allowance',
     description: 'Bimonthly call-credit entitlements, HR review, approvals, and Treasury payment.',
@@ -360,7 +453,7 @@ export const IT_SUPPORT_ACCENT = {
 } as const;
 
 /** Used by shell header chips / footer. */
-export const IT_SUPPORT_CAPABILITY_HINT = 'it.view · service-desk · assets · recovery · telephone allowance';
+export const IT_SUPPORT_CAPABILITY_HINT = 'it.view · service-desk · assets · inspections · recovery · telephone allowance';
 
 export type ItSupportModuleCard = (typeof IT_SUPPORT_MODULE_CARDS)[number];
 
@@ -389,6 +482,19 @@ export const resolveItSupportNavIcon = (id: string): LucideIcon => {
       return Shield;
     case 'system-monitoring':
       return Activity;
+    case 'inspection-management':
+    case 'inspection-dashboard':
+    case 'inspection-register':
+    case 'inspection-schedules':
+    case 'inspection-findings':
+    case 'inspection-reports':
+    case 'inspection-actions':
+    case 'inspection-hazid':
+    case 'inspection-bbs':
+    case 'inspection-drills':
+    case 'inspection-ewaste':
+    case 'inspection-records':
+      return ClipboardCheck;
     case 'telephone-allowance':
     case 'ta-dashboard':
     case 'ta-manage':

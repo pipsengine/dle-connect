@@ -8,6 +8,7 @@ import {
   FileText,
   FolderOpen,
   LayoutDashboard,
+  Package,
   PackageCheck,
   Scale,
   Settings,
@@ -19,12 +20,19 @@ import {
   type LucideIcon,
 } from 'lucide-react';
 
+export type ProcurementNavChild = {
+  id: string;
+  label: string;
+  href: string;
+};
+
 export type ProcurementNavItem = {
   id: string;
   label: string;
   href: string;
   icon: LucideIcon;
   permissionKeys: string[];
+  children?: ProcurementNavChild[];
 };
 
 const view = ['view_procurement', 'procurement.view', 'procurement.*'] as const;
@@ -33,10 +41,24 @@ const vendor = [...view, 'vendor.view', 'vendor.*'] as const;
 export const PROCUREMENT_NAV: ProcurementNavItem[] = [
   { id: 'dashboard', label: 'Procurement Command Centre', href: '/procurement', icon: LayoutDashboard, permissionKeys: [...view, 'vendor.view'] },
   { id: 'plans', label: 'Procurement Planning', href: '/procurement/plans', icon: ClipboardList, permissionKeys: [...view] },
-  { id: 'purchase-requisitions', label: 'Purchase Requisitions', href: '/procurement/purchase-requisitions', icon: FileText, permissionKeys: [...view] },
+  {
+    id: 'purchase-requisitions',
+    label: 'Purchase Requisitions',
+    href: '/procurement/purchase-requisitions',
+    icon: FileText,
+    permissionKeys: [...view],
+    children: [
+      {
+        id: 'single-sourced-justification',
+        label: 'Single Sourced Justification',
+        href: '/procurement/purchase-requisitions/single-sourced-justification',
+      },
+    ],
+  },
   { id: 'sourcing', label: 'Sourcing & RFx', href: '/procurement/sourcing', icon: FileSearch, permissionKeys: [...view] },
   { id: 'tenders', label: 'E-Tendering', href: '/procurement/tenders', icon: FolderOpen, permissionKeys: [...view] },
   { id: 'cbe', label: 'Competitive Bid Evaluation', href: '/procurement/cbe', icon: Scale, permissionKeys: [...view] },
+  { id: 'products', label: 'Products', href: '/procurement/products', icon: Package, permissionKeys: [...view] },
   { id: 'suppliers', label: 'Supplier Management', href: '/procurement/suppliers', icon: Users, permissionKeys: [...vendor] },
   { id: 'contracts', label: 'Contracts & Frameworks', href: '/procurement/contracts', icon: BriefcaseBusiness, permissionKeys: [...view] },
   { id: 'purchase-orders', label: 'Purchase Orders', href: '/procurement/purchase-orders', icon: ShoppingCart, permissionKeys: [...view] },
