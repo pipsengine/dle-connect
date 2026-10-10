@@ -5,8 +5,7 @@ import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import type { FormEvent, ReactNode } from 'react';
 import { useEffect, useState } from 'react';
-import { ChevronDown, Menu, PanelLeftClose, PanelLeftOpen, Search, X } from 'lucide-react';
-import { EnterpriseHomeButton } from '@/components/layout/enterprise-home-button';
+import { ChevronDown, Globe, Menu, Search, X } from 'lucide-react';
 import { NotificationCenter } from '@/components/layout/notification-center';
 import { EnterpriseUserProfile } from '@hris/components/layout/enterprise-user-profile';
 import { canAccessCommercial } from '@/lib/access/commercial-access';
@@ -15,9 +14,11 @@ import { TENDER_NAV } from '@/lib/commercial/nav';
 type Props = { children: ReactNode };
 
 const childActive = (pathname: string, href: string) =>
-  href === '/commercial/tenders'
-    ? pathname === '/commercial/tenders'
-    : pathname === href || pathname.startsWith(`${href}/`);
+  href === '/'
+    ? pathname === '/'
+    : href === '/commercial/tenders'
+      ? pathname === '/commercial/tenders'
+      : pathname === href || pathname.startsWith(`${href}/`);
 
 export function TendersPortalShell({ children }: Props) {
   const pathname = usePathname();
@@ -25,8 +26,8 @@ export function TendersPortalShell({ children }: Props) {
   const [mobileOpen, setMobileOpen] = useState(false);
   const [groupOpen, setGroupOpen] = useState(true);
   const [query, setQuery] = useState('');
-  const [railCollapsed, setRailCollapsed] = useState(false);
   const [allowed, setAllowed] = useState(true);
+  const [languageOpen, setLanguageOpen] = useState(false);
 
   useEffect(() => {
     let active = true;
@@ -47,17 +48,19 @@ export function TendersPortalShell({ children }: Props) {
     };
   }, [pathname, router]);
 
-  const widthClass = railCollapsed ? 'w-[72px]' : 'w-[260px]';
-  const contentPad = railCollapsed ? 'lg:pl-[72px]' : 'lg:pl-[260px]';
-
   const submitSearch = (event: FormEvent) => {
     event.preventDefault();
     const next = query.trim();
     router.push(next ? `/commercial/tenders/opportunities?q=${encodeURIComponent(next)}` : '/commercial/tenders/opportunities');
   };
 
-  const navBody = (collapsed: boolean, onNavigate?: () => void) => (
-    <nav className="space-y-1">
+  const linkClass = (selected: boolean) =>
+    `flex items-center gap-2.5 rounded-lg px-3 py-2 text-[13px] font-semibold ${
+      selected ? 'bg-[#2563eb] text-white shadow-sm' : 'text-[#d5deea] hover:bg-white/10 hover:text-white'
+    }`;
+
+  const navBody = (onNavigate?: () => void) => (
+    <nav className="space-y-0.5">
       {TENDER_NAV.map((item) => {
         const Icon = item.icon;
         const children = item.children || [];
@@ -69,41 +72,28 @@ export function TendersPortalShell({ children }: Props) {
             {children.length ? (
               <button
                 type="button"
-                title={item.label}
                 onClick={() => setGroupOpen((value) => !value)}
-                className={`flex w-full items-center gap-3 rounded-md px-3 py-2.5 text-sm font-semibold text-white/80 hover:bg-white/10 ${collapsed ? 'justify-center px-2' : ''}`}
+                className="flex w-full items-center gap-2.5 rounded-lg px-3 py-2.5 text-[13px] font-semibold text-white hover:bg-white/10"
               >
-                <Icon className="h-4 w-4 shrink-0" />
-                {!collapsed ? <span className="flex-1 truncate text-left">{item.label}</span> : null}
-                {!collapsed ? <ChevronDown className={`h-4 w-4 transition ${groupOpen ? 'rotate-180' : ''}`} /> : null}
+                <Icon className="h-4 w-4 shrink-0 text-sky-300" />
+                <span className="flex-1 truncate text-left">{item.label}</span>
+                <ChevronDown className={`h-4 w-4 text-white/70 transition ${groupOpen ? 'rotate-180' : ''}`} />
               </button>
             ) : (
-              <Link
-                href={item.href}
-                title={item.label}
-                onClick={onNavigate}
-                className={`flex items-center gap-3 rounded-md px-3 py-2.5 text-sm font-semibold ${
-                  sectionOn ? 'bg-blue-600 text-white' : 'text-white/75 hover:bg-white/10 hover:text-white'
-                } ${collapsed ? 'justify-center px-2' : ''}`}
-              >
+              <Link href={item.href} title={item.label} onClick={onNavigate} className={linkClass(sectionOn)}>
                 <Icon className="h-4 w-4 shrink-0" />
-                {!collapsed ? <span className="truncate">{item.label}</span> : null}
+                <span className="truncate">{item.label}</span>
               </Link>
             )}
-            {!collapsed && children.length && groupOpen ? (
-              <div className="ml-4 mt-0.5 space-y-0.5 border-l border-white/15 pl-2">
+            {children.length && groupOpen ? (
+              <div className="mt-0.5 space-y-0.5 pl-3">
                 {children.map((child) => {
+                  const ChildIcon = child.icon;
                   const selected = childActive(pathname, child.href);
                   return (
-                    <Link
-                      key={child.id}
-                      href={child.href}
-                      onClick={onNavigate}
-                      className={`block truncate rounded-md px-2.5 py-2 text-[13px] font-semibold ${
-                        selected ? 'bg-blue-600 text-white' : 'text-white/70 hover:bg-white/10 hover:text-white'
-                      }`}
-                    >
-                      {child.label}
+                    <Link key={child.id} href={child.href} onClick={onNavigate} className={linkClass(selected)}>
+                      <ChildIcon className="h-3.5 w-3.5 shrink-0 opacity-90" />
+                      <span className="truncate">{child.label}</span>
                     </Link>
                   );
                 })}
@@ -119,73 +109,69 @@ export function TendersPortalShell({ children }: Props) {
 
   return (
     <div className="min-h-screen bg-[#f4f7fb] text-slate-900">
-      <aside className={`fixed inset-y-0 left-0 z-40 hidden flex-col border-r border-white/10 bg-[#071427] transition-all lg:flex ${widthClass}`}>
-        <div className={`flex border-b border-white/10 px-3 py-4 ${railCollapsed ? 'flex-col items-center gap-2' : 'items-center gap-2'}`}>
-          <Image src="/brand/dorman-long-logo.png" alt="DLE" width={36} height={36} className="rounded bg-white p-0.5" />
-          {!railCollapsed ? (
-            <div className="min-w-0 flex-1">
-              <div className="text-[13px] font-black tracking-wide text-white">DLE CONNECT</div>
-              <div className="text-[10px] font-semibold uppercase tracking-[0.14em] text-sky-300">Enterprise</div>
-            </div>
-          ) : null}
-          <button
-            type="button"
-            onClick={() => setRailCollapsed((value) => !value)}
-            className="shrink-0 rounded-md p-1.5 text-white/70 hover:bg-white/10 hover:text-white"
-            aria-label={railCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
-          >
-            {railCollapsed ? <PanelLeftOpen className="h-4 w-4" /> : <PanelLeftClose className="h-4 w-4" />}
-          </button>
-        </div>
-        <div className="flex-1 overflow-y-auto p-2">{navBody(railCollapsed)}</div>
-        <div className="border-t border-white/10 px-3 py-3 text-white/70">
-          {!railCollapsed ? (
-            <>
-              <div className="text-xs font-bold text-white">DLE Connect Enterprise</div>
-              <div className="text-[11px] text-white/50">Build · Deliver · Grow</div>
-            </>
-          ) : null}
-        </div>
+      <aside className="fixed inset-y-0 left-0 z-40 hidden w-[252px] flex-col bg-[#071427] lg:flex">
+        <Link href="/" title="Enterprise Home" className="flex items-center gap-2 px-4 py-4">
+          <Image src="/brand/dorman-long-logo.png" alt="DLE" width={34} height={34} className="rounded bg-white p-0.5" />
+          <div className="min-w-0 flex-1">
+            <div className="text-[13px] font-black tracking-wide text-white">DLE CONNECT</div>
+            <div className="text-[9px] font-semibold uppercase tracking-[0.18em] text-sky-300">Enterprise</div>
+          </div>
+          <Menu className="h-4 w-4 text-white/80" aria-hidden />
+        </Link>
+        <div className="flex-1 overflow-y-auto px-3 pb-4">{navBody()}</div>
       </aside>
 
       {mobileOpen ? (
         <div className="fixed inset-0 z-50 lg:hidden">
           <button type="button" className="absolute inset-0 bg-slate-900/40" onClick={() => setMobileOpen(false)} aria-label="Close menu" />
           <div className="absolute inset-y-0 left-0 flex w-[270px] flex-col bg-[#071427] shadow-xl">
-            <div className="flex items-center justify-between border-b border-white/10 px-4 py-3">
-              <div className="text-sm font-black text-white">Tenders Management</div>
+            <div className="flex items-center justify-between px-4 py-3">
+              <div className="text-sm font-black text-white">DLE CONNECT</div>
               <button type="button" onClick={() => setMobileOpen(false)} className="text-white/80"><X className="h-5 w-5" /></button>
             </div>
-            <div className="flex-1 overflow-y-auto p-2">{navBody(false, () => setMobileOpen(false))}</div>
+            <div className="flex-1 overflow-y-auto px-3 pb-4">{navBody(() => setMobileOpen(false))}</div>
           </div>
         </div>
       ) : null}
 
-      <div className={`min-h-screen ${contentPad}`}>
-        <header className="sticky top-0 z-30 flex h-14 items-center justify-between gap-3 border-b border-slate-200 bg-white/95 px-4 backdrop-blur">
-          <div className="flex min-w-0 flex-1 items-center gap-3">
-            <button type="button" className="rounded-md border border-slate-200 p-2 lg:hidden" onClick={() => setMobileOpen(true)} aria-label="Open menu">
-              <Menu className="h-4 w-4" />
-            </button>
-            <EnterpriseHomeButton />
-            <div className="hidden shrink-0 text-sm font-black text-slate-900 sm:block">Tenders Management</div>
-            <form onSubmit={submitSearch} className="relative ml-1 hidden max-w-xl flex-1 md:block">
-              <Search className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
-              <input
-                value={query}
-                onChange={(event) => setQuery(event.target.value)}
-                className="h-9 w-full rounded-full border border-slate-200 bg-slate-50 pl-9 pr-3 text-sm outline-none placeholder:text-slate-400 focus:border-blue-500 focus:bg-white focus:ring-2 focus:ring-blue-100"
-                placeholder="Search tenders, enquiries, clients, reference no, documents..."
-                aria-label="Search tenders"
-              />
-            </form>
-          </div>
-          <div className="flex items-center gap-2">
+      <div className="min-h-screen lg:pl-[252px]">
+        <header className="sticky top-0 z-30 flex h-16 items-center gap-3 border-b border-slate-200/80 bg-white px-4 lg:px-6">
+          <button type="button" className="rounded-md border border-slate-200 p-2 lg:hidden" onClick={() => setMobileOpen(true)} aria-label="Open menu">
+            <Menu className="h-4 w-4" />
+          </button>
+          <form onSubmit={submitSearch} className="relative min-w-0 flex-1">
+            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+            <input
+              value={query}
+              onChange={(event) => setQuery(event.target.value)}
+              className="h-10 w-full max-w-xl rounded-xl border border-slate-200 bg-[#f8fafc] pl-10 pr-3 text-sm outline-none placeholder:text-slate-400 focus:border-blue-500 focus:bg-white focus:ring-2 focus:ring-blue-100"
+              placeholder="Search enquiries, tenders, clients, reference no, documents..."
+              aria-label="Search tenders"
+            />
+          </form>
+          <div className="ml-auto flex items-center gap-2">
             <NotificationCenter />
+            <div className="relative">
+              <button
+                type="button"
+                onClick={() => setLanguageOpen((value) => !value)}
+                className="inline-flex h-10 items-center gap-1.5 rounded-lg px-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+                aria-expanded={languageOpen}
+              >
+                <Globe className="h-4 w-4 text-slate-500" />
+                English
+                <ChevronDown className="h-3.5 w-3.5 text-slate-400" />
+              </button>
+              {languageOpen ? (
+                <div className="absolute right-0 top-11 z-20 w-36 rounded-xl border border-slate-200 bg-white py-1 text-sm shadow-lg">
+                  <div className="px-3 py-2 font-semibold text-blue-700">English</div>
+                </div>
+              ) : null}
+            </div>
             <EnterpriseUserProfile />
           </div>
         </header>
-        <main className="p-4 lg:p-5">{children}</main>
+        <main className="px-4 py-5 lg:px-6">{children}</main>
       </div>
     </div>
   );

@@ -130,6 +130,10 @@ export function OpportunitiesBoard({ initialTab = 'Opportunity Register' }: { in
   useEffect(() => {
     const query = searchParams.get('q') || '';
     if (query) setSearch(query);
+    if (searchParams.get('compose') === '1') {
+      setEditing(null);
+      setModalOpen(true);
+    }
   }, [searchParams]);
 
   const clients = useMemo(() => Array.from(new Set(rows.map((row) => row.clientName).filter(Boolean))).sort(), [rows]);

@@ -543,6 +543,35 @@ function Invoke-CheckedCommand {
   }
 }
 
+function Test-InstalledDependenciesCurrent {
+  $LockPath = Join-Path $RepoRoot "package-lock.json"
+  $ModulesPath = Join-Path $RepoRoot "node_modules"
+  $NextPackage = Join-Path $ModulesPath "next\package.json"
+  $MailPackage = Join-Path $ModulesPath "nodemailer\package.json"
+  if (-not ((Test-Path -LiteralPath $LockPath) -and (Test-Path -LiteralPath $NextPackage) -and (Test-Path -LiteralPath $MailPackage))) {
+    return $false
+  }
+
+  $LockStamp = Join-Path $ModulesPath ".dle-lockstamp"
+  $LockHash = (Get-FileHash -LiteralPath $LockPath -Algorithm SHA256).Hash
+  if ((Test-Path -LiteralPath $LockStamp) -and ((Get-Content -LiteralPath $LockStamp -Raw).Trim() -eq $LockHash)) {
+    return $true
+  }
+
+  # First run after this check: node_modules written after the lockfile means ci already happened.
+  $LockTime = (Get-Item -LiteralPath $LockPath).LastWriteTimeUtc
+  $ModulesTime = (Get-Item -LiteralPath $ModulesPath).LastWriteTimeUtc
+  return $ModulesTime -ge $LockTime
+}
+
+function Save-InstalledDependencyStamp {
+  $LockPath = Join-Path $RepoRoot "package-lock.json"
+  $LockStamp = Join-Path $RepoRoot "node_modules\.dle-lockstamp"
+  if (-not (Test-Path -LiteralPath $LockPath)) { return }
+  $LockHash = (Get-FileHash -LiteralPath $LockPath -Algorithm SHA256).Hash
+  Set-Content -LiteralPath $LockStamp -Value $LockHash -Encoding ascii
+}
+
 function Copy-IisEnvironmentFile {
   param(
     [Parameter(Mandatory = $true)][string]$DestinationRoot
@@ -708,13 +737,20 @@ function Test-NextTraceFiles {
 
 Push-Location $RepoRoot
 try {
-  if (-not $SkipInstall) {
+  $DependenciesCurrent = Test-InstalledDependenciesCurrent
+  if (-not $SkipInstall -and -not $DependenciesCurrent) {
     Invoke-CheckedCommand -FilePath "npm" -ArgumentList @("ci")
+    Save-InstalledDependencyStamp
   } elseif (-not (Test-Path -LiteralPath (Join-Path $RepoRoot "node_modules\nodemailer\package.json"))) {
-    Write-Host "SkipInstall set but nodemailer is missing; installing declared dependencies..."
+    Write-Host "Dependencies are incomplete; installing declared packages..."
     Invoke-CheckedCommand -FilePath "npm" -ArgumentList @("install", "--no-audit", "--no-fund")
+    Save-InstalledDependencyStamp
+  } else {
+    Write-Host "Skipping npm ci. Installed dependencies already match package-lock.json."
+    Save-InstalledDependencyStamp
   }
 
+  Write-Host "Keeping apps\dashboard\.next\cache so the production compile can reuse it."
   Invoke-CheckedCommand -FilePath "npm" -ArgumentList @("run", "build")
 
   if (-not (Test-Path -LiteralPath $StandalonePath)) {
@@ -742,7 +778,7 @@ try {
   }
 
   if (Test-Path -LiteralPath $ExistingRuntimeData) {
-    Copy-DirectoryContents -SourcePath $ExistingRuntimeData -DestinationPath $RuntimeDataBackupPath
+    Copy-DirectoryContents -SourcePath $ExistingRuntimeData -DestinationPath $RuntimeDataBackupPath -ExcludeDirectoryNames @('payment-attachments')
   } elseif (Test-Path -LiteralPath $RuntimeDataBackupPath) {
     # A partial wipe can delete site\data while the backup is the only remaining copy.
     Write-Warning "Live site data folder is missing. Keeping $RuntimeDataBackupPath so publish can restore it."
@@ -751,7 +787,7 @@ try {
   if (Test-Path -LiteralPath $ExistingNestedFinanceData) {
     $NestedFinanceBackup = Join-Path $RuntimeDataBackupPath "finance"
     New-Item -ItemType Directory -Path $NestedFinanceBackup -Force | Out-Null
-    Copy-DirectoryContents -SourcePath $ExistingNestedFinanceData -DestinationPath $NestedFinanceBackup
+    Copy-DirectoryContents -SourcePath $ExistingNestedFinanceData -DestinationPath $NestedFinanceBackup -ExcludeDirectoryNames @('payment-attachments')
   }
 
   # Auth and notifications are written on the running site during the build.
@@ -797,12 +833,12 @@ try {
   $DataSource = Join-Path $AppPath "data"
   if (Test-Path -LiteralPath $DataSource) {
     $DataTarget = Join-Path $ResolvedOutputPath "apps\dashboard\data"
-    Copy-DirectoryContents -SourcePath $DataSource -DestinationPath $DataTarget
+    Copy-DirectoryContents -SourcePath $DataSource -DestinationPath $DataTarget -ExcludeDirectoryNames @('payment-attachments')
     $RootDataTarget = Join-Path $ResolvedOutputPath "data"
     if (Test-Path -LiteralPath $RuntimeDataBackupPath) {
       Copy-DirectoryContents -SourcePath $RuntimeDataBackupPath -DestinationPath $RootDataTarget
     } else {
-      Copy-DirectoryContents -SourcePath $DataSource -DestinationPath $RootDataTarget
+      Copy-DirectoryContents -SourcePath $DataSource -DestinationPath $RootDataTarget -ExcludeDirectoryNames @('payment-attachments')
     }
   }
 
@@ -833,12 +869,9 @@ try {
     }
   }
 
-  # Keep a read-only mirror under the site package for older code paths (primary is repo root).
-  if (Test-Path -LiteralPath $DurableAttachments) {
-    Copy-DirectoryContents -SourcePath $DurableAttachments -DestinationPath $SitePackageAttachments
-    Copy-DirectoryContents -SourcePath $DurableAttachments -DestinationPath $NestedAttachments
-  }
-  Write-Host "Ensured durable payment attachments folder: $DurableAttachments"
+  # Payment files stay in the repo-root store. web.config pins DLE_FINANCE_DATA_DIR there,
+  # so publish does not copy them into the IIS package.
+  Write-Host "Payment attachments stay at $DurableAttachments (not copied into the IIS site)."
 
   # Migrate HRIS JSON stores (dayrate overlay, earning adjustments, etc.) out of the IIS package.
   foreach ($LegacyHrisRoot in @($SitePackageHrisData, $NestedHrisData)) {

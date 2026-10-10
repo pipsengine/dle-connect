@@ -1,6 +1,6 @@
 import { Suspense } from 'react';
-import { TenderDesk } from '../_components/TenderDesk';
+import { EvaluationBoard } from '../_components/EvaluationBoard';
 
 export default function EvaluationPage() {
-  return <Suspense fallback={<p className="text-sm text-slate-500">Loading evaluation…</p>}><TenderDesk desk="evaluation" /></Suspense>;
+  return <Suspense fallback={<p className="text-sm text-slate-500">Loading evaluation…</p>}><EvaluationBoard /></Suspense>;
 }

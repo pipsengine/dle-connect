@@ -1,6 +1,13 @@
 import {
+  Award,
+  BarChart3,
+  ClipboardList,
   FolderKanban,
+  Inbox,
   LayoutDashboard,
+  Send,
+  ShieldCheck,
+  SquareCheckBig,
   type LucideIcon,
 } from 'lucide-react';
 
@@ -8,6 +15,7 @@ export type TenderNavChild = {
   id: string;
   label: string;
   href: string;
+  icon: LucideIcon;
 };
 
 export type TenderNavItem = {
@@ -19,24 +27,22 @@ export type TenderNavItem = {
 };
 
 export const TENDER_NAV: TenderNavItem[] = [
-  { id: 'home', label: 'Dashboard', href: '/commercial/tenders', icon: LayoutDashboard },
   {
     id: 'tender-management',
     label: 'Tender Management',
-    href: '/commercial/tenders/opportunities',
+    href: '/commercial/tenders',
     icon: FolderKanban,
     children: [
-      { id: 'dashboard', label: 'Dashboard', href: '/commercial/tenders' },
-      { id: 'enquiries', label: 'Enquiries', href: '/commercial/tenders/enquiries' },
-      { id: 'opportunities', label: 'Tender Opportunities', href: '/commercial/tenders/opportunities' },
-      { id: 'workspace', label: 'Tender Workspace', href: '/commercial/tenders/workspace' },
-      { id: 'bid', label: 'Bid Preparation', href: '/commercial/tenders/bid-preparation' },
-      { id: 'evaluation', label: 'Tender Evaluation', href: '/commercial/tenders/evaluation' },
-      { id: 'approvals', label: 'Approvals', href: '/commercial/tenders/approvals' },
-      { id: 'submission', label: 'Submission & Tracking', href: '/commercial/tenders/submission' },
-      { id: 'awards', label: 'Awards & Contracts', href: '/commercial/tenders/awards' },
-      { id: 'reports', label: 'Reports & Intelligence', href: '/commercial/tenders/reports' },
-      { id: 'administration', label: 'Administration', href: '/commercial/tenders/administration' },
+      { id: 'dashboard', label: 'Dashboard', href: '/commercial/tenders', icon: LayoutDashboard },
+      { id: 'enquiries', label: 'Enquiries', href: '/commercial/tenders/enquiries', icon: Inbox },
+      { id: 'opportunities', label: 'Tender Opportunities', href: '/commercial/tenders/opportunities', icon: ClipboardList },
+      { id: 'workspace', label: 'Tender Workspace', href: '/commercial/tenders/workspace', icon: FolderKanban },
+      { id: 'bid', label: 'Bid Preparation', href: '/commercial/tenders/bid-preparation', icon: ClipboardList },
+      { id: 'evaluation', label: 'Tender Evaluation', href: '/commercial/tenders/evaluation', icon: SquareCheckBig },
+      { id: 'approvals', label: 'Approvals', href: '/commercial/tenders/approvals', icon: ShieldCheck },
+      { id: 'submission', label: 'Submission & Tracking', href: '/commercial/tenders/submission', icon: Send },
+      { id: 'awards', label: 'Awards & Contracts', href: '/commercial/tenders/awards', icon: Award },
+      { id: 'reports', label: 'Reports & Intelligence', href: '/commercial/tenders/reports', icon: BarChart3 },
     ],
   },
 ];

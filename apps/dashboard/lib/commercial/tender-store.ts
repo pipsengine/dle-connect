@@ -347,6 +347,33 @@ const percentDelta = (current: number, previous: number) => {
   return Math.round(((current - previous) / previous) * 100);
 };
 
+const PIPELINE_STAGE_LABELS = ['Qualification', 'Bid Preparation', 'Awaiting Approval', 'Submitted', 'Under Negotiation', 'Awarded'] as const;
+const TERMINAL_STATUSES = new Set(['Lost', 'Closed', 'Cancelled', 'No-Bid', 'Withdrawn']);
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+const designStageOf = (row: TenderOpportunity) => {
+  const stage = row.stage;
+  const status = row.status;
+  if (status === 'Awarded' || stage === 'Awarded') return 'Awarded';
+  if (stage === 'Negotiation' || status === 'Negotiation') return 'Under Negotiation';
+  if (stage === 'Submitted' || status === 'Submitted') return 'Submitted';
+  if (stage === 'Under Review' || status === 'Under Review') return 'Awaiting Approval';
+  if (stage === 'Bid Preparation' || status === 'Bid Preparation' || status === 'Open') return 'Bid Preparation';
+  return 'Qualification';
+};
+
+const dayStamp = (value: string) => {
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return null;
+  return Date.UTC(parsed.getUTCFullYear(), parsed.getUTCMonth(), parsed.getUTCDate());
+};
+
+const deadlineStatus = (row: TenderOpportunity): 'In Progress' | 'Review' | 'Drafting' => {
+  if (row.status === 'Draft') return 'Drafting';
+  if (row.status === 'Under Review' || row.stage === 'Under Review') return 'Review';
+  return 'In Progress';
+};
+
 export const buildTenderDashboard = async (): Promise<TenderDashboard> => {
   const rows = await listOpportunities();
   const now = new Date();
@@ -383,6 +410,266 @@ export const buildTenderDashboard = async (): Promise<TenderDashboard> => {
   const decided = rows.filter((row) => ['Awarded', 'Lost', 'Closed', 'No-Bid'].includes(row.status));
   const awarded = rows.filter((row) => row.status === 'Awarded' || row.stage === 'Awarded');
   const isEnquiry = (row: TenderOpportunity) => row.stage === 'Enquiry' || row.tenderType === 'Enquiry' || row.opportunityType === 'Enquiry';
+  const isActive = (row: TenderOpportunity) => !TERMINAL_STATUSES.has(row.status) && row.status !== 'Draft';
+  const activeRows = rows.filter(isActive);
+  const pipelineRows = rows.filter((row) => !TERMINAL_STATUSES.has(row.status));
+  const pipelineStages = PIPELINE_STAGE_LABELS.map((label) => {
+    const matched = pipelineRows.filter((row) => designStageOf(row) === label);
+    return { label, count: matched.length, value: matched.reduce((sum, row) => sum + row.estimatedValue, 0) };
+  });
+  const awaitingRows = pipelineRows.filter((row) => designStageOf(row) === 'Awaiting Approval');
+  const weekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+  const yearStart = new Date(Date.UTC(now.getUTCFullYear(), 0, 1));
+  const lastYearStart = new Date(Date.UTC(now.getUTCFullYear() - 1, 0, 1));
+  const last12Start = new Date(now.getTime() - 365 * 24 * 60 * 60 * 1000);
+  const outcomeOf = (row: TenderOpportunity) => {
+    if (row.status === 'Awarded' || row.stage === 'Awarded') return 'won' as const;
+    if (row.status === 'Lost') return 'lost' as const;
+    if (['Cancelled', 'No-Bid', 'Withdrawn'].includes(row.status)) return 'withdrawn' as const;
+    return null;
+  };
+  const winLossFor = (from: Date, to: Date) => {
+    const tally = { won: 0, lost: 0, withdrawn: 0 };
+    for (const row of rows) {
+      const outcome = outcomeOf(row);
+      if (!outcome || !inRange(row.updatedAt || row.createdAt, from, to)) continue;
+      tally[outcome] += 1;
+    }
+    return tally;
+  };
+  const rateOf = (tally: { won: number; lost: number; withdrawn: number }) => {
+    const total = tally.won + tally.lost + tally.withdrawn;
+    return total ? Math.round((tally.won / total) * 100) : null;
+  };
+  const thisYearLoss = winLossFor(yearStart, now);
+  const lastYearLoss = winLossFor(lastYearStart, yearStart);
+  const todayUtc = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate());
+  const deadlines = pipelineRows
+    .map((row) => {
+      const submissionDate = row.submissionDeadline || row.closingDate;
+      const stamp = dayStamp(submissionDate);
+      if (stamp == null) return null;
+      const daysLeft = Math.round((stamp - todayUtc) / 86400000);
+      return {
+        id: row.id,
+        referenceNo: row.referenceNo,
+        title: row.title,
+        clientName: row.clientName,
+        submissionDate,
+        daysLeft,
+        statusLabel: deadlineStatus(row),
+      };
+    })
+    .filter((row): row is NonNullable<typeof row> => !!row && row.daysLeft >= -3)
+    .sort((a, b) => a.daysLeft - b.daysLeft)
+    .slice(0, 5);
+
+  const pool = await ensureTenderDb();
+  const extra = await pool.request().query(`
+    SELECT [SubmittedAt] AS [At] FROM [commercial].[TenderSubmissions];
+    SELECT COALESCE(CONVERT(varchar(10), [AwardDate], 23), CONVERT(varchar(33), [CreatedAt], 126)) AS [At] FROM [commercial].[TenderAwards];
+    SELECT i.[ItemId], i.[OpportunityId], i.[Title], i.[Details], i.[Status], i.[DueAt], i.[Kind],
+           o.[ReferenceNo], o.[Title] AS [OpportunityTitle]
+    FROM [commercial].[TenderItems] i
+    LEFT JOIN [commercial].[TenderOpportunities] o ON o.[OpportunityId] = i.[OpportunityId]
+    WHERE UPPER(ISNULL(i.[Status], N'')) NOT IN (N'DONE', N'CLOSED', N'CANCELLED', N'COMPLETE', N'COMPLETED')
+    ORDER BY CASE WHEN i.[DueAt] IS NULL THEN 1 ELSE 0 END, i.[DueAt];
+  `);
+  const recordsets = Array.isArray(extra.recordsets) ? extra.recordsets : Object.values(extra.recordsets || {});
+  const submissionDates = ((recordsets[0] || []) as Array<{ At?: unknown }>).map((row) => iso(row.At));
+  const awardDates = ((recordsets[1] || []) as Array<{ At?: unknown }>).map((row) => iso(row.At));
+  const activity = MONTHS.map((month, index) => {
+    const from = new Date(Date.UTC(now.getUTCFullYear(), index, 1));
+    const to = new Date(Date.UTC(now.getUTCFullYear(), index + 1, 1));
+    return {
+      month,
+      opportunities: rows.filter((row) => inRange(row.createdAt, from, to)).length,
+      submissions: submissionDates.filter((value) => inRange(value, from, to)).length,
+      awards: awardDates.filter((value) => inRange(value, from, to)).length,
+    };
+  });
+
+  const dueBadge = (daysLeft: number | null) => {
+    if (daysLeft == null) return 'Open';
+    if (daysLeft < 0) return 'Overdue';
+    if (daysLeft === 0) return 'Due today';
+    if (daysLeft === 1) return 'Due in 1 day';
+    return `Due in ${daysLeft} days`;
+  };
+  const itemActions = ((recordsets[2] || []) as Array<Record<string, unknown>>).slice(0, 5).map((row) => {
+    const due = iso(row.DueAt);
+    const stamp = dayStamp(due);
+    const daysLeft = stamp == null ? null : Math.round((stamp - todayUtc) / 86400000);
+    const tone = daysLeft != null && daysLeft <= 2 ? 'urgent' as const : daysLeft != null && daysLeft <= 7 ? 'due' as const : clean(row.Kind, 40).toUpperCase() === 'TASK' ? 'open' as const : 'pending' as const;
+    return {
+      id: clean(row.ItemId, 40),
+      opportunityId: clean(row.OpportunityId, 40),
+      referenceNo: clean(row.ReferenceNo, 80),
+      title: clean(row.Title, 300),
+      detail: [clean(row.ReferenceNo, 80), clean(row.OpportunityTitle, 300) || clean(row.Details, 180)].filter(Boolean).join(' · '),
+      tone,
+      badge: daysLeft != null && daysLeft <= 2 ? 'Urgent' : daysLeft != null ? dueBadge(daysLeft) : 'Pending',
+    };
+  });
+  const seen = new Set(itemActions.map((item) => item.opportunityId));
+  const derived: TenderDashboard['actions'] = [];
+  for (const row of pipelineRows) {
+    if (derived.length + itemActions.length >= 5 || seen.has(row.id)) continue;
+    const deadline = row.submissionDeadline || row.closingDate;
+    const stamp = dayStamp(deadline);
+    const daysLeft = stamp == null ? null : Math.round((stamp - todayUtc) / 86400000);
+    const clarification = dayStamp(row.clarificationDeadline);
+    const clarificationDays = clarification == null ? null : Math.round((clarification - todayUtc) / 86400000);
+    if (daysLeft != null && daysLeft <= 7) {
+      derived.push({ id: `due-${row.id}`, opportunityId: row.id, referenceNo: row.referenceNo, title: 'Complete technical proposal', detail: `${row.referenceNo} · ${row.title}`, tone: 'urgent', badge: 'Urgent' });
+    } else if (designStageOf(row) === 'Awaiting Approval') {
+      derived.push({ id: `approval-${row.id}`, opportunityId: row.id, referenceNo: row.referenceNo, title: 'Commercial bid approval pending', detail: `${row.referenceNo} · ${row.title}`, tone: 'pending', badge: 'Pending' });
+    } else if (clarificationDays != null && clarificationDays >= 0 && clarificationDays <= 14) {
+      derived.push({ id: `clarify-${row.id}`, opportunityId: row.id, referenceNo: row.referenceNo, title: 'Respond to client clarification', detail: `${row.referenceNo} · ${row.title}`, tone: 'due', badge: dueBadge(clarificationDays) });
+    } else if (!row.ownerName) {
+      derived.push({ id: `team-${row.id}`, opportunityId: row.id, referenceNo: row.referenceNo, title: 'Assign team members', detail: `${row.referenceNo} · ${row.title}`, tone: 'open', badge: 'Open' });
+    } else if (daysLeft != null && daysLeft <= 14) {
+      derived.push({ id: `submit-${row.id}`, opportunityId: row.id, referenceNo: row.referenceNo, title: 'Submit final documents', detail: `${row.referenceNo} · ${row.title}`, tone: 'ready', badge: dueBadge(daysLeft) });
+    }
+  }
+
+  const closedOut = new Set(['Lost', 'Cancelled', 'No-Bid', 'Withdrawn']);
+  const stageRank = (row: TenderOpportunity) => {
+    const text = `${row.stage} ${row.status}`.toLowerCase();
+    if (text.includes('award')) return 5;
+    if (text.includes('negot')) return 4;
+    if (text.includes('submit') || text.includes('under review')) return 3;
+    if (text.includes('bid') || text.includes('tender') || row.status === 'Open') return 2;
+    if (text.includes('prequal') || text.includes('qualif') || text.includes('invit')) return 1;
+    return 0;
+  };
+  const funnelRows = rows.filter((row) => !closedOut.has(row.status));
+  const funnelLabels = ['Enquiries', 'Qualification', 'Tender/Bid', 'Submission', 'Negotiation', 'Awarded'];
+  const funnelCounts = funnelLabels.map((_, index) => funnelRows.filter((row) => stageRank(row) >= index).length);
+  const funnelBase = funnelCounts[0] || 0;
+  const reached = (index: number, list: TenderOpportunity[]) => list.filter((row) => !closedOut.has(row.status) && stageRank(row) >= index).length;
+  const sumValue = (list: TenderOpportunity[]) => list.reduce((sum, row) => sum + row.estimatedValue, 0);
+  const valueBuckets = (from: Date, to: Date) => {
+    const scoped = rows.filter((row) => inRange(row.updatedAt || row.createdAt, from, to));
+    return {
+      won: sumValue(scoped.filter((row) => row.status === 'Awarded' || row.stage === 'Awarded')),
+      lost: sumValue(scoped.filter((row) => row.status === 'Lost')),
+      withdrawn: sumValue(scoped.filter((row) => closedOut.has(row.status) && row.status !== 'Lost')),
+      pending: sumValue(scoped.filter((row) => !closedOut.has(row.status) && row.status !== 'Awarded' && row.stage !== 'Awarded')),
+    };
+  };
+  const valueRate = (bucket: { won: number; lost: number }) => {
+    const base = bucket.won + bucket.lost;
+    return base ? Math.round((bucket.won / base) * 100) : null;
+  };
+  const thisYearValue = valueBuckets(yearStart, now);
+  const lastYearValue = valueBuckets(lastYearStart, yearStart);
+  const categoryOf = (row: TenderOpportunity) => {
+    const text = `${row.category} ${row.subCategory} ${row.tenderType} ${row.title}`.toLowerCase();
+    if (/oil|gas|lng|petroleum|upstream/.test(text)) return 'Oil & Gas';
+    if (/construct/.test(text)) return 'Construction';
+    if (/fabricat/.test(text)) return 'Fabrication';
+    if (/maintain/.test(text)) return 'Maintenance';
+    if (/infra|power|road|bridge/.test(text)) return 'Infrastructure';
+    return 'Other';
+  };
+  const categoryLabels = ['Oil & Gas', 'Construction', 'Fabrication', 'Maintenance', 'Infrastructure', 'Other'];
+  const nigeriaStates = ['Abia', 'Adamawa', 'Akwa Ibom', 'Anambra', 'Bauchi', 'Bayelsa', 'Benue', 'Borno', 'Cross River', 'Delta', 'Ebonyi', 'Edo', 'Ekiti', 'Enugu', 'FCT', 'Abuja', 'Gombe', 'Imo', 'Jigawa', 'Kaduna', 'Kano', 'Katsina', 'Kebbi', 'Kogi', 'Kwara', 'Lagos', 'Nasarawa', 'Niger', 'Ogun', 'Ondo', 'Osun', 'Oyo', 'Plateau', 'Rivers', 'Sokoto', 'Taraba', 'Yobe', 'Zamfara'];
+  const regionOf = (row: TenderOpportunity) => {
+    const text = `${row.location} ${row.site} ${row.projectLocation}`;
+    return nigeriaStates.find((state) => new RegExp(`\\b${state}\\b`, 'i').test(text)) || '';
+  };
+  const regionTotals = new Map<string, number>();
+  const clientTotals = new Map<string, number>();
+  for (const row of funnelRows) {
+    const client = row.clientName || 'Unassigned';
+    clientTotals.set(client, (clientTotals.get(client) || 0) + row.estimatedValue);
+    const region = regionOf(row);
+    if (region) regionTotals.set(region === 'Abuja' ? 'FCT' : region, (regionTotals.get(region === 'Abuja' ? 'FCT' : region) || 0) + row.estimatedValue);
+  }
+  const recentStatus = (row: TenderOpportunity) => {
+    if (row.status === 'Under Review' || row.stage === 'Under Review') return 'Under Review';
+    if (stageRank(row) >= 1) return 'Qualified';
+    return 'New';
+  };
+  const valueStage = (label: string, rank: number) => ({
+    label,
+    value: sumValue(funnelRows.filter((row) => stageRank(row) === rank)),
+  });
+  const oilGasDecided = rows.filter((row) => categoryOf(row) === 'Oil & Gas' && (row.status === 'Awarded' || row.stage === 'Awarded' || row.status === 'Lost'));
+  const oilGasWon = oilGasDecided.filter((row) => row.status === 'Awarded' || row.stage === 'Awarded').length;
+  const board: TenderDashboard['board'] = {
+    enquiries: funnelCounts[0] || 0,
+    enquiriesDeltaPct: percentDelta(thisMonth.length, lastMonth.length),
+    qualified: funnelCounts[1] || 0,
+    qualifiedDeltaPct: percentDelta(reached(1, thisMonth), reached(1, lastMonth)),
+    activeTenders: funnelCounts[2] || 0,
+    activeDeltaPct: percentDelta(reached(2, thisMonth), reached(2, lastMonth)),
+    potentialValue: sumValue(funnelRows),
+    potentialDeltaPct: percentDelta(sumValue(thisMonth), sumValue(lastMonth)),
+    contractsWon: funnelCounts[5] || 0,
+    contractsWonDeltaPct: percentDelta(
+      rows.filter((row) => (row.status === 'Awarded' || row.stage === 'Awarded') && inRange(row.updatedAt || row.createdAt, yearStart, now)).length,
+      rows.filter((row) => (row.status === 'Awarded' || row.stage === 'Awarded') && inRange(row.updatedAt || row.createdAt, lastYearStart, yearStart)).length,
+    ),
+    winRateValuePct: valueRate(thisYearValue),
+    winRateValueDeltaPct: (() => {
+      const current = valueRate(thisYearValue);
+      const previous = valueRate(lastYearValue);
+      if (current == null || previous == null) return current == null ? null : current;
+      return current - previous;
+    })(),
+    funnel: funnelLabels.map((label, index) => ({
+      label,
+      count: funnelCounts[index] || 0,
+      pct: funnelBase ? Math.round(((funnelCounts[index] || 0) / funnelBase) * 100) : 0,
+    })),
+    valueByStage: [valueStage('Enquiries', 0), valueStage('Qualified', 1), valueStage('Tender', 2), valueStage('Negotiation', 4), valueStage('Awarded', 5)],
+    categories: categoryLabels.map((label) => ({ label, count: funnelRows.filter((row) => categoryOf(row) === label).length })),
+    clients: Array.from(clientTotals.entries()).sort((a, b) => b[1] - a[1]).slice(0, 6).map(([name, value]) => ({ name, value })),
+    regions: Array.from(regionTotals.entries()).sort((a, b) => b[1] - a[1]).slice(0, 6).map(([name, value]) => ({ name, value })),
+    deadlines: funnelRows
+      .map((row) => {
+        const date = row.submissionDeadline || row.closingDate;
+        const stamp = dayStamp(date);
+        if (!date || stamp == null) return null;
+        return { id: row.id, date, title: row.title, client: row.clientName, stage: funnelLabels[stageRank(row)] || row.stage, daysLeft: Math.round((stamp - todayUtc) / 86400000) };
+      })
+      .filter((row): row is NonNullable<typeof row> => !!row && row.daysLeft >= -3)
+      .sort((a, b) => a.daysLeft - b.daysLeft)
+      .slice(0, 5),
+    approvals: awaitingRows.slice(0, 5).map((row) => ({
+      id: row.id,
+      title: row.title,
+      value: row.estimatedValue,
+      stage: row.department || 'Commercial',
+      priority: row.priority || 'Medium',
+    })),
+    recent: [...rows].sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1)).slice(0, 5).map((row) => ({
+      id: row.id,
+      date: row.createdAt,
+      title: row.title,
+      client: row.clientName,
+      status: recentStatus(row),
+    })),
+    winLossValue: { thisYear: thisYearValue, last12: valueBuckets(last12Start, now) },
+    activityRolling: Array.from({ length: 12 }, (_, index) => {
+      const from = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - 11 + index, 1));
+      const to = new Date(Date.UTC(from.getUTCFullYear(), from.getUTCMonth() + 1, 1));
+      return {
+        month: MONTHS[from.getUTCMonth()] || '',
+        enquiries: rows.filter((row) => inRange(row.createdAt, from, to)).length,
+        submissions: submissionDates.filter((value) => inRange(value, from, to)).length,
+        awards: awardDates.filter((value) => inRange(value, from, to)).length,
+      };
+    }),
+    insights: {
+      oilGasWinPct: oilGasDecided.length ? Math.round((oilGasWon / oilGasDecided.length) * 100) : null,
+      qualifiedValue: sumValue(funnelRows.filter((row) => stageRank(row) === 1)),
+      highRisk: funnelRows.filter((row) => /high|urgent|critical/i.test(row.priority) || (dayStamp(row.submissionDeadline || row.closingDate) != null && Math.round(((dayStamp(row.submissionDeadline || row.closingDate) || 0) - todayUtc) / 86400000) <= 14 && stageRank(row) < 5)).length,
+    },
+    actionCount: itemActions.length + derived.length,
+  };
 
   return {
     total: rows.length,
@@ -391,9 +678,29 @@ export const buildTenderDashboard = async (): Promise<TenderDashboard> => {
     invitations: countWhere(rows, (row) => row.stage === 'Invited' || row.status === 'Invited'),
     prequalification: countWhere(rows, (row) => row.stage === 'Prequalification' || row.status === 'Prequalification'),
     closingSoon,
-    pipelineValue: rows.reduce((sum, row) => sum + row.estimatedValue, 0),
+    pipelineValue: pipelineRows.reduce((sum, row) => sum + row.estimatedValue, 0),
     awardedValue: awarded.reduce((sum, row) => sum + row.estimatedValue, 0),
-    winRatePct: decided.length ? Math.round((awarded.length / decided.length) * 100) : null,
+    winRatePct: rateOf(winLossFor(last12Start, now)) ?? (decided.length ? Math.round((awarded.length / decided.length) * 100) : null),
+    activeTenders: activeRows.length,
+    activeDeltaPct: percentDelta(countWhere(thisMonth, isActive), countWhere(lastMonth, isActive)),
+    pipelineDeltaPct: percentDelta(
+      thisMonth.reduce((sum, row) => sum + row.estimatedValue, 0),
+      lastMonth.reduce((sum, row) => sum + row.estimatedValue, 0),
+    ),
+    winRateDeltaPct: (() => {
+      const current = rateOf(thisYearLoss);
+      const previous = rateOf(lastYearLoss);
+      if (current == null || previous == null) return current == null ? null : current;
+      return current - previous;
+    })(),
+    awaitingApproval: awaitingRows.length,
+    awaitingNewThisWeek: awaitingRows.filter((row) => inRange(row.createdAt, weekAgo, now)).length,
+    pipelineStages,
+    activity,
+    winLoss: { last12: winLossFor(last12Start, now), thisYear: thisYearLoss },
+    deadlines,
+    actions: [...itemActions, ...derived].slice(0, 5),
+    board,
     monthDelta: {
       total: percentDelta(thisMonth.length, lastMonth.length),
       enquiries: percentDelta(countWhere(thisMonth, isEnquiry), countWhere(lastMonth, isEnquiry)),

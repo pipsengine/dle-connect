@@ -146,6 +146,68 @@ export type TenderLookups = {
   businessUnits: string[];
 };
 
+export type TenderPipelineStage = {
+  label: string;
+  count: number;
+  value: number;
+};
+
+export type TenderWinLoss = {
+  won: number;
+  lost: number;
+  withdrawn: number;
+};
+
+export type TenderDashboardDeadline = {
+  id: string;
+  referenceNo: string;
+  title: string;
+  clientName: string;
+  submissionDate: string;
+  daysLeft: number;
+  statusLabel: 'In Progress' | 'Review' | 'Drafting';
+};
+
+export type TenderDashboardAction = {
+  id: string;
+  opportunityId: string;
+  referenceNo: string;
+  title: string;
+  detail: string;
+  tone: 'urgent' | 'pending' | 'due' | 'open' | 'ready';
+  badge: string;
+};
+
+export type TenderCommandBoard = {
+  enquiries: number;
+  enquiriesDeltaPct: number | null;
+  qualified: number;
+  qualifiedDeltaPct: number | null;
+  activeTenders: number;
+  activeDeltaPct: number | null;
+  potentialValue: number;
+  potentialDeltaPct: number | null;
+  contractsWon: number;
+  contractsWonDeltaPct: number | null;
+  winRateValuePct: number | null;
+  winRateValueDeltaPct: number | null;
+  funnel: Array<{ label: string; count: number; pct: number }>;
+  valueByStage: Array<{ label: string; value: number }>;
+  categories: Array<{ label: string; count: number }>;
+  clients: Array<{ name: string; value: number }>;
+  regions: Array<{ name: string; value: number }>;
+  deadlines: Array<{ id: string; date: string; title: string; client: string; stage: string; daysLeft: number }>;
+  approvals: Array<{ id: string; title: string; value: number; stage: string; priority: string }>;
+  recent: Array<{ id: string; date: string; title: string; client: string; status: string }>;
+  winLossValue: {
+    thisYear: { won: number; lost: number; withdrawn: number; pending: number };
+    last12: { won: number; lost: number; withdrawn: number; pending: number };
+  };
+  activityRolling: Array<{ month: string; enquiries: number; submissions: number; awards: number }>;
+  insights: { oilGasWinPct: number | null; qualifiedValue: number; highRisk: number };
+  actionCount: number;
+};
+
 export type TenderDashboard = {
   total: number;
   enquiries: number;
@@ -156,6 +218,18 @@ export type TenderDashboard = {
   pipelineValue: number;
   awardedValue: number;
   winRatePct: number | null;
+  activeTenders: number;
+  activeDeltaPct: number | null;
+  pipelineDeltaPct: number | null;
+  winRateDeltaPct: number | null;
+  awaitingApproval: number;
+  awaitingNewThisWeek: number;
+  pipelineStages: TenderPipelineStage[];
+  activity: Array<{ month: string; opportunities: number; submissions: number; awards: number }>;
+  winLoss: { last12: TenderWinLoss; thisYear: TenderWinLoss };
+  deadlines: TenderDashboardDeadline[];
+  actions: TenderDashboardAction[];
+  board: TenderCommandBoard;
   monthDelta: {
     total: number | null;
     enquiries: number | null;
