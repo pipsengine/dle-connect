@@ -5,7 +5,10 @@ import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { CalendarClock, ChartColumn, CheckCircle2, ChevronDown, CircleDollarSign, ClipboardList, Clock3, Download, FileStack, FileText, Flag, LayoutGrid, Plus, ScrollText, Trophy, type LucideIcon } from 'lucide-react';
 import type { TenderAuditEvent, TenderAward, TenderItem, TenderOpportunity } from '@/lib/commercial/tender-types';
 import { MONTHS, compactNaira, daysUntil, downloadCsv, plainNaira } from '@/lib/commercial/tender-present';
-import { formatWhen, tenderGet, tenderPost } from './tender-api';
+import { formatWhen, money, tenderGet, tenderPost } from './tender-api';
+import { ActingEmployee } from './acting-employee';
+import { ItemCapture } from './record-capture';
+import { BlueprintRegisters } from './BlueprintRegisters';
 import { Donut, Pager, Pill } from './tender-widgets';
 
 const TABS: Array<{ id: string; icon: LucideIcon }> = [
@@ -58,7 +61,7 @@ export function AwardsBoard() {
   const [pageSize, setPageSize] = useState(10);
   const [actionsOpen, setActionsOpen] = useState(false);
   const [adding, setAdding] = useState(false);
-  const [form, setForm] = useState({ id: '', contractRef: '', awardedValue: '', awardDate: '' });
+  const [form, setForm] = useState({ id: '', contractRef: '', awardedValue: '', currency: 'NGN', awardDate: '', handoverOwner: '', handoverNotes: '' });
 
   const load = async () => {
     const [opportunities, awarded, tasks, events] = await Promise.all([
@@ -97,6 +100,10 @@ export function AwardsBoard() {
   useEffect(() => { setPage(1); }, [statusFilter, tableStatus, client, year, range, search, pageSize]);
   const pageCount = Math.max(1, Math.ceil(filtered.length / pageSize));
   const pageRows = filtered.slice((page - 1) * pageSize, page * pageSize);
+  const awardCurrency = (item: Contract) => item.award.currency || item.opportunity?.currency || 'NGN';
+  const totals = new Map<string, number>();
+  contracts.forEach((item) => totals.set(awardCurrency(item), (totals.get(awardCurrency(item)) || 0) + item.award.awardedValue));
+  const valueLabel = totals.size ? Array.from(totals).map(([code, amount]) => money(amount, code)).join(' · ') : money(0, 'NGN');
   const value = contracts.reduce((sum, item) => sum + item.award.awardedValue, 0);
   const active = contracts.filter((item) => item.status === 'Active' || item.status === 'In Progress');
   const completed = contracts.filter((item) => item.status === 'Completed');
@@ -116,9 +123,9 @@ export function AwardsBoard() {
   const saveAward = async () => {
     setError('');
     try {
-      await tenderPost({ action: 'award', id: form.id, award: { contractRef: form.contractRef, awardedValue: Number(form.awardedValue || 0), awardDate: form.awardDate } });
+      await tenderPost({ action: 'award', id: form.id, award: { contractRef: form.contractRef, awardedValue: Number(form.awardedValue || 0), currency: form.currency, awardDate: form.awardDate, handoverOwner: form.handoverOwner, handoverNotes: form.handoverNotes } });
       setAdding(false);
-      setForm({ id: '', contractRef: '', awardedValue: '', awardDate: '' });
+      setForm({ id: '', contractRef: '', awardedValue: '', currency: 'NGN', awardDate: '', handoverOwner: '', handoverNotes: '' });
       await load();
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : 'Award was not saved.');
@@ -128,7 +135,7 @@ export function AwardsBoard() {
   const share = (count: number) => (contracts.length ? Math.round((count / contracts.length) * 100) : 0);
   const kpis: Array<{ label: string; value: string; note: string; tint: string; icon: LucideIcon; iconTint: string }> = [
     { label: 'Awarded Contracts', value: String(contracts.length), note: `This Year: ${contracts.filter((item) => (item.award.awardDate || '').startsWith(String(thisYear))).length}`, tint: 'bg-[#eef5ff]', icon: Trophy, iconTint: 'bg-blue-100 text-blue-600' },
-    { label: 'Total Contract Value', value: compactNaira(value), note: `This Year: ${compactNaira(yearValue)}`, tint: 'bg-[#eefbf3]', icon: CircleDollarSign, iconTint: 'bg-emerald-100 text-emerald-600' },
+    { label: 'Total Contract Value', value: valueLabel, note: `This Year: ${money(yearValue, totals.size === 1 ? Array.from(totals.keys())[0] : 'NGN')}`, tint: 'bg-[#eefbf3]', icon: CircleDollarSign, iconTint: 'bg-emerald-100 text-emerald-600' },
     { label: 'Active Contracts', value: String(active.length), note: `${share(active.length)}% of total`, tint: 'bg-[#fff8eb]', icon: Clock3, iconTint: 'bg-amber-100 text-amber-600' },
     { label: 'Completed Contracts', value: String(completed.length), note: `${share(completed.length)}% of total`, tint: 'bg-[#eefbf3]', icon: CheckCircle2, iconTint: 'bg-emerald-100 text-emerald-600' },
     { label: 'Contracts Expiring Soon', value: String(expiring.length), note: 'Within 3 months', tint: 'bg-[#fff1f2]', icon: CalendarClock, iconTint: 'bg-rose-100 text-rose-500' },
@@ -159,7 +166,7 @@ export function AwardsBoard() {
               <CircleDollarSign className="h-4 w-4 text-slate-400" />
               <span>
                 <span className="block text-[10px] font-semibold uppercase tracking-wide text-slate-400">Total Contract Value</span>
-                <span className="text-[12px] font-black text-slate-800">{compactNaira(value)}</span>
+                <span className="text-[12px] font-black text-slate-800">{valueLabel}</span>
               </span>
             </div>
             <div className="relative">
@@ -175,6 +182,7 @@ export function AwardsBoard() {
         </div>
       </section>
       {error ? <div className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">{error}</div> : null}
+      <BlueprintRegisters opportunityId={form.id || awards[0]?.opportunityId || ''} focus="award" />
       <div className="flex gap-1 overflow-x-auto rounded-2xl border border-slate-200 bg-white px-2 shadow-sm">
         {TABS.map((item) => {
           const Icon = item.icon;
@@ -200,15 +208,28 @@ export function AwardsBoard() {
         })}
       </div>
       {adding ? (
-        <Panel title="Add Contract">
-          <div className="grid gap-2 md:grid-cols-4">
-            <select value={form.id} onChange={(event) => setForm({ ...form, id: event.target.value })} className="h-10 rounded-lg border border-slate-200 px-2 text-sm"><option value="">Opportunity</option>{rows.map((row) => <option key={row.id} value={row.id}>{row.referenceNo}</option>)}</select>
-            <input value={form.contractRef} onChange={(event) => setForm({ ...form, contractRef: event.target.value })} placeholder="Contract reference" className="h-10 rounded-lg border border-slate-200 px-3 text-sm" />
-            <input value={form.awardedValue} onChange={(event) => setForm({ ...form, awardedValue: event.target.value })} placeholder="Awarded value" className="h-10 rounded-lg border border-slate-200 px-3 text-sm" />
-            <input type="date" value={form.awardDate} onChange={(event) => setForm({ ...form, awardDate: event.target.value })} className="h-10 rounded-lg border border-slate-200 px-2 text-sm" />
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-4" role="presentation" onClick={() => setAdding(false)}>
+          <div className="w-full max-w-2xl rounded-2xl bg-white p-5 shadow-xl" role="dialog" aria-modal="true" aria-labelledby="add-contract-title" onClick={(event) => event.stopPropagation()}>
+            <div className="mb-3 flex items-center justify-between">
+              <h2 id="add-contract-title" className="text-lg font-black text-slate-950">Add Contract</h2>
+              <button type="button" onClick={() => setAdding(false)} className="rounded-lg px-2 py-1 text-sm font-semibold text-slate-500 hover:bg-slate-100">Close</button>
+            </div>
+            <ActingEmployee />
+            <div className="mt-3 grid gap-2 md:grid-cols-2">
+              <select value={form.id} onChange={(event) => { const row = rows.find((item) => item.id === event.target.value); setForm({ ...form, id: event.target.value, currency: row?.currency || 'NGN' }); }} className="h-10 rounded-lg border border-slate-200 px-2 text-sm" aria-label="Opportunity"><option value="">Opportunity</option>{rows.map((row) => <option key={row.id} value={row.id}>{row.referenceNo} · {row.currency || 'NGN'}</option>)}</select>
+              <input value={form.contractRef} onChange={(event) => setForm({ ...form, contractRef: event.target.value })} placeholder="Contract reference" className="h-10 rounded-lg border border-slate-200 px-3 text-sm" />
+              <select value={form.currency} onChange={(event) => setForm({ ...form, currency: event.target.value })} className="h-10 rounded-lg border border-slate-200 px-2 text-sm" aria-label="Contract currency">{['NGN', 'USD', 'EUR', 'GBP'].map((code) => <option key={code} value={code}>{code === 'NGN' ? 'NGN - Nigerian Naira' : code === 'USD' ? 'USD - US Dollar' : code}</option>)}</select>
+              <input value={form.awardedValue} onChange={(event) => setForm({ ...form, awardedValue: event.target.value })} placeholder="Awarded value" className="h-10 rounded-lg border border-slate-200 px-3 text-sm" />
+              <input type="date" value={form.awardDate} onChange={(event) => setForm({ ...form, awardDate: event.target.value })} className="h-10 rounded-lg border border-slate-200 px-2 text-sm" aria-label="Award date" />
+              <input value={form.handoverOwner} onChange={(event) => setForm({ ...form, handoverOwner: event.target.value })} placeholder="Handover owner" className="h-10 rounded-lg border border-slate-200 px-3 text-sm" />
+              <input value={form.handoverNotes} onChange={(event) => setForm({ ...form, handoverNotes: event.target.value })} placeholder="Handover notes and baseline differences" className="h-10 rounded-lg border border-slate-200 px-3 text-sm md:col-span-2" />
+            </div>
+            <div className="mt-4 flex justify-end gap-2">
+              <button type="button" onClick={() => setAdding(false)} className="rounded-lg border border-slate-200 px-4 py-2 text-sm font-bold text-slate-600">Cancel</button>
+              <button type="button" onClick={saveAward} className="rounded-lg bg-[#2563eb] px-4 py-2 text-sm font-bold text-white">Save award</button>
+            </div>
           </div>
-          <button type="button" onClick={saveAward} className="mt-3 rounded-lg bg-[#2563eb] px-4 py-2 text-sm font-bold text-white">Save award</button>
-        </Panel>
+        </div>
       ) : null}
       <div className="grid gap-3 xl:grid-cols-[minmax(0,1.4fr)_360px]">
         <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
@@ -238,7 +259,7 @@ export function AwardsBoard() {
                     <td className="px-3 py-2">{item.opportunity?.clientName || '—'}</td>
                     <td className="px-3 py-2">{item.award.contractRef}</td>
                     <td className="px-3 py-2">{formatWhen(item.award.awardDate)}</td>
-                    <td className="px-3 py-2">₦ {plainNaira(item.award.awardedValue)}</td>
+                    <td className="px-3 py-2">{money(item.award.awardedValue, awardCurrency(item))}</td>
                     <td className="px-3 py-2">{item.opportunity?.contractDuration ? `${item.opportunity.contractDuration} ${item.opportunity.durationUnit || 'Months'}` : '—'}</td>
                     <td className="px-3 py-2"><Pill className={item.status === 'Active' ? 'bg-emerald-50 text-emerald-700' : item.status === 'Completed' ? 'bg-teal-50 text-teal-700' : item.status === 'Closed' ? 'bg-slate-100 text-slate-500' : 'bg-amber-50 text-amber-700'}>{item.status}</Pill></td>
                     <td className="px-3 py-2"><Link href={`/commercial/tenders/awards?id=${item.award.opportunityId}`} className="font-semibold text-blue-700">View</Link></td>
@@ -266,6 +287,7 @@ export function AwardsBoard() {
       </div>
       <div className="grid gap-3 xl:grid-cols-3">
         <Panel title="Contract Milestones" action={<button type="button" onClick={() => setTab('Milestones & Deliverables')} className="text-[12px] font-semibold text-blue-700">View All →</button>}>
+          {rows[0] ? <ItemCapture opportunityId={form.id || awards[0]?.opportunityId || rows[0].id} kind="MILESTONE" onSaved={() => load()} /> : null}
           <table className="w-full text-left text-[12px]">
             <thead className="text-[11px] text-slate-400"><tr>{['#', 'Contract Title', 'Milestone', 'Due Date', 'Status'].map((heading) => <th key={heading} className="pb-2 font-semibold">{heading}</th>)}</tr></thead>
             <tbody>{milestones.length === 0 ? <tr><td colSpan={5} className="py-6 text-center text-slate-500">No milestones have been logged.</td></tr> : milestones.map((item, index) => <tr key={item.id} className="border-t border-slate-100"><td className="py-2 text-slate-400">{index + 1}</td><td className="py-2">{rows.find((row) => row.id === item.opportunityId)?.title || '—'}</td><td className="py-2 font-semibold">{item.title}</td><td className="py-2">{formatWhen(item.dueAt)}</td><td className="py-2"><Pill className="bg-blue-50 text-blue-700">{item.status || '—'}</Pill></td></tr>)}</tbody>

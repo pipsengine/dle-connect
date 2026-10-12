@@ -22,6 +22,8 @@ import type { TenderDocument } from '@/lib/commercial/tender-types';
 import { daysUntil, fileSize, workspaceStepIndex } from '@/lib/commercial/tender-present';
 import { formatWhen, money } from './tender-api';
 import { Pill } from './tender-widgets';
+import { SubmissionCapture } from './record-capture';
+import { BlueprintRegisters } from './BlueprintRegisters';
 import { useTenderRecord } from './use-tender-record';
 
 const TABS: Array<{ id: string; icon: LucideIcon }> = [
@@ -88,6 +90,7 @@ export function SubmissionBoard() {
         ) : null}
       </div>
       {record.error ? <div className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">{record.error}</div> : null}
+      <BlueprintRegisters opportunityId={opportunity?.id || ''} focus="submission" />
       {record.notice ? <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">{record.notice}</div> : null}
 
       <section className="rounded-2xl border border-slate-200 bg-white px-4 py-4 shadow-sm">
@@ -151,7 +154,7 @@ export function SubmissionBoard() {
         <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
           {tab === 'Submission Package' ? <PackageTable documents={documents} submitted={Boolean(submission)} /> : null}
           {tab === 'Amendments / Addenda' ? <PackageTable documents={addenda} submitted={Boolean(submission)} /> : null}
-          {tab === 'Delivery & Acknowledgement' ? <p className="text-sm text-slate-600">{submission ? `${submission.channel || 'Submission'} · ${submission.receiptReference || 'No acknowledgement'} · ${formatWhen(submission.submittedAt)}` : 'No delivery has been recorded.'}</p> : null}
+          {tab === 'Delivery & Acknowledgement' ? opportunity ? <><SubmissionCapture opportunityId={opportunity.id} onSaved={() => record.reload()} /><p className="text-sm text-slate-600">{submission ? `${submission.channel || 'Submission'} · ${submission.receiptReference || 'No acknowledgement'} · ${formatWhen(submission.submittedAt)}` : 'No delivery has been recorded.'}</p></> : <p className="text-sm text-slate-500">Open an opportunity before recording a submission.</p> : null}
           {tab === 'Tracking & Communication' || tab === 'Audit Trail' ? <AuditList events={audit} /> : null}
           {tab === 'Post Submission Activities' ? <p className="text-sm text-slate-600">{(record.detail?.items || []).length ? record.detail!.items.map((item) => item.title).join(', ') : 'No post-submission activities have been logged.'}</p> : null}
         </section>
@@ -181,6 +184,7 @@ export function SubmissionBoard() {
               </ol>
             </Panel>
             <Panel className="xl:col-span-4" title="Submission Details">
+              {opportunity ? <SubmissionCapture opportunityId={opportunity.id} onSaved={() => record.reload()} /> : null}
               <dl className="text-[13px]">
                 {([
                   ['Submission Reference', submission?.id || '—'],

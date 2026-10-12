@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { Check, Loader2, X } from 'lucide-react';
 import type { TenderLookups, TenderOpportunity } from '@/lib/commercial/tender-types';
 import { money, tenderGet, tenderPost, tenderUpload } from './tender-api';
+import { ActingEmployee } from './acting-employee';
 
 const STEPS = ['Opportunity Details', 'Client & Contact', 'Scope & Commercial', 'Key Dates', 'Documents', 'Team & Approval'];
 const TYPES = ['Client Tender', 'Supplier Tender', 'Enquiry', 'Framework Agreement', 'Other'];
@@ -15,8 +16,8 @@ const STATUSES = ['Open', 'Under Review', 'Prequalification', 'Closed', 'Awarded
 const PRIORITIES = ['High', 'Medium', 'Low'];
 const CONTRACTS = ['Lump Sum', 'Unit Rate', 'Reimbursable', 'Framework'];
 const CURRENCIES = [
-  { code: 'NGN', label: 'NGN - Nigerian Naira' },
-  { code: 'USD', label: 'USD - US Dollar' },
+  { code: 'NGN', label: 'NGN - Nigerian Naira (₦)' },
+  { code: 'USD', label: 'USD - US Dollar ($)' },
   { code: 'EUR', label: 'EUR - Euro' },
   { code: 'GBP', label: 'GBP - British Pound' },
 ];
@@ -60,6 +61,7 @@ type FormState = {
   ownerName: string;
   teamNotes: string;
   approvalNotes: string;
+  bidDecision: string;
   documentCategory: string;
 };
 
@@ -102,6 +104,7 @@ const blank = (): FormState => ({
   ownerName: '',
   teamNotes: '',
   approvalNotes: '',
+  bidDecision: 'Pending',
   documentCategory: 'Invitation',
 });
 
@@ -145,6 +148,7 @@ const fromOpportunity = (row: TenderOpportunity): FormState => ({
   ownerName: row.ownerName,
   teamNotes: row.teamNotes,
   approvalNotes: row.approvalNotes,
+  bidDecision: row.bidDecision || 'Pending',
 });
 
 const fieldClass = 'h-10 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100';
@@ -255,6 +259,7 @@ export function OpportunityModal({
     ownerName: form.ownerName,
     teamNotes: form.teamNotes,
     approvalNotes: form.approvalNotes,
+    bidDecision: form.bidDecision,
   });
 
   const persist = async (saveMode: 'draft' | 'submit') => {
@@ -317,6 +322,7 @@ export function OpportunityModal({
               <div className="text-xs font-semibold text-slate-400">Tender Management / Tender Opportunities / New Opportunity</div>
               <h2 className="text-xl font-black text-slate-950">{form.id ? 'Edit Tender Opportunity' : 'New Tender Opportunity'}</h2>
               <p className="text-sm text-slate-500">Register a tender opportunity, enquiry or invitation received from a client or external source.</p>
+              <div className="mt-1"><ActingEmployee /></div>
             </div>
           </div>
           <div className="flex items-center gap-2">
@@ -487,6 +493,9 @@ export function OpportunityModal({
               <h3 className="mb-3 text-sm font-black text-slate-900">6 Team & Approval</h3>
               <div className="grid gap-3 md:grid-cols-2">
                 <Field label="Opportunity Owner"><input className={fieldClass} value={form.ownerName} onChange={(event) => set('ownerName', event.target.value)} /></Field>
+                <Field label="Bid / No-Bid">
+                  <select className={fieldClass} value={form.bidDecision} onChange={(event) => set('bidDecision', event.target.value)}>{['Pending', 'Bid', 'No-Bid'].map((item) => <option key={item}>{item}</option>)}</select>
+                </Field>
                 <Field label="Opportunity Status">
                   <select className={fieldClass} value={form.status} onChange={(event) => set('status', event.target.value)}>{STATUSES.map((item) => <option key={item}>{item}</option>)}</select>
                 </Field>

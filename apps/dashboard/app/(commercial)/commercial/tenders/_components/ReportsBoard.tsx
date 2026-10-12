@@ -8,6 +8,7 @@ import { MONTHS, closedOut, compactNaira, daysUntil, downloadCsv, inMonth, month
 import { formatWhen, tenderGet } from './tender-api';
 import { Donut, Pill } from './tender-widgets';
 import { Crumbs, Empty, Panel, TabBar } from './record-frame';
+import { BlueprintRegisters } from './BlueprintRegisters';
 
 const TABS = ['Executive Overview', 'Tender Pipeline', 'Bid Success Analysis', 'Contract Performance', 'Spend Analysis', 'Supplier / Client Analysis', 'Risk & Compliance', 'Custom Reports'] as const;
 const STATUS_LABELS = ['Open', 'Bid Submitted', 'Under Evaluation', 'Awarded', 'Closed', 'Withdrawn'] as const;
@@ -181,6 +182,7 @@ export function ReportsBoard() {
         </div>
       </div>
       {error ? <div className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">{error}</div> : null}
+      <BlueprintRegisters opportunityId={rows[0]?.id || ''} focus="reports" />
       <TabBar tabs={TABS} tab={tab} onTab={(value) => setTab(value as (typeof TABS)[number])} />
 
       {tab === 'Executive Overview' ? (

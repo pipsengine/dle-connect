@@ -103,6 +103,7 @@ export type TenderAward = {
   opportunityId: string;
   contractRef: string;
   awardedValue: number;
+  currency: string;
   awardDate: string;
   handoverOwner: string;
   handoverNotes: string;
@@ -241,4 +242,36 @@ export type TenderDashboard = {
   byStage: Array<{ label: string; count: number; value: number }>;
   byStatus: Array<{ label: string; count: number }>;
   latest: TenderOpportunity[];
+};
+
+export type BlueprintViewer = {
+  roles: string[];
+  permissions: string[];
+  isGlobalAdmin?: boolean;
+};
+
+export type TenderBlueprint = {
+  lots: Array<{ id: string; lotCode: string; title: string; estimatedValue: number; currency: string; status: string }>;
+  parties: Array<{ id: string; role: string; name: string; worksharePct: number; liability: string; accessScope: string }>;
+  qualifications: Array<{ id: string; certificate: string; referenceNo: string; expiresOn: string; eligibility: string; evidence: string }>;
+  scores: Array<{ id: string; criterion: string; weightPct: number; score: number; overrideReason: string; authority: string }>;
+  weightedScore: number | null;
+  bidThreshold: number;
+  roles: Array<{ id: string; role: string; person: string; employeeCode: string }>;
+  rates: Array<{ id: string; code: string; description: string; unit: string; rate: number; currency: string; locationFactor: number; effectiveFrom: string; approvedBy: string }>;
+  estimates: Array<{ id: string; version: number; label: string; locked: boolean; currency: string; fxRate: number; totalCost: number; totalSell: number; explanation: string; createdAt: string }>;
+  quotes: Array<{ id: string; supplier: string; lotCode: string; technicalNotes: string; commercialAmount: number | null; currency: string; sealed: boolean; releasedAt: string }>;
+  scenarios: Array<{ id: string; name: string; fxRate: number; escalationPct: number; productivityPct: number; delayDays: number; overrunPct: number; cost: number; sell: number; margin: number; assumptions: string }>;
+  cashFlow: {
+    periods: Array<{ id: string; month: string; inflow: number; outflow: number; retention: number; mobilization: number; guarantee: number; net: number }>;
+    npv: number | null;
+    irr: number | null;
+    peakFunding: number;
+    discountRate: number;
+  };
+  clauses: Array<{ id: string; clauseType: string; text: string; deviation: string; residualRisk: string; owner: string; acceptance: string }>;
+  manifest: Array<{ id: string; submissionId: string; fileName: string; contentHash: string; sizeBytes: number; createdAt: string }>;
+  baselines: Array<{ id: string; awardId: string; lotCode: string; projectCode: string; acceptedBy: string; status: string; createdAt: string }>;
+  reviews: Array<{ id: string; ruleset: string; finding: string; evidence: string; confidence: number; humanDecision: string; outcome: string }>;
+  limits: Array<{ stage: string; amount: number }>;
 };

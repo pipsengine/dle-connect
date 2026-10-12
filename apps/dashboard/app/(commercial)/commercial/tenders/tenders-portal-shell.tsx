@@ -5,7 +5,7 @@ import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import type { FormEvent, ReactNode } from 'react';
 import { useEffect, useState } from 'react';
-import { ChevronDown, Globe, Menu, Search, X } from 'lucide-react';
+import { ChevronDown, ChevronLeft, ChevronRight, Globe, Menu, Search, X } from 'lucide-react';
 import { NotificationCenter } from '@/components/layout/notification-center';
 import { EnterpriseUserProfile } from '@hris/components/layout/enterprise-user-profile';
 import { canAccessCommercial } from '@/lib/access/commercial-access';
@@ -24,10 +24,23 @@ export function TendersPortalShell({ children }: Props) {
   const pathname = usePathname();
   const router = useRouter();
   const [mobileOpen, setMobileOpen] = useState(false);
+  const [collapsed, setCollapsed] = useState(false);
   const [groupOpen, setGroupOpen] = useState(true);
   const [query, setQuery] = useState('');
   const [allowed, setAllowed] = useState(true);
   const [languageOpen, setLanguageOpen] = useState(false);
+
+  useEffect(() => {
+    setCollapsed(window.localStorage.getItem('dle-tender-sidebar') === 'collapsed');
+  }, []);
+
+  const toggleSidebar = () => {
+    setCollapsed((value) => {
+      const next = !value;
+      window.localStorage.setItem('dle-tender-sidebar', next ? 'collapsed' : 'open');
+      return next;
+    });
+  };
 
   useEffect(() => {
     let active = true;
@@ -59,7 +72,7 @@ export function TendersPortalShell({ children }: Props) {
       selected ? 'bg-[#2563eb] text-white shadow-sm' : 'text-[#d5deea] hover:bg-white/10 hover:text-white'
     }`;
 
-  const navBody = (onNavigate?: () => void) => (
+  const navBody = (onNavigate?: () => void, iconOnly = false) => (
     <nav className="space-y-0.5">
       {TENDER_NAV.map((item) => {
         const Icon = item.icon;
@@ -69,7 +82,7 @@ export function TendersPortalShell({ children }: Props) {
           : childActive(pathname, item.href);
         return (
           <div key={item.id}>
-            {children.length ? (
+            {children.length && !iconOnly ? (
               <button
                 type="button"
                 onClick={() => setGroupOpen((value) => !value)}
@@ -79,25 +92,26 @@ export function TendersPortalShell({ children }: Props) {
                 <span className="flex-1 truncate text-left">{item.label}</span>
                 <ChevronDown className={`h-4 w-4 text-white/70 transition ${groupOpen ? 'rotate-180' : ''}`} />
               </button>
-            ) : (
-              <Link href={item.href} title={item.label} onClick={onNavigate} className={linkClass(sectionOn)}>
-                <Icon className="h-4 w-4 shrink-0" />
-                <span className="truncate">{item.label}</span>
-              </Link>
-            )}
-            {children.length && groupOpen ? (
-              <div className="mt-0.5 space-y-0.5 pl-3">
+            ) : null}
+            {children.length && (iconOnly || groupOpen) ? (
+              <div className={`mt-0.5 space-y-0.5 ${iconOnly ? '' : 'pl-3'}`}>
                 {children.map((child) => {
                   const ChildIcon = child.icon;
                   const selected = childActive(pathname, child.href);
                   return (
-                    <Link key={child.id} href={child.href} onClick={onNavigate} className={linkClass(selected)}>
+                    <Link key={child.id} href={child.href} title={child.label} onClick={onNavigate} className={`${linkClass(selected)} ${iconOnly ? 'justify-center px-2' : ''}`}>
                       <ChildIcon className="h-3.5 w-3.5 shrink-0 opacity-90" />
-                      <span className="truncate">{child.label}</span>
+                      {iconOnly ? null : <span className="truncate">{child.label}</span>}
                     </Link>
                   );
                 })}
               </div>
+            ) : null}
+            {!children.length ? (
+              <Link href={item.href} title={item.label} onClick={onNavigate} className={`${linkClass(sectionOn)} ${iconOnly ? 'justify-center px-2' : ''}`}>
+                <Icon className="h-4 w-4 shrink-0" />
+                {iconOnly ? null : <span className="truncate">{item.label}</span>}
+              </Link>
             ) : null}
           </div>
         );
@@ -109,16 +123,22 @@ export function TendersPortalShell({ children }: Props) {
 
   return (
     <div className="min-h-screen bg-[#f4f7fb] text-slate-900">
-      <aside className="fixed inset-y-0 left-0 z-40 hidden w-[252px] flex-col bg-[#071427] lg:flex">
-        <Link href="/" title="Enterprise Home" className="flex items-center gap-2 px-4 py-4">
-          <Image src="/brand/dorman-long-logo.png" alt="DLE" width={34} height={34} className="rounded bg-white p-0.5" />
-          <div className="min-w-0 flex-1">
-            <div className="text-[13px] font-black tracking-wide text-white">DLE CONNECT</div>
-            <div className="text-[9px] font-semibold uppercase tracking-[0.18em] text-sky-300">Enterprise</div>
-          </div>
-          <Menu className="h-4 w-4 text-white/80" aria-hidden />
-        </Link>
-        <div className="flex-1 overflow-y-auto px-3 pb-4">{navBody()}</div>
+      <aside className={`fixed inset-y-0 left-0 z-40 hidden flex-col bg-[#071427] transition-[width] lg:flex ${collapsed ? 'w-[72px]' : 'w-[252px]'}`}>
+        <div className={`flex gap-2 py-4 ${collapsed ? 'flex-col items-center px-2' : 'items-center px-4'}`}>
+          <Link href="/" title="Enterprise Home" className="shrink-0">
+            <Image src="/brand/dorman-long-logo.png" alt="DLE" width={34} height={34} className="rounded bg-white p-0.5" />
+          </Link>
+          {collapsed ? null : (
+            <div className="min-w-0 flex-1">
+              <div className="text-[13px] font-black tracking-wide text-white">DLE CONNECT</div>
+              <div className="text-[9px] font-semibold uppercase tracking-[0.18em] text-sky-300">Enterprise</div>
+            </div>
+          )}
+          <button type="button" onClick={toggleSidebar} className="rounded-md p-1 text-white/80 hover:bg-white/10" aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}>
+            {collapsed ? <ChevronRight className="h-4 w-4" /> : <ChevronLeft className="h-4 w-4" />}
+          </button>
+        </div>
+        <div className="flex-1 overflow-y-auto px-3 pb-4">{navBody(undefined, collapsed)}</div>
       </aside>
 
       {mobileOpen ? (
@@ -134,7 +154,7 @@ export function TendersPortalShell({ children }: Props) {
         </div>
       ) : null}
 
-      <div className="min-h-screen lg:pl-[252px]">
+      <div className={`min-h-screen ${collapsed ? 'lg:pl-[72px]' : 'lg:pl-[252px]'}`}>
         <header className="sticky top-0 z-30 flex h-16 items-center gap-3 border-b border-slate-200/80 bg-white px-4 lg:px-6">
           <button type="button" className="rounded-md border border-slate-200 p-2 lg:hidden" onClick={() => setMobileOpen(true)} aria-label="Open menu">
             <Menu className="h-4 w-4" />

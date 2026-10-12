@@ -25,9 +25,11 @@ import {
   type LucideIcon,
 } from 'lucide-react';
 import type { TenderDocument, TenderLine, TenderOpportunity } from '@/lib/commercial/tender-types';
-import { daysUntil, plainNaira, workspaceStepIndex } from '@/lib/commercial/tender-present';
+import { daysUntil, workspaceStepIndex } from '@/lib/commercial/tender-present';
 import { formatWhen, money } from './tender-api';
 import { OpportunityModal } from './OpportunityModal';
+import { DocumentCapture, ItemCapture, LineCapture } from './record-capture';
+import { BlueprintRegisters } from './BlueprintRegisters';
 import { Pill } from './tender-widgets';
 import { useTenderRecord } from './use-tender-record';
 
@@ -60,7 +62,6 @@ const CHECKLIST: Array<{ label: string; group: 'technical' | 'boq' | 'commercial
   { label: 'Financial Statements', group: 'commercial', token: 'financial' },
 ];
 
-const naira = (value: number) => `₦ ${plainNaira(value)}`;
 const percent = (done: number, total: number) => (total ? Math.round((done / total) * 100) : 0);
 
 const matchDoc = (documents: TenderDocument[], token: string) => documents.find((doc) => `${doc.category} ${doc.fileName}`.toLowerCase().includes(token));
@@ -159,6 +160,7 @@ export function BidBoard() {
         ) : null}
       </div>
       {record.error ? <div className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">{record.error}</div> : null}
+      <BlueprintRegisters opportunityId={opportunity?.id || ''} focus="bid" />
 
       <section className="rounded-2xl border border-slate-200 bg-white px-4 py-4 shadow-sm">
         <div className="flex flex-wrap items-start justify-between gap-4">
@@ -231,11 +233,14 @@ export function BidBoard() {
 
       {opportunity && tab !== 'Overview' ? (
         <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-          {tab === 'BOQ & Costing' ? <LineTable lines={lines} /> : null}
-          {tab === 'Team & Tasks' ? <TeamPanel opportunity={opportunity} /> : null}
+          {tab === 'BOQ & Costing' ? <><LineCapture opportunityId={opportunity.id} currency={opportunity.currency || 'NGN'} onSaved={() => record.loadDetail(opportunity.id)} /><LineTable lines={lines} currency={opportunity.currency || 'NGN'} /></> : null}
+          {tab === 'Team & Tasks' ? <><ItemCapture opportunityId={opportunity.id} kind="TASK" onSaved={() => record.loadDetail(opportunity.id)} /><TeamPanel opportunity={opportunity} /></> : null}
           {tab === 'Timeline' || tab === 'Audit Trail' ? <AuditList events={record.detail?.audit || []} /> : null}
           {tab === 'Compliance Matrix' ? <ItemList items={compliance} empty="No compliance items have been logged." /> : null}
           {tab === 'Resource Plan' ? <p className="text-sm text-slate-600">{opportunity.teamNotes || 'No resource plan has been saved.'}</p> : null}
+          {tab === 'Compliance Matrix' ? <ItemCapture opportunityId={opportunity.id} kind="COMPLIANCE" onSaved={() => record.loadDetail(opportunity.id)} /> : null}
+          {tab === 'Resource Plan' ? <ItemCapture opportunityId={opportunity.id} kind="TASK" onSaved={() => record.loadDetail(opportunity.id)} /> : null}
+          {!['BOQ & Costing', 'Team & Tasks', 'Timeline', 'Audit Trail'].includes(tab) ? <DocumentCapture opportunityId={opportunity.id} category={tab} onSaved={() => record.loadDetail(opportunity.id)} /> : null}
           {!['BOQ & Costing', 'Team & Tasks', 'Timeline', 'Audit Trail', 'Compliance Matrix', 'Resource Plan'].includes(tab) ? (
             documents.filter((doc) => tab === 'Contract Documents' || `${doc.category} ${doc.fileName}`.toLowerCase().includes(tab.split(' ')[0].toLowerCase())).length
               ? documents.filter((doc) => tab === 'Contract Documents' || `${doc.category} ${doc.fileName}`.toLowerCase().includes(tab.split(' ')[0].toLowerCase())).map((doc) => <a key={doc.id} className="block py-1 text-sm font-semibold text-blue-700" href={`/api/commercial/tenders?resource=document&documentId=${doc.id}`}>{doc.fileName}</a>)
@@ -329,10 +334,10 @@ export function BidBoard() {
               </Panel>
             </div>
             <Panel className="xl:col-span-4" title="BOQ Summary" action={<button type="button" onClick={() => setTab('BOQ & Costing')} className="text-[12px] font-semibold text-blue-700">View Details →</button>}>
-              <LineTable lines={lines.slice(0, 5)} />
+              <LineTable lines={lines.slice(0, 5)} currency={opportunity?.currency || 'NGN'} />
               <div className="mt-2 flex items-center justify-between border-t border-slate-200 pt-2 text-[13px]">
                 <span className="font-semibold text-slate-500">Total Estimated Cost</span>
-                <b className="text-[16px] text-slate-950">{naira(priced)}</b>
+                <b className="text-[16px] text-slate-950">{money(priced, opportunity?.currency || 'NGN')}</b>
               </div>
             </Panel>
             <Panel className="xl:col-span-4" title="Cost Estimate Summary" action={<button type="button" onClick={() => setTab('BOQ & Costing')} className="text-[12px] font-semibold text-blue-700">View Details →</button>}>
@@ -341,18 +346,18 @@ export function BidBoard() {
                 const share = priced ? Math.round((amount / priced) * 100) : 0;
                 return (
                   <div key={label} className="mb-2.5">
-                    <div className="mb-1 flex items-center justify-between text-[12px]"><span className="text-slate-600">{label}</span><b className="text-slate-800">{naira(amount)} <span className="font-semibold text-slate-400">{share}%</span></b></div>
+                    <div className="mb-1 flex items-center justify-between text-[12px]"><span className="text-slate-600">{label}</span><b className="text-slate-800">{money(amount, opportunity?.currency || 'NGN')} <span className="font-semibold text-slate-400">{share}%</span></b></div>
                     <div className="h-1.5 overflow-hidden rounded-full bg-slate-100"><div className="h-1.5 rounded-full bg-[#3b82f6]" style={{ width: `${share}%` }} /></div>
                   </div>
                 );
               })}
-              <div className="mt-2 text-right text-[13px] font-black text-slate-950">Total Estimated Cost {naira(priced)}</div>
+              <div className="mt-2 text-right text-[13px] font-black text-slate-950">Total Estimated Cost {money(priced, opportunity?.currency || 'NGN')}</div>
             </Panel>
             <Panel className="xl:col-span-4" title="Commercial Inputs (Target)" action={<button type="button" onClick={() => setEditing(true)} className="inline-flex items-center gap-1 text-[12px] font-semibold text-blue-700"><Pencil className="h-3.5 w-3.5" /> Edit</button>}>
               <dl className="text-[13px]">
                 {([
-                  ['Proposed Selling Price', sell ? naira(sell) : opportunity ? money(opportunity.estimatedValue, opportunity.currency) : '—'],
-                  ['Expected Gross Margin', sell ? `${naira(sell - priced)} (${sell ? Math.round(((sell - priced) / sell) * 100) : 0}%)` : '—'],
+                  ['Proposed Selling Price', sell ? money(sell, opportunity?.currency || 'NGN') : opportunity ? money(opportunity.estimatedValue, opportunity.currency) : '—'],
+                  ['Expected Gross Margin', sell ? `${money(sell - priced, opportunity?.currency || 'NGN')} (${sell ? Math.round(((sell - priced) / sell) * 100) : 0}%)` : '—'],
                   ['Project Duration', opportunity?.contractDuration ? `${opportunity.contractDuration} ${opportunity.durationUnit || 'Months'}` : '—'],
                   ['Mobilization Advance', '—'],
                   ['Retention', opportunity ? (opportunity.retentions ? 'Applicable' : '—') : '—'],
@@ -395,10 +400,11 @@ function Panel({ title, action, children, className = '' }: { title: string; act
   );
 }
 
-function LineTable({ lines }: { lines: TenderLine[] }) {
+function LineTable({ lines, currency = 'NGN' }: { lines: TenderLine[]; currency?: string }) {
+  const symbol = currency === 'USD' ? 'USD' : currency === 'NGN' ? 'NGN' : currency;
   return (
     <table className="w-full text-left text-[12px]">
-      <thead className="text-[11px] text-slate-400"><tr>{['#', 'Description', 'Qty', 'Unit', 'Unit Rate (₦)', 'Total (₦)'].map((heading) => <th key={heading} className="pb-2 font-semibold">{heading}</th>)}</tr></thead>
+      <thead className="text-[11px] text-slate-400"><tr>{['#', 'Description', 'Qty', 'Unit', `Unit Rate (${symbol})`, `Total (${symbol})`].map((heading) => <th key={heading} className="pb-2 font-semibold">{heading}</th>)}</tr></thead>
       <tbody>
         {lines.length === 0 ? <tr><td colSpan={6} className="py-6 text-center text-slate-500">No priced lines yet.</td></tr> : lines.map((line, index) => (
           <tr key={line.id} className="border-t border-slate-100">
@@ -406,8 +412,8 @@ function LineTable({ lines }: { lines: TenderLine[] }) {
             <td className="py-2 font-semibold text-slate-800">{line.description}</td>
             <td className="py-2">{line.quantity}</td>
             <td className="py-2">{line.unit || '—'}</td>
-            <td className="py-2">{plainNaira(line.unitCost)}</td>
-            <td className="py-2 font-semibold">{plainNaira(line.quantity * line.unitCost)}</td>
+            <td className="py-2">{money(line.unitCost, currency)}</td>
+            <td className="py-2 font-semibold">{money(line.quantity * line.unitCost, currency)}</td>
           </tr>
         ))}
       </tbody>

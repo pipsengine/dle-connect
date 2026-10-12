@@ -5,6 +5,8 @@ import { useSearchParams } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import type { TenderApproval, TenderAward, TenderDashboard, TenderDocument, TenderItem, TenderLine, TenderOpportunity, TenderSubmission } from '@/lib/commercial/tender-types';
 import { formatWhen, money, tenderGet, tenderPost } from './tender-api';
+import { BlueprintRegisters } from './BlueprintRegisters';
+import { ActingEmployee } from './acting-employee';
 
 type Detail = {
   opportunity: TenderOpportunity;
@@ -139,6 +141,7 @@ export function TenderDesk({ desk }: { desk: Desk }) {
       {desk === 'administration' ? (
         <section className="max-w-2xl rounded-2xl border border-slate-200 bg-white p-4">
           <h2 className="mb-3 text-sm font-black">Tender settings</h2>
+          <div className="mb-3"><ActingEmployee /></div>
           <form className="grid gap-2 md:grid-cols-[1fr_1fr_auto]" onSubmit={(event) => { event.preventDefault(); tenderPost({ action: 'setting', key: form.key, value: form.value }).then(() => tenderGet<typeof settings>('settings').then(setSettings)).catch((reason) => setError(reason instanceof Error ? reason.message : 'Save failed.')); }}>
             <input className={inputClass} placeholder="Key" value={form.key || ''} onChange={(event) => setForm({ ...form, key: event.target.value })} />
             <input className={inputClass} placeholder="Value" value={form.value || ''} onChange={(event) => setForm({ ...form, value: event.target.value })} />
@@ -149,6 +152,7 @@ export function TenderDesk({ desk }: { desk: Desk }) {
               <li key={setting.key} className="flex justify-between gap-3 py-2"><span className="font-semibold">{setting.key}</span><span>{setting.value}</span></li>
             ))}
           </ul>
+          <div className="mt-4"><BlueprintRegisters opportunityId="" focus="admin" /></div>
         </section>
       ) : null}
 
@@ -177,6 +181,7 @@ export function TenderDesk({ desk }: { desk: Desk }) {
                   <h2 className="text-lg font-black">{opportunity.title}</h2>
                   <p className="text-sm text-slate-500">{opportunity.clientName} · {opportunity.stage} · {opportunity.status} · {money(opportunity.estimatedValue, opportunity.currency)}</p>
                   <p className="mt-1 text-sm text-slate-600">{opportunity.department || 'No department'} · {opportunity.location || 'No location'} · {opportunity.site || 'No site'}</p>
+                  <div className="mt-2"><ActingEmployee /></div>
                 </div>
 
                 {desk === 'workspace' ? (
@@ -257,8 +262,9 @@ export function TenderDesk({ desk }: { desk: Desk }) {
 
                 {desk === 'awards' ? (
                   <>
-                    <form className="grid max-w-lg gap-2" onSubmit={(event) => { event.preventDefault(); submit('award', { award: { contractRef: form.contractRef, awardedValue: Number(form.awardedValue || 0), awardDate: form.awardDate, handoverOwner: form.handoverOwner, handoverNotes: form.handoverNotes } }); }}>
+                    <form className="grid max-w-lg gap-2" onSubmit={(event) => { event.preventDefault(); submit('award', { award: { contractRef: form.contractRef, awardedValue: Number(form.awardedValue || 0), currency: form.currency || opportunity.currency || 'NGN', awardDate: form.awardDate, handoverOwner: form.handoverOwner, handoverNotes: form.handoverNotes } }); }}>
                       <input className={inputClass} required placeholder="Contract reference" value={form.contractRef || ''} onChange={(event) => setForm({ ...form, contractRef: event.target.value })} />
+                      <select className={inputClass} value={form.currency || opportunity.currency || 'NGN'} onChange={(event) => setForm({ ...form, currency: event.target.value })} aria-label="Award currency"><option value="NGN">NGN - Nigerian Naira</option><option value="USD">USD - US Dollar</option><option value="EUR">EUR - Euro</option><option value="GBP">GBP - British Pound</option></select>
                       <input className={inputClass} required placeholder="Awarded value" value={form.awardedValue || ''} onChange={(event) => setForm({ ...form, awardedValue: event.target.value })} />
                       <input className={inputClass} type="date" value={form.awardDate || ''} onChange={(event) => setForm({ ...form, awardDate: event.target.value })} />
                       <input className={inputClass} placeholder="Handover owner" value={form.handoverOwner || ''} onChange={(event) => setForm({ ...form, handoverOwner: event.target.value })} />
@@ -266,7 +272,7 @@ export function TenderDesk({ desk }: { desk: Desk }) {
                       <button className="h-10 rounded-lg bg-blue-600 text-sm font-bold text-white" type="submit">Record award</button>
                     </form>
                     {detail.awards.length === 0 ? <p className="text-sm text-slate-500">No awards recorded.</p> : detail.awards.map((row) => (
-                      <div key={row.id} className="border-t border-slate-100 py-2 text-sm">{row.contractRef} · {money(row.awardedValue)} · {row.handoverOwner} · {formatWhen(row.awardDate)}</div>
+                      <div key={row.id} className="border-t border-slate-100 py-2 text-sm">{row.contractRef} · {money(row.awardedValue, row.currency)} · {row.handoverOwner || row.createdBy} · {formatWhen(row.awardDate)}</div>
                     ))}
                   </>
                 ) : null}

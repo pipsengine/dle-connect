@@ -32,6 +32,8 @@ import type { TenderApproval, TenderAward, TenderDocument, TenderItem, TenderLin
 import { daysUntil, plainNaira, stageSave, WORKSPACE_STAGES, workspaceStepIndex } from '@/lib/commercial/tender-present';
 import { formatWhen, money, tenderGet, tenderPost, tenderUpload } from './tender-api';
 import { OpportunityModal } from './OpportunityModal';
+import { ItemCapture, LineCapture } from './record-capture';
+import { BlueprintRegisters } from './BlueprintRegisters';
 import { Pill } from './tender-widgets';
 
 type Detail = {
@@ -173,6 +175,7 @@ export function TenderWorkspace() {
         ) : null}
       </div>
       {error ? <div className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">{error}</div> : null}
+      {opportunity ? <BlueprintRegisters opportunityId={opportunity.id} focus="workspace" /> : null}
       {notice ? <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">{notice}</div> : null}
 
       <section className="rounded-2xl border border-slate-200 bg-white px-4 py-4 shadow-sm">
@@ -261,25 +264,35 @@ export function TenderWorkspace() {
 
       {opportunity && tab !== 'Overview' ? (
         <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-          {tab === 'Details' ? <p className="whitespace-pre-wrap text-sm text-slate-700">{opportunity.description || opportunity.scopeSummary || 'No description has been saved.'}</p> : null}
-          {tab === 'Lots / Packages' ? <Lines lines={detail?.lines || []} /> : null}
-          {tab === 'Compliance Matrix' ? <Items items={compliance} empty="No compliance items yet." /> : null}
+          {tab === 'Details' ? (
+            <div className="space-y-3">
+              <p className="whitespace-pre-wrap text-sm text-slate-700">{opportunity.description || opportunity.scopeSummary || 'No description has been saved.'}</p>
+              <ItemCapture opportunityId={opportunity.id} kinds={['QUALIFICATION', 'REQUIREMENT', 'CLAUSE', 'BOND', 'SCENARIO', 'CASHFLOW', 'SUPPLIER', 'DEVIATION', 'LESSON', 'HANDOVER']} onSaved={() => loadDetail(opportunity.id)} />
+              <Items items={(detail?.items || []).filter((item) => /qualif|require|clause|bond|scenario|cash|supplier|deviat|lesson|handover/i.test(item.kind))} empty="No qualification, clause, scenario or handover records yet." />
+            </div>
+          ) : null}
+          {tab === 'Lots / Packages' ? <><LineCapture opportunityId={opportunity.id} currency={opportunity.currency || 'NGN'} onSaved={() => loadDetail(opportunity.id)} /><Lines lines={detail?.lines || []} /></> : null}
+          {tab === 'Compliance Matrix' ? <><ItemCapture opportunityId={opportunity.id} kind="COMPLIANCE" onSaved={() => loadDetail(opportunity.id)} /><Items items={compliance} empty="No compliance items yet." /></> : null}
           {tab === 'Documents' ? <Documents documents={(detail?.documents || []).filter((item) => !/addend/i.test(item.category))} opportunityId={opportunity.id} onUploaded={() => loadDetail(opportunity.id)} /> : null}
           {tab === 'Addenda' ? <Documents documents={addenda} opportunityId={opportunity.id} category="Addendum" onUploaded={() => loadDetail(opportunity.id)} /> : null}
-          {tab === 'Clarifications (Q&A)' ? <Items items={clarifications} empty="No clarifications have been logged." /> : null}
-          {tab === 'Risk & Issues' ? <Items items={risks} empty="No risks or issues have been logged." /> : null}
+          {tab === 'Clarifications (Q&A)' ? <><ItemCapture opportunityId={opportunity.id} kind="CLARIFICATION" onSaved={() => loadDetail(opportunity.id)} /><Items items={clarifications} empty="No clarifications have been logged." /></> : null}
+          {tab === 'Risk & Issues' ? <><ItemCapture opportunityId={opportunity.id} kind="RISK" onSaved={() => loadDetail(opportunity.id)} /><Items items={risks} empty="No risks or issues have been logged." /></> : null}
           {tab === 'Financials' ? (
-            <div className="grid gap-3 md:grid-cols-3">
-              <Metric label="Estimated value" value={money(opportunity.estimatedValue, opportunity.currency)} />
-              <Metric label="Priced lines" value={money(submittedValue, opportunity.currency)} />
-              <Metric label="Awarded value" value={money((detail?.awards || []).reduce((sum, award) => sum + award.awardedValue, 0), opportunity.currency)} />
-              <div className="md:col-span-3"><Lines lines={detail?.lines || []} /></div>
+            <div className="space-y-3">
+              <ItemCapture opportunityId={opportunity.id} kinds={['SCENARIO', 'CASHFLOW']} onSaved={() => loadDetail(opportunity.id)} />
+              <div className="grid gap-3 md:grid-cols-3">
+                <Metric label="Estimated value" value={money(opportunity.estimatedValue, opportunity.currency)} />
+                <Metric label="Priced lines" value={money(submittedValue, opportunity.currency)} />
+                <Metric label="Awarded value" value={money((detail?.awards || []).reduce((sum, award) => sum + award.awardedValue, 0), opportunity.currency)} />
+                <div className="md:col-span-3"><LineCapture opportunityId={opportunity.id} currency={opportunity.currency || 'NGN'} onSaved={() => loadDetail(opportunity.id)} /><Lines lines={detail?.lines || []} /></div>
+              </div>
             </div>
           ) : null}
           {tab === 'Team & Tasks' ? (
             <div className="space-y-3 text-sm">
               <p><b>Owner:</b> {opportunity.ownerName || 'Unassigned'}</p>
               <p className="text-slate-600">{opportunity.teamNotes || 'No team notes have been saved.'}</p>
+              <ItemCapture opportunityId={opportunity.id} kind="TASK" onSaved={() => loadDetail(opportunity.id)} />
               <Items items={tasks} empty="No tasks have been assigned." />
             </div>
           ) : null}

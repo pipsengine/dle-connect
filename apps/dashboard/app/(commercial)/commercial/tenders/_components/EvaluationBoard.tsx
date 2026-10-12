@@ -22,7 +22,10 @@ import {
 import type { TenderItem, TenderOpportunity } from '@/lib/commercial/tender-types';
 import { daysUntil, expectedValue, plainNaira, workspaceStepIndex } from '@/lib/commercial/tender-present';
 import { formatWhen, money, tenderPost } from './tender-api';
+import { ActingEmployee } from './acting-employee';
 import { Pill } from './tender-widgets';
+import { ItemCapture } from './record-capture';
+import { BlueprintRegisters } from './BlueprintRegisters';
 import { useTenderRecord } from './use-tender-record';
 
 const EVAL_STAGES = ['Enquiry', 'Qualification', 'Bid Preparation', 'Evaluation', 'Approvals', 'Submission', 'Negotiation', 'Award'] as const;
@@ -40,7 +43,7 @@ const TABS: Array<{ id: string; icon: LucideIcon }> = [
   { id: 'Audit Trail', icon: ChartGantt },
 ];
 
-const naira = (value: number) => `₦ ${plainNaira(value)}`;
+const naira = (value: number, currency = 'NGN') => money(value, currency);
 const score = (checks: boolean[]) => (checks.length ? Math.round((checks.filter(Boolean).length / checks.length) * 100) : 0);
 
 const levelOf = (item: TenderItem) => {
@@ -101,13 +104,14 @@ export function EvaluationBoard() {
     { label: 'Overall Readiness', value: overall, note: opportunity ? (ready ? 'Recommended' : overall >= 60 ? 'Review' : 'Not Ready') : '—', tint: 'bg-[#eefbf3]', icon: Trophy, iconTint: 'bg-emerald-100 text-emerald-600', bar: 'bg-emerald-500' },
   ];
 
+  const currency = opportunity?.currency || 'NGN';
   const priceRows: Array<[string, string, boolean]> = [
-    ['Contract Price (₦)', opportunity ? naira(opportunity.estimatedValue) : '—', false],
-    ['Total Cost (₦)', lines.length ? naira(cost) : '—', false],
-    ['Gross Margin (₦)', sell ? naira(margin) : '—', false],
+    [`Contract Price (${currency})`, opportunity ? naira(opportunity.estimatedValue, currency) : '—', false],
+    [`Total Cost (${currency})`, lines.length ? naira(cost, currency) : '—', false],
+    [`Gross Margin (${currency})`, sell ? naira(margin, currency) : '—', false],
     ['Gross Margin %', marginPct == null ? '—' : `${marginPct.toFixed(1)}%`, false],
-    ['Expected Value (₦)', opportunity ? naira(expectedValue(opportunity)) : '—', false],
-    ['Working Capital (₦)', '—', true],
+    [`Expected Value (${currency})`, opportunity ? naira(expectedValue(opportunity), currency) : '—', false],
+    [`Working Capital (${currency})`, '—', true],
     ['IRR (Project)', '—', true],
     ['Payback Period', '—', true],
   ];
@@ -136,6 +140,7 @@ export function EvaluationBoard() {
         ) : null}
       </div>
       {record.error ? <div className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">{record.error}</div> : null}
+      <BlueprintRegisters opportunityId={opportunity?.id || ''} focus="evaluation" />
       {record.notice ? <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">{record.notice}</div> : null}
 
       <section className="rounded-2xl border border-slate-200 bg-white px-4 py-4 shadow-sm">
@@ -214,9 +219,10 @@ export function EvaluationBoard() {
       {opportunity && tab !== 'Evaluation Overview' ? (
         <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
           {tab === 'Audit Trail' ? <AuditList events={record.detail?.audit || []} /> : null}
-          {tab === 'Risk Assessment' ? <RiskList risks={risks} /> : null}
-          {tab === 'Team & Comments' ? <Comments approvals={approvals} /> : null}
-          {tab === 'Scenario Comparison' ? <p className="text-sm text-slate-500">Only the base case is priced from saved lines. Optimistic, downside and stress cases stay blank until a scenario is saved.</p> : null}
+          {tab === 'Risk Assessment' ? <><ItemCapture opportunityId={opportunity.id} kind="RISK" onSaved={() => record.reload()} /><RiskList risks={risks} /></> : null}
+          {tab === 'Team & Comments' ? <><ItemCapture opportunityId={opportunity.id} kind="TASK" onSaved={() => record.reload()} /><Comments approvals={approvals} /></> : null}
+          {tab === 'Scenario Comparison' ? <><ItemCapture opportunityId={opportunity.id} kind="SCENARIO" onSaved={() => record.reload()} /><p className="text-sm text-slate-500">Base case is priced from saved lines. Save optimistic, downside and stress assumptions as scenario records.</p></> : null}
+          {tab === 'Technical Evaluation' || tab === 'Commercial Evaluation' ? <ItemCapture opportunityId={opportunity.id} kind="CLAUSE" onSaved={() => record.reload()} /> : null}
           {!['Audit Trail', 'Risk Assessment', 'Team & Comments', 'Scenario Comparison'].includes(tab) ? <p className="text-sm text-slate-600">{opportunity.scopeSummary || opportunity.description || 'No evaluation narrative has been saved for this tab.'}</p> : null}
         </section>
       ) : (
@@ -329,6 +335,7 @@ export function EvaluationBoard() {
                   <p className="mt-1 leading-5">{opportunity ? `Readiness is ${overall}/100 from the saved documents, prices and risks.` : 'Open an opportunity to score this tender.'}</p>
                 </div>
               </div>
+              <div className="mb-2"><ActingEmployee /></div>
               <textarea value={comment} onChange={(event) => setComment(event.target.value)} placeholder="Recommendation note" className="mb-2 h-16 w-full rounded-lg border border-slate-200 p-2 text-[12px]" />
               <div className="grid gap-2">
                 <button type="button" disabled={!opportunity} onClick={() => decide('APPROVE')} className="rounded-lg bg-emerald-600 px-3 py-2 text-sm font-bold text-white disabled:opacity-50">Proceed to Approval</button>

@@ -31,6 +31,8 @@ import {
   updateItemStatus,
   upsertSetting,
 } from '@/lib/commercial/tender-store';
+import { getTenderBlueprint, saveBlueprintRecord } from '@/lib/commercial/tender-blueprint-store';
+import type { BlueprintViewer } from '@/lib/commercial/tender-types';
 
 const ok = (data: unknown) => NextResponse.json({ status: 'success', data });
 const err = (status: number, error: string) => NextResponse.json({ status: 'error', error }, { status });
@@ -42,7 +44,16 @@ const permissionsFrom = async (session: SessionPayload) => {
   return effectivePermissionsForUser(session.sub, session.roles);
 };
 
-const actorFrom = (session: SessionPayload) => session.fullName || session.username || 'Commercial User';
+const actorFrom = (session: SessionPayload) => {
+  const name = session.fullName || session.username || 'Commercial User';
+  const code = session.employeeCode?.trim();
+  return (code ? `${name} (${code})` : name).slice(0, 120);
+};
+const viewerFrom = (session: SessionPayload, permissions: string[]): BlueprintViewer => ({
+  roles: session.roles || [],
+  permissions,
+  isGlobalAdmin: session.isGlobalAdmin,
+});
 
 export async function GET(request: NextRequest) {
   const session = await sessionFrom(request);
@@ -53,6 +64,7 @@ export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
   const resource = searchParams.get('resource') || 'opportunities';
   const id = searchParams.get('id') || '';
+  if (searchParams.get('company') && searchParams.get('company')?.toUpperCase() !== 'DLE') return err(404, 'Opportunity was not found.');
 
   try {
     if (resource === 'document') {
@@ -98,6 +110,8 @@ export async function GET(request: NextRequest) {
         return ok(await listItems(id || undefined, searchParams.get('kind') || undefined));
       case 'audit':
         return ok(await listAudit(id || undefined));
+      case 'blueprint':
+        return ok(await getTenderBlueprint(id, viewerFrom(session, permissions)));
       case 'settings':
         return ok(await listSettings());
       default:
@@ -132,6 +146,7 @@ export async function POST(request: NextRequest) {
     const body = await request.json();
     const action = String(body.action || 'save');
     const id = String(body.id || body.opportunityId || '');
+    if (body.company && String(body.company).toUpperCase() !== 'DLE') return err(404, 'Opportunity was not found.');
 
     switch (action) {
       case 'save':
@@ -143,7 +158,9 @@ export async function POST(request: NextRequest) {
       case 'line':
         return ok(await addLine(id, body.line || body, actor));
       case 'approval':
-        return ok(await addApproval(id, body.approval || body, actor));
+        return ok(await addApproval(id, body.approval || body, actor, { allowSelf: Boolean(session.isGlobalAdmin) }));
+      case 'blueprint':
+        return ok(await saveBlueprintRecord(String(body.kind || ''), id, body, actor, viewerFrom(session, permissions)));
       case 'submission':
         return ok(await addSubmission(id, body.submission || body, actor));
       case 'award':
@@ -187,7 +204,7 @@ export async function POST(request: NextRequest) {
     }
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Tender request failed.';
-    const status = /required|not found|Choose/i.test(message) ? 400 : 500;
+    const status = /required|not found|Choose|blocked|cannot|exceeds|requires|inactive|workshare|justification/i.test(message) ? 400 : 500;
     return err(status, message);
   }
 }

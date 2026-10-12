@@ -14,11 +14,10 @@ import {
   monthDelta,
   MONTHS,
   nextActionOn,
-  plainNaira,
   receivedOn,
   sourceBucket,
 } from '@/lib/commercial/tender-present';
-import { formatWhen, tenderGet, tenderPost } from './tender-api';
+import { formatWhen, money, tenderGet, tenderPost } from './tender-api';
 import { OpportunityModal } from './OpportunityModal';
 import { Delta, Donut, Pager, Pill, SplitButton, TodayChip } from './tender-widgets';
 
@@ -163,7 +162,7 @@ export function EnquiriesBoard() {
   const exportRows = () => {
     const chosen = picked.length ? filtered.filter((row) => picked.includes(row.id)) : filtered;
     downloadCsv('enquiries.csv', ['Enquiry Title', 'Client', 'Reference No.', 'Received Date', 'Source', 'Category', 'Estimated Value', 'Status', 'Owner', 'Next Action Date'], chosen.map((row) => [
-      row.title, row.clientName, row.enquiryRef || row.referenceNo, formatWhen(receivedOn(row)), row.source, row.category, plainNaira(row.estimatedValue), enquiryPill(row), row.ownerName, formatWhen(nextActionOn(row)),
+      row.title, row.clientName, row.enquiryRef || row.referenceNo, formatWhen(receivedOn(row)), row.source, row.category, money(row.estimatedValue, row.currency), enquiryPill(row), row.ownerName, formatWhen(nextActionOn(row)),
     ]));
   };
 
@@ -232,7 +231,7 @@ export function EnquiriesBoard() {
           <table className="min-w-[1100px] w-full text-left text-[13px]">
             <thead className="bg-[#f8fafc] text-[11px] font-semibold uppercase tracking-wide text-slate-400">
               <tr>
-                {['', 'S/N', 'Enquiry Title', 'Client', 'Reference No.', 'Received Date', 'Source', 'Category', 'Estimated Value (₦)', 'Status', 'Owner', 'Next Action Date', 'Action'].map((heading) => (
+                {['', 'S/N', 'Enquiry Title', 'Client', 'Reference No.', 'Received Date', 'Source', 'Category', 'Estimated Value', 'Status', 'Owner', 'Next Action Date', 'Action'].map((heading) => (
                   <th key={heading || 'check'} className="px-3 py-3 font-semibold">{heading}</th>
                 ))}
               </tr>
@@ -252,7 +251,7 @@ export function EnquiriesBoard() {
                     <td className="px-3 py-3">{formatWhen(receivedOn(row))}</td>
                     <td className="px-3 py-3"><Pill className={SOURCE_CLASS[row.source] || 'bg-slate-100 text-slate-600'}>{row.source || '—'}</Pill></td>
                     <td className="px-3 py-3">{row.category || '—'}</td>
-                    <td className="px-3 py-3 font-semibold">{plainNaira(row.estimatedValue)}</td>
+                    <td className="px-3 py-3 font-semibold">{money(row.estimatedValue, row.currency)}</td>
                     <td className="px-3 py-3"><Pill className={PILL_CLASS[pill]}>{pill}</Pill></td>
                     <td className="px-3 py-3">{row.ownerName || '—'}</td>
                     <td className="px-3 py-3">{formatWhen(nextActionOn(row))}</td>

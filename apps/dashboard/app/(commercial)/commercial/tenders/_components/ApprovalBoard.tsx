@@ -22,6 +22,8 @@ import {
 import { daysUntil, fileSize } from '@/lib/commercial/tender-present';
 import { formatWhen, money, tenderPost } from './tender-api';
 import { Pill } from './tender-widgets';
+import { BlueprintRegisters } from './BlueprintRegisters';
+import { ActingEmployee } from './acting-employee';
 import { useTenderRecord } from './use-tender-record';
 
 const TABS: Array<{ id: string; icon: LucideIcon; count?: 'comments' | 'checks' | 'related' }> = [
@@ -49,6 +51,7 @@ export function ApprovalBoard() {
   const [tab, setTab] = useState('Document Review');
   const [actionsOpen, setActionsOpen] = useState(false);
   const [comment, setComment] = useState('');
+  const [stage, setStage] = useState('Commercial Review');
   const [docIndex, setDocIndex] = useState(0);
   const [zoom, setZoom] = useState(100);
   const opportunity = record.opportunity;
@@ -78,7 +81,7 @@ export function ApprovalBoard() {
     if (!opportunity) return;
     record.setError('');
     try {
-      await tenderPost({ action: 'approval', id: opportunity.id, approval: { stage: 'COMMERCIAL', decision, comments: comment } });
+      await tenderPost({ action: 'approval', id: opportunity.id, approval: { stage, decision, comments: comment } });
       record.setNotice(decision === 'APPROVE' ? 'Approved and moved forward.' : decision === 'REJECT' ? 'Rejected.' : decision === 'COMMENT' ? 'Comment posted.' : 'Returned for revision.');
       setComment('');
       setActionsOpen(false);
@@ -104,6 +107,7 @@ export function ApprovalBoard() {
         ) : null}
       </div>
       {record.error ? <div className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">{record.error}</div> : null}
+      <BlueprintRegisters opportunityId={opportunity?.id || ''} focus="approval" />
       {record.notice ? <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">{record.notice}</div> : null}
 
       <section className="rounded-2xl border border-slate-200 bg-white px-4 py-4 shadow-sm">
@@ -229,6 +233,12 @@ export function ApprovalBoard() {
 
           <div className="space-y-3 xl:col-span-3">
             <Panel title="Approver Actions">
+              <div className="mb-2"><ActingEmployee /></div>
+              <label className="mb-2 block text-[12px] text-slate-500">Record against
+                <select value={stage} onChange={(event) => setStage(event.target.value)} className="mt-1 h-9 w-full rounded-lg border border-slate-200 px-2 font-semibold text-slate-700">
+                  {ROUTE.map((item) => <option key={item}>{item}</option>)}
+                </select>
+              </label>
               <ActionButton disabled={!opportunity} onClick={() => act('APPROVE')} icon={CheckCircle2} title="Approve" detail="Complete review and move to next stage" className="border-emerald-200 bg-emerald-50 text-emerald-700" />
               <ActionButton disabled={!opportunity} onClick={() => act('RETURN')} icon={RotateCcw} title="Return for Revision" detail="Send back with comments" className="border-amber-200 bg-amber-50 text-amber-700" />
               <ActionButton disabled={!opportunity} onClick={() => act('REJECT')} icon={XCircle} title="Reject" detail="Stop approval process" className="border-rose-200 bg-rose-50 text-rose-600" />

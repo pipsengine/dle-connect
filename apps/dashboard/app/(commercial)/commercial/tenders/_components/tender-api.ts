@@ -39,6 +39,7 @@ export async function tenderUpload(opportunityId: string, file: File, category: 
 export const money = (value: number, currency = 'NGN') => {
   const formatted = Number(value || 0).toLocaleString('en-NG', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   if (currency === 'NGN') return `₦ ${formatted}`;
+  if (currency === 'USD') return `$ ${formatted}`;
   return `${currency} ${formatted}`;
 };
 

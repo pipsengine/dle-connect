@@ -15,12 +15,11 @@ import {
   expectedValue,
   opportunityStage,
   opportunityTabMatch,
-  plainNaira,
   sectorOf,
   stageRank,
   winProbability,
 } from '@/lib/commercial/tender-present';
-import { formatWhen, tenderGet, tenderPost } from './tender-api';
+import { formatWhen, money, tenderGet, tenderPost } from './tender-api';
 import { OpportunityModal } from './OpportunityModal';
 import { Donut, Pager, Pill, SplitButton, TodayChip } from './tender-widgets';
 
@@ -163,7 +162,7 @@ export function OpportunitiesRegister() {
   const clientSum = clientBars.reduce((sum, item) => sum + item[1], 0);
 
   const exportRows = () => downloadCsv('tender-opportunities.csv', ['Opportunity Title', 'Client', 'Reference No.', 'Category', 'Stage', 'Estimated Value', 'Probability', 'Expected Value', 'Closing Date', 'Owner'], filtered.map((row) => [
-    row.title, row.clientName, row.referenceNo, row.category, opportunityStage(row), plainNaira(row.estimatedValue), `${winProbability(row)}%`, plainNaira(expectedValue(row)), formatWhen(row.submissionDeadline || row.closingDate), row.ownerName,
+    row.title, row.clientName, row.referenceNo, row.category, opportunityStage(row), money(row.estimatedValue, row.currency), `${winProbability(row)}%`, money(expectedValue(row), row.currency), formatWhen(row.submissionDeadline || row.closingDate), row.ownerName,
   ]));
 
   return (
@@ -233,7 +232,7 @@ export function OpportunitiesRegister() {
           <table className="min-w-[1200px] w-full text-left text-[13px]">
             <thead className="bg-[#f8fafc] text-[11px] font-semibold uppercase tracking-wide text-slate-400">
               <tr>
-                {['', 'S/N', 'Opportunity Title', 'Client', 'Reference No.', 'Category', 'Stage', 'Estimated Value (₦)', 'Probability', 'Expected Value (₦)', 'Closing Date', ...(showDays ? ['Days Left'] : []), 'Owner', 'Action'].map((heading) => (
+                {['', 'S/N', 'Opportunity Title', 'Client', 'Reference No.', 'Category', 'Stage', 'Estimated Value', 'Probability', 'Expected Value', 'Closing Date', ...(showDays ? ['Days Left'] : []), 'Owner', 'Action'].map((heading) => (
                   <th key={heading || 'check'} className="px-3 py-3 font-semibold">{heading}</th>
                 ))}
               </tr>
@@ -253,9 +252,9 @@ export function OpportunitiesRegister() {
                     <td className="px-3 py-3 text-slate-500">{row.referenceNo}</td>
                     <td className="px-3 py-3">{row.category || '—'}</td>
                     <td className="px-3 py-3"><Pill className={STAGE_CLASS[label]}>{label}</Pill></td>
-                    <td className="px-3 py-3 font-semibold">{plainNaira(row.estimatedValue)}</td>
+                    <td className="px-3 py-3 font-semibold">{money(row.estimatedValue, row.currency)}</td>
                     <td className="px-3 py-3 font-bold text-slate-700">{winProbability(row)}%</td>
-                    <td className="px-3 py-3">{plainNaira(expectedValue(row))}</td>
+                    <td className="px-3 py-3">{money(expectedValue(row), row.currency)}</td>
                     <td className="px-3 py-3">{formatWhen(row.submissionDeadline || row.closingDate)}</td>
                     {showDays ? <td className="px-3 py-3">{left == null ? '—' : <Pill className={left <= 30 ? 'bg-rose-50 text-rose-600' : left <= 60 ? 'bg-amber-50 text-amber-700' : 'bg-emerald-50 text-emerald-700'}>{left} days</Pill>}</td> : null}
                     <td className="px-3 py-3">{row.ownerName || '—'}</td>

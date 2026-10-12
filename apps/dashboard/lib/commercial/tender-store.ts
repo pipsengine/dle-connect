@@ -1,4 +1,5 @@
-import { mkdir, writeFile } from 'node:fs/promises';
+import { createHash } from 'node:crypto';
+import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import sql from 'mssql';
 import { getDleEnterpriseDbPool } from '@/lib/dle-enterprise-db';
@@ -243,6 +244,24 @@ export const saveOpportunity = async (input: TenderOpportunityInput, actor: stri
   const mode = input.saveMode === 'submit' ? 'submit' : 'draft';
   validate(input, mode);
   const pool = await ensureTenderDb();
+  if (clean(input.bidDecision, 20).toLowerCase() === 'bid') {
+    const settings = await listSettings();
+    const thresholdValue = Number(settings.find((item) => item.key.toLowerCase() === 'bid.threshold')?.value ?? 60);
+    const threshold = Number.isFinite(thresholdValue) ? thresholdValue : 60;
+    let weighted: number | null = null;
+    let override = /override:/i.test(String(input.approvalNotes || ''));
+    if (clean(input.id, 40)) {
+      const scoreResult = await pool.request().input('Id', sql.NVarChar(40), clean(input.id, 40)).query(`
+        SELECT [WeightPct],[Score],[OverrideReason] FROM [commercial].[TenderBidScores] WHERE [OpportunityId]=@Id
+      `);
+      const weight = scoreResult.recordset.reduce((sum, row) => sum + num(row.WeightPct), 0);
+      weighted = weight ? scoreResult.recordset.reduce((sum, row) => sum + num(row.WeightPct) * num(row.Score), 0) / weight : null;
+      override = override || scoreResult.recordset.some((row) => clean(row.OverrideReason));
+    }
+    if ((weighted == null || weighted < threshold) && !override) {
+      throw new Error(`A Bid decision requires a weighted score of at least ${threshold}, or an override: justification in the approval notes.`);
+    }
+  }
   const status = mode === 'draft' ? 'Draft' : (clean(input.status, 40) && clean(input.status, 40) !== 'Draft' ? clean(input.status, 40) : 'Under Review');
   const stage = stageFor(input, status);
   const existingId = clean(input.id, 40);
@@ -268,6 +287,20 @@ export const saveOpportunity = async (input: TenderOpportunityInput, actor: stri
         [UpdatedAt]=SYSUTCDATETIME(),[UpdatedBy]=@UpdatedBy
       WHERE [OpportunityId]=@Id
     `);
+    const valueChanged = num(current.estimatedValue) !== num(input.estimatedValue);
+    const scopeChanged = clean(current.scopeSummary) !== clean(input.scopeSummary);
+    const currencyChanged = clean(current.currency, 10) !== clean(input.currency, 10);
+    if (valueChanged || scopeChanged || currencyChanged) {
+      const approvals = await listApprovals(existingId);
+      if (approvals.some((item) => item.decision === 'APPROVE')) {
+        await pool.request().input('Id', sql.NVarChar(40), existingId).query(`
+          UPDATE [commercial].[TenderOpportunities]
+          SET [Status]=N'Under Review', [Stage]=N'Commercial Review', [UpdatedAt]=SYSUTCDATETIME()
+          WHERE [OpportunityId]=@Id
+        `);
+        await audit(pool, existingId, actor, 'MATERIAL_CHANGE_REAPPROVAL', 'Approved price, currency or scope changed. Prior approvals must be renewed.');
+      }
+    }
     await audit(pool, existingId, actor, mode === 'submit' ? 'SUBMITTED_FOR_REVIEW' : 'UPDATED', referenceNo);
     return getOpportunity(existingId);
   }
@@ -812,6 +845,11 @@ export const saveDocument = async (
   await mkdir(path.dirname(absolute), { recursive: true });
   await writeFile(absolute, file.bytes);
   const pool = await ensureTenderDb();
+  const contentHash = createHash('sha256').update(file.bytes).digest('hex');
+  const versionResult = await pool.request()
+    .input('OpportunityId', sql.NVarChar(40), opportunityId)
+    .input('FileName', sql.NVarChar(260), safeName)
+    .query(`SELECT ISNULL(MAX([VersionNo]),0)+1 AS NextVersion FROM [commercial].[TenderDocuments] WHERE [OpportunityId]=@OpportunityId AND [FileName]=@FileName`);
   await pool
     .request()
     .input('Id', sql.NVarChar(40), id)
@@ -822,12 +860,22 @@ export const saveDocument = async (
     .input('SizeBytes', sql.BigInt, file.bytes.length)
     .input('StorageKey', sql.NVarChar(500), storageKey)
     .input('UploadedBy', sql.NVarChar(120), clean(actor, 120))
+    .input('ContentHash', sql.NVarChar(64), contentHash)
+    .input('VersionNo', sql.Int, num(versionResult.recordset[0]?.NextVersion, 1))
     .query(`
       INSERT INTO [commercial].[TenderDocuments]
-        ([DocumentId],[OpportunityId],[FileName],[Category],[ContentType],[SizeBytes],[StorageKey],[UploadedBy])
-      VALUES (@Id,@OpportunityId,@FileName,@Category,@ContentType,@SizeBytes,@StorageKey,@UploadedBy)
+        ([DocumentId],[OpportunityId],[FileName],[Category],[ContentType],[SizeBytes],[StorageKey],[UploadedBy],[ContentHash],[VersionNo])
+      VALUES (@Id,@OpportunityId,@FileName,@Category,@ContentType,@SizeBytes,@StorageKey,@UploadedBy,@ContentHash,@VersionNo)
     `);
   await audit(pool, opportunityId, actor, 'DOCUMENT_UPLOADED', safeName);
+  if (/addend/i.test(category)) {
+    await pool.request().input('Id', sql.NVarChar(40), opportunityId).query(`
+      UPDATE [commercial].[TenderItems]
+      SET [Status]=N'REVIEW'
+      WHERE [OpportunityId]=@Id AND [Kind] LIKE N'%REQUIRE%'
+    `);
+    await audit(pool, opportunityId, actor, 'ADDENDUM_IMPACT', `${safeName} marked requirement responses for review.`);
+  }
   return listDocuments(opportunityId);
 };
 
@@ -934,15 +982,29 @@ export const addApproval = async (
   opportunityId: string,
   input: { stage: string; decision: string; comments?: string },
   actor: string,
+  options?: { allowSelf?: boolean },
 ) => {
-  if (!(await getOpportunity(opportunityId))) throw new Error('Opportunity was not found.');
+  const opportunity = await getOpportunity(opportunityId);
+  if (!opportunity) throw new Error('Opportunity was not found.');
   const decision = clean(input.decision, 20) || 'APPROVE';
+  const stageName = clean(input.stage, 40) || 'COMMERCIAL';
+  if (decision === 'APPROVE' && !options?.allowSelf && opportunity.ownerName && opportunity.ownerName.toLowerCase() === clean(actor, 120).toLowerCase()) {
+    throw new Error('The opportunity owner cannot approve their own bid. A different approver is required.');
+  }
+  if (decision === 'APPROVE') {
+    const settings = await listSettings();
+    const limitRow = settings.find((item) => item.key.toLowerCase() === `approval.limit.${stageName}`.toLowerCase());
+    const limit = limitRow ? Number(limitRow.value) : NaN;
+    if (Number.isFinite(limit) && limit > 0 && opportunity.estimatedValue > limit && !/exception:/i.test(input.comments || '')) {
+      throw new Error(`This ${stageName} approval exceeds the configured limit of ${limit}. Record EXCEPTION: and the justification to proceed.`);
+    }
+  }
   const pool = await ensureTenderDb();
   await pool
     .request()
     .input('Id', sql.NVarChar(40), idFor('TAP'))
     .input('OpportunityId', sql.NVarChar(40), opportunityId)
-    .input('StageName', sql.NVarChar(40), clean(input.stage, 40) || 'COMMERCIAL')
+    .input('StageName', sql.NVarChar(40), stageName)
     .input('Decision', sql.NVarChar(20), decision)
     .input('ActorName', sql.NVarChar(120), clean(actor, 120))
     .input('Comments', sql.NVarChar(sql.MAX), clean(input.comments))
@@ -997,20 +1059,62 @@ export const addSubmission = async (
     throw new Error('Submission channel and receipt reference are required.');
   }
   if (!(await getOpportunity(opportunityId))) throw new Error('Opportunity was not found.');
+  const records = await listItems(opportunityId);
+  const closed = /done|complete|closed|uploaded|waived/i;
+  const openCompliance = records.filter((item) => /comply|compliance/i.test(item.kind) && !closed.test(item.status));
+  if (openCompliance.length) {
+    throw new Error(`Submission is blocked until these compliance items are closed: ${openCompliance.map((item) => item.title).join(', ')}`);
+  }
+  const today = new Date().toISOString().slice(0, 10);
+  const expiredSecurity = records.filter((item) => /bond|guarantee|certif/i.test(item.kind) && item.dueAt && item.dueAt < today && !closed.test(item.status));
+  if (expiredSecurity.length) {
+    throw new Error(`Submission is blocked because these securities have expired: ${expiredSecurity.map((item) => item.title).join(', ')}`);
+  }
   const pool = await ensureTenderDb();
+  const documents = await listDocuments(opportunityId);
+  const submissionId = idFor('TSUB');
+  const packageHasher = createHash('sha256');
+  const manifest: Array<{ fileName: string; hash: string; size: number }> = [];
+  for (const document of documents) {
+    const file = await getDocumentFile(document.id);
+    let bytes = Buffer.from('missing');
+    if (file) {
+      try {
+        bytes = await readFile(file.absolutePath);
+      } catch {
+        bytes = Buffer.from('missing');
+      }
+    }
+    const fileHash = createHash('sha256').update(document.fileName).update(bytes).digest('hex');
+    packageHasher.update(fileHash);
+    manifest.push({ fileName: document.fileName, hash: fileHash, size: bytes.length });
+  }
+  const packageHash = documents.length ? packageHasher.digest('hex') : '';
+  const notes = [clean(input.notes), packageHash ? `Package SHA-256: ${packageHash}` : ''].filter(Boolean).join('\n');
   await pool
     .request()
-    .input('Id', sql.NVarChar(40), idFor('TSUB'))
+    .input('Id', sql.NVarChar(40), submissionId)
     .input('OpportunityId', sql.NVarChar(40), opportunityId)
     .input('Channel', sql.NVarChar(80), clean(input.channel, 80))
     .input('ReceiptReference', sql.NVarChar(150), clean(input.receiptReference, 150))
     .input('SubmittedBy', sql.NVarChar(120), clean(actor, 120))
-    .input('Notes', sql.NVarChar(sql.MAX), clean(input.notes))
+    .input('Notes', sql.NVarChar(sql.MAX), notes)
     .query(`
       INSERT INTO [commercial].[TenderSubmissions]
         ([SubmissionId],[OpportunityId],[Channel],[ReceiptReference],[SubmittedBy],[Notes])
       VALUES (@Id,@OpportunityId,@Channel,@ReceiptReference,@SubmittedBy,@Notes)
     `);
+  for (const entry of manifest) {
+    await pool.request()
+      .input('Id', sql.NVarChar(40), idFor('TMAN'))
+      .input('SubmissionId', sql.NVarChar(40), submissionId)
+      .input('OpportunityId', sql.NVarChar(40), opportunityId)
+      .input('Company', sql.NVarChar(20), 'DLE')
+      .input('FileName', sql.NVarChar(260), entry.fileName)
+      .input('ContentHash', sql.NVarChar(64), entry.hash)
+      .input('SizeBytes', sql.BigInt, entry.size)
+      .query(`INSERT INTO [commercial].[TenderManifest] ([ManifestId],[SubmissionId],[OpportunityId],[CompanyCode],[FileName],[ContentHash],[SizeBytes]) VALUES (@Id,@SubmissionId,@OpportunityId,@Company,@FileName,@ContentHash,@SizeBytes)`);
+  }
   await pool.request().input('Id', sql.NVarChar(40), opportunityId).query(`
     UPDATE [commercial].[TenderOpportunities]
     SET [Status]=N'Submitted', [Stage]=N'Submitted', [UpdatedAt]=SYSUTCDATETIME()
@@ -1026,7 +1130,7 @@ export const listAwards = async (opportunityId?: string): Promise<TenderAward[]>
   const where = opportunityId ? 'WHERE [OpportunityId]=@Id' : '';
   if (opportunityId) request.input('Id', sql.NVarChar(40), clean(opportunityId, 40));
   const result = await request.query(`
-    SELECT [AwardId],[OpportunityId],[ContractRef],[AwardedValue],[AwardDate],[HandoverOwner],[HandoverNotes],[CreatedAt],[CreatedBy]
+    SELECT [AwardId],[OpportunityId],[ContractRef],[AwardedValue],[Currency],[AwardDate],[HandoverOwner],[HandoverNotes],[CreatedAt],[CreatedBy]
     FROM [commercial].[TenderAwards] ${where} ORDER BY [CreatedAt] DESC
   `);
   return result.recordset.map((row) => ({
@@ -1034,6 +1138,7 @@ export const listAwards = async (opportunityId?: string): Promise<TenderAward[]>
     opportunityId: clean(row.OpportunityId, 40),
     contractRef: clean(row.ContractRef, 100),
     awardedValue: num(row.AwardedValue),
+    currency: clean(row.Currency, 10) || 'NGN',
     awardDate: row.AwardDate ? String(row.AwardDate).slice(0, 10) : '',
     handoverOwner: clean(row.HandoverOwner, 120),
     handoverNotes: clean(row.HandoverNotes),
@@ -1044,11 +1149,12 @@ export const listAwards = async (opportunityId?: string): Promise<TenderAward[]>
 
 export const addAward = async (
   opportunityId: string,
-  input: { contractRef: string; awardedValue: number; awardDate?: string; handoverOwner?: string; handoverNotes?: string },
+  input: { contractRef: string; awardedValue: number; currency?: string; awardDate?: string; handoverOwner?: string; handoverNotes?: string },
   actor: string,
 ) => {
   if (!clean(input.contractRef, 100)) throw new Error('Contract reference is required.');
-  if (!(await getOpportunity(opportunityId))) throw new Error('Opportunity was not found.');
+  const opportunity = await getOpportunity(opportunityId);
+  if (!opportunity) throw new Error('Opportunity was not found.');
   const pool = await ensureTenderDb();
   await pool
     .request()
@@ -1056,14 +1162,15 @@ export const addAward = async (
     .input('OpportunityId', sql.NVarChar(40), opportunityId)
     .input('ContractRef', sql.NVarChar(100), clean(input.contractRef, 100))
     .input('AwardedValue', sql.Decimal(19, 2), num(input.awardedValue))
+    .input('Currency', sql.NVarChar(10), clean(input.currency, 10) || opportunity.currency || 'NGN')
     .input('AwardDate', sql.Date, dateOrNull(input.awardDate) || new Date())
     .input('HandoverOwner', sql.NVarChar(120), clean(input.handoverOwner, 120) || clean(actor, 120))
     .input('HandoverNotes', sql.NVarChar(sql.MAX), clean(input.handoverNotes))
     .input('CreatedBy', sql.NVarChar(120), clean(actor, 120))
     .query(`
       INSERT INTO [commercial].[TenderAwards]
-        ([AwardId],[OpportunityId],[ContractRef],[AwardedValue],[AwardDate],[HandoverOwner],[HandoverNotes],[CreatedBy])
-      VALUES (@Id,@OpportunityId,@ContractRef,@AwardedValue,@AwardDate,@HandoverOwner,@HandoverNotes,@CreatedBy)
+        ([AwardId],[OpportunityId],[ContractRef],[AwardedValue],[Currency],[AwardDate],[HandoverOwner],[HandoverNotes],[CreatedBy])
+      VALUES (@Id,@OpportunityId,@ContractRef,@AwardedValue,@Currency,@AwardDate,@HandoverOwner,@HandoverNotes,@CreatedBy)
     `);
   await pool.request().input('Id', sql.NVarChar(40), opportunityId).query(`
     UPDATE [commercial].[TenderOpportunities]

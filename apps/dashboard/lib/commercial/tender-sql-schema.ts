@@ -149,4 +149,241 @@ CREATE TABLE [commercial].[TenderSettings] (
   [UpdatedAt] DATETIME2(0) NOT NULL CONSTRAINT [DF_TenderSettings_UpdatedAt] DEFAULT SYSUTCDATETIME(),
   [UpdatedBy] NVARCHAR(120) NULL
 );
+
+IF COL_LENGTH(N'commercial.TenderAwards', N'Currency') IS NULL
+  ALTER TABLE [commercial].[TenderAwards] ADD [Currency] NVARCHAR(10) NOT NULL CONSTRAINT [DF_TenderAwards_Currency] DEFAULT N'NGN';
+
+IF COL_LENGTH(N'commercial.TenderDocuments', N'ContentHash') IS NULL
+  ALTER TABLE [commercial].[TenderDocuments] ADD [ContentHash] NVARCHAR(64) NULL;
+IF COL_LENGTH(N'commercial.TenderDocuments', N'VersionNo') IS NULL
+  ALTER TABLE [commercial].[TenderDocuments] ADD [VersionNo] INT NOT NULL CONSTRAINT [DF_TenderDocs_Version] DEFAULT 1;
+
+IF OBJECT_ID(N'[commercial].[TenderLots]', N'U') IS NULL
+CREATE TABLE [commercial].[TenderLots] (
+  [LotId] NVARCHAR(40) NOT NULL CONSTRAINT [PK_TenderLots] PRIMARY KEY,
+  [OpportunityId] NVARCHAR(40) NOT NULL,
+  [CompanyCode] NVARCHAR(20) NOT NULL CONSTRAINT [DF_TenderLots_Company] DEFAULT N'DLE',
+  [LotCode] NVARCHAR(40) NOT NULL,
+  [Title] NVARCHAR(300) NOT NULL,
+  [EstimatedValue] DECIMAL(19,2) NOT NULL CONSTRAINT [DF_TenderLots_Value] DEFAULT 0,
+  [Currency] NVARCHAR(10) NOT NULL CONSTRAINT [DF_TenderLots_Currency] DEFAULT N'NGN',
+  [Status] NVARCHAR(30) NOT NULL CONSTRAINT [DF_TenderLots_Status] DEFAULT N'OPEN',
+  [CreatedAt] DATETIME2(0) NOT NULL CONSTRAINT [DF_TenderLots_CreatedAt] DEFAULT SYSUTCDATETIME(),
+  [CreatedBy] NVARCHAR(120) NULL
+);
+
+IF OBJECT_ID(N'[commercial].[TenderParties]', N'U') IS NULL
+CREATE TABLE [commercial].[TenderParties] (
+  [PartyId] NVARCHAR(40) NOT NULL CONSTRAINT [PK_TenderParties] PRIMARY KEY,
+  [OpportunityId] NVARCHAR(40) NOT NULL,
+  [CompanyCode] NVARCHAR(20) NOT NULL CONSTRAINT [DF_TenderParties_Company] DEFAULT N'DLE',
+  [RoleName] NVARCHAR(40) NOT NULL,
+  [PartyName] NVARCHAR(220) NOT NULL,
+  [WorksharePct] DECIMAL(9,2) NOT NULL CONSTRAINT [DF_TenderParties_Share] DEFAULT 0,
+  [Liability] NVARCHAR(300) NULL,
+  [AccessScope] NVARCHAR(300) NULL,
+  [CreatedAt] DATETIME2(0) NOT NULL CONSTRAINT [DF_TenderParties_CreatedAt] DEFAULT SYSUTCDATETIME(),
+  [CreatedBy] NVARCHAR(120) NULL
+);
+
+IF OBJECT_ID(N'[commercial].[TenderQualifications]', N'U') IS NULL
+CREATE TABLE [commercial].[TenderQualifications] (
+  [QualificationId] NVARCHAR(40) NOT NULL CONSTRAINT [PK_TenderQualifications] PRIMARY KEY,
+  [OpportunityId] NVARCHAR(40) NOT NULL,
+  [CompanyCode] NVARCHAR(20) NOT NULL CONSTRAINT [DF_TenderQual_Company] DEFAULT N'DLE',
+  [CertificateName] NVARCHAR(220) NOT NULL,
+  [ReferenceNo] NVARCHAR(120) NULL,
+  [ExpiresOn] DATE NULL,
+  [Eligibility] NVARCHAR(20) NOT NULL CONSTRAINT [DF_TenderQual_Eligibility] DEFAULT N'PENDING',
+  [Evidence] NVARCHAR(MAX) NULL,
+  [CreatedAt] DATETIME2(0) NOT NULL CONSTRAINT [DF_TenderQual_CreatedAt] DEFAULT SYSUTCDATETIME(),
+  [CreatedBy] NVARCHAR(120) NULL
+);
+
+IF OBJECT_ID(N'[commercial].[TenderBidScores]', N'U') IS NULL
+CREATE TABLE [commercial].[TenderBidScores] (
+  [ScoreId] NVARCHAR(40) NOT NULL CONSTRAINT [PK_TenderBidScores] PRIMARY KEY,
+  [OpportunityId] NVARCHAR(40) NOT NULL,
+  [CompanyCode] NVARCHAR(20) NOT NULL CONSTRAINT [DF_TenderScores_Company] DEFAULT N'DLE',
+  [Criterion] NVARCHAR(180) NOT NULL,
+  [WeightPct] DECIMAL(9,2) NOT NULL,
+  [Score] DECIMAL(9,2) NOT NULL,
+  [OverrideReason] NVARCHAR(MAX) NULL,
+  [AuthorityName] NVARCHAR(120) NULL,
+  [CreatedAt] DATETIME2(0) NOT NULL CONSTRAINT [DF_TenderScores_CreatedAt] DEFAULT SYSUTCDATETIME(),
+  [CreatedBy] NVARCHAR(120) NULL
+);
+
+IF OBJECT_ID(N'[commercial].[TenderRoles]', N'U') IS NULL
+CREATE TABLE [commercial].[TenderRoles] (
+  [RoleId] NVARCHAR(40) NOT NULL CONSTRAINT [PK_TenderRoles] PRIMARY KEY,
+  [OpportunityId] NVARCHAR(40) NOT NULL,
+  [CompanyCode] NVARCHAR(20) NOT NULL CONSTRAINT [DF_TenderRoles_Company] DEFAULT N'DLE',
+  [RoleName] NVARCHAR(80) NOT NULL,
+  [PersonName] NVARCHAR(180) NOT NULL,
+  [EmployeeCode] NVARCHAR(80) NULL,
+  [CreatedAt] DATETIME2(0) NOT NULL CONSTRAINT [DF_TenderRoles_CreatedAt] DEFAULT SYSUTCDATETIME(),
+  [CreatedBy] NVARCHAR(120) NULL
+);
+
+IF OBJECT_ID(N'[commercial].[TenderRates]', N'U') IS NULL
+CREATE TABLE [commercial].[TenderRates] (
+  [RateId] NVARCHAR(40) NOT NULL CONSTRAINT [PK_TenderRates] PRIMARY KEY,
+  [CompanyCode] NVARCHAR(20) NOT NULL CONSTRAINT [DF_TenderRates_Company] DEFAULT N'DLE',
+  [RateCode] NVARCHAR(40) NOT NULL,
+  [Description] NVARCHAR(300) NOT NULL,
+  [Unit] NVARCHAR(25) NOT NULL,
+  [Rate] DECIMAL(19,4) NOT NULL,
+  [Currency] NVARCHAR(10) NOT NULL CONSTRAINT [DF_TenderRates_Currency] DEFAULT N'NGN',
+  [LocationFactor] DECIMAL(9,4) NOT NULL CONSTRAINT [DF_TenderRates_Factor] DEFAULT 1,
+  [EffectiveFrom] DATE NULL,
+  [ApprovedBy] NVARCHAR(120) NULL,
+  [CreatedAt] DATETIME2(0) NOT NULL CONSTRAINT [DF_TenderRates_CreatedAt] DEFAULT SYSUTCDATETIME()
+);
+
+IF OBJECT_ID(N'[commercial].[TenderEstimates]', N'U') IS NULL
+CREATE TABLE [commercial].[TenderEstimates] (
+  [EstimateId] NVARCHAR(40) NOT NULL CONSTRAINT [PK_TenderEstimates] PRIMARY KEY,
+  [OpportunityId] NVARCHAR(40) NOT NULL,
+  [CompanyCode] NVARCHAR(20) NOT NULL CONSTRAINT [DF_TenderEst_Company] DEFAULT N'DLE',
+  [VersionNo] INT NOT NULL,
+  [Label] NVARCHAR(180) NOT NULL,
+  [Locked] BIT NOT NULL CONSTRAINT [DF_TenderEst_Locked] DEFAULT 1,
+  [Currency] NVARCHAR(10) NOT NULL,
+  [FxRate] DECIMAL(19,6) NOT NULL CONSTRAINT [DF_TenderEst_Fx] DEFAULT 1,
+  [TotalCost] DECIMAL(19,2) NOT NULL,
+  [TotalSell] DECIMAL(19,2) NOT NULL,
+  [Explanation] NVARCHAR(MAX) NULL,
+  [CreatedAt] DATETIME2(0) NOT NULL CONSTRAINT [DF_TenderEst_CreatedAt] DEFAULT SYSUTCDATETIME(),
+  [CreatedBy] NVARCHAR(120) NULL
+);
+
+IF OBJECT_ID(N'[commercial].[TenderEstimateLines]', N'U') IS NULL
+CREATE TABLE [commercial].[TenderEstimateLines] (
+  [EstimateLineId] NVARCHAR(40) NOT NULL CONSTRAINT [PK_TenderEstimateLines] PRIMARY KEY,
+  [EstimateId] NVARCHAR(40) NOT NULL,
+  [OpportunityId] NVARCHAR(40) NOT NULL,
+  [SectionName] NVARCHAR(120) NULL,
+  [Description] NVARCHAR(300) NOT NULL,
+  [Quantity] DECIMAL(19,4) NOT NULL,
+  [Unit] NVARCHAR(25) NULL,
+  [UnitCost] DECIMAL(19,2) NOT NULL,
+  [MarkupPct] DECIMAL(9,2) NOT NULL,
+  [Sell] DECIMAL(19,2) NOT NULL
+);
+
+IF OBJECT_ID(N'[commercial].[TenderQuotes]', N'U') IS NULL
+CREATE TABLE [commercial].[TenderQuotes] (
+  [QuoteId] NVARCHAR(40) NOT NULL CONSTRAINT [PK_TenderQuotes] PRIMARY KEY,
+  [OpportunityId] NVARCHAR(40) NOT NULL,
+  [CompanyCode] NVARCHAR(20) NOT NULL CONSTRAINT [DF_TenderQuotes_Company] DEFAULT N'DLE',
+  [SupplierName] NVARCHAR(220) NOT NULL,
+  [LotCode] NVARCHAR(40) NULL,
+  [TechnicalNotes] NVARCHAR(MAX) NULL,
+  [CommercialAmount] DECIMAL(19,2) NOT NULL,
+  [Currency] NVARCHAR(10) NOT NULL CONSTRAINT [DF_TenderQuotes_Currency] DEFAULT N'NGN',
+  [AmountHash] NVARCHAR(64) NOT NULL,
+  [ReleasedAt] DATETIME2(0) NULL,
+  [ReleasedBy] NVARCHAR(120) NULL,
+  [CreatedAt] DATETIME2(0) NOT NULL CONSTRAINT [DF_TenderQuotes_CreatedAt] DEFAULT SYSUTCDATETIME(),
+  [CreatedBy] NVARCHAR(120) NULL
+);
+
+IF OBJECT_ID(N'[commercial].[TenderScenarios]', N'U') IS NULL
+CREATE TABLE [commercial].[TenderScenarios] (
+  [ScenarioId] NVARCHAR(40) NOT NULL CONSTRAINT [PK_TenderScenarios] PRIMARY KEY,
+  [OpportunityId] NVARCHAR(40) NOT NULL,
+  [CompanyCode] NVARCHAR(20) NOT NULL CONSTRAINT [DF_TenderScen_Company] DEFAULT N'DLE',
+  [ScenarioName] NVARCHAR(40) NOT NULL,
+  [FxRate] DECIMAL(19,6) NOT NULL,
+  [EscalationPct] DECIMAL(9,2) NOT NULL,
+  [ProductivityPct] DECIMAL(9,2) NOT NULL,
+  [DelayDays] INT NOT NULL,
+  [OverrunPct] DECIMAL(9,2) NOT NULL,
+  [Cost] DECIMAL(19,2) NOT NULL,
+  [Sell] DECIMAL(19,2) NOT NULL,
+  [Margin] DECIMAL(19,2) NOT NULL,
+  [Assumptions] NVARCHAR(MAX) NULL,
+  [CreatedAt] DATETIME2(0) NOT NULL CONSTRAINT [DF_TenderScen_CreatedAt] DEFAULT SYSUTCDATETIME(),
+  [CreatedBy] NVARCHAR(120) NULL
+);
+
+IF OBJECT_ID(N'[commercial].[TenderCashFlows]', N'U') IS NULL
+CREATE TABLE [commercial].[TenderCashFlows] (
+  [PeriodId] NVARCHAR(40) NOT NULL CONSTRAINT [PK_TenderCashFlows] PRIMARY KEY,
+  [OpportunityId] NVARCHAR(40) NOT NULL,
+  [CompanyCode] NVARCHAR(20) NOT NULL CONSTRAINT [DF_TenderCash_Company] DEFAULT N'DLE',
+  [PeriodMonth] CHAR(7) NOT NULL,
+  [Inflow] DECIMAL(19,2) NOT NULL,
+  [Outflow] DECIMAL(19,2) NOT NULL,
+  [Retention] DECIMAL(19,2) NOT NULL,
+  [Mobilization] DECIMAL(19,2) NOT NULL,
+  [Guarantee] DECIMAL(19,2) NOT NULL,
+  [CreatedAt] DATETIME2(0) NOT NULL CONSTRAINT [DF_TenderCash_CreatedAt] DEFAULT SYSUTCDATETIME(),
+  [CreatedBy] NVARCHAR(120) NULL
+);
+
+IF OBJECT_ID(N'[commercial].[TenderClauses]', N'U') IS NULL
+CREATE TABLE [commercial].[TenderClauses] (
+  [ClauseId] NVARCHAR(40) NOT NULL CONSTRAINT [PK_TenderClauses] PRIMARY KEY,
+  [OpportunityId] NVARCHAR(40) NOT NULL,
+  [CompanyCode] NVARCHAR(20) NOT NULL CONSTRAINT [DF_TenderClause_Company] DEFAULT N'DLE',
+  [ClauseType] NVARCHAR(80) NOT NULL,
+  [ClauseText] NVARCHAR(MAX) NULL,
+  [Deviation] NVARCHAR(MAX) NULL,
+  [ResidualRisk] NVARCHAR(300) NULL,
+  [OwnerName] NVARCHAR(120) NULL,
+  [Acceptance] NVARCHAR(40) NOT NULL CONSTRAINT [DF_TenderClause_Acceptance] DEFAULT N'OPEN',
+  [CreatedAt] DATETIME2(0) NOT NULL CONSTRAINT [DF_TenderClause_CreatedAt] DEFAULT SYSUTCDATETIME(),
+  [CreatedBy] NVARCHAR(120) NULL
+);
+
+IF OBJECT_ID(N'[commercial].[TenderManifest]', N'U') IS NULL
+CREATE TABLE [commercial].[TenderManifest] (
+  [ManifestId] NVARCHAR(40) NOT NULL CONSTRAINT [PK_TenderManifest] PRIMARY KEY,
+  [SubmissionId] NVARCHAR(40) NOT NULL,
+  [OpportunityId] NVARCHAR(40) NOT NULL,
+  [CompanyCode] NVARCHAR(20) NOT NULL CONSTRAINT [DF_TenderManifest_Company] DEFAULT N'DLE',
+  [FileName] NVARCHAR(260) NOT NULL,
+  [ContentHash] NVARCHAR(64) NOT NULL,
+  [SizeBytes] BIGINT NOT NULL,
+  [CreatedAt] DATETIME2(0) NOT NULL CONSTRAINT [DF_TenderManifest_CreatedAt] DEFAULT SYSUTCDATETIME()
+);
+
+IF OBJECT_ID(N'[commercial].[TenderBaselines]', N'U') IS NULL
+CREATE TABLE [commercial].[TenderBaselines] (
+  [BaselineId] NVARCHAR(40) NOT NULL CONSTRAINT [PK_TenderBaselines] PRIMARY KEY,
+  [OpportunityId] NVARCHAR(40) NOT NULL,
+  [AwardId] NVARCHAR(40) NOT NULL,
+  [CompanyCode] NVARCHAR(20) NOT NULL CONSTRAINT [DF_TenderBase_Company] DEFAULT N'DLE',
+  [LotCode] NVARCHAR(40) NOT NULL CONSTRAINT [DF_TenderBase_Lot] DEFAULT N'',
+  [ProjectCode] NVARCHAR(30) NOT NULL,
+  [AcceptedBy] NVARCHAR(180) NOT NULL,
+  [Snapshot] NVARCHAR(MAX) NOT NULL,
+  [Status] NVARCHAR(30) NOT NULL CONSTRAINT [DF_TenderBase_Status] DEFAULT N'ACCEPTED',
+  [CreatedAt] DATETIME2(0) NOT NULL CONSTRAINT [DF_TenderBase_CreatedAt] DEFAULT SYSUTCDATETIME(),
+  [CreatedBy] NVARCHAR(120) NULL
+);
+
+IF NOT EXISTS (
+  SELECT 1 FROM sys.indexes WHERE name = N'UX_TenderBaseline_AwardLot' AND object_id = OBJECT_ID(N'[commercial].[TenderBaselines]')
+)
+  CREATE UNIQUE INDEX [UX_TenderBaseline_AwardLot] ON [commercial].[TenderBaselines]([AwardId],[LotCode]);
+
+IF OBJECT_ID(N'[commercial].[TenderAiReviews]', N'U') IS NULL
+CREATE TABLE [commercial].[TenderAiReviews] (
+  [ReviewId] NVARCHAR(40) NOT NULL CONSTRAINT [PK_TenderAiReviews] PRIMARY KEY,
+  [OpportunityId] NVARCHAR(40) NOT NULL,
+  [CompanyCode] NVARCHAR(20) NOT NULL CONSTRAINT [DF_TenderAi_Company] DEFAULT N'DLE',
+  [Ruleset] NVARCHAR(40) NOT NULL,
+  [Finding] NVARCHAR(300) NOT NULL,
+  [Evidence] NVARCHAR(MAX) NULL,
+  [Confidence] DECIMAL(9,2) NOT NULL,
+  [HumanDecision] NVARCHAR(20) NULL,
+  [Outcome] NVARCHAR(MAX) NULL,
+  [DecidedBy] NVARCHAR(120) NULL,
+  [DecidedAt] DATETIME2(0) NULL,
+  [CreatedAt] DATETIME2(0) NOT NULL CONSTRAINT [DF_TenderAi_CreatedAt] DEFAULT SYSUTCDATETIME(),
+  [CreatedBy] NVARCHAR(120) NULL
+);
 `;
