@@ -3,12 +3,14 @@
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
-import { BarChart3, Check, Clock3, FileText, ListChecks, MessageSquare, MoreHorizontal, Plus, Search, Send, Trophy, Upload, X, XCircle } from 'lucide-react';
+import { BarChart3, Check, Clock3, FileText, ListChecks, MessageSquare, Plus, Search, Send, Trophy, Upload, X, XCircle } from 'lucide-react';
 import type { TenderApproval, TenderAward, TenderDocument, TenderItem, TenderLookups, TenderOpportunity, TenderSubmission } from '@/lib/commercial/tender-types';
 import { daysUntil, downloadCsv, sectorOf } from '@/lib/commercial/tender-present';
+import { awardedToDleOf, clientStatusOf } from '@/lib/commercial/tender-workflow';
 import { formatWhen, tenderGet, tenderPost, tenderUpload } from './tender-api';
 import { ActingEmployee } from './acting-employee';
 import { BlueprintRegisters } from './BlueprintRegisters';
+import { RowMenu } from './record-frame';
 
 type TrackStatus = 'Submitted' | 'Awaiting Response' | 'Under Clarification' | 'Awarded' | 'Not Successful' | 'Withdrawn';
 type Tab = 'All Submissions' | 'Awaiting Response' | 'Under Clarification' | 'Awarded' | 'Not Successful' | 'Withdrawn' | 'Late';
@@ -50,6 +52,11 @@ const responseDueOf = (submission: TenderSubmission | undefined, items: TenderIt
 };
 
 const trackStatus = (row: TenderOpportunity, submission: TenderSubmission | undefined, awarded: boolean, items: TenderItem[]): TrackStatus => {
+  const outcome = awardedToDleOf(row);
+  const client = clientStatusOf(row);
+  if (outcome === 'No') return 'Not Successful';
+  if (outcome === 'Yes' || client === 'Awarded') return 'Awarded';
+  if (client === 'Cancelled') return 'Withdrawn';
   const text = `${row.status} ${row.stage}`.toLowerCase();
   if (awarded || /award/.test(text)) return 'Awarded';
   if (/withdraw/.test(text)) return 'Withdrawn';
@@ -327,19 +334,16 @@ export function SubmissionBoard() {
                     <td className="px-3 py-2.5"><span className={`rounded-md px-2 py-0.5 text-[11px] font-bold ${statusTone[view.state]}`}>{view.state}</span></td>
                     <td className="px-3 py-2.5"><span className="inline-flex items-center gap-2"><span className="inline-flex h-7 w-7 items-center justify-center rounded-full bg-blue-100 text-[10px] font-black text-blue-700">{initials(row.ownerName || '—')}</span>{row.ownerName || '—'}</span></td>
                     <td className="px-3 py-2.5">{view.updated ? formatWhen(view.updated) : '—'}</td>
-                    <td className="relative px-3 py-2.5" onClick={(event) => event.stopPropagation()}>
-                      <button type="button" aria-label={`Actions for ${row.referenceNo}`} disabled={busy} onClick={() => setMenuId(menuId === row.id ? '' : row.id)} className="rounded-lg p-1 text-slate-400 hover:bg-slate-100"><MoreHorizontal className="h-4 w-4" /></button>
-                      {menuId === row.id ? (
-                        <div className="absolute right-3 z-20 w-56 rounded-xl border border-slate-200 bg-white py-1 text-[12px] shadow-lg">
-                          <Link href={`/commercial/tenders/workspace?id=${row.id}`} className="block px-3 py-2 hover:bg-slate-50" onClick={() => setMenuId('')}>View workspace</Link>
-                          <MenuButton label="Update submission status" onClick={() => openFor(row, 'status')} />
-                          <MenuButton label="Record client communication" onClick={() => openFor(row, 'communication')} />
-                          <MenuButton label="Log clarification response" onClick={() => openFor(row, 'clarification')} />
-                          <MenuButton label="Upload submission documents" onClick={() => openFor(row, 'upload')} />
-                          <MenuButton label="View submission checklist" onClick={() => openFor(row, 'checklist')} />
-                          <MenuButton label="Send notification" onClick={() => run(() => tenderPost({ action: 'notify', id: row.id, message: `${row.referenceNo} ${row.title} submission needs attention.` }), 'Portal notification raised.')} />
-                        </div>
-                      ) : null}
+                    <td className="px-3 py-2.5" onClick={(event) => event.stopPropagation()}>
+                      <RowMenu open={menuId === row.id} disabled={busy} label={`Actions for ${row.referenceNo}`} onToggle={() => setMenuId(menuId === row.id ? '' : row.id)}>
+                        <Link href={`/commercial/tenders/workspace?id=${row.id}`} className="block px-3 py-2 hover:bg-slate-50" onClick={() => setMenuId('')}>View workspace</Link>
+                        <MenuButton label="Update submission status" onClick={() => openFor(row, 'status')} />
+                        <MenuButton label="Record client communication" onClick={() => openFor(row, 'communication')} />
+                        <MenuButton label="Log clarification response" onClick={() => openFor(row, 'clarification')} />
+                        <MenuButton label="Upload submission documents" onClick={() => openFor(row, 'upload')} />
+                        <MenuButton label="View submission checklist" onClick={() => openFor(row, 'checklist')} />
+                        <MenuButton label="Send notification" onClick={() => run(() => tenderPost({ action: 'notify', id: row.id, message: `${row.referenceNo} ${row.title} submission needs attention.` }), 'Portal notification raised.')} />
+                      </RowMenu>
                     </td>
                   </tr>
                 );

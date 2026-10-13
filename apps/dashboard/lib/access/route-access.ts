@@ -9,6 +9,7 @@ import {
 } from '@/lib/access/offboarding-access';
 import { canAccessRecruitment } from '@/lib/access/recruitment-access';
 import { canAccessTimesheetEntryAndApproval, isTimesheetEntryOrApprovalPath } from '@/lib/access/timesheet-access';
+import { canAccessTenderPortal } from '@/lib/access/commercial-access';
 
 type SessionLike = Pick<SessionPayload, 'department' | 'unit' | 'roles' | 'permissions' | 'isGlobalAdmin'> & {
   employeeCode?: string;
@@ -575,15 +576,7 @@ export const canAccessRoute = (session: SessionLike, pathname: string) => {
     return false;
   }
   if (path.startsWith('/commercial') || path.startsWith('/api/commercial')) {
-    if (session.isGlobalAdmin || (session.roles || []).includes('Super Administrator')) return true;
-    return hasAnyPermission(session.permissions || [], [
-      'view_sales_crm',
-      'commercial.view',
-      'commercial.*',
-      'commercial.edit',
-      'commercial.create',
-      'enterprise.view',
-    ]);
+    return canAccessTenderPortal(session);
   }
   if (path.startsWith('/procurement') || path.startsWith('/api/procurement')) {
     if (session.isGlobalAdmin || (session.roles || []).includes('Super Administrator')) return true;

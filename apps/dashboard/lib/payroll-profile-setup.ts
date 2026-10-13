@@ -282,27 +282,34 @@ export const setupDraftToProfileSummary = (
       : (monthlyPackageGross != null && monthlyPackageGross > 0 ? monthlyPackageGross : previous.basicSalary));
   const allowances = (monthlyPackageGross ?? 0) > 0 && basicSalary != null ? Math.max(0, (monthlyPackageGross ?? 0) - basicSalary) : previous.allowances;
   const deductionsTotal = storedDeductions.reduce((sum, line) => sum + payrollLineMonthlyAmount(line), 0);
-  const accountNumber = normalized.accountNumber.trim() || previous.accountNumber || '';
+  const text = (value: unknown) => {
+    if (typeof value === 'string') return value.trim();
+    if (typeof value === 'number' && Number.isFinite(value)) return String(value);
+    return '';
+  };
+  const accountNumber = text(normalized.accountNumber);
+  const accountName = text(normalized.accountName);
+  const accountTail = accountNumber.replace(/\D/g, '').slice(-4) || accountNumber.slice(-4);
   return {
     ...previous,
-    payrollGroup: normalized.payrollGroup.trim() || previous.payrollGroup,
-    salaryGrade: normalized.salaryGrade.trim() || previous.salaryGrade,
+    payrollGroup: text(normalized.payrollGroup) || previous.payrollGroup,
+    salaryGrade: text(normalized.salaryGrade) || previous.salaryGrade,
     payCurrency: normalized.payCurrency || previous.payCurrency || 'NGN',
     basicSalary: basicSalary ?? null,
     allowances: allowances ?? null,
     deductions: deductionsTotal > 0 ? deductionsTotal : previous.deductions,
-    bankName: normalized.bankName.trim() || previous.bankName,
+    bankName: text(normalized.bankName) || previous.bankName,
     accountNumber: accountNumber || null,
-    accountNumberMasked: accountNumber ? `••••••${accountNumber.replace(/\D/g, '').slice(-4)}` : previous.accountNumberMasked,
-    accountName: normalized.accountName.trim() || previous.accountName || null,
-    pensionProvider: normalized.pensionProvider.trim() || previous.pensionProvider,
-    pensionPin: normalized.pensionPin.trim() || previous.pensionPin || null,
-    taxId: normalized.taxId.trim() || previous.taxId,
+    accountNumberMasked: accountNumber ? `••••••${accountTail}` : null,
+    accountName: accountName || null,
+    pensionProvider: text(normalized.pensionProvider) || previous.pensionProvider,
+    pensionPin: text(normalized.pensionPin) || previous.pensionPin || null,
+    taxId: text(normalized.taxId) || previous.taxId,
     earningLines: normalized.earningLines,
     deductionLines: normalized.deductionLines,
     nhfApplicable: normalized.nhfApplicable,
-    nhfNumber: normalized.nhfNumber.trim() || previous.nhfNumber || null,
-    benefitGroup: normalized.benefitGroup.trim() || previous.benefitGroup || null,
+    nhfNumber: text(normalized.nhfNumber) || previous.nhfNumber || null,
+    benefitGroup: text(normalized.benefitGroup) || previous.benefitGroup || null,
     ratePerDay: Number(normalized.ratePerDay || normalized.dailyRate) || previous.ratePerDay || null,
     ratePerHour: Number(normalized.ratePerHour) || previous.ratePerHour || null,
     hoursPerDay: Number(normalized.hoursPerDay) || previous.hoursPerDay || null,

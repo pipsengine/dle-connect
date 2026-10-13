@@ -4,7 +4,8 @@ import Link from 'next/link';
 import { useEffect, useMemo, useState } from 'react';
 import { CalendarRange, Download, FileBarChart2 } from 'lucide-react';
 import type { TenderApproval, TenderAuditEvent, TenderAward, TenderDashboard, TenderItem, TenderOpportunity, TenderSubmission } from '@/lib/commercial/tender-types';
-import { MONTHS, closedOut, compactNaira, daysUntil, downloadCsv, inMonth, monthDelta, plainNaira } from '@/lib/commercial/tender-present';
+import { MONTHS, closedOut, daysUntil, downloadCsv, inMonth, monthDelta } from '@/lib/commercial/tender-present';
+import { awardedToDleOf } from '@/lib/commercial/tender-workflow';
 import { formatWhen, tenderGet } from './tender-api';
 import { Donut, Pill } from './tender-widgets';
 import { Crumbs, Empty, Panel, TabBar } from './record-frame';
@@ -95,9 +96,9 @@ export function ReportsBoard() {
   const submittedIds = new Set(submissions.map((item) => item.opportunityId));
   const awardedIds = new Set(awards.map((item) => item.opportunityId));
   const bids = scoped.filter((row) => submittedIds.has(row.id) || reportStatus(row) === 'Bid Submitted' || reportStatus(row) === 'Awarded');
-  const won = scoped.filter((row) => awardedIds.has(row.id) || reportStatus(row) === 'Awarded');
-  const contractValue = awards.reduce((sum, award) => sum + award.awardedValue, 0);
-  const decided = scoped.filter((row) => reportStatus(row) === 'Awarded' || row.status === 'Lost');
+  const won = scoped.filter((row) => awardedToDleOf(row) === 'Yes');
+  const unsuccessful = scoped.filter((row) => awardedToDleOf(row) === 'No');
+  const decided = scoped.filter((row) => awardedToDleOf(row) !== 'Pending Decision');
   const winRate = decided.length ? Math.round((won.length / decided.length) * 100) : 0;
   const cycles = won.map((row) => {
     const award = awards.find((item) => item.opportunityId === row.id);
@@ -117,28 +118,19 @@ export function ReportsBoard() {
     awards: awards.filter((item) => inMonth(item.awardDate || item.createdAt, year, index)).length,
   }));
   const maxActivity = Math.max(1, ...activity.flatMap((item) => [item.opportunities, item.bids, item.awards]));
-  let running = 0;
-  const valueTrend = MONTHS.map((month, index) => {
-    const value = awards.filter((item) => inMonth(item.awardDate || item.createdAt, year, index)).reduce((sum, item) => sum + item.awardedValue, 0);
-    running += value;
-    return { month, value, cumulative: running };
-  });
-  const maxValue = Math.max(1, ...valueTrend.map((item) => item.cumulative));
   const clients = Array.from(scoped.reduce((map, row) => {
     const name = row.clientName || 'Unassigned';
-    const current = map.get(name) || { tenders: 0, awarded: 0, value: 0 };
+    const current = map.get(name) || { tenders: 0, awarded: 0, unsuccessful: 0 };
     current.tenders += 1;
-    if (reportStatus(row) === 'Awarded') {
-      current.awarded += 1;
-      current.value += awards.filter((item) => item.opportunityId === row.id).reduce((sum, item) => sum + item.awardedValue, 0);
-    }
+    if (awardedToDleOf(row) === 'Yes') current.awarded += 1;
+    if (awardedToDleOf(row) === 'No') current.unsuccessful += 1;
     map.set(name, current);
     return map;
-  }, new Map<string, { tenders: number; awarded: number; value: number }>())).sort((a, b) => b[1].value - a[1].value).slice(0, 5);
+  }, new Map<string, { tenders: number; awarded: number; unsuccessful: number }>())).sort((a, b) => b[1].awarded - a[1].awarded).slice(0, 5);
   const sectors = SECTORS.map((label) => {
     const matched = scoped.filter((row) => sectorBucket(row) === label);
-    const wins = matched.filter((row) => reportStatus(row) === 'Awarded').length;
-    const losses = matched.filter((row) => row.status === 'Lost').length;
+    const wins = matched.filter((row) => awardedToDleOf(row) === 'Yes').length;
+    const losses = matched.filter((row) => awardedToDleOf(row) === 'No').length;
     return { label, tenders: matched.length, contracts: wins, rate: wins + losses ? Math.round((wins / (wins + losses)) * 100) : 0 };
   });
   const complianceItems = items.filter((item) => /comply|compliance|document/i.test(item.kind));
@@ -149,13 +141,13 @@ export function ReportsBoard() {
     .sort((a, b) => (a.days || 0) - (b.days || 0))
     .slice(0, 5);
 
-  const exportReport = () => downloadCsv('tender-report.csv', ['Reference', 'Title', 'Client', 'Status', 'Estimated Value', 'Owner'], scoped.map((row) => [row.referenceNo, row.title, row.clientName, reportStatus(row), plainNaira(row.estimatedValue), row.ownerName]));
+  const exportReport = () => downloadCsv('tender-report.csv', ['Reference', 'Title', 'Client', 'Preparation', 'Client Status', 'Awarded to DLE', 'Owner'], scoped.map((row) => [row.referenceNo, row.title, row.clientName, reportStatus(row), row.clientStatus || 'Pending', awardedToDleOf(row), row.ownerName]));
 
   const kpis = [
     ['Total Tender Opportunities', String(scoped.length), countDelta(() => true)],
     ['Bids Submitted', String(bids.length), countDelta((row) => submittedIds.has(row.id))],
-    ['Contracts Awarded', String(won.length), countDelta((row) => awardedIds.has(row.id))],
-    ['Total Contract Value', compactNaira(contractValue), monthDelta(awards.filter((item) => inWindow(item.createdAt, thisStart, new Date())).reduce((sum, item) => sum + item.awardedValue, 0), awards.filter((item) => inWindow(item.createdAt, prevStart, thisStart)).reduce((sum, item) => sum + item.awardedValue, 0))],
+    ['Awarded to DLE', String(won.length), countDelta((row) => awardedToDleOf(row) === 'Yes')],
+    ['Unsuccessful Bids', String(unsuccessful.length), countDelta((row) => awardedToDleOf(row) === 'No')],
     ['Win Rate', `${winRate}%`, dashboard?.winRateDeltaPct ?? 0],
     ['Average Tender Cycle', `${cycle} days`, null],
   ] as const;
@@ -214,19 +206,18 @@ export function ReportsBoard() {
                 })}
               </svg>
             </Panel>
-            <Panel title="Contract Value Trend" action={<span className="text-[12px] font-semibold text-blue-700">View Details →</span>}>
+            <Panel title="Submission Activity" action={<span className="text-[12px] font-semibold text-blue-700">View Details →</span>}>
               <svg viewBox="0 0 360 150" className="h-36 w-full">
-                {valueTrend.map((item, index) => <rect key={item.month} x={16 + index * 28} y={120 - (item.value / maxValue) * 90} width="14" height={(item.value / maxValue) * 90} rx="2" fill="#60a5fa" />)}
-                <path d={valueTrend.map((item, index) => `${index ? 'L' : 'M'}${23 + index * 28},${120 - (item.cumulative / maxValue) * 90}`).join(' ')} fill="none" stroke="#22c55e" strokeWidth="2" />
+                {activity.map((item, index) => <rect key={item.month} x={16 + index * 28} y={120 - (item.bids / maxActivity) * 90} width="14" height={(item.bids / maxActivity) * 90} rx="2" fill="#60a5fa" />)}
               </svg>
             </Panel>
           </div>
           <div className="grid gap-3 xl:grid-cols-3">
-            <Panel title="Top Clients by Tender Value" action={<Link href="/commercial/tenders/opportunities" className="text-[12px] font-semibold text-blue-700">View All →</Link>}>
-              {clients.length === 0 ? <Empty>No client values in this period.</Empty> : (
+            <Panel title="Top Clients by Tenders Won" action={<Link href="/commercial/tenders/opportunities" className="text-[12px] font-semibold text-blue-700">View All →</Link>}>
+              {clients.length === 0 ? <Empty>No client records in this period.</Empty> : (
                 <table className="w-full text-left text-[12px]">
-                  <thead className="text-slate-400"><tr>{['#', 'Client', 'No. of Tenders', 'Contracts Awarded', 'Total Value (₦)'].map((heading) => <th key={heading} className="py-1 font-semibold">{heading}</th>)}</tr></thead>
-                  <tbody>{clients.map(([name, value], index) => <tr key={name} className="border-t border-slate-100"><td className="py-2">{index + 1}</td><td className="py-2 font-semibold">{name}</td><td className="py-2">{value.tenders}</td><td className="py-2">{value.awarded}</td><td className="py-2">{plainNaira(value.value)}</td></tr>)}</tbody>
+                  <thead className="text-slate-400"><tr>{['#', 'Client', 'No. of Tenders', 'Awarded to DLE', 'Unsuccessful'].map((heading) => <th key={heading} className="py-1 font-semibold">{heading}</th>)}</tr></thead>
+                  <tbody>{clients.map(([name, value], index) => <tr key={name} className="border-t border-slate-100"><td className="py-2">{index + 1}</td><td className="py-2 font-semibold">{name}</td><td className="py-2">{value.tenders}</td><td className="py-2">{value.awarded}</td><td className="py-2">{value.unsuccessful}</td></tr>)}</tbody>
                 </table>
               )}
             </Panel>
@@ -278,8 +269,8 @@ export function ReportsBoard() {
           <p className="mb-3 text-sm text-slate-500">{scoped.length} opportunities · {submissions.length} submissions · {awards.length} awards · {approvals.length} approval records in this period.</p>
           {scoped.length === 0 ? <Empty>No records in this period.</Empty> : (
             <table className="w-full text-left text-[13px]">
-              <thead className="text-[11px] uppercase text-slate-400"><tr>{['Reference', 'Title', 'Client', 'Status', 'Value'].map((heading) => <th key={heading} className="py-2 font-semibold">{heading}</th>)}</tr></thead>
-              <tbody>{scoped.slice(0, 12).map((row) => <tr key={row.id} className="border-t border-slate-100"><td className="py-2">{row.referenceNo}</td><td className="py-2 font-semibold"><Link href={`/commercial/tenders/workspace?id=${row.id}`} className="hover:text-blue-700">{row.title}</Link></td><td className="py-2">{row.clientName}</td><td className="py-2">{reportStatus(row)}</td><td className="py-2">{plainNaira(row.estimatedValue)}</td></tr>)}</tbody>
+              <thead className="text-[11px] uppercase text-slate-400"><tr>{['Reference', 'Title', 'Client', 'Status', 'Awarded to DLE'].map((heading) => <th key={heading} className="py-2 font-semibold">{heading}</th>)}</tr></thead>
+              <tbody>{scoped.slice(0, 12).map((row) => <tr key={row.id} className="border-t border-slate-100"><td className="py-2">{row.referenceNo}</td><td className="py-2 font-semibold"><Link href={`/commercial/tenders/workspace?id=${row.id}`} className="hover:text-blue-700">{row.title}</Link></td><td className="py-2">{row.clientName}</td><td className="py-2">{reportStatus(row)}</td><td className="py-2">{awardedToDleOf(row)}</td></tr>)}</tbody>
             </table>
           )}
         </Panel>

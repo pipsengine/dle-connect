@@ -3,7 +3,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { AUTH_COOKIE, verifySessionToken, type SessionPayload } from '@/lib/auth/session';
 import { effectivePermissionsForUser } from '@/lib/auth/access-control-store';
 import { isSuperActor } from '@/lib/auth/role-delegation';
-import { canAccessCommercial, canEditCommercial, isGmCommercial, isManagingDirector } from '@/lib/access/commercial-access';
+import { canAccessTenderPortal, isGmCommercial, isManagingDirector } from '@/lib/access/commercial-access';
 import { createEnterpriseNotification } from '@/lib/enterprise-notifications-store';
 import {
   addApproval,
@@ -28,9 +28,18 @@ import {
   saveDocument,
   saveOpportunity,
   setWatchlisted,
+  assignTenderOfficer,
+  decideBid,
+  acknowledgeAssignment,
+  convertEnquiryToTender,
+  setClientOutcome,
+  assertSubmissionEvidence,
   updateItemStatus,
   upsertSetting,
 } from '@/lib/commercial/tender-store';
+import { announceVerifiedAward, runTenderDeadlineReminders } from '@/lib/commercial/tender-reminder-service';
+import { loadEmployeeFormOptions } from '@/lib/employee-form-options';
+import { departmentalReviewAllowed, preparationOf } from '@/lib/commercial/tender-workflow';
 import { getTenderBlueprint, saveBlueprintRecord } from '@/lib/commercial/tender-blueprint-store';
 import type { BlueprintViewer } from '@/lib/commercial/tender-types';
 
@@ -59,7 +68,7 @@ export async function GET(request: NextRequest) {
   const session = await sessionFrom(request);
   if (!session) return err(401, 'Unauthorized');
   const permissions = await permissionsFrom(session);
-  if (!canAccessCommercial(permissions, session.isGlobalAdmin)) return err(403, 'Forbidden');
+  if (!canAccessTenderPortal(session)) return err(403, 'Forbidden');
 
   const { searchParams } = new URL(request.url);
   const resource = searchParams.get('resource') || 'opportunities';
@@ -114,6 +123,15 @@ export async function GET(request: NextRequest) {
         return ok(await getTenderBlueprint(id, viewerFrom(session, permissions)));
       case 'settings':
         return ok(await listSettings());
+      case 'directory': {
+        const options = await loadEmployeeFormOptions(true);
+        return ok((options.employees || []).map((employee) => ({
+          employeeId: employee.employeeId,
+          fullName: employee.fullName,
+          department: employee.department,
+          jobTitle: employee.jobTitle,
+        })));
+      }
       default:
         return err(400, 'Unknown resource.');
     }
@@ -127,7 +145,7 @@ export async function POST(request: NextRequest) {
   const session = await sessionFrom(request);
   if (!session) return err(401, 'Unauthorized');
   const permissions = await permissionsFrom(session);
-  if (!canEditCommercial(permissions, session.isGlobalAdmin)) return err(403, 'Forbidden');
+  if (!canAccessTenderPortal(session)) return err(403, 'Forbidden');
   const actor = actorFrom(session);
 
   try {
@@ -172,16 +190,124 @@ export async function POST(request: NextRequest) {
             return err(403, 'Only the Managing Director can assign the responsible officer and internal submission date.');
           }
         }
+        const nextStatus = `${opportunity.stage || ''} ${opportunity.status || ''}`;
+        if (/submit/i.test(nextStatus) && opportunity.id) {
+          const current = await getOpportunity(String(opportunity.id));
+          if (current && preparationOf(current) !== 'Submitted') await assertSubmissionEvidence(String(opportunity.id));
+        }
         return ok(await saveOpportunity(opportunity, actor));
       }
+      case 'assign': {
+        const enquiry = String(body.recordType || '') === 'enquiry';
+        if (enquiry && !isGmCommercial(session.roles, session.isGlobalAdmin)) return err(403, 'Only GM Commercial can assign an enquiry.');
+        if (!enquiry && !isManagingDirector(session.roles, session.isGlobalAdmin)) return err(403, 'Only the Managing Director can assign a tender opportunity.');
+        const saved = await assignTenderOfficer(id, {
+          officerName: String(body.officerName || ''),
+          employeeCode: String(body.employeeCode || ''),
+          internalDeadline: String(body.internalDeadline || ''),
+          reason: String(body.reason || ''),
+        }, actor);
+        if (saved) {
+          await createEnterpriseNotification(session, {
+            title: `Assignment · ${saved.referenceNo}`,
+            body: `${saved.title} is assigned to ${saved.ownerName}. Please acknowledge it.`,
+            module: 'Commercial',
+            kind: 'Workflow',
+            severity: 'info',
+            href: `/commercial/tenders/workspace?id=${saved.id}`,
+            actor,
+            recipientEmployeeCode: saved.ownerEmployeeCode || undefined,
+            channels: ['In-App', 'Email'],
+          });
+        }
+        return ok(saved);
+      }
+      case 'acknowledge':
+        return ok(await acknowledgeAssignment(id, actor, String(session.employeeCode || '')));
+      case 'client-outcome': {
+        if (!isGmCommercial(session.roles, session.isGlobalAdmin) && !isManagingDirector(session.roles, session.isGlobalAdmin)) {
+          return err(403, 'Only GM Commercial or the Managing Director can record a client decision.');
+        }
+        return ok(await setClientOutcome(id, {
+          clientStatus: String(body.clientStatus || ''),
+          awardedToDle: String(body.awardedToDle || ''),
+          reason: String(body.reason || ''),
+        }, actor));
+      }
+      case 'confirm-award': {
+        if (!isManagingDirector(session.roles, session.isGlobalAdmin) && !isGmCommercial(session.roles, session.isGlobalAdmin)) {
+          return err(403, 'Only an authorized management officer can verify an award.');
+        }
+        const awardedToDle = String(body.awardedToDle || '');
+        const saved = await setClientOutcome(id, {
+          clientStatus: awardedToDle === 'No' ? 'Awarded' : 'Awarded',
+          awardedToDle,
+          reason: String(body.reason || 'Award verification'),
+        }, actor);
+        if (awardedToDle === 'Yes' && saved && body.announce === true) {
+          const supplied = Array.isArray(body.recipients) ? body.recipients.map((code: unknown) => String(code)) : [];
+          const announcement = await announceVerifiedAward(session, {
+            opportunityId: saved.id,
+            referenceNo: saved.referenceNo,
+            title: saved.title,
+            clientName: saved.clientName,
+            recipients: supplied,
+          });
+          return ok({ opportunity: saved, announcement });
+        }
+        return ok({ opportunity: saved, announcement: { sent: false, recipients: 0 } });
+      }
+      case 'reminders':
+        return ok(await runTenderDeadlineReminders(session));
       case 'duplicate':
         return ok(await duplicateOpportunity(id, actor));
       case 'watchlist':
         return ok(await setWatchlisted(id, Boolean(body.watchlisted), actor));
       case 'line':
         return ok(await addLine(id, body.line || body, actor));
-      case 'approval':
-        return ok(await addApproval(id, body.approval || body, actor, { allowSelf: Boolean(session.isGlobalAdmin) }));
+      case 'bid-decision': {
+        if (!isManagingDirector(session.roles, session.isGlobalAdmin)) {
+          return err(403, 'Only the Managing Director can record a bid or no-bid decision.');
+        }
+        const decision = String(body.decision || '');
+        const saved = await decideBid(id, {
+          decision,
+          comments: String(body.comments || ''),
+          officerName: String(body.officerName || ''),
+          employeeCode: String(body.employeeCode || ''),
+          internalDeadline: String(body.internalDeadline || ''),
+        }, actor);
+        if (saved && decision.toLowerCase() === 'bid' && saved.ownerEmployeeCode) {
+          await createEnterpriseNotification(session, {
+            title: `Bid approved · ${saved.referenceNo}`,
+            body: `${saved.title} is approved for bid preparation and assigned to ${saved.ownerName}. Please acknowledge it.`,
+            module: 'Commercial',
+            kind: 'Workflow',
+            severity: 'info',
+            href: `/commercial/tenders/bid-preparation?id=${saved.id}`,
+            actor,
+            recipientEmployeeCode: saved.ownerEmployeeCode,
+            channels: ['In-App', 'Email'],
+          });
+        }
+        return ok(saved);
+      }
+      case 'approval': {
+        const approval = body.approval || body;
+        const decision = String(approval.decision || '').toUpperCase();
+        const current = await getOpportunity(id);
+        if (!current) return err(404, 'Opportunity was not found.');
+        if (decision !== 'COMMENT' && !departmentalReviewAllowed(current)) {
+          return err(403, 'Departmental review starts only after the Managing Director approves a bid and assigns a responsible officer.');
+        }
+        if ((decision === 'REJECT' || decision === 'RETURN') && !String(approval.comments || '').trim()) {
+          return err(400, 'A comment is required to reject or return this bid.');
+        }
+        if (decision === 'APPROVE' && !(await listDocuments(id)).length) {
+          return err(400, 'Upload the bid document package before approval.');
+        }
+        return ok(await addApproval(id, approval, actor, { allowSelf: Boolean(session.isGlobalAdmin) }));
+      }
       case 'blueprint':
         return ok(await saveBlueprintRecord(String(body.kind || ''), id, body, actor, viewerFrom(session, permissions)));
       case 'submission':
@@ -210,17 +336,8 @@ export async function POST(request: NextRequest) {
         return ok(notification);
       }
       case 'convert': {
-        const opportunity = await getOpportunity(id);
-        if (!opportunity) return err(404, 'Opportunity was not found.');
-        const saved = await saveOpportunity({
-          ...opportunity,
-          opportunityType: 'Client Tender',
-          tenderType: 'Client Bid',
-          stage: 'Bid Preparation',
-          status: 'Open',
-          saveMode: 'submit',
-        }, actor);
-        return ok(saved);
+        if (!isGmCommercial(session.roles, session.isGlobalAdmin)) return err(403, 'Only GM Commercial can convert an enquiry into a tender opportunity.');
+        return ok(await convertEnquiryToTender(id, actor));
       }
       default:
         return err(400, 'Unknown action.');

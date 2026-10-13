@@ -11,6 +11,8 @@ export async function registerNodeInstrumentation() {
   ensurePayrollReminderSchedulerStarted();
   const { ensureCelebrationSchedulerStarted } = await import('@/lib/celebration-scheduler');
   ensureCelebrationSchedulerStarted();
+  const { ensureTenderDeadlineSchedulerStarted } = await import('@/lib/commercial/tender-deadline-scheduler');
+  ensureTenderDeadlineSchedulerStarted();
   void import('@/lib/payroll-approval-notification-service')
     .then(({ repairPayrollApprovalNotificationPrivacy }) => repairPayrollApprovalNotificationPrivacy())
     .then((result) => {

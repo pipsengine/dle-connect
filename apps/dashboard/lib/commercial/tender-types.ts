@@ -41,6 +41,14 @@ export type TenderOpportunity = {
   teamNotes: string;
   approvalNotes: string;
   watchlisted: boolean;
+  preparationStatus: string;
+  clientStatus: string;
+  awardedToDle: string;
+  ownerEmployeeCode: string;
+  assignedAt: string;
+  acknowledgedAt: string;
+  deadlineOverrideReason: string;
+  urgentException: boolean;
   createdAt: string;
   updatedAt: string;
   createdBy: string;

@@ -3,12 +3,15 @@
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
-import { CalendarDays, Check, FileText, MoreHorizontal, Play, Plus, Search, UserRound, X } from 'lucide-react';
+import { CalendarDays, Check, FileText, Play, Plus, Search, UserRound, X } from 'lucide-react';
 import type { TenderOpportunity } from '@/lib/commercial/tender-types';
 import { closedOut, daysUntil, receivedOn, sectorOf } from '@/lib/commercial/tender-present';
 import { isManagingDirector } from '@/lib/access/commercial-access';
+import { internalDeadlineFromExternal } from '@/lib/commercial/tender-workflow';
 import { formatWhen, tenderGet, tenderPost } from './tender-api';
 import { TenderOpportunityModal } from './TenderOpportunityModal';
+import { OfficerSearch, type DirectoryEmployee } from './OfficerSearch';
+import { RowMenu } from './record-frame';
 
 type OpportunityStatus = 'Not Started' | 'In Progress' | 'Submitted' | 'Closed';
 type Tab = 'All Opportunities' | 'Awaiting Assignment' | OpportunityStatus | 'Overdue';
@@ -47,7 +50,7 @@ const dateTone = (value: string) => {
 };
 
 const statusTone: Record<OpportunityStatus, string> = {
-  'Not Started': 'bg-rose-50 text-rose-600',
+  'Not Started': 'bg-slate-100 text-slate-600',
   'In Progress': 'bg-blue-50 text-blue-700',
   Submitted: 'bg-emerald-50 text-emerald-700',
   Closed: 'bg-slate-100 text-slate-600',
@@ -90,6 +93,10 @@ export function OpportunitiesRegister() {
   const [md, setMd] = useState(false);
   const [assigning, setAssigning] = useState<TenderOpportunity | null>(null);
   const [assignee, setAssignee] = useState('');
+  const [assigneeCode, setAssigneeCode] = useState('');
+  const [internalDate, setInternalDate] = useState('');
+  const [assignReason, setAssignReason] = useState('');
+  const [directory, setDirectory] = useState<DirectoryEmployee[]>([]);
   const [busy, setBusy] = useState(false);
 
   const load = async () => {
@@ -104,7 +111,7 @@ export function OpportunitiesRegister() {
     }
   };
 
-  useEffect(() => { load(); }, []);
+  useEffect(() => { load(); tenderGet<DirectoryEmployee[]>('directory').then(setDirectory).catch(() => setDirectory([])); }, []);
   useEffect(() => {
     fetch('/api/auth/me', { cache: 'no-store', credentials: 'same-origin' })
       .then((response) => (response.ok ? response.json() : null))
@@ -295,22 +302,20 @@ export function OpportunitiesRegister() {
                       </span>
                     </td>
                     <td className="px-3 py-2.5"><span className={`rounded-md px-2 py-0.5 text-[11px] font-bold ${statusTone[state]}`}>{state}</span></td>
-                    <td className="relative px-3 py-2.5">
-                      <button type="button" aria-label={`Actions for ${row.referenceNo}`} disabled={busy} onClick={() => setMenuId(menuId === row.id ? '' : row.id)} className="rounded-lg p-1 text-slate-400 hover:bg-slate-100"><MoreHorizontal className="h-4 w-4" /></button>
-                      {menuId === row.id ? (
-                        <div className="absolute right-3 z-20 w-56 rounded-xl border border-slate-200 bg-white py-1 text-[12px] shadow-lg">
-                          <Link href={`/commercial/tenders/workspace?id=${row.id}`} className="block px-3 py-2 hover:bg-slate-50" onClick={() => setMenuId('')}>View workspace</Link>
-                          <MenuButton label="Edit opportunity" onClick={() => { setEditing(row); setModalOpen(true); setMenuId(''); }} />
-                          <MenuButton label="Assign responsible officer" onClick={() => { if (!md) { setError('Only the Managing Director can assign the responsible officer and internal submission date.'); setMenuId(''); return; } setAssigning(row); setAssignee(row.ownerName); setMenuId(''); }} />
-                          <MenuButton label="Mark Not Started" onClick={() => saveStatus(row, 'Not Started')} />
-                          <MenuButton label="Mark In Progress" onClick={() => saveStatus(row, 'In Progress')} />
-                          <MenuButton label="Mark Submitted" onClick={() => saveStatus(row, 'Submitted')} />
-                          <MenuButton label="Close opportunity" onClick={() => saveStatus(row, 'Closed')} />
-                          <MenuButton label="Duplicate" onClick={() => run(() => tenderPost({ action: 'duplicate', id: row.id }), `${row.referenceNo} duplicated.`)} />
-                          <MenuButton label={row.watchlisted ? 'Remove from watchlist' : 'Add to watchlist'} onClick={() => run(() => tenderPost({ action: 'watchlist', id: row.id, watchlisted: !row.watchlisted }), row.watchlisted ? 'Removed from the watchlist.' : 'Added to the watchlist.')} />
-                          <MenuButton label="Send notification" onClick={() => run(() => tenderPost({ action: 'notify', id: row.id, message: `${row.referenceNo} ${row.title} needs attention.` }), 'Portal notification raised.')} />
-                        </div>
-                      ) : null}
+                    <td className="px-3 py-2.5">
+                      <RowMenu open={menuId === row.id} disabled={busy} label={`Actions for ${row.referenceNo}`} onToggle={() => setMenuId(menuId === row.id ? '' : row.id)}>
+                        <Link href={`/commercial/tenders/workspace?id=${row.id}`} className="block px-3 py-2 hover:bg-slate-50" onClick={() => setMenuId('')}>View workspace</Link>
+                        <MenuButton label="Edit opportunity" onClick={() => { setEditing(row); setModalOpen(true); setMenuId(''); }} />
+                        <MenuButton label="Assign responsible officer" onClick={() => { if (!md) { setError('Only the Managing Director can assign the responsible officer and internal submission date.'); setMenuId(''); return; } setAssigning(row); setAssignee(row.ownerName); setAssigneeCode(row.ownerEmployeeCode || ''); setInternalDate((internalOn(row) || internalDeadlineFromExternal(externalOn(row))).slice(0, 10)); setAssignReason(''); setMenuId(''); }} />
+                        {row.ownerName && !row.acknowledgedAt ? <MenuButton label="Acknowledge assignment" onClick={() => run(() => tenderPost({ action: 'acknowledge', id: row.id }), `${row.referenceNo} acknowledged.`)} /> : null}
+                        <MenuButton label="Mark Not Started" onClick={() => saveStatus(row, 'Not Started')} />
+                        <MenuButton label="Mark In Progress" onClick={() => saveStatus(row, 'In Progress')} />
+                        <MenuButton label="Mark Submitted" onClick={() => saveStatus(row, 'Submitted')} />
+                        <MenuButton label="Close opportunity" onClick={() => saveStatus(row, 'Closed')} />
+                        <MenuButton label="Duplicate" onClick={() => run(() => tenderPost({ action: 'duplicate', id: row.id }), `${row.referenceNo} duplicated.`)} />
+                        <MenuButton label={row.watchlisted ? 'Remove from watchlist' : 'Add to watchlist'} onClick={() => run(() => tenderPost({ action: 'watchlist', id: row.id, watchlisted: !row.watchlisted }), row.watchlisted ? 'Removed from the watchlist.' : 'Added to the watchlist.')} />
+                        <MenuButton label="Send notification" onClick={() => run(() => tenderPost({ action: 'notify', id: row.id, message: `${row.referenceNo} ${row.title} needs attention.` }), 'Portal notification raised.')} />
+                      </RowMenu>
                     </td>
                   </tr>
                 );
@@ -341,27 +346,38 @@ export function OpportunitiesRegister() {
             event.preventDefault();
             const row = assigning;
             const name = assignee.trim();
+            if (!assigneeCode || !name) {
+              setError('Search and select a responsible officer from the employee directory.');
+              return;
+            }
             setAssigning(null);
-            const complete = row.status !== 'Draft' && row.estimatedValue > 0 && Boolean(row.department && row.location && row.site);
-            run(async () => {
-              await tenderPost({
-                action: 'save',
-                opportunity: {
-                  ...row,
-                  ownerName: name,
-                  stage: row.stage === 'Enquiry' ? 'Tender/Bid' : row.stage || 'Tender/Bid',
-                  status: complete ? row.status : 'Draft',
-                  saveMode: complete ? 'submit' : 'draft',
-                },
-              });
-              await tenderPost({ action: 'notify', id: row.id, message: `${row.referenceNo} assigned to ${name}.` });
-            }, `${row.referenceNo} assigned to ${name}.`);
+            run(() => tenderPost({
+              action: 'assign',
+              id: row.id,
+              recordType: 'tender',
+              officerName: name,
+              employeeCode: assigneeCode,
+              internalDeadline: internalDate,
+              reason: assignReason,
+            }), `${row.referenceNo} assigned to ${name}.`);
           }}>
             <h2 className="text-[16px] font-black text-slate-950">Assign responsible officer</h2>
-            <p className="mt-1 text-[12px] text-slate-500">{assigning.referenceNo} · {assigning.title}</p>
-            <input list="tender-officers" value={assignee} onChange={(event) => setAssignee(event.target.value)} required placeholder="Officer name" className="mt-4 h-10 w-full rounded-lg border border-slate-200 px-3 text-sm" />
-            <datalist id="tender-officers">{officers.map((name) => <option key={name} value={name} />)}</datalist>
-            <p className="mt-2 text-[12px] text-amber-700">The internal submission date is set from Edit opportunity. Only the Managing Director can change it.</p>
+            <p className="mt-1 text-[12px] text-slate-500">{assigning.referenceNo} · {assigning.title}. The Managing Director confirms the internal submission deadline, 24 hours before the client deadline unless a reason is recorded.</p>
+            {assigning.urgentException ? <p className="mt-2 rounded-lg bg-rose-50 px-3 py-2 text-[12px] font-semibold text-rose-700">Urgent exception: the client deadline is less than 24 hours away and needs MD authorization.</p> : null}
+            <div className="mt-4">
+              <OfficerSearch
+                employees={directory}
+                employeeId={assigneeCode}
+                name={assignee}
+                onSelect={(person) => { setAssigneeCode(person?.employeeId || ''); setAssignee(person?.fullName || ''); }}
+              />
+            </div>
+            <label className="mt-3 block text-[12px] font-semibold text-slate-600">Internal submission deadline
+              <input type="date" value={internalDate} onChange={(event) => setInternalDate(event.target.value)} required className="mt-1 h-10 w-full rounded-lg border border-slate-200 px-3 text-sm font-normal" />
+            </label>
+            <label className="mt-3 block text-[12px] font-semibold text-slate-600">Reason for reassignment, extension or override
+              <textarea value={assignReason} onChange={(event) => setAssignReason(event.target.value)} className="mt-1 h-20 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm font-normal" />
+            </label>
             <div className="mt-4 flex justify-end gap-2">
               <button type="button" onClick={() => setAssigning(null)} className="h-9 rounded-lg border border-slate-200 px-3 text-[12px] font-semibold">Cancel</button>
               <button type="submit" className="h-9 rounded-lg bg-[#2563eb] px-3 text-[12px] font-bold text-white">Save assignment</button>

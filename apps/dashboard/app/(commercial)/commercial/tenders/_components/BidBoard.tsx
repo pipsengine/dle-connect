@@ -20,6 +20,7 @@ import {
   type LucideIcon,
 } from 'lucide-react';
 import type { TenderBlueprint, TenderDocument, TenderLine } from '@/lib/commercial/tender-types';
+import { externalDeadlineOf, internalDeadlineOf } from '@/lib/commercial/tender-workflow';
 import { formatWhen, money, tenderGet, tenderPost } from './tender-api';
 import { OpportunityModal } from './OpportunityModal';
 import { DocumentCapture, ItemCapture, LineCapture, SubmissionCapture } from './record-capture';
@@ -137,7 +138,7 @@ export function BidBoard() {
     try {
       await tenderPost({
         action: 'save',
-        opportunity: { ...opportunity, title: draft.title || opportunity.title, currency: draft.currency, submissionDeadline: draft.submissionDeadline, scopeSummary: draft.strategy, saveMode: 'submit' },
+        opportunity: { ...opportunity, title: draft.title || opportunity.title, currency: draft.currency, scopeSummary: draft.strategy, saveMode: 'submit' },
       });
       await record.loadDetail(opportunity.id);
       await record.reload();
@@ -213,8 +214,8 @@ export function BidBoard() {
             <Info label="Tender Type" value={opportunity?.tenderType || '—'} />
           </div>
           <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-            <Info label="External Deadline" value={opportunity ? formatWhen(opportunity.submissionDeadline || opportunity.closingDate) : '—'} />
-            <Info label="Internal Deadline" value={opportunity ? formatWhen(opportunity.clarificationDeadline) : '—'} />
+            <Info label="External Deadline" value={opportunity ? formatWhen(externalDeadlineOf(opportunity)) : '—'} />
+            <Info label="Internal Deadline" value={opportunity ? formatWhen(internalDeadlineOf(opportunity)) : '—'} />
             <div>
               <div className="mb-1 text-[11px] font-semibold text-slate-400">Status</div>
               <div className="flex h-10 items-center rounded-lg border border-slate-200 bg-[#f8fafc] px-3">
@@ -265,7 +266,7 @@ export function BidBoard() {
                 <Field label="Bid Reference No." className="md:col-span-3"><input readOnly value={opportunity?.referenceNo || ''} placeholder="—" className="h-10 w-full rounded-lg border border-slate-200 bg-[#f8fafc] px-3 text-[13px] font-semibold text-slate-800" /></Field>
                 <Field label="Version" className="md:col-span-3"><select disabled className="h-10 w-full rounded-lg border border-slate-200 bg-[#f8fafc] px-3 text-[13px] text-slate-500" aria-label="Version"><option>{versionLabel}</option></select></Field>
                 <Field label="Bid Title" required className="md:col-span-6"><input value={draft.title} onChange={(event) => setDraft({ ...draft, title: event.target.value })} placeholder="Bid title" className="h-10 w-full rounded-lg border border-slate-200 px-3 text-[13px] text-slate-800" /></Field>
-                <Field label="Target Submission Date" required className="md:col-span-6"><input type="date" value={draft.submissionDeadline} onChange={(event) => setDraft({ ...draft, submissionDeadline: event.target.value })} className="h-10 w-full rounded-lg border border-slate-200 px-3 text-[13px] text-slate-800" /></Field>
+                <Field label="Target Submission Date" required className="md:col-span-6"><input type="date" readOnly value={(opportunity ? externalDeadlineOf(opportunity) : draft.submissionDeadline).slice(0, 10)} className="h-10 w-full rounded-lg border border-slate-200 bg-[#f8fafc] px-3 text-[13px] text-slate-800" title="Taken from the tender opportunity. The Managing Director confirms deadline changes." /></Field>
                 <Field label="Bid Currency" className="md:col-span-6">
                   <select value={draft.currency} onChange={(event) => setDraft({ ...draft, currency: event.target.value })} className="h-10 w-full rounded-lg border border-slate-200 px-3 text-[13px] text-slate-800" aria-label="Bid currency">
                     <option value="NGN">NGN - Nigerian Naira</option>
@@ -289,8 +290,8 @@ export function BidBoard() {
               {[
                 ['Tender Issue Date', opportunity?.invitationDate],
                 ['Clarification Deadline', opportunity?.clarificationDeadline],
-                ['Internal Submission Deadline', ''],
-                ['Client Submission Deadline', opportunity?.submissionDeadline || opportunity?.closingDate],
+                ['Internal Submission Deadline', opportunity ? internalDeadlineOf(opportunity) : ''],
+                ['Client Submission Deadline', opportunity ? externalDeadlineOf(opportunity) : ''],
                 ['Expected Award Date', record.detail?.awards?.[0]?.awardDate],
               ].map(([label, value]) => (
                 <div key={String(label)} className="flex items-center justify-between border-b border-slate-50 py-2 text-[12px] last:border-0">

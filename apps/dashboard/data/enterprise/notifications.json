@@ -26656,21 +26656,3 @@
   ],
   "liveOverrides": []
 }
-: "warning",
-      "status": "Unread",
-      "href": "/logistics-fleet/trips-dispatch?tab=supervisor&tripId=trp-1784124090101-nuqe5",
-      "createdAt": "2026-07-15T14:16:09.874Z",
-      "actor": "Fleet Supervisor Resend",
-      "channels": [
-        "In-App",
-        "Email"
-      ],
-      "metadata": {
-        "tripId": "trp-1784124090101-nuqe5",
-        "action": "submit-trip",
-        "module": "logistics-fleet"
-      }
-    }
-  ],
-  "liveOverrides": []
-}

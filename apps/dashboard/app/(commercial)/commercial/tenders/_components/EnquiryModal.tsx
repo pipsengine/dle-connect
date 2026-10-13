@@ -1,9 +1,8 @@
 'use client';
 
 import { useEffect, useState, type ReactNode } from 'react';
-import { ArrowLeft, Info, Mail, Plus, Save, Send, X } from 'lucide-react';
-import type { TenderLookups, TenderOpportunity } from '@/lib/commercial/tender-types';
-import { isGmCommercial } from '@/lib/access/commercial-access';
+import { ArrowLeft, Info, Mail, Plus, Save, X } from 'lucide-react';
+import type { TenderOpportunity } from '@/lib/commercial/tender-types';
 import { tenderGet, tenderPost, tenderUpload } from './tender-api';
 import { ActingEmployee } from './acting-employee';
 
@@ -31,33 +30,20 @@ const writeExtra = (extra: Extra, notes: string) => {
   return lines.join('\n');
 };
 
-const dayBefore = (value: string) => {
-  const [year, month, day] = value.split('-').map(Number);
-  if (!year || !month || !day) return '';
-  const date = new Date(year, month - 1, day);
-  date.setDate(date.getDate() - 1);
-  const monthText = String(date.getMonth() + 1).padStart(2, '0');
-  const dayText = String(date.getDate()).padStart(2, '0');
-  return `${date.getFullYear()}-${monthText}-${dayText}`;
-};
-
 export function EnquiryModal({
   open,
   initial,
   clients,
-  officers,
   onClose,
   onSaved,
 }: {
   open: boolean;
   initial?: TenderOpportunity | null;
   clients: string[];
-  officers: string[];
+  officers?: string[];
   onClose: () => void;
   onSaved: () => void;
 }) {
-  const [gm, setGm] = useState(false);
-  const [lookups, setLookups] = useState<TenderLookups | null>(null);
   const [title, setTitle] = useState('');
   const [received, setReceived] = useState('');
   const [client, setClient] = useState('');
@@ -67,13 +53,6 @@ export function EnquiryModal({
   const [priority, setPriority] = useState('Medium');
   const [description, setDescription] = useState('');
   const [external, setExternal] = useState('');
-  const [internal, setInternal] = useState('');
-  const [internalTouched, setInternalTouched] = useState(false);
-  const [officer, setOfficer] = useState('');
-  const [newOfficer, setNewOfficer] = useState(false);
-  const [lineManager, setLineManager] = useState('');
-  const [department, setDepartment] = useState('');
-  const [site, setSite] = useState('');
   const [contact, setContact] = useState('');
   const [email, setEmail] = useState('');
   const [phone, setPhone] = useState('');
@@ -96,13 +75,6 @@ export function EnquiryModal({
     setPriority(initial?.priority || 'Medium');
     setDescription(initial?.description || '');
     setExternal((initial?.submissionDeadline || initial?.closingDate || '').slice(0, 10));
-    setInternal((initial?.clarificationDeadline || '').slice(0, 10));
-    setInternalTouched(Boolean(initial?.clarificationDeadline));
-    setOfficer(initial?.ownerName || '');
-    setNewOfficer(false);
-    setLineManager(extra.lineManager);
-    setDepartment(initial?.department || '');
-    setSite(initial?.site || '');
     setContact(initial?.contactPerson || '');
     setEmail(initial?.email || '');
     setPhone(initial?.phone || '');
@@ -111,27 +83,13 @@ export function EnquiryModal({
     setProjects(extra.relatedProjects);
     setFiles([]);
     setError('');
-    tenderGet<TenderLookups>('lookups').then(setLookups).catch(() => setLookups(null));
-    fetch('/api/auth/me', { cache: 'no-store', credentials: 'same-origin' })
-      .then((response) => (response.ok ? response.json() : null))
-      .then((json) => setGm(isGmCommercial(json?.data?.roles || [], Boolean(json?.data?.isGlobalAdmin))))
-      .catch(() => setGm(false));
   }, [open, initial]);
 
   if (!open) return null;
 
-  const setExternalDate = (value: string) => {
-    setExternal(value);
-    if (gm && !internalTouched) setInternal(value ? dayBefore(value) : '');
-  };
-
-  const save = async (assign: boolean) => {
+  const save = async () => {
     if (!title.trim() || !client.trim() || !source || !sector || !received || !description.trim() || !external) {
       setError('Complete the required enquiry details, description, and external response deadline.');
-      return;
-    }
-    if (assign && (!gm || !officer.trim() || !internal)) {
-      setError('GM Commercial must choose the responsible officer and internal response date before assigning.');
       return;
     }
     setBusy(true);
@@ -155,25 +113,22 @@ export function EnquiryModal({
           contactPerson: contact,
           email,
           phone,
-          department,
-          location: initial?.location || site,
-          site,
+          department: initial?.department || '',
+          location: initial?.location || '',
+          site: initial?.site || '',
           estimatedValue: initial?.estimatedValue || 0,
           currency: initial?.currency || 'NGN',
           invitationDate: received,
           submissionDeadline: external,
           closingDate: external,
-          clarificationDeadline: gm ? internal : (initial?.clarificationDeadline || ''),
-          ownerName: gm ? officer.trim() : (initial?.ownerName || ''),
-          teamNotes: writeExtra({ lineManager: gm ? lineManager : readExtra(initial?.teamNotes || '').lineManager, responseFormat: format, relatedProjects: projects }, initial?.teamNotes || ''),
+          clarificationDeadline: initial?.clarificationDeadline || '',
+          ownerName: initial?.ownerName || '',
+          teamNotes: writeExtra({ lineManager: readExtra(initial?.teamNotes || '').lineManager, responseFormat: format, relatedProjects: projects }, initial?.teamNotes || ''),
           saveMode: initial && initial.status !== 'Draft' && initial.estimatedValue > 0 && initial.department && initial.location && initial.site ? 'submit' : 'draft',
         },
       });
       if (saved?.id && files.length) {
         await Promise.all(files.map((file) => tenderUpload(saved.id, file, 'Enquiry')));
-      }
-      if (assign && saved?.id) {
-        await tenderPost({ action: 'notify', id: saved.id, message: `${saved.referenceNo} assigned to ${officer.trim()}. Internal response date ${internal}.` });
       }
       onSaved();
     } catch (reason) {
@@ -191,7 +146,7 @@ export function EnquiryModal({
             <span className="inline-flex h-11 w-11 items-center justify-center rounded-xl bg-[#2563eb] text-white"><Mail className="h-5 w-5" /></span>
             <div>
               <h2 className="text-[20px] font-black text-slate-950">{initial ? 'Edit Enquiry' : 'New Enquiry'}</h2>
-              <p className="text-[12px] text-slate-500">Capture client enquiry details and assign a responsible officer.</p>
+              <p className="text-[12px] text-slate-500">Capture the client enquiry. GM Commercial assigns the responsible officer afterwards.</p>
             </div>
           </div>
           <button type="button" onClick={onClose} className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-slate-200 px-3 text-[12px] font-bold text-slate-700"><ArrowLeft className="h-3.5 w-3.5" /> Back to Enquiries</button>
@@ -234,39 +189,11 @@ export function EnquiryModal({
                 <div className="text-right text-[11px] text-slate-400">{description.length}/2000</div>
               </Field>
             </Card>
-            <Card step="3" title="Response Deadlines">
-              <div className="grid gap-3 md:grid-cols-2">
-                <Field label="External Response Deadline" required><input type="date" required value={external} onChange={(event) => setExternalDate(event.target.value)} className={input} /></Field>
-                <Field label="Internal Response Deadline" required>
-                  <input type="date" value={internal} disabled={!gm} onChange={(event) => { setInternalTouched(true); setInternal(event.target.value); }} className={`${input} disabled:bg-slate-50`} />
-                </Field>
-              </div>
-              <p className="mt-3 flex items-start gap-2 rounded-lg bg-sky-50 px-3 py-2 text-[12px] text-sky-800"><Info className="mt-0.5 h-4 w-4 shrink-0" /> Internal deadline is set to 24 hours before the external deadline. This can be adjusted by GM Commercial if required.</p>
+            <Card step="3" title="Response Deadline">
+              <Field label="External Response Deadline" required><input type="date" required value={external} onChange={(event) => setExternal(event.target.value)} className={input} /></Field>
+              <p className="mt-3 flex items-start gap-2 rounded-lg bg-sky-50 px-3 py-2 text-[12px] text-sky-800"><Info className="mt-0.5 h-4 w-4 shrink-0" /> GM Commercial assigns the responsible officer and confirms the internal response deadline after this enquiry is saved.</p>
             </Card>
-            <Card step="4" title="Assignment">
-              <div className="grid gap-3 md:grid-cols-2">
-                <Field label="Responsible Officer">
-                  <div className="flex gap-2">
-                    {newOfficer ? <input value={officer} disabled={!gm} onChange={(event) => setOfficer(event.target.value)} placeholder="Officer name" className={input} /> : (
-                      <select value={officer} disabled={!gm} onChange={(event) => setOfficer(event.target.value)} className={input} aria-label="Responsible officer">
-                        <option value="">Select officer...</option>
-                        {officers.map((name) => <option key={name}>{name}</option>)}
-                      </select>
-                    )}
-                    <button type="button" disabled={!gm} onClick={() => setNewOfficer((value) => !value)} className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-slate-200 text-blue-700 disabled:opacity-40" aria-label="Add officer"><Plus className="h-4 w-4" /></button>
-                  </div>
-                </Field>
-                <Field label="Line Manager"><input value={lineManager} disabled={!gm} onChange={(event) => setLineManager(event.target.value)} placeholder="Line manager" className={input} /></Field>
-                <Field label="Department">
-                  <select value={department} onChange={(event) => setDepartment(event.target.value)} className={input} aria-label="Department"><option value="">Select department</option>{(lookups?.departments || []).map((item) => <option key={item.id} value={item.name}>{item.name}</option>)}</select>
-                </Field>
-                <Field label="Work Centre">
-                  <select value={site} onChange={(event) => setSite(event.target.value)} className={input} aria-label="Work centre"><option value="">Select work centre</option>{(lookups?.sites || []).map((item) => <option key={item.id} value={item.name}>{item.name}</option>)}</select>
-                </Field>
-              </div>
-              <p className="mt-3 rounded-lg bg-amber-50 px-3 py-2 text-[12px] text-amber-800">{gm ? 'Saving and assigning notifies the portal that this officer owns the enquiry.' : 'Only GM Commercial can assign the responsible officer and the internal response date.'}</p>
-            </Card>
-            <Card step="5" title="Attachments">
+            <Card step="4" title="Attachments">
               <label className="flex min-h-28 cursor-pointer flex-col items-center justify-center rounded-xl border border-dashed border-slate-300 bg-slate-50 px-4 py-6 text-center text-[12px] text-slate-500">
                 <input type="file" multiple className="hidden" onChange={(event) => setFiles(Array.from(event.target.files || []))} />
                 Drag and drop files here, or click to browse
@@ -274,7 +201,7 @@ export function EnquiryModal({
               </label>
               {files.length ? <ul className="mt-2 text-[12px] text-slate-600">{files.map((file) => <li key={file.name}>{file.name}</li>)}</ul> : null}
             </Card>
-            <Card step="6" title="Additional Information">
+            <Card step="5" title="Additional Information">
               <div className="grid gap-3 md:grid-cols-2">
                 <Field label="Client Contact Person"><input value={contact} onChange={(event) => setContact(event.target.value)} placeholder="Enter contact person name..." className={input} /></Field>
                 <Field label="Enquiry Type"><select value={enquiryType} onChange={(event) => setEnquiryType(event.target.value)} className={input} aria-label="Enquiry type">{ENQUIRY_TYPES.map((item) => <option key={item}>{item}</option>)}</select></Field>
@@ -288,10 +215,9 @@ export function EnquiryModal({
         </div>
         <div className="flex flex-wrap items-center justify-between gap-2 border-t border-slate-200 bg-white px-5 py-4">
           <div className="flex gap-2">
-            <button type="button" disabled={busy} onClick={() => save(false)} className="inline-flex h-10 items-center gap-1.5 rounded-lg border border-slate-200 px-4 text-[13px] font-bold text-slate-700 disabled:opacity-50"><Save className="h-4 w-4" /> Save as Draft</button>
+            <button type="button" disabled={busy} onClick={() => save()} className="inline-flex h-10 items-center gap-1.5 rounded-lg bg-[#2563eb] px-4 text-[13px] font-bold text-white disabled:opacity-50"><Save className="h-4 w-4" /> {busy ? 'Saving…' : 'Save Enquiry'}</button>
             <button type="button" onClick={onClose} className="inline-flex h-10 items-center gap-1.5 rounded-lg border border-slate-200 px-4 text-[13px] font-bold text-slate-700"><X className="h-4 w-4" /> Cancel</button>
           </div>
-          {gm ? <button type="button" disabled={busy} onClick={() => save(true)} className="inline-flex h-10 items-center gap-1.5 rounded-lg bg-[#2563eb] px-4 text-[13px] font-bold text-white disabled:opacity-50"><Send className="h-4 w-4" /> {busy ? 'Saving…' : 'Save and Assign'}</button> : null}
         </div>
       </div>
     </div>

@@ -61,7 +61,7 @@ export function AwardsBoard() {
   const [pageSize, setPageSize] = useState(10);
   const [actionsOpen, setActionsOpen] = useState(false);
   const [adding, setAdding] = useState(false);
-  const [form, setForm] = useState({ id: '', contractRef: '', awardedValue: '', currency: 'NGN', awardDate: '', handoverOwner: '', handoverNotes: '' });
+  const [form, setForm] = useState({ id: '', contractRef: '', awardedValue: '', currency: 'NGN', awardDate: '', handoverOwner: '', handoverNotes: '', awardedToDle: 'Pending Decision', awardType: 'Full', reason: '', announce: false, recipients: '' });
 
   const load = async () => {
     const [opportunities, awarded, tasks, events] = await Promise.all([
@@ -123,9 +123,21 @@ export function AwardsBoard() {
   const saveAward = async () => {
     setError('');
     try {
-      await tenderPost({ action: 'award', id: form.id, award: { contractRef: form.contractRef, awardedValue: Number(form.awardedValue || 0), currency: form.currency, awardDate: form.awardDate, handoverOwner: form.handoverOwner, handoverNotes: form.handoverNotes } });
+      if (form.awardedToDle === 'Yes' || form.awardedToDle === 'No') {
+        await tenderPost({
+          action: 'confirm-award',
+          id: form.id,
+          awardedToDle: form.awardedToDle,
+          reason: form.reason || form.handoverNotes,
+          announce: form.awardedToDle === 'Yes' && form.announce,
+          recipients: form.recipients.split(',').map((code) => code.trim()).filter(Boolean),
+        });
+      }
+      if (form.awardedToDle !== 'No') {
+        await tenderPost({ action: 'award', id: form.id, award: { contractRef: form.contractRef, awardedValue: Number(form.awardedValue || 0), currency: form.currency, awardDate: form.awardDate, handoverOwner: form.handoverOwner, handoverNotes: `${form.awardType === 'Partial' ? 'Partial award. ' : ''}${form.handoverNotes}` } });
+      }
       setAdding(false);
-      setForm({ id: '', contractRef: '', awardedValue: '', currency: 'NGN', awardDate: '', handoverOwner: '', handoverNotes: '' });
+      setForm({ id: '', contractRef: '', awardedValue: '', currency: 'NGN', awardDate: '', handoverOwner: '', handoverNotes: '', awardedToDle: 'Pending Decision', awardType: 'Full', reason: '', announce: false, recipients: '' });
       await load();
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : 'Award was not saved.');
@@ -222,7 +234,22 @@ export function AwardsBoard() {
               <input value={form.awardedValue} onChange={(event) => setForm({ ...form, awardedValue: event.target.value })} placeholder="Awarded value" className="h-10 rounded-lg border border-slate-200 px-3 text-sm" />
               <input type="date" value={form.awardDate} onChange={(event) => setForm({ ...form, awardDate: event.target.value })} className="h-10 rounded-lg border border-slate-200 px-2 text-sm" aria-label="Award date" />
               <input value={form.handoverOwner} onChange={(event) => setForm({ ...form, handoverOwner: event.target.value })} placeholder="Handover owner" className="h-10 rounded-lg border border-slate-200 px-3 text-sm" />
+              <select value={form.awardedToDle} onChange={(event) => setForm({ ...form, awardedToDle: event.target.value })} className="h-10 rounded-lg border border-slate-200 px-2 text-sm" aria-label="Awarded to DLE">
+                <option>Pending Decision</option>
+                <option>Yes</option>
+                <option>No</option>
+              </select>
+              <select value={form.awardType} onChange={(event) => setForm({ ...form, awardType: event.target.value })} className="h-10 rounded-lg border border-slate-200 px-2 text-sm" aria-label="Award type">
+                <option>Full</option>
+                <option>Partial</option>
+              </select>
+              <input value={form.reason} onChange={(event) => setForm({ ...form, reason: event.target.value })} placeholder="Verification reason, client feedback or lessons learned" className="h-10 rounded-lg border border-slate-200 px-3 text-sm md:col-span-2" />
               <input value={form.handoverNotes} onChange={(event) => setForm({ ...form, handoverNotes: event.target.value })} placeholder="Handover notes and baseline differences" className="h-10 rounded-lg border border-slate-200 px-3 text-sm md:col-span-2" />
+              <label className="flex items-center gap-2 text-[12px] text-slate-600 md:col-span-2">
+                <input type="checkbox" checked={form.announce} onChange={(event) => setForm({ ...form, announce: event.target.checked })} />
+                Send the congratulatory announcement once, only after this award is verified
+              </label>
+              <input value={form.recipients} onChange={(event) => setForm({ ...form, recipients: event.target.value })} placeholder="Employee codes for the announcement, separated by commas" className="h-10 rounded-lg border border-slate-200 px-3 text-sm md:col-span-2" />
             </div>
             <div className="mt-4 flex justify-end gap-2">
               <button type="button" onClick={() => setAdding(false)} className="rounded-lg border border-slate-200 px-4 py-2 text-sm font-bold text-slate-600">Cancel</button>

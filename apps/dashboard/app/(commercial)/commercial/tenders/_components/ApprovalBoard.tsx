@@ -1,386 +1,510 @@
 'use client';
 
 import Link from 'next/link';
-import { useState, type ReactNode } from 'react';
-import {
-  CheckCircle2,
-  ChevronDown,
-  ChevronLeft,
-  ChevronRight,
-  Download,
-  FileText,
-  GitBranch,
-  History,
-  ListChecks,
-  MessageSquare,
-  RotateCcw,
-  XCircle,
-  ZoomIn,
-  ZoomOut,
-  type LucideIcon,
-} from 'lucide-react';
+import { useEffect, useMemo, useState } from 'react';
+import { CheckCircle2, ClipboardCheck, Filter, History, Search, XCircle } from 'lucide-react';
+import { isManagingDirector } from '@/lib/access/commercial-access';
 import { daysUntil, fileSize } from '@/lib/commercial/tender-present';
-import { formatWhen, money, tenderPost } from './tender-api';
-import { Pill } from './tender-widgets';
-import { BlueprintRegisters } from './BlueprintRegisters';
-import { ActingEmployee } from './acting-employee';
+import {
+  DEPARTMENT_REVIEW_STAGES,
+  bidChoiceOf,
+  departmentalReviewAllowed,
+  externalDeadlineOf,
+  internalDeadlineFromExternal,
+  internalDeadlineOf,
+  isEnquiryRecord,
+  stageMatchesActor,
+  tenderApprovalBucket,
+} from '@/lib/commercial/tender-workflow';
+import type { TenderApproval, TenderOpportunity } from '@/lib/commercial/tender-types';
+import { formatWhen, tenderGet, tenderPost } from './tender-api';
+import { OfficerSearch, type DirectoryEmployee } from './OfficerSearch';
 import { useTenderRecord } from './use-tender-record';
 
-const TABS: Array<{ id: string; icon: LucideIcon; count?: 'comments' | 'checks' | 'related' }> = [
-  { id: 'Document Review', icon: FileText },
-  { id: 'Approval Comments', icon: MessageSquare, count: 'comments' },
-  { id: 'Checklist', icon: ListChecks, count: 'checks' },
-  { id: 'Approval Workflow', icon: GitBranch },
-  { id: 'Version History', icon: History },
-  { id: 'Related Items', icon: FileText, count: 'related' },
-];
+type QueueTab = 'mine' | 'all' | 'completed';
+type Choice = 'Bid' | 'No Bid' | '';
+type DetailTab = 'details' | 'documents' | 'assessment' | 'comments' | 'related' | 'history';
 
-const CHECKS = ['Complete BOQ with unit rates', 'Cost estimation summary', 'Assumptions and basis of estimate', 'Quantity take-off sheets', 'Material price quotations', 'Labour and manpower estimate', 'Equipment and vendor quotes', 'Contingency and escalation', 'Cost breakdown by discipline', 'Management summary'];
-const ROUTE = ['Engineering Review', 'Commercial Review', 'Finance Review', 'Legal Review', 'HSE Review', 'Management Approval'];
+const priorityTone: Record<string, string> = {
+  High: 'bg-rose-50 text-rose-600',
+  Medium: 'bg-amber-50 text-amber-700',
+  Low: 'bg-blue-50 text-blue-700',
+};
 
-const toneFor = (status: string) => {
-  if (/approv|complete|done/i.test(status)) return 'bg-emerald-50 text-emerald-700';
-  if (/progress|open/i.test(status)) return 'bg-blue-50 text-blue-700';
-  if (/return|pending|medium/i.test(status)) return 'bg-amber-50 text-amber-700';
-  if (/reject|high|not started/i.test(status)) return 'bg-rose-50 text-rose-600';
-  return 'bg-slate-100 text-slate-500';
+const requirementLines = (row: TenderOpportunity) => {
+  const source = row.scopeSummary || row.description || '';
+  return source.split(/\r?\n|•/).map((line) => line.replace(/^[\s\-*]+/, '').trim()).filter(Boolean).slice(0, 8);
 };
 
 export function ApprovalBoard() {
   const record = useTenderRecord();
-  const [tab, setTab] = useState('Document Review');
-  const [actionsOpen, setActionsOpen] = useState(false);
-  const [comment, setComment] = useState('');
-  const [stage, setStage] = useState('Commercial Review');
-  const [docIndex, setDocIndex] = useState(0);
-  const [zoom, setZoom] = useState(100);
-  const opportunity = record.opportunity;
-  const documents = record.detail?.documents || [];
-  const approvals = record.detail?.approvals || [];
-  const lines = record.detail?.lines || [];
-  const safeIndex = documents.length ? Math.min(docIndex, documents.length - 1) : 0;
-  const document = documents[safeIndex];
-  const days = opportunity ? daysUntil(opportunity.submissionDeadline || opportunity.closingDate) : null;
-  const rowIndex = record.rows.findIndex((row) => row.id === record.selectedId);
-  const checks = CHECKS.map((label, index) => {
-    const token = label.split(' ')[0].toLowerCase();
-    const done = index === 0 ? lines.length > 0 : index === 1 ? Boolean(opportunity?.estimatedValue) : documents.some((item) => token.length > 2 && `${item.category} ${item.fileName}`.toLowerCase().includes(token));
-    return { label, done };
-  });
-  const doneCount = checks.filter((item) => item.done).length;
-  const progress = CHECKS.length ? Math.round((doneCount / CHECKS.length) * 100) : 0;
-  const route = ROUTE.map((stage) => {
-    const match = approvals.find((item) => item.decision !== 'COMMENT' && item.stage.toLowerCase().includes(stage.split(' ')[0].toLowerCase()));
-    return { stage, match };
-  });
-  const currentRoute = route.find((item) => !item.match);
-  const reviewStatus = !opportunity ? '—' : doneCount === 0 ? 'Not Started' : doneCount === CHECKS.length ? 'Completed' : 'In Progress';
-  const counts = { comments: approvals.length, checks: CHECKS.length, related: documents.length };
+  const { selectedId, setSelectedId } = record;
+  const [tab, setTab] = useState<QueueTab>('mine');
+  const [detailTab, setDetailTab] = useState<DetailTab>('details');
+  const [search, setSearch] = useState('');
+  const [filtersOpen, setFiltersOpen] = useState(false);
+  const [priority, setPriority] = useState('');
+  const [sector, setSector] = useState('');
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(5);
+  const [md, setMd] = useState(false);
+  const [department, setDepartment] = useState('');
+  const [roles, setRoles] = useState<string[]>([]);
+  const [directory, setDirectory] = useState<DirectoryEmployee[]>([]);
+  const [choice, setChoice] = useState<Choice>('');
+  const [comments, setComments] = useState('');
+  const [officer, setOfficer] = useState('');
+  const [officerCode, setOfficerCode] = useState('');
+  const [internal, setInternal] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [confirming, setConfirming] = useState<'decision' | 'return' | ''>('');
 
-  const act = async (decision: string) => {
+  useEffect(() => {
+    tenderGet<DirectoryEmployee[]>('directory').then(setDirectory).catch(() => setDirectory([]));
+    fetch('/api/auth/me', { cache: 'no-store', credentials: 'same-origin' })
+      .then((response) => (response.ok ? response.json() : null))
+      .then((json) => {
+        const data = json?.data || {};
+        const nextRoles = Array.isArray(data.roles) ? data.roles : [];
+        setRoles(nextRoles);
+        setDepartment(String(data.department || data.unit || ''));
+        setMd(isManagingDirector(nextRoles, Boolean(data.isGlobalAdmin)));
+      })
+      .catch(() => setMd(false));
+  }, []);
+
+  const tenders = useMemo(() => record.rows.filter((row) => !isEnquiryRecord(row)), [record.rows]);
+  const pendingMine = useMemo(() => tenders.filter((row) => {
+    const bucket = tenderApprovalBucket(row);
+    if (md && bucket === 'pending') return true;
+    return bucket === 'review' && DEPARTMENT_REVIEW_STAGES.some((stage) => stageMatchesActor(stage, department, roles));
+  }), [department, md, roles, tenders]);
+  const openApprovals = useMemo(() => tenders.filter((row) => {
+    const bucket = tenderApprovalBucket(row);
+    return bucket === 'pending' || bucket === 'review';
+  }), [tenders]);
+  const completed = useMemo(() => tenders.filter((row) => tenderApprovalBucket(row) === 'completed'), [tenders]);
+  const queue = tab === 'mine' ? pendingMine : tab === 'completed' ? completed : openApprovals;
+  const filtered = useMemo(() => {
+    const text = search.trim().toLowerCase();
+    return queue.filter((row) => {
+      if (priority && row.priority !== priority) return false;
+      if (sector && !(row.category || '').toLowerCase().includes(sector.trim().toLowerCase())) return false;
+      if (!text) return true;
+      return `${row.referenceNo} ${row.title} ${row.clientName}`.toLowerCase().includes(text);
+    });
+  }, [priority, queue, search, sector]);
+  const pageCount = Math.max(1, Math.ceil(filtered.length / pageSize));
+  const safePage = Math.min(page, pageCount);
+  const pageRows = filtered.slice((safePage - 1) * pageSize, safePage * pageSize);
+  const opportunity = record.detail?.opportunity?.id === record.selectedId ? record.detail.opportunity : null;
+  const approvals = record.detail?.opportunity?.id === record.selectedId ? record.detail.approvals : [];
+  const documents = record.detail?.opportunity?.id === record.selectedId ? record.detail.documents : [];
+  const audit = record.detail?.opportunity?.id === record.selectedId ? record.detail.audit : [];
+  const decided = opportunity ? bidChoiceOf(opportunity) : '';
+  const external = opportunity ? externalDeadlineOf(opportunity) : '';
+  const storedInternal = opportunity ? internalDeadlineOf(opportunity) : '';
+  const related = useMemo(() => {
+    if (!opportunity?.enquiryRef) return [];
+    return record.rows.filter((row) => isEnquiryRecord(row) && (row.referenceNo === opportunity.enquiryRef || row.enquiryRef === opportunity.enquiryRef));
+  }, [opportunity?.enquiryRef, record.rows]);
+  const requirements = opportunity ? requirementLines(opportunity) : [];
+  const externalDays = external ? daysUntil(external) : null;
+  const internalDays = (storedInternal || (external ? internalDeadlineFromExternal(external) : '')) ? daysUntil(storedInternal || internalDeadlineFromExternal(external)) : null;
+
+  useEffect(() => {
+    if (!filtered.length) return;
+    if (!filtered.some((row) => row.id === selectedId)) setSelectedId(filtered[0].id);
+  }, [filtered, selectedId, setSelectedId]);
+
+  useEffect(() => {
     if (!opportunity) return;
+    const draft = approvals.find((item) => item.decision.toUpperCase() === 'DRAFT');
+    const draftChoice: Choice = draft?.comments.startsWith('BID:') ? 'Bid' : draft?.comments.startsWith('NO BID:') ? 'No Bid' : '';
+    setChoice(decided || draftChoice);
+    setComments(decided ? '' : (draft?.comments || '').replace(/^(BID|NO BID):\s*/, ''));
+    setOfficer(opportunity.ownerName || '');
+    setOfficerCode(opportunity.ownerEmployeeCode || '');
+    setInternal((storedInternal || (external ? internalDeadlineFromExternal(external) : '')).slice(0, 10));
+    setConfirming('');
+    setDetailTab('details');
+  }, [opportunity?.id, opportunity?.updatedAt]);
+
+  const run = async (decision: string) => {
+    if (!opportunity) return;
+    setBusy(true);
     record.setError('');
     try {
-      await tenderPost({ action: 'approval', id: opportunity.id, approval: { stage, decision, comments: comment } });
-      record.setNotice(decision === 'APPROVE' ? 'Approved and moved forward.' : decision === 'REJECT' ? 'Rejected.' : decision === 'COMMENT' ? 'Comment posted.' : 'Returned for revision.');
-      setComment('');
-      setActionsOpen(false);
+      await tenderPost({
+        action: 'bid-decision',
+        id: opportunity.id,
+        decision,
+        comments: decision === 'Draft' ? `${choice === 'No Bid' ? 'NO BID' : 'BID'}: ${comments}`.trim() : comments,
+        officerName: officer,
+        employeeCode: officerCode,
+        internalDeadline: internal,
+      });
+      record.setNotice(decision === 'Draft' ? 'Draft saved.' : decision === 'Return' ? 'Returned for clarification.' : decision === 'No Bid' ? 'Opportunity declined and closed to bid preparation.' : 'Bid approved, officer assigned, and bid preparation opened.');
+      setConfirming('');
       await record.reload();
     } catch (reason) {
-      record.setError(reason instanceof Error ? reason.message : 'Approval was not saved.');
+      record.setError(reason instanceof Error ? reason.message : 'The decision was not saved.');
+    } finally {
+      setBusy(false);
     }
   };
 
+  const review = async (stage: string, decision: 'APPROVE' | 'RETURN') => {
+    if (!opportunity) return;
+    if (decision === 'RETURN' && !comments.trim()) {
+      record.setError('A comment is required to return this review.');
+      return;
+    }
+    setBusy(true);
+    record.setError('');
+    try {
+      await tenderPost({ action: 'approval', id: opportunity.id, approval: { stage, decision, comments } });
+      record.setNotice(decision === 'APPROVE' ? `${stage} approved.` : `${stage} returned.`);
+      setComments('');
+      await record.reload();
+    } catch (reason) {
+      record.setError(reason instanceof Error ? reason.message : 'The review was not saved.');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const currentReview = DEPARTMENT_REVIEW_STAGES.find((stage) => !approvals.some((item) => item.stage === stage && item.decision.toUpperCase() === 'APPROVE'));
+  const canReview = Boolean(opportunity && departmentalReviewAllowed(opportunity) && currentReview && (md || stageMatchesActor(currentReview, department, roles)));
+
   return (
-    <div className="space-y-3">
-      <div className="flex flex-wrap items-center justify-between gap-2 text-[12px] text-slate-400">
-        <div>
-          Tender Management <span className="px-1">›</span>
-          <Link href="/commercial/tenders/workspace" className="hover:text-slate-700">Tender Workspace</Link>
-          <span className="px-1">›</span> Approvals <span className="px-1">›</span>
-          <span className="font-semibold text-slate-600">Approval Details</span>
-        </div>
-        {record.rows.length > 1 ? (
-          <select value={record.selectedId} onChange={(event) => { record.setSelectedId(event.target.value); setDocIndex(0); }} className="h-8 max-w-[280px] rounded-lg border border-slate-200 bg-white px-2 text-[12px] font-semibold text-slate-600" aria-label="Open opportunity">
-            {record.rows.map((row) => <option key={row.id} value={row.id}>{row.referenceNo} · {row.title}</option>)}
-          </select>
-        ) : null}
-      </div>
-      {record.error ? <div className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">{record.error}</div> : null}
-      <BlueprintRegisters opportunityId={opportunity?.id || ''} focus="approval" />
-      {record.notice ? <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">{record.notice}</div> : null}
-
-      <section className="rounded-2xl border border-slate-200 bg-white px-4 py-4 shadow-sm">
-        <div className="flex flex-wrap items-start justify-between gap-4">
-          <div className="flex min-w-0 items-start gap-3">
-            <span className="inline-flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-[#2563eb] text-white shadow-sm"><FileText className="h-6 w-6" /></span>
-            <div className="min-w-0">
-              <h1 className="text-[22px] font-black tracking-tight text-slate-950">Approval Details</h1>
-              <p className="text-[12px] text-slate-500">Review document, comments and take approval action</p>
-              <p className="mt-1 text-[12px] text-slate-600">
-                <b className="font-semibold text-slate-800">{opportunity?.title || (record.loading ? 'Loading approval…' : 'No opportunity is open')}</b>
-                <span className="px-1.5 text-slate-300">|</span>Client: <b className="font-semibold">{opportunity?.clientName || '—'}</b>
-                <span className="px-1.5 text-slate-300">|</span>Ref: <b className="font-semibold">{opportunity?.referenceNo || '—'}</b>
-                <span className="px-1.5 text-slate-300">|</span>Sector: <b className="font-semibold">{opportunity?.category || '—'}</b>
-                <span className="px-1.5 text-slate-300">|</span>Estimated Value: <b className="font-semibold">{opportunity ? money(opportunity.estimatedValue, opportunity.currency) : '—'}</b>
-              </p>
-            </div>
+    <div className="space-y-4">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="flex items-start gap-3">
+          <span className="inline-flex h-11 w-11 items-center justify-center rounded-xl bg-[#2563eb] text-white"><ClipboardCheck className="h-5 w-5" /></span>
+          <div>
+            <h1 className="text-[22px] font-black tracking-tight text-slate-950">Approvals</h1>
+            <p className="text-[13px] text-slate-500">Review opportunities, make bid/no bid decisions, assign responsible officers and approve.</p>
           </div>
-          <div className="flex flex-wrap items-center gap-2">
-            <div className="inline-flex h-11 items-center gap-2 rounded-xl border border-amber-200 bg-amber-50 px-3 text-[12px] shadow-sm">
-              <span className="text-amber-700/70">Current Stage</span>
-              <span className="h-2 w-2 rounded-full bg-amber-500" />
-              <span className="font-bold text-amber-700">{opportunity?.stage || '—'}</span>
-            </div>
-            <div className="inline-flex h-11 items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 shadow-sm">
-              <span>
-                <span className="block text-[10px] font-semibold uppercase tracking-wide text-slate-400">Due Date</span>
-                <span className="text-[12px] font-bold text-slate-800">{opportunity ? formatWhen(opportunity.submissionDeadline || opportunity.closingDate) : '—'}</span>
-              </span>
-              {days != null ? <span className="rounded-full bg-rose-50 px-2 py-0.5 text-[11px] font-bold text-rose-600">{days} days left</span> : null}
-            </div>
-            <button type="button" disabled={rowIndex <= 0} onClick={() => { record.setSelectedId(record.rows[rowIndex - 1]?.id || ''); setDocIndex(0); }} className="inline-flex h-11 items-center gap-1 rounded-xl border border-slate-200 bg-white px-3 text-[12px] font-bold text-slate-700 disabled:opacity-40">
-              <ChevronLeft className="h-4 w-4" /> Previous
+        </div>
+        <div className="flex flex-wrap gap-2">
+          {([
+            ['mine', 'Pending My Action', pendingMine.length],
+            ['all', 'All Approvals', openApprovals.length],
+            ['completed', 'Completed', completed.length],
+          ] as const).map(([id, label, count]) => (
+            <button key={id} type="button" onClick={() => { setTab(id); setPage(1); }} className={`h-10 rounded-xl px-4 text-[13px] font-bold ${tab === id ? 'bg-[#2563eb] text-white shadow-sm' : 'border border-slate-200 bg-white text-slate-600'}`}>
+              {label} ({count})
             </button>
-            <div className="relative">
-              <button type="button" onClick={() => setActionsOpen((value) => !value)} className="inline-flex h-11 items-center gap-2 rounded-xl bg-[#2563eb] px-4 text-sm font-bold text-white shadow-sm">Actions <ChevronDown className="h-4 w-4" /></button>
-              {actionsOpen ? (
-                <div className="absolute right-0 top-12 z-20 w-52 rounded-xl border border-slate-200 bg-white py-1 text-sm shadow-lg">
-                  <button type="button" className="block w-full px-3 py-2 text-left hover:bg-slate-50 disabled:text-slate-300" disabled={!opportunity} onClick={() => act('APPROVE')}>Approve</button>
-                  <button type="button" className="block w-full px-3 py-2 text-left hover:bg-slate-50 disabled:text-slate-300" disabled={!opportunity} onClick={() => act('RETURN')}>Return for revision</button>
-                  <button type="button" className="block w-full px-3 py-2 text-left hover:bg-slate-50 disabled:text-slate-300" disabled={!opportunity} onClick={() => act('REJECT')}>Reject</button>
-                  <Link href={opportunity ? `/commercial/tenders/workspace?id=${opportunity.id}` : '/commercial/tenders/workspace'} className="block px-3 py-2 hover:bg-slate-50">Open workspace</Link>
-                </div>
-              ) : null}
-            </div>
-          </div>
-        </div>
-      </section>
-
-      <section className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-white px-4 py-3 shadow-sm">
-        <div className="flex min-w-0 items-center gap-3">
-          <span className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-emerald-50 text-emerald-600"><FileText className="h-5 w-5" /></span>
-          <div className="min-w-0">
-            <div className="flex flex-wrap items-center gap-2">
-              <h2 className="truncate text-[15px] font-black text-slate-950">{document?.fileName || 'No document uploaded'}</h2>
-              <Pill className={toneFor(reviewStatus)}>{reviewStatus}</Pill>
-              {opportunity?.priority ? <Pill className={toneFor(opportunity.priority === 'High' ? 'High' : opportunity.priority)}>{opportunity.priority} Priority</Pill> : null}
-              <Pill className="bg-slate-100 text-slate-600">Version —</Pill>
-            </div>
-            <p className="text-[12px] text-slate-500">{document?.category || opportunity?.stage || '—'}</p>
-          </div>
-        </div>
-        <div className="grid grid-cols-2 gap-x-6 gap-y-1 text-[11px] sm:grid-cols-4">
-          {[['Reference No.', opportunity?.referenceNo || '—'], ['Submitted By', document?.uploadedBy || opportunity?.ownerName || '—'], ['Submitted Date', document ? formatWhen(document.uploadedAt) : '—'], ['Current Approver', currentRoute ? (opportunity?.ownerName || '—') : (route[route.length - 1]?.match?.actor || '—')]].map(([label, value]) => (
-            <div key={label}><div className="text-slate-400">{label}</div><div className="font-bold text-slate-800">{value}</div></div>
           ))}
         </div>
-      </section>
-
-      <div className="flex gap-1 overflow-x-auto rounded-2xl border border-slate-200 bg-white px-2 shadow-sm">
-        {TABS.map((item) => {
-          const Icon = item.icon;
-          const selected = tab === item.id;
-          const count = item.count ? counts[item.count] : null;
-          return (
-            <button key={item.id} type="button" onClick={() => setTab(item.id)} className={`inline-flex items-center gap-1.5 whitespace-nowrap border-b-2 px-3 py-3 text-[13px] font-semibold ${selected ? 'border-[#2563eb] text-[#2563eb]' : 'border-transparent text-slate-500'}`}>
-              <Icon className="h-3.5 w-3.5" />{item.id}{count != null ? ` (${count})` : ''}
-            </button>
-          );
-        })}
       </div>
+      {record.error ? <p className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">{record.error}</p> : null}
+      {record.notice ? <p className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">{record.notice}</p> : null}
 
-      {tab !== 'Document Review' ? (
-        <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-          {tab === 'Approval Comments' ? <Comments approvals={approvals} /> : null}
-          {tab === 'Checklist' ? <ChecklistTable checks={checks} /> : null}
-          {tab === 'Approval Workflow' ? <RouteList route={route} /> : null}
-          {tab === 'Version History' ? <VersionTable documents={documents} /> : null}
-          {tab === 'Related Items' ? <RelatedTable documents={documents} /> : null}
-        </section>
-      ) : (
-        <div className="grid items-start gap-3 xl:grid-cols-12">
-          <Panel className="xl:col-span-5" title="Document Viewer">
-            <div className="mb-2 flex items-center justify-between rounded-xl border border-slate-200 bg-slate-50 px-2 py-1.5 text-[12px]">
-              <div className="flex items-center gap-1">
-                <button type="button" disabled={safeIndex <= 0} onClick={() => setDocIndex((value) => Math.max(0, value - 1))} className="inline-flex h-7 w-7 items-center justify-center rounded-lg hover:bg-white disabled:opacity-40" aria-label="Previous document"><ChevronLeft className="h-4 w-4" /></button>
-                <span className="min-w-14 text-center font-semibold text-slate-700">{documents.length ? `${safeIndex + 1} / ${documents.length}` : '— / —'}</span>
-                <button type="button" disabled={safeIndex >= documents.length - 1} onClick={() => setDocIndex((value) => value + 1)} className="inline-flex h-7 w-7 items-center justify-center rounded-lg hover:bg-white disabled:opacity-40" aria-label="Next document"><ChevronRight className="h-4 w-4" /></button>
-              </div>
-              <div className="flex items-center gap-1">
-                <button type="button" onClick={() => setZoom((value) => Math.max(80, value - 10))} className="inline-flex h-7 w-7 items-center justify-center rounded-lg hover:bg-white" aria-label="Zoom out"><ZoomOut className="h-3.5 w-3.5" /></button>
-                <span className="w-10 text-center font-semibold">{zoom}%</span>
-                <button type="button" onClick={() => setZoom((value) => Math.min(150, value + 10))} className="inline-flex h-7 w-7 items-center justify-center rounded-lg hover:bg-white" aria-label="Zoom in"><ZoomIn className="h-3.5 w-3.5" /></button>
-                {document ? <a className="inline-flex h-7 w-7 items-center justify-center rounded-lg hover:bg-white" href={`/api/commercial/tenders?resource=document&documentId=${document.id}`} aria-label="Download document"><Download className="h-3.5 w-3.5" /></a> : <span className="inline-flex h-7 w-7 items-center justify-center text-slate-300"><Download className="h-3.5 w-3.5" /></span>}
-              </div>
-            </div>
-            <div className="h-[420px] overflow-auto rounded-xl border border-slate-200 bg-slate-50">
-              {document ? (
-                /pdf|image/.test(document.contentType) ? <iframe title={document.fileName} src={`/api/commercial/tenders?resource=document&documentId=${document.id}`} className="h-full w-full origin-top-left" style={{ transform: `scale(${zoom / 100})` }} /> : (
-                  <a className="flex h-full flex-col items-center justify-center text-sm font-semibold text-blue-700" href={`/api/commercial/tenders?resource=document&documentId=${document.id}`}>{document.fileName}<span className="mt-1 font-normal text-slate-400">{fileSize(document.sizeBytes)} · Open file</span></a>
-                )
-              ) : <div className="flex h-full items-center justify-center text-sm text-slate-500">No document has been uploaded for review.</div>}
-            </div>
-          </Panel>
-
-          <Panel className="xl:col-span-4" title="Approval Checklist" action={<span className="text-[12px] font-semibold text-blue-700">{doneCount} of {CHECKS.length} completed</span>}>
-            <div className="mb-2 flex items-center gap-2">
-              <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-slate-100"><div className="h-1.5 rounded-full bg-emerald-500" style={{ width: `${progress}%` }} /></div>
-              <span className="text-[12px] font-bold text-slate-500">{progress}%</span>
-            </div>
-            <ChecklistTable checks={checks} />
-          </Panel>
-
-          <div className="space-y-3 xl:col-span-3">
-            <Panel title="Approver Actions">
-              <div className="mb-2"><ActingEmployee /></div>
-              <label className="mb-2 block text-[12px] text-slate-500">Record against
-                <select value={stage} onChange={(event) => setStage(event.target.value)} className="mt-1 h-9 w-full rounded-lg border border-slate-200 px-2 font-semibold text-slate-700">
-                  {ROUTE.map((item) => <option key={item}>{item}</option>)}
-                </select>
-              </label>
-              <ActionButton disabled={!opportunity} onClick={() => act('APPROVE')} icon={CheckCircle2} title="Approve" detail="Complete review and move to next stage" className="border-emerald-200 bg-emerald-50 text-emerald-700" />
-              <ActionButton disabled={!opportunity} onClick={() => act('RETURN')} icon={RotateCcw} title="Return for Revision" detail="Send back with comments" className="border-amber-200 bg-amber-50 text-amber-700" />
-              <ActionButton disabled={!opportunity} onClick={() => act('REJECT')} icon={XCircle} title="Reject" detail="Stop approval process" className="border-rose-200 bg-rose-50 text-rose-600" />
-            </Panel>
-            <Panel title="Approval Routing">
-              <RouteList route={route} />
-            </Panel>
-            <Panel title="Related Items" action={<button type="button" onClick={() => setTab('Related Items')} className="text-[12px] font-semibold text-blue-700">View All →</button>}>
-              <RelatedTable documents={documents.slice(0, 5)} />
-            </Panel>
+      <div className="grid items-start gap-4 xl:grid-cols-[380px_minmax(0,1fr)]">
+        <section className="rounded-2xl border border-slate-200 bg-white shadow-sm">
+          <div className="flex items-center justify-between gap-2 border-b border-slate-100 px-4 py-3">
+            <h2 className="text-[15px] font-black text-slate-950">{tab === 'completed' ? 'Completed Decisions' : tab === 'all' ? 'Open Approvals' : md ? 'Opportunities Awaiting MD Decision' : 'Awaiting Your Review'}</h2>
+            <span className="inline-flex h-6 min-w-6 items-center justify-center rounded-full bg-slate-100 px-2 text-[12px] font-bold text-slate-600">{filtered.length}</span>
           </div>
-
-          <Panel className="xl:col-span-7" title={`Departmental Comments (${approvals.length})`}>
-            <div className="mb-3 flex gap-2">
-              <input value={comment} onChange={(event) => setComment(event.target.value)} placeholder="Add a comment… Use @ to mention team members" className="h-10 flex-1 rounded-lg border border-slate-200 px-3 text-[13px]" />
-              <button type="button" disabled={!opportunity} onClick={() => act('COMMENT')} className="rounded-lg bg-[#2563eb] px-3 text-sm font-bold text-white disabled:opacity-50">Post Comment</button>
+          <div className="flex gap-2 px-4 py-3">
+            <label className="relative min-w-0 flex-1">
+              <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+              <input value={search} onChange={(event) => { setSearch(event.target.value); setPage(1); }} placeholder="Search by title, client, reference no..." className="h-10 w-full rounded-xl border border-slate-200 bg-slate-50 pl-9 pr-3 text-[13px] outline-none focus:border-blue-500 focus:bg-white" aria-label="Search approvals" />
+            </label>
+            <button type="button" onClick={() => setFiltersOpen((value) => !value)} className="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-slate-200 text-slate-500" aria-label="Filter approvals"><Filter className="h-4 w-4" /></button>
+          </div>
+          {filtersOpen ? (
+            <div className="grid grid-cols-2 gap-2 px-4 pb-3">
+              <select value={priority} onChange={(event) => { setPriority(event.target.value); setPage(1); }} className="h-10 rounded-lg border border-slate-200 px-2 text-[12px]" aria-label="Priority filter">
+                <option value="">All priorities</option>
+                {['High', 'Medium', 'Low'].map((item) => <option key={item}>{item}</option>)}
+              </select>
+              <input value={sector} onChange={(event) => { setSector(event.target.value); setPage(1); }} placeholder="Sector" className="h-10 rounded-lg border border-slate-200 px-2 text-[12px]" aria-label="Sector filter" />
             </div>
-            <Comments approvals={approvals} />
-          </Panel>
-          <Panel className="xl:col-span-5" title="Version History">
-            <VersionTable documents={documents} />
-          </Panel>
-        </div>
-      )}
+          ) : null}
+          <div className="space-y-2 px-3 pb-3">
+            {pageRows.length === 0 ? <p className="px-2 py-8 text-center text-[13px] text-slate-500">{record.loading ? 'Loading approvals…' : 'No opportunities in this view.'}</p> : pageRows.map((row) => {
+              const selected = row.id === record.selectedId;
+              const due = externalDeadlineOf(row);
+              const left = due ? daysUntil(due) : null;
+              const bucket = tenderApprovalBucket(row);
+              return (
+                <button key={row.id} type="button" onClick={() => record.setSelectedId(row.id)} className={`w-full rounded-xl border p-3 text-left ${selected ? 'border-[#2563eb] bg-blue-50/40 shadow-sm' : 'border-slate-200 bg-white hover:border-slate-300'}`}>
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="min-w-0">
+                      <div className="text-[12px] font-bold text-[#2563eb]">{row.referenceNo || '—'}</div>
+                      <div className="truncate text-[13px] font-black text-slate-900">{row.title}</div>
+                    </div>
+                    <div className="text-right">
+                      <div className="text-[12px] font-semibold text-slate-700">{due ? formatWhen(due) : '—'}</div>
+                      <div className="text-[11px] font-bold text-[#2563eb]">{left == null ? '' : left < 0 ? 'Overdue' : `${left} days left`}</div>
+                    </div>
+                  </div>
+                  <div className="mt-2 text-[12px] text-slate-500">Client: {row.clientName || '—'} · Sector: {row.category || '—'}</div>
+                  <div className="mt-2 flex items-center justify-between gap-2">
+                    <span className={`rounded-md px-2 py-0.5 text-[11px] font-bold ${priorityTone[row.priority] || 'bg-slate-100 text-slate-600'}`}>{row.priority || '—'}</span>
+                    <span className={`rounded-md px-2 py-0.5 text-[10px] font-bold ${bucket === 'completed' ? 'bg-emerald-50 text-emerald-700' : bucket === 'review' ? 'bg-blue-50 text-blue-700' : 'bg-amber-50 text-amber-700'}`}>
+                      {bucket === 'completed' ? (bidChoiceOf(row) === 'No Bid' ? 'No Bid' : 'Completed') : bucket === 'review' ? 'Bid Review' : 'MD Decision Required'}
+                    </span>
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+          <div className="flex flex-wrap items-center justify-between gap-2 border-t border-slate-100 px-3 py-3 text-[12px] text-slate-500">
+            <span>Showing {filtered.length === 0 ? 0 : (safePage - 1) * pageSize + 1} to {Math.min(safePage * pageSize, filtered.length)} of {filtered.length}</span>
+            <div className="flex items-center gap-1">
+              <button type="button" disabled={safePage <= 1} onClick={() => setPage(safePage - 1)} className="h-8 rounded-lg border border-slate-200 px-2 disabled:opacity-40">‹</button>
+              <span className="inline-flex h-8 min-w-8 items-center justify-center rounded-lg bg-[#2563eb] px-2 font-bold text-white">{safePage}</span>
+              <button type="button" disabled={safePage >= pageCount} onClick={() => setPage(safePage + 1)} className="h-8 rounded-lg border border-slate-200 px-2 disabled:opacity-40">›</button>
+              <select value={pageSize} onChange={(event) => { setPageSize(Number(event.target.value)); setPage(1); }} className="h-8 rounded-lg border border-slate-200 px-1" aria-label="Rows per page">
+                {[5, 10].map((size) => <option key={size} value={size}>Show {size}</option>)}
+              </select>
+            </div>
+          </div>
+        </section>
+
+        <section className="min-w-0 space-y-3">
+          {!opportunity ? <div className="rounded-2xl border border-slate-200 bg-white p-8 text-sm text-slate-500">{record.loading ? 'Loading opportunity…' : 'Select an opportunity to review it.'}</div> : (
+            <>
+              <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <h2 className="text-[18px] font-black text-slate-950">{opportunity.title}</h2>
+                      <span className="rounded-full bg-amber-50 px-2 py-0.5 text-[11px] font-bold text-amber-700">{decided === 'Bid' ? 'Bid approved' : decided === 'No Bid' ? 'No Bid' : 'Awaiting MD Bid / No Bid Decision'}</span>
+                    </div>
+                    <p className="text-[12px] font-semibold text-slate-500">{opportunity.referenceNo}</p>
+                  </div>
+                  <Link href={`/commercial/tenders/workspace?id=${opportunity.id}`} target="_blank" className="text-[12px] font-bold text-[#2563eb]">Open in New Tab</Link>
+                </div>
+                <ol className="mt-4 grid gap-2 sm:grid-cols-4 xl:grid-cols-8">
+                  {['MD Bid / No Bid', 'Assign Responsible Officer', ...DEPARTMENT_REVIEW_STAGES].map((stage, index) => {
+                    const approved = index === 0 ? Boolean(decided) : index === 1 ? Boolean(opportunity.ownerName && decided === 'Bid') : approvals.some((item) => item.stage === stage && item.decision.toUpperCase() === 'APPROVE');
+                    const current = !approved && (index === 0 ? !decided : index === 1 ? decided === 'Bid' && !opportunity.ownerName : decided === 'Bid' && Boolean(opportunity.ownerName) && currentReview === stage);
+                    return (
+                      <li key={stage} className="min-w-0">
+                        <div className={`mx-auto flex h-7 w-7 items-center justify-center rounded-full text-[12px] font-bold ${approved ? 'bg-emerald-500 text-white' : current ? 'bg-[#2563eb] text-white' : 'bg-slate-100 text-slate-400'}`}>{index + 1}</div>
+                        <div className="mt-1 truncate text-center text-[10px] font-semibold text-slate-600">{stage}</div>
+                        <div className={`text-center text-[10px] ${approved ? 'text-emerald-600' : current ? 'text-[#2563eb]' : 'text-slate-400'}`}>{approved ? 'Complete' : current ? 'Current Stage' : 'Pending'}</div>
+                      </li>
+                    );
+                  })}
+                </ol>
+              </div>
+
+              <div className="flex gap-1 overflow-x-auto rounded-2xl border border-slate-200 bg-white px-2">
+                {([
+                  ['details', 'Opportunity Details', 0],
+                  ['documents', 'Client Documents', documents.length],
+                  ['assessment', 'Bid / No Bid Assessment', 0],
+                  ['comments', 'Comments', approvals.filter((item) => item.comments).length],
+                  ['related', 'Related Enquiries', related.length],
+                  ['history', 'History', audit.length],
+                ] as const).map(([id, label, count]) => (
+                  <button key={id} type="button" onClick={() => setDetailTab(id)} className={`whitespace-nowrap border-b-2 px-3 py-3 text-[13px] font-semibold ${detailTab === id ? 'border-[#2563eb] text-[#2563eb]' : 'border-transparent text-slate-500'}`}>
+                    {label}{id === 'details' || id === 'assessment' ? '' : ` (${count})`}
+                  </button>
+                ))}
+              </div>
+
+              {detailTab === 'details' ? (
+                <div className="grid gap-3 lg:grid-cols-2">
+                  <article className="rounded-2xl border border-slate-200 bg-white p-4">
+                    <h3 className="mb-3 text-[14px] font-black text-slate-900">Key Information</h3>
+                    <dl className="space-y-2 text-[13px]">
+                      <Info label="Project Title" value={opportunity.title} />
+                      <Info label="Client" value={opportunity.clientName} />
+                      <Info label="Sector" value={opportunity.category} />
+                      <Info label="Tender Type" value={opportunity.tenderType || opportunity.contractType} />
+                      <div>
+                        <dt className="text-slate-400">Project Scope</dt>
+                        <dd className="text-slate-800">{opportunity.description || '—'}</dd>
+                      </div>
+                      <div>
+                        <dt className="text-slate-400">Key Requirements</dt>
+                        <dd>{requirements.length ? <ul className="list-disc pl-4 text-slate-800">{requirements.map((line) => <li key={line}>{line}</li>)}</ul> : <span className="text-slate-500">No key requirements have been recorded.</span>}</dd>
+                      </div>
+                    </dl>
+                    <span className={`mt-3 inline-flex rounded-md px-2 py-0.5 text-[11px] font-bold ${priorityTone[opportunity.priority] || 'bg-slate-100 text-slate-600'}`}>{opportunity.priority || '—'}</span>
+                  </article>
+                  <div className="space-y-3">
+                    <article className="rounded-2xl border border-slate-200 bg-white p-4">
+                      <h3 className="mb-3 text-[14px] font-black text-slate-900">Deadlines</h3>
+                      <Deadline label="External Submission Date" value={external ? formatWhen(external) : '—'} days={externalDays} />
+                      <Deadline label="Internal Submission Date (Default: 24h)" value={(storedInternal || (external ? internalDeadlineFromExternal(external) : '')) ? formatWhen(storedInternal || internalDeadlineFromExternal(external)) : '—'} days={internalDays} />
+                      <button type="button" onClick={() => setDetailTab('history')} className="mt-2 text-[12px] font-bold text-[#2563eb]">View deadline history</button>
+                    </article>
+                    <article className="rounded-2xl border border-slate-200 bg-white p-4">
+                      <h3 className="mb-3 text-[14px] font-black text-slate-900">Client Information</h3>
+                      <Info label="Client" value={opportunity.clientName} />
+                      <Info label="Contact Person" value={opportunity.contactPerson} />
+                      <Info label="Client Reference" value={opportunity.enquiryRef} />
+                      <Info label="Sector" value={opportunity.category} />
+                      <Info label="Location" value={opportunity.location || opportunity.projectLocation} />
+                    </article>
+                  </div>
+                </div>
+              ) : null}
+
+              {detailTab === 'documents' ? (
+                <article className="rounded-2xl border border-slate-200 bg-white p-4">
+                  {documents.length === 0 ? <p className="text-sm text-slate-500">No client documents have been uploaded.</p> : (
+                    <ul className="divide-y divide-slate-100">
+                      {documents.map((file) => (
+                        <li key={file.id} className="flex items-center justify-between gap-3 py-2 text-[13px]">
+                          <span className="min-w-0"><span className="block truncate font-semibold text-slate-800">{file.fileName}</span><span className="text-slate-400">{file.category} · {fileSize(file.sizeBytes)} · {formatWhen(file.uploadedAt)}</span></span>
+                          <a className="font-bold text-[#2563eb]" href={`/api/commercial/tenders?resource=document&documentId=${file.id}`}>Open</a>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </article>
+              ) : null}
+
+              {detailTab === 'assessment' ? <Assessment approvals={approvals} decided={decided} /> : null}
+              {detailTab === 'comments' ? (
+                <article className="rounded-2xl border border-slate-200 bg-white p-4">
+                  {approvals.filter((item) => item.comments).length === 0 ? <p className="text-sm text-slate-500">No comments yet.</p> : approvals.filter((item) => item.comments).map((item) => (
+                    <Comment key={item.id} item={item} />
+                  ))}
+                </article>
+              ) : null}
+              {detailTab === 'related' ? (
+                <article className="rounded-2xl border border-slate-200 bg-white p-4">
+                  {related.length === 0 ? <p className="text-sm text-slate-500">No related enquiry is linked to this opportunity.</p> : related.map((row) => (
+                    <Link key={row.id} href={`/commercial/tenders/enquiries?id=${row.id}`} className="block py-2 text-[13px] font-semibold text-[#2563eb]">{row.referenceNo} · {row.title}</Link>
+                  ))}
+                </article>
+              ) : null}
+              {detailTab === 'history' ? (
+                <article className="rounded-2xl border border-slate-200 bg-white p-4">
+                  {audit.length === 0 ? <p className="text-sm text-slate-500">No history has been recorded.</p> : (
+                    <ol className="space-y-2">{audit.map((event) => (
+                      <li key={event.id} className="rounded-xl border border-slate-100 px-3 py-2 text-[13px]"><span className="font-bold text-slate-800">{event.action}</span> <span className="text-slate-500">{event.actor} · {formatWhen(event.createdAt)}</span><div className="text-slate-600">{event.details}</div></li>
+                    ))}</ol>
+                  )}
+                </article>
+              ) : null}
+
+              <article className="rounded-2xl border border-slate-200 bg-white p-4">
+                <div className="mb-3 flex items-start gap-2">
+                  <span className="inline-flex h-8 w-8 items-center justify-center rounded-lg bg-blue-50 text-[#2563eb]"><ClipboardCheck className="h-4 w-4" /></span>
+                  <div>
+                    <h3 className="text-[15px] font-black text-slate-950">MD Bid / No Bid Decision</h3>
+                    <p className="text-[12px] text-slate-500">Review all information and determine whether DLE will bid on this opportunity before assigning a responsible officer.</p>
+                  </div>
+                </div>
+                <div className="grid gap-3 lg:grid-cols-[1fr_1fr_280px]">
+                  <DecisionCard
+                    selected={choice === 'Bid'}
+                    disabled={!md || Boolean(decided) || busy}
+                    tone="emerald"
+                    title="BID"
+                    points={['Approve to proceed with bid preparation.', 'Open Bid Preparation for this opportunity.', 'Assign responsible officer (next step).', 'Set internal submission deadline.', 'Notify assigned officer and team.']}
+                    onSelect={() => setChoice('Bid')}
+                  />
+                  <DecisionCard
+                    selected={choice === 'No Bid'}
+                    disabled={!md || Boolean(decided) || busy}
+                    tone="rose"
+                    title="NO BID"
+                    points={['Decline this opportunity.', 'Record reason for no bid.', 'Close opportunity to bid preparation.', 'Retain for reporting and analysis.', 'Notify relevant stakeholders.']}
+                    onSelect={() => setChoice('No Bid')}
+                  />
+                  <label className="block text-[12px] font-semibold text-slate-500">
+                    MD Comments {choice === 'No Bid' ? <span className="text-rose-500">*</span> : null}
+                    <textarea maxLength={1000} value={comments} onChange={(event) => setComments(event.target.value)} disabled={!md || Boolean(decided) || busy} placeholder="Enter your decision comments, reasons or instructions..." className="mt-1 min-h-36 w-full rounded-xl border border-slate-200 px-3 py-2 text-[13px] font-normal text-slate-800 outline-none focus:border-blue-500" />
+                    <span className="mt-1 block text-right text-[11px] font-normal text-slate-400">{comments.length}/1000</span>
+                  </label>
+                </div>
+                {choice === 'Bid' && !decided ? (
+                  <div className="mt-3 grid gap-3 rounded-xl border border-emerald-100 bg-emerald-50/40 p-3 md:grid-cols-2">
+                    <div>
+                      <div className="mb-1 text-[12px] font-semibold text-slate-600">Responsible Officer</div>
+                      <OfficerSearch employees={directory} employeeId={officerCode} name={officer} disabled={!md || busy} onSelect={(employee) => { setOfficer(employee?.fullName || ''); setOfficerCode(employee?.employeeId || ''); }} />
+                    </div>
+                    <label className="block text-[12px] font-semibold text-slate-600">Internal submission deadline
+                      <input type="date" value={internal} onChange={(event) => setInternal(event.target.value)} disabled={!md || busy} className="mt-1 h-10 w-full rounded-lg border border-slate-200 bg-white px-3 text-[13px]" />
+                    </label>
+                  </div>
+                ) : null}
+                {decided ? <p className="mt-3 text-[12px] font-semibold text-slate-600">{decided === 'Bid' ? `Bid approved. Responsible officer: ${opportunity.ownerName || '—'}.` : 'This opportunity was declined and is closed to bid preparation.'}</p> : null}
+                {!md ? <p className="mt-3 text-[12px] text-slate-500">Only the Managing Director can confirm a bid or no-bid decision.</p> : null}
+                {canReview && currentReview ? (
+                  <div className="mt-3 flex flex-wrap items-center justify-between gap-2 rounded-xl border border-blue-100 bg-blue-50/50 px-3 py-2">
+                    <span className="text-[12px] font-semibold text-slate-700">{currentReview} can start because the bid is approved and an officer is assigned.</span>
+                    <span className="flex gap-2">
+                      <button type="button" disabled={busy} onClick={() => review(currentReview, 'RETURN')} className="h-9 rounded-lg border border-slate-200 bg-white px-3 text-[12px] font-bold text-slate-700">Return</button>
+                      <button type="button" disabled={busy} onClick={() => review(currentReview, 'APPROVE')} className="h-9 rounded-lg bg-[#2563eb] px-3 text-[12px] font-bold text-white">Approve stage</button>
+                    </span>
+                  </div>
+                ) : null}
+                <div className="mt-4 flex flex-wrap items-center justify-between gap-2">
+                  <div className="flex gap-3 text-[12px] font-bold">
+                    <button type="button" disabled={!md || Boolean(decided) || busy} onClick={() => setConfirming('return')} className="text-slate-600 disabled:opacity-40">Return for Clarification</button>
+                    <button type="button" onClick={() => setDetailTab('history')} className="inline-flex items-center gap-1 text-[#2563eb]"><History className="h-3.5 w-3.5" /> View History</button>
+                  </div>
+                  <div className="flex gap-2">
+                    <button type="button" disabled={!md || Boolean(decided) || busy} onClick={() => run('Draft')} className="h-10 rounded-xl border border-slate-200 px-4 text-[13px] font-bold text-slate-700 disabled:opacity-40">Save as Draft</button>
+                    <button type="button" disabled={!md || Boolean(decided) || busy || !choice} onClick={() => setConfirming('decision')} className="h-10 rounded-xl bg-[#2563eb] px-4 text-[13px] font-bold text-white disabled:opacity-40">{choice === 'Bid' ? 'Approve & Assign' : 'Confirm Decision & Proceed'}</button>
+                  </div>
+                </div>
+                {confirming ? (
+                  <div className="mt-3 rounded-xl border border-slate-200 bg-slate-50 p-3 text-[13px]">
+                    <p className="font-semibold text-slate-800">{confirming === 'return' ? 'Return this opportunity for clarification?' : choice === 'No Bid' ? 'Decline this opportunity and close it to bid preparation?' : 'Approve this bid, assign the officer, and open bid preparation?'}</p>
+                    <div className="mt-2 flex gap-2">
+                      <button type="button" disabled={busy} onClick={() => setConfirming('')} className="h-9 rounded-lg border border-slate-200 bg-white px-3 font-bold text-slate-700">Cancel</button>
+                      <button type="button" disabled={busy} onClick={() => run(confirming === 'return' ? 'Return' : choice === 'No Bid' ? 'No Bid' : 'Bid')} className="h-9 rounded-lg bg-[#2563eb] px-3 font-bold text-white">{busy ? 'Saving…' : 'Confirm'}</button>
+                    </div>
+                  </div>
+                ) : null}
+              </article>
+            </>
+          )}
+        </section>
+      </div>
     </div>
   );
 }
 
-function Panel({ title, action, children, className = '' }: { title: string; action?: ReactNode; children: ReactNode; className?: string }) {
+function Info({ label, value }: { label: string; value?: string }) {
+  return <div className="flex justify-between gap-3"><dt className="text-slate-400">{label}</dt><dd className="text-right font-semibold text-slate-800">{value || '—'}</dd></div>;
+}
+
+function Deadline({ label, value, days }: { label: string; value: string; days: number | null }) {
   return (
-    <section className={`rounded-2xl border border-slate-200 bg-white p-4 shadow-sm ${className}`}>
-      <div className="mb-3 flex items-center justify-between gap-2">
-        <h2 className="text-[14px] font-black text-slate-900">{title}</h2>
-        {action}
-      </div>
-      {children}
-    </section>
+    <div className="mb-2 flex items-center justify-between gap-2 text-[13px]">
+      <span><span className="block text-slate-400">{label}</span><span className="font-semibold text-slate-800">{value}</span></span>
+      {days != null ? <span className="rounded-full bg-blue-50 px-2 py-0.5 text-[11px] font-bold text-[#2563eb]">{days < 0 ? 'Overdue' : `${days} days left`}</span> : null}
+    </div>
   );
 }
 
-function ActionButton({ icon: Icon, title, detail, className, onClick, disabled }: { icon: LucideIcon; title: string; detail: string; className: string; onClick: () => void; disabled?: boolean }) {
+function DecisionCard({ selected, disabled, tone, title, points, onSelect }: { selected: boolean; disabled: boolean; tone: 'emerald' | 'rose'; title: string; points: string[]; onSelect: () => void }) {
+  const active = tone === 'emerald' ? 'border-emerald-300 bg-emerald-50' : 'border-rose-300 bg-rose-50';
   return (
-    <button type="button" disabled={disabled} onClick={onClick} className={`mb-2 flex w-full items-start gap-2 rounded-xl border px-3 py-2.5 text-left last:mb-0 disabled:opacity-50 ${className}`}>
-      <Icon className="mt-0.5 h-4 w-4 shrink-0" />
-      <span><span className="block text-[13px] font-black">{title}</span><span className="block text-[11px] font-medium opacity-80">{detail}</span></span>
+    <button type="button" disabled={disabled} onClick={onSelect} className={`rounded-2xl border p-3 text-left ${selected ? active : 'border-slate-200 bg-white'} disabled:cursor-default`}>
+      <div className={`mb-2 inline-flex items-center gap-2 text-[13px] font-black ${tone === 'emerald' ? 'text-emerald-700' : 'text-rose-600'}`}>
+        {tone === 'emerald' ? <CheckCircle2 className="h-4 w-4" /> : <XCircle className="h-4 w-4" />} {title}
+      </div>
+      <ul className="space-y-1 text-[12px] text-slate-600">{points.map((point) => <li key={point}>{point}</li>)}</ul>
     </button>
   );
 }
 
-function ChecklistTable({ checks }: { checks: Array<{ label: string; done: boolean }> }) {
-  return (
-    <table className="w-full text-left text-[12px]">
-      <thead className="text-[11px] text-slate-400"><tr>{['#', 'Requirement', 'Status', 'Remarks'].map((heading) => <th key={heading} className="pb-2 font-semibold">{heading}</th>)}</tr></thead>
-      <tbody>
-        {checks.map((item, index) => (
-          <tr key={item.label} className="border-t border-slate-100">
-            <td className="py-2 text-slate-400">{index + 1}</td>
-            <td className="py-2 font-semibold text-slate-800">{item.label}</td>
-            <td className="py-2"><Pill className={item.done ? 'bg-emerald-50 text-emerald-700' : 'bg-rose-50 text-rose-600'}>{item.done ? 'Completed' : 'Not Started'}</Pill></td>
-            <td className="py-2 text-slate-400">{item.done ? 'On file' : '—'}</td>
-          </tr>
-        ))}
-      </tbody>
-    </table>
-  );
+function Comment({ item }: { item: TenderApproval }) {
+  return <div className="border-b border-slate-100 py-2 text-[13px]"><div className="font-bold text-slate-800">{item.actor} · {item.stage} · {item.decision}</div><p className="text-slate-600">{item.comments}</p><div className="text-[11px] text-slate-400">{formatWhen(item.createdAt)}</div></div>;
 }
 
-function RouteList({ route }: { route: Array<{ stage: string; match?: { actor: string; decision: string; createdAt: string } }> }) {
-  const current = route.findIndex((item) => !item.match);
+function Assessment({ approvals, decided }: { approvals: TenderApproval[]; decided: string }) {
+  const decision = approvals.find((item) => item.stage === 'MD Bid / No Bid' && ['BID', 'NO BID'].includes(item.decision.toUpperCase()));
   return (
-    <ol className="space-y-2">
-      {route.map((item, index) => {
-        const status = item.match ? (/approv/i.test(item.match.decision) ? 'Approved' : /reject/i.test(item.match.decision) ? 'Rejected' : /return/i.test(item.match.decision) ? 'Returned' : item.match.decision) : index === current ? 'In Progress' : 'Pending';
-        const circle = item.match ? 'bg-emerald-500 text-white' : index === current ? 'bg-[#2563eb] text-white' : 'bg-slate-100 text-slate-400';
-        return (
-          <li key={item.stage} className="flex items-center gap-2 text-[12px]">
-            <span className={`inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[11px] font-black ${circle}`}>{index + 1}</span>
-            <span className="min-w-0 flex-1">
-              <b className="block truncate text-slate-800">{item.stage}</b>
-              <span className="block truncate text-slate-400">{item.match?.actor || '—'}</span>
-            </span>
-            <Pill className={toneFor(status)}>{status}</Pill>
-          </li>
-        );
-      })}
-    </ol>
-  );
-}
-
-function Comments({ approvals }: { approvals: Array<{ id: string; actor: string; stage: string; comments: string; decision: string; createdAt: string }> }) {
-  if (approvals.length === 0) return <p className="py-4 text-center text-sm text-slate-500">No comments yet.</p>;
-  return (
-    <div>
-      {approvals.map((item) => {
-        const initials = (item.actor || '—').split(/\s+/).slice(0, 2).map((part) => part[0]?.toUpperCase() || '').join('');
-        return (
-          <div key={item.id} className="flex gap-2 border-t border-slate-100 py-2 text-[12px] first:border-0">
-            <span className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-blue-100 text-[11px] font-black text-blue-700">{initials}</span>
-            <div className="min-w-0">
-              <div className="font-bold text-slate-800">{item.actor || '—'} <span className="font-semibold text-slate-400">{item.stage}</span> <span className="font-normal text-slate-400">{formatWhen(item.createdAt)}</span></div>
-              <p className="text-slate-600">{item.comments || item.decision}</p>
-            </div>
-          </div>
-        );
-      })}
-    </div>
-  );
-}
-
-function VersionTable({ documents }: { documents: Array<{ id: string; fileName: string; uploadedBy: string; uploadedAt: string; category: string }> }) {
-  return (
-    <table className="w-full text-left text-[12px]">
-      <thead className="text-[11px] text-slate-400"><tr>{['Version', 'Date', 'Uploaded By', 'Remarks', 'Action'].map((heading) => <th key={heading} className="pb-2 font-semibold">{heading}</th>)}</tr></thead>
-      <tbody>
-        {documents.length === 0 ? <tr><td colSpan={5} className="py-6 text-center text-slate-500">No document versions yet.</td></tr> : documents.map((item) => (
-          <tr key={item.id} className="border-t border-slate-100">
-            <td className="py-2 font-semibold text-slate-500">—</td>
-            <td className="py-2">{formatWhen(item.uploadedAt)}</td>
-            <td className="py-2">{item.uploadedBy || '—'}</td>
-            <td className="py-2">{item.category || item.fileName}</td>
-            <td className="py-2"><a className="font-semibold text-blue-700" href={`/api/commercial/tenders?resource=document&documentId=${item.id}`}>View</a></td>
-          </tr>
-        ))}
-      </tbody>
-    </table>
-  );
-}
-
-function RelatedTable({ documents }: { documents: Array<{ id: string; fileName: string; category: string }> }) {
-  return (
-    <table className="w-full text-left text-[12px]">
-      <thead className="text-[11px] text-slate-400"><tr>{['#', 'Item', 'Type', 'Status'].map((heading) => <th key={heading} className="pb-2 font-semibold">{heading}</th>)}</tr></thead>
-      <tbody>
-        {documents.length === 0 ? <tr><td colSpan={4} className="py-6 text-center text-slate-500">No related documents.</td></tr> : documents.map((item, index) => (
-          <tr key={item.id} className="border-t border-slate-100">
-            <td className="py-2 text-slate-400">{index + 1}</td>
-            <td className="py-2 font-semibold text-slate-800">{item.fileName}</td>
-            <td className="py-2">Document</td>
-            <td className="py-2"><Pill className="bg-blue-50 text-blue-700">{item.category || 'Filed'}</Pill></td>
-          </tr>
-        ))}
-      </tbody>
-    </table>
+    <article className="rounded-2xl border border-slate-200 bg-white p-4 text-[13px] text-slate-700">
+      <p>{decided ? `The recorded decision is ${decided}.` : 'No bid decision has been confirmed.'}</p>
+      {decision ? <p className="mt-2">{decision.actor} · {formatWhen(decision.createdAt)}{decision.comments ? ` · ${decision.comments}` : ''}</p> : null}
+    </article>
   );
 }

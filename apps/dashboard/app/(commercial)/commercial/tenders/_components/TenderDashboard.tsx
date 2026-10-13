@@ -13,30 +13,20 @@ import {
   UserRound,
   type LucideIcon,
 } from 'lucide-react';
-import type { TenderAuditEvent, TenderAward, TenderOpportunity, TenderSubmission } from '@/lib/commercial/tender-types';
+import type { TenderAuditEvent, TenderOpportunity, TenderSubmission } from '@/lib/commercial/tender-types';
+import { awardedToDleOf, CLIENT_COLORS, clientStatusOf, externalDeadlineOf, internalDeadlineOf, PREPARATION_COLORS, preparationOf, type ClientStatus } from '@/lib/commercial/tender-workflow';
 import { formatWhen, tenderGet } from './tender-api';
 
 type Prep = 'Not Started' | 'In Progress' | 'Submitted';
-type Decision = 'Pending' | 'Awarded' | 'Unsuccessful' | 'In Evaluation' | 'Cancelled' | 'Re-Opened';
+type Decision = ClientStatus;
 
-const PREP_COLORS: Record<Prep, string> = { 'Not Started': '#3b82f6', 'In Progress': '#22c55e', Submitted: '#94a3b8' };
-const DECISION_COLORS: Record<Decision, string> = {
-  Pending: '#94a3b8',
-  Awarded: '#22c55e',
-  Unsuccessful: '#ef4444',
-  'In Evaluation': '#3b82f6',
-  Cancelled: '#a855f7',
-  'Re-Opened': '#f59e0b',
-};
-const DECISIONS: Decision[] = ['Pending', 'Awarded', 'Unsuccessful', 'In Evaluation', 'Cancelled', 'Re-Opened'];
+const PREP_COLORS: Record<Prep, string> = PREPARATION_COLORS;
+const DECISION_COLORS: Record<Decision, string> = CLIENT_COLORS;
+const DECISIONS: Decision[] = ['Pending', 'Suspended', 'Cancelled', 'Re-Opened', 'Awarded'];
 
 const isEnquiry = (row: TenderOpportunity) => row.stage === 'Enquiry' || row.tenderType === 'Enquiry' || row.opportunityType === 'Enquiry';
-const textOf = (row: TenderOpportunity) => `${row.stage} ${row.status}`.toLowerCase();
-const isAwarded = (row: TenderOpportunity) => /award/.test(textOf(row));
-const isCancelled = (row: TenderOpportunity) => row.status === 'Cancelled' || /cancel/.test(textOf(row));
-const isReopened = (row: TenderOpportunity) => /re-?open/.test(textOf(row));
-const isUnsuccessful = (row: TenderOpportunity) => /lost|no-bid|withdraw/.test(textOf(row)) || row.status === 'Closed';
-const isTerminal = (row: TenderOpportunity) => isAwarded(row) || isUnsuccessful(row) || isCancelled(row);
+const isAwardedToDle = (row: TenderOpportunity) => awardedToDleOf(row) === 'Yes';
+const isTerminal = (row: TenderOpportunity) => clientStatusOf(row) === 'Awarded' || clientStatusOf(row) === 'Cancelled';
 
 function daysUntil(value: string) {
   if (!value) return null;
@@ -49,19 +39,11 @@ function daysUntil(value: string) {
 }
 
 function prepOf(row: TenderOpportunity): Prep {
-  const text = textOf(row);
-  if (/submit/.test(text)) return 'Submitted';
-  if (row.status === 'Draft' || (!row.ownerName && /enquir|draft|open/.test(text))) return 'Not Started';
-  return 'In Progress';
+  return preparationOf(row);
 }
 
 function decisionOf(row: TenderOpportunity): Decision {
-  if (isAwarded(row)) return 'Awarded';
-  if (isCancelled(row)) return 'Cancelled';
-  if (isReopened(row)) return 'Re-Opened';
-  if (isUnsuccessful(row)) return 'Unsuccessful';
-  if (/evaluat|negot|shortlist|under review|review/.test(textOf(row))) return 'In Evaluation';
-  return 'Pending';
+  return clientStatusOf(row);
 }
 
 function dueLabel(days: number) {
@@ -103,7 +85,6 @@ const pct = (count: number, total: number) => (total ? Math.round((count / total
 
 export function TenderDashboard() {
   const [rows, setRows] = useState<TenderOpportunity[]>([]);
-  const [awards, setAwards] = useState<TenderAward[]>([]);
   const [submittedIds, setSubmittedIds] = useState<Set<string>>(new Set());
   const [audit, setAudit] = useState<TenderAuditEvent[]>([]);
   const [error, setError] = useState('');
@@ -115,13 +96,11 @@ export function TenderDashboard() {
     let active = true;
     Promise.all([
       tenderGet<TenderOpportunity[]>('opportunities'),
-      tenderGet<TenderAward[]>('awards'),
       tenderGet<TenderSubmission[]>('submissions'),
       tenderGet<TenderAuditEvent[]>('audit'),
-    ]).then(([opportunities, awardRows, submissionRows, auditRows]) => {
+    ]).then(([opportunities, submissionRows, auditRows]) => {
       if (!active) return;
       setRows(opportunities);
-      setAwards(awardRows);
       setSubmittedIds(new Set(submissionRows.map((item) => item.opportunityId)));
       setAudit(auditRows);
     }).catch((reason) => {
@@ -134,9 +113,9 @@ export function TenderDashboard() {
   const year = new Date().getFullYear();
 
   const openRows = rows.filter((row) => !isTerminal(row));
-  const met = (row: TenderOpportunity) => prepOf(row) === 'Submitted' || isAwarded(row) || submittedIds.has(row.id);
-  const enquiries = openRows.filter(isEnquiry);
-  const tenders = openRows.filter((row) => !isEnquiry(row));
+  const met = (row: TenderOpportunity) => prepOf(row) === 'Submitted' || isAwardedToDle(row) || submittedIds.has(row.id);
+  const enquiries = rows.filter(isEnquiry);
+  const tenders = rows.filter((row) => !isEnquiry(row));
   const tally = (list: TenderOpportunity[]) => ({
     notStarted: list.filter((row) => prepOf(row) === 'Not Started').length,
     inProgress: list.filter((row) => prepOf(row) === 'In Progress').length,
@@ -148,8 +127,8 @@ export function TenderDashboard() {
   const unassignedTenders = tenders.filter((row) => !row.ownerName.trim()).length;
 
   const deadlineRows = openRows.map((row) => {
-    const internal = row.clarificationDeadline;
-    const external = row.submissionDeadline || row.closingDate;
+    const internal = internalDeadlineOf(row);
+    const external = externalDeadlineOf(row);
     const internalDays = daysUntil(internal);
     const externalDays = daysUntil(external);
     const nearest = [internalDays, externalDays].filter((value): value is number => value != null).sort((left, right) => left - right)[0];
@@ -158,21 +137,18 @@ export function TenderDashboard() {
 
   const internalDue = deadlineRows.filter((item) => item.internalDays != null && item.internalDays <= 3);
   const externalDue = deadlineRows.filter((item) => item.externalDays != null && item.externalDays <= 7);
-  const awardedRows = rows.filter(isAwarded);
-  const awardedThisYear = awards.length
-    ? awards.filter((award) => (award.awardDate || award.createdAt || '').startsWith(String(year))).length
-    : awardedRows.filter((row) => (row.updatedAt || row.createdAt || '').startsWith(String(year))).length;
-  const awardedCount = awards.length ? awards.length : awardedRows.length;
+  const awardedRows = rows.filter(isAwardedToDle);
+  const awardedThisYear = awardedRows.filter((row) => (row.updatedAt || row.createdAt || '').startsWith(String(year))).length;
+  const awardedCount = awardedRows.length;
+  const submittedBids = rows.filter((row) => !isEnquiry(row) && (prepOf(row) === 'Submitted' || submittedIds.has(row.id))).length;
+  const pendingDecision = rows.filter((row) => awardedToDleOf(row) === 'Pending Decision' && prepOf(row) === 'Submitted').length;
+  const unsuccessful = rows.filter((row) => awardedToDleOf(row) === 'No').length;
 
   const upcomingRows = deadlineRows.filter((item) => (item.nearest ?? 0) >= 0);
   const pastRows = deadlineRows.filter((item) => (item.nearest ?? 0) < 0 && !met(item.row));
   const visibleDeadlines = upcomingRows.filter((item) => deadlineTab === 'All' || (deadlineTab === 'Enquiries' ? isEnquiry(item.row) : !isEnquiry(item.row)));
   const visiblePast = pastRows.filter((item) => pastTab === 'All' || (pastTab === 'Enquiries' ? isEnquiry(item.row) : !isEnquiry(item.row)));
-  const classified = rows.map((row) => {
-    const reopened = isReopened(row) || audit.some((event) => event.opportunityId === row.id && /re-?open/i.test(`${event.action} ${event.details}`));
-    if (reopened && !isAwarded(row) && !isCancelled(row) && !isUnsuccessful(row)) return 'Re-Opened' as Decision;
-    return decisionOf(row);
-  });
+  const classified = rows.map((row) => decisionOf(row));
   const decisionCounts = DECISIONS.map((label) => ({ label, count: classified.filter((item) => item === label).length }));
   const decisionTotal = rows.length;
 
@@ -197,20 +173,22 @@ export function TenderDashboard() {
 
       {error ? <div className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">{error}</div> : null}
 
-      <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-6">
-        <Kpi icon={Mail} tint="bg-blue-50 text-blue-600" value={enquiries.length} label="Enquiries" lines={[
-          [enquiryPrep.notStarted, 'Not Started', 'bg-emerald-500'],
+      <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        <Kpi icon={Mail} tint="bg-blue-50 text-blue-600" value={enquiries.length} label="Total Enquiries" lines={[
+          [enquiryPrep.notStarted, 'Not Started', 'bg-slate-400'],
           [enquiryPrep.inProgress, 'In Progress', 'bg-blue-500'],
-          [enquiryPrep.submitted, 'Submitted', 'bg-violet-500'],
+          [enquiryPrep.submitted, 'Submitted', 'bg-emerald-500'],
         ]} />
-        <Kpi icon={FileText} tint="bg-orange-50 text-orange-500" value={tenders.length} label="Tender Opportunities" lines={[
-          [tenderPrep.notStarted, 'Not Started', 'bg-emerald-500'],
+        <Kpi icon={FileText} tint="bg-orange-50 text-orange-500" value={tenders.length} label="Total Tender Opportunities" lines={[
+          [tenderPrep.notStarted, 'Not Started', 'bg-slate-400'],
           [tenderPrep.inProgress, 'In Progress', 'bg-blue-500'],
-          [tenderPrep.submitted, 'Submitted', 'bg-violet-500'],
+          [tenderPrep.submitted, 'Submitted', 'bg-emerald-500'],
         ]} />
-        <Kpi icon={UserRound} tint="bg-amber-50 text-amber-600" value={unassignedEnquiries + unassignedTenders} label="Unassigned Items" lines={[
-          [unassignedEnquiries, 'Enquiries', 'bg-amber-500'],
-          [unassignedTenders, 'Tenders', 'bg-orange-500'],
+        <Kpi icon={UserRound} tint="bg-amber-50 text-amber-600" value={unassignedEnquiries} label="Enquiries Awaiting GM Commercial Assignment" lines={[
+          [unassignedEnquiries, 'Awaiting assignment', 'bg-amber-500'],
+        ]} />
+        <Kpi icon={UserRound} tint="bg-rose-50 text-rose-500" value={unassignedTenders} label="Tenders Awaiting MD Assignment" lines={[
+          [unassignedTenders, 'Awaiting assignment', 'bg-rose-500'],
         ]} />
         <Kpi icon={Clock3} tint="bg-rose-50 text-rose-500" value={internalDue.length} label="Internal Deadlines Due" lines={[
           [internalDue.filter((item) => (item.internalDays ?? 0) >= 0).length, 'in next 3 days', 'bg-rose-400'],
@@ -220,8 +198,13 @@ export function TenderDashboard() {
           [externalDue.filter((item) => (item.externalDays ?? 0) >= 0).length, 'in next 7 days', 'bg-orange-400'],
           [externalDue.filter((item) => (item.externalDays ?? 0) < 0).length, 'Overdue', 'bg-orange-600'],
         ]} />
+        <Kpi icon={Send} tint="bg-blue-50 text-blue-600" value={submittedBids} label="Submitted Bids" lines={[
+          [pendingDecision, 'Pending Decision', 'bg-slate-400'],
+        ]} />
         <Kpi icon={Trophy} tint="bg-emerald-50 text-emerald-600" value={awardedCount} label="Awarded to DLE" lines={[
-          [awardedThisYear, 'This year', 'bg-emerald-500'],
+          [awardedThisYear, 'Yes, this year', 'bg-emerald-500'],
+          [unsuccessful, 'No', 'bg-rose-500'],
+          [pendingDecision, 'Pending Decision', 'bg-slate-400'],
         ]} />
       </section>
 
@@ -239,13 +222,14 @@ export function TenderDashboard() {
           </div>
           <div className="overflow-x-auto">
             <table className="w-full min-w-[640px] text-left text-[12px]">
-              <thead className="text-[11px] uppercase text-slate-400"><tr>{['#', 'Type', 'Title', 'Internal Deadline', 'External Deadline', 'Status'].map((heading) => <th key={heading} className="px-4 pb-2 font-semibold">{heading}</th>)}</tr></thead>
+              <thead className="text-[11px] uppercase text-slate-400"><tr>{['#', 'Type', 'Title', 'Officer', 'Internal Deadline', 'External Deadline', 'Status'].map((heading) => <th key={heading} className="px-4 pb-2 font-semibold">{heading}</th>)}</tr></thead>
               <tbody>
-                {visibleDeadlines.length === 0 ? <tr><td colSpan={6} className="px-4 py-8 text-center text-slate-500">{ready ? 'No upcoming deadlines.' : 'Loading register…'}</td></tr> : visibleDeadlines.slice(0, 6).map((item, index) => (
+                {visibleDeadlines.length === 0 ? <tr><td colSpan={7} className="px-4 py-8 text-center text-slate-500">{ready ? 'No upcoming deadlines.' : 'Loading register…'}</td></tr> : visibleDeadlines.slice(0, 6).map((item, index) => (
                   <tr key={item.row.id} className="border-t border-slate-100">
                     <td className="px-4 py-2.5 text-slate-400">{index + 1}</td>
                     <td className="px-4 py-2.5 text-slate-600">{isEnquiry(item.row) ? 'Enquiry' : 'Tender'}</td>
                     <td className="px-4 py-2.5 font-semibold text-slate-800"><Link href={`/commercial/tenders/workspace?id=${item.row.id}`}>{item.row.title}</Link></td>
+                    <td className="px-4 py-2.5">{item.row.ownerName || 'Unassigned'}</td>
                     <td className="px-4 py-2.5">{item.internal ? formatWhen(item.internal) : '—'}</td>
                     <td className="px-4 py-2.5">{item.external ? formatWhen(item.external) : '—'}</td>
                     <td className="px-4 py-2.5">{item.nearest == null ? '—' : <span className={`rounded-md px-2 py-0.5 text-[11px] font-bold ${dueTone(item.nearest)}`}>{dueLabel(item.nearest)}</span>}</td>
@@ -295,16 +279,17 @@ export function TenderDashboard() {
           </div>
           <div className="overflow-x-auto">
             <table className="w-full min-w-[640px] text-left text-[12px]">
-              <thead className="text-[11px] uppercase text-slate-400"><tr>{['#', 'Type', 'Title', 'Internal Deadline', 'External Deadline', 'Status'].map((heading) => <th key={heading} className="px-4 pb-2 font-semibold">{heading}</th>)}</tr></thead>
+              <thead className="text-[11px] uppercase text-slate-400"><tr>{['#', 'Type', 'Title', 'Officer', 'Internal Deadline', 'External Deadline', 'Status'].map((heading) => <th key={heading} className="px-4 pb-2 font-semibold">{heading}</th>)}</tr></thead>
               <tbody>
-                {visiblePast.length === 0 ? <tr><td colSpan={6} className="px-4 py-8 text-center text-slate-500">{ready ? 'No past deadlines were missed.' : 'Loading register…'}</td></tr> : visiblePast.slice(0, 6).map((item, index) => (
+                {visiblePast.length === 0 ? <tr><td colSpan={7} className="px-4 py-8 text-center text-slate-500">{ready ? 'No past deadlines were missed.' : 'Loading register…'}</td></tr> : visiblePast.slice(0, 6).map((item, index) => (
                   <tr key={item.row.id} className="border-t border-slate-100">
                     <td className="px-4 py-2.5 text-slate-400">{index + 1}</td>
                     <td className="px-4 py-2.5 text-slate-600">{isEnquiry(item.row) ? 'Enquiry' : 'Tender'}</td>
                     <td className="px-4 py-2.5 font-semibold text-slate-800"><Link href={`/commercial/tenders/workspace?id=${item.row.id}`}>{item.row.title}</Link></td>
+                    <td className="px-4 py-2.5">{item.row.ownerName || 'Unassigned'}</td>
                     <td className="px-4 py-2.5">{item.internal ? formatWhen(item.internal) : '—'}</td>
                     <td className="px-4 py-2.5">{item.external ? formatWhen(item.external) : '—'}</td>
-                    <td className="px-4 py-2.5"><span className="rounded-md bg-rose-50 px-2 py-0.5 text-[11px] font-bold text-rose-600">{item.nearest == null ? 'Not met' : `${dueLabel(item.nearest)} · Not met`}</span></td>
+                    <td className="px-4 py-2.5"><span className="rounded-md bg-rose-50 px-2 py-0.5 text-[11px] font-bold text-rose-600">{item.nearest == null ? 'Not met' : `${dueLabel(item.nearest)} · Escalated`}</span></td>
                   </tr>
                 ))}
               </tbody>

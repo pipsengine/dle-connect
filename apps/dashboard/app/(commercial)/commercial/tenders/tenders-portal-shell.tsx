@@ -6,9 +6,10 @@ import { usePathname, useRouter } from 'next/navigation';
 import type { FormEvent, ReactNode } from 'react';
 import { useEffect, useState } from 'react';
 import { ChevronDown, ChevronLeft, ChevronRight, Globe, Menu, Search, X } from 'lucide-react';
+import { EnterpriseHomeButton } from '@/components/layout/enterprise-home-button';
 import { NotificationCenter } from '@/components/layout/notification-center';
 import { EnterpriseUserProfile } from '@hris/components/layout/enterprise-user-profile';
-import { canAccessCommercial } from '@/lib/access/commercial-access';
+import { canAccessTenderPortal } from '@/lib/access/commercial-access';
 import { TENDER_NAV } from '@/lib/commercial/nav';
 
 type Props = { children: ReactNode };
@@ -48,13 +49,22 @@ export function TendersPortalShell({ children }: Props) {
       .then((res) => (res.ok ? res.json() : null))
       .then((json) => {
         if (!active) return;
-        const permissions = Array.isArray(json?.data?.permissions) ? json.data.permissions : [];
-        const ok = canAccessCommercial(permissions, Boolean(json?.data?.isGlobalAdmin));
+        const data = json?.data || {};
+        const ok = canAccessTenderPortal({
+          department: data.department,
+          unit: data.unit,
+          roles: Array.isArray(data.roles) ? data.roles : [],
+          isGlobalAdmin: Boolean(data.isGlobalAdmin),
+          sub: data.sub,
+        });
         setAllowed(ok);
         if (!ok) router.replace('/access-denied');
       })
       .catch(() => {
-        if (active) setAllowed(true);
+        if (active) {
+          setAllowed(false);
+          router.replace('/access-denied');
+        }
       });
     return () => {
       active = false;
@@ -170,6 +180,7 @@ export function TendersPortalShell({ children }: Props) {
             />
           </form>
           <div className="ml-auto flex items-center gap-2">
+            <EnterpriseHomeButton alwaysShowLabel />
             <NotificationCenter />
             <div className="relative">
               <button

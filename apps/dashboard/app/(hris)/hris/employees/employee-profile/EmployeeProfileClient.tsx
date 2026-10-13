@@ -3102,6 +3102,7 @@ export default function EmployeeProfileClient({
                             )}
                             <Field label="Bank Name" value={v(profileData.payrollSummary.bankName)} masked={!perms.canViewPayroll} />
                             <Field label="Account Number" value={v(profileData.payrollSummary.accountNumberMasked)} />
+                            <Field label="Account Name" value={v(profileData.payrollSummary.accountName)} masked={!perms.canViewPayroll} />
                             <Field label="Pension Provider" value={v(profileData.payrollSummary.pensionProvider)} masked={!perms.canViewPayroll} />
                             <Field label="Tax ID" value={v(profileData.payrollSummary.taxId)} masked={!perms.canViewPayroll} />
                             <Field label="Payroll Group" value={v(profileData.payrollSummary.payrollGroup)} masked={!perms.canViewPayroll} />
@@ -3301,7 +3302,7 @@ export default function EmployeeProfileClient({
                         ) : (
                           <PayrollSetupStep
                             payroll={profileSummaryToSetupDraft(payrollDraft, profileData.employmentType || '')}
-                            onChange={(draft) => setPayrollDraft(setupDraftToProfileSummary(draft, payrollDraft, profileData.employmentType || ''))}
+                            onChange={(draft) => setPayrollDraft((current) => setupDraftToProfileSummary(draft, current || profileData.payrollSummary, profileData.employmentType || ''))}
                             options={{
                               payrollGroups: payrollFormOptions?.payrollGroups || [],
                               banks: payrollFormOptions?.banks || [],

@@ -52,7 +52,10 @@ export const compactMoney = (value: number) => {
 
 export const formatWhen = (value: string) => {
   if (!value) return '—';
-  const parsed = new Date(value);
+  const match = String(value).trim().match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  const parsed = match
+    ? new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3]))
+    : new Date(value);
   if (Number.isNaN(parsed.getTime())) return value;
   return parsed.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
 };

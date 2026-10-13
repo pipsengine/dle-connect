@@ -12,7 +12,7 @@ import {
   ChevronDown
 } from 'lucide-react';
 import { navigationConfig, NavItem } from '@/lib/config/navigation';
-import { canAccessCommercial } from '@/lib/access/commercial-access';
+import { canAccessTenderPortal } from '@/lib/access/commercial-access';
 import { canAccessAdministrationCentre, hasPermission } from '@/lib/auth/permission-match';
 import { canAccessCrewMobilization, canAccessHrManagementNav, isGlobalSuperAdministrator, isLegacyWorkforceTimesheetPage, isSecurityAuditTrailPath } from '@/lib/access/route-access';
 import { canAccessTimesheetEntryAndApproval } from '@/lib/access/timesheet-access';
@@ -197,7 +197,7 @@ export function Sidebar({
             return canAccessTimesheetEntryAndApproval(sessionLike);
           }
           if (sub.route?.startsWith('/commercial')) {
-            return canAccessCommercial(permissions, sessionContext.isGlobalAdmin);
+            return canAccessTenderPortal(sessionLike);
           }
           if (sub.route?.startsWith('/hris/') && platformOnly && !sessionContext.isGlobalAdmin && !sessionContext.roles.includes('Super Administrator')) {
             return false;
@@ -213,7 +213,7 @@ export function Sidebar({
               : item.id === 'it-support'
                 ? canAccessItSupportPortal(permissions, sessionContext.isGlobalAdmin)
                 : item.id === 'sales-crm'
-                  ? canAccessCommercial(permissions, sessionContext.isGlobalAdmin)
+                  ? canAccessTenderPortal(sessionLike)
                   : (item.route === '/finance' || item.route?.startsWith('/finance')
                   ? canAccessFullFinanceIntelligence(permissions, sessionContext.isGlobalAdmin)
                   : canAccess(permissions, requiredPermission(item.route)))

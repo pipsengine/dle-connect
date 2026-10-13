@@ -3,17 +3,20 @@
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
-import { CalendarDays, Check, Clock3, Mail, MoreHorizontal, Play, Plus, Search, X } from 'lucide-react';
+import { CalendarDays, Check, Clock3, Mail, Play, Plus, Search, X } from 'lucide-react';
 import type { TenderOpportunity } from '@/lib/commercial/tender-types';
 import { closedOut, daysUntil, enquiryPill, receivedOn, sectorOf } from '@/lib/commercial/tender-present';
 import { isGmCommercial } from '@/lib/access/commercial-access';
+import { internalDeadlineFromExternal } from '@/lib/commercial/tender-workflow';
 import { formatWhen, tenderGet, tenderPost } from './tender-api';
 import { EnquiryModal } from './EnquiryModal';
+import { OfficerSearch, type DirectoryEmployee } from './OfficerSearch';
+import { RowMenu } from './record-frame';
 
 type EnquiryStatus = 'Not Started' | 'In Progress' | 'Submitted' | 'Closed';
-type Tab = 'All Enquiries' | EnquiryStatus | 'Overdue';
+type Tab = 'All Enquiries' | 'Awaiting GM Assignment' | EnquiryStatus | 'Overdue';
 
-const TABS: Tab[] = ['All Enquiries', 'Not Started', 'In Progress', 'Submitted', 'Overdue', 'Closed'];
+const TABS: Tab[] = ['All Enquiries', 'Awaiting GM Assignment', 'Not Started', 'In Progress', 'Submitted', 'Overdue', 'Closed'];
 const STATUSES: EnquiryStatus[] = ['Not Started', 'In Progress', 'Submitted', 'Closed'];
 const PRIORITIES = ['High', 'Medium', 'Low'];
 
@@ -45,7 +48,7 @@ const dateTone = (value: string) => {
 };
 
 const statusTone: Record<EnquiryStatus, string> = {
-  'Not Started': 'bg-rose-50 text-rose-600',
+  'Not Started': 'bg-slate-100 text-slate-600',
   'In Progress': 'bg-blue-50 text-blue-700',
   Submitted: 'bg-emerald-50 text-emerald-700',
   Closed: 'bg-slate-100 text-slate-600',
@@ -90,6 +93,10 @@ export function EnquiriesBoard() {
   const [gm, setGm] = useState(false);
   const [assigning, setAssigning] = useState<TenderOpportunity | null>(null);
   const [assignee, setAssignee] = useState('');
+  const [assigneeCode, setAssigneeCode] = useState('');
+  const [internalDate, setInternalDate] = useState('');
+  const [assignReason, setAssignReason] = useState('');
+  const [directory, setDirectory] = useState<DirectoryEmployee[]>([]);
   const [busy, setBusy] = useState(false);
 
   const load = async () => {
@@ -104,7 +111,7 @@ export function EnquiriesBoard() {
     }
   };
 
-  useEffect(() => { load(); }, []);
+  useEffect(() => { load(); tenderGet<DirectoryEmployee[]>('directory').then(setDirectory).catch(() => setDirectory([])); }, []);
   useEffect(() => {
     fetch('/api/auth/me', { cache: 'no-store', credentials: 'same-origin' })
       .then((response) => (response.ok ? response.json() : null))
@@ -128,6 +135,7 @@ export function EnquiriesBoard() {
     Submitted: enquiries.filter((row) => enquiryStatus(row) === 'Submitted').length,
     Closed: enquiries.filter((row) => enquiryStatus(row) === 'Closed').length,
     Overdue: enquiries.filter(overdue).length,
+    'Awaiting GM Assignment': enquiries.filter((row) => !row.ownerName.trim() && enquiryStatus(row) !== 'Closed' && enquiryStatus(row) !== 'Submitted').length,
   };
   const share = (count: number) => (counts.all ? Math.round((count / counts.all) * 100) : 0);
   const now = new Date();
@@ -151,7 +159,8 @@ export function EnquiriesBoard() {
 
   const filtered = useMemo(() => enquiries.filter((row) => {
     if (tab === 'Overdue' && !overdue(row)) return false;
-    if (tab !== 'All Enquiries' && tab !== 'Overdue' && enquiryStatus(row) !== tab) return false;
+    if (tab === 'Awaiting GM Assignment' && row.ownerName.trim()) return false;
+    if (tab !== 'All Enquiries' && tab !== 'Overdue' && tab !== 'Awaiting GM Assignment' && enquiryStatus(row) !== tab) return false;
     const haystack = `${row.title} ${row.clientName} ${row.referenceNo} ${row.enquiryRef} ${row.ownerName}`.toLowerCase();
     if (search && !haystack.includes(search.toLowerCase())) return false;
     if (client !== 'All Clients' && row.clientName !== client) return false;
@@ -232,8 +241,9 @@ export function EnquiriesBoard() {
       {error ? <div className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">{error}</div> : null}
       {notice ? <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">{notice}</div> : null}
 
-      <section className="grid gap-3 md:grid-cols-2 xl:grid-cols-5">
+      <section className="grid gap-3 md:grid-cols-2 xl:grid-cols-6">
         <Kpi icon={Mail} tint="bg-blue-50 text-blue-600" value={counts.all} label="Total Enquiries" foot={<span className={delta >= 0 ? 'text-emerald-600' : 'text-rose-600'}>{delta >= 0 ? '↑' : '↓'} {Math.abs(delta)}% vs last 30 days</span>} />
+        <Kpi icon={Clock3} tint="bg-amber-50 text-amber-600" value={counts['Awaiting GM Assignment']} label="Awaiting GM Commercial Assignment" foot={<span className="text-amber-600">{share(counts['Awaiting GM Assignment'])}% require assignment</span>} />
         <Kpi icon={Clock3} tint="bg-slate-100 text-slate-500" value={counts['Not Started']} label="Not Started" foot={<span className="text-slate-400">{share(counts['Not Started'])}% of total</span>} />
         <Kpi icon={Play} tint="bg-blue-50 text-blue-600" value={counts['In Progress']} label="In Progress" foot={<span className="text-slate-400">{share(counts['In Progress'])}% of total</span>} />
         <Kpi icon={Check} tint="bg-emerald-50 text-emerald-600" value={counts.Submitted} label="Submitted" foot={<span className="text-slate-400">{share(counts.Submitted)}% of total</span>} />
@@ -243,7 +253,7 @@ export function EnquiriesBoard() {
       <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
         <div className="flex gap-1 overflow-x-auto border-b border-slate-100 px-3 pt-2">
           {TABS.map((item) => {
-            const count = item === 'All Enquiries' ? counts.all : item === 'Overdue' ? counts.Overdue : counts[item];
+            const count = item === 'All Enquiries' ? counts.all : item === 'Overdue' ? counts.Overdue : item === 'Awaiting GM Assignment' ? counts['Awaiting GM Assignment'] : counts[item];
             return <button key={item} type="button" onClick={() => setTab(item)} className={`whitespace-nowrap border-b-2 px-3 py-2.5 text-[13px] font-semibold ${tab === item ? 'border-[#2563eb] text-[#2563eb]' : 'border-transparent text-slate-500'}`}>{item} ({count})</button>;
           })}
         </div>
@@ -296,23 +306,21 @@ export function EnquiriesBoard() {
                       </span>
                     </td>
                     <td className="px-3 py-2.5"><span className={`rounded-md px-2 py-0.5 text-[11px] font-bold ${statusTone[state]}`}>{state}</span></td>
-                    <td className="relative px-3 py-2.5">
-                      <button type="button" aria-label={`Actions for ${row.referenceNo}`} disabled={busy} onClick={() => setMenuId(menuId === row.id ? '' : row.id)} className="rounded-lg p-1 text-slate-400 hover:bg-slate-100"><MoreHorizontal className="h-4 w-4" /></button>
-                      {menuId === row.id ? (
-                        <div className="absolute right-3 z-20 w-52 rounded-xl border border-slate-200 bg-white py-1 text-[12px] shadow-lg">
-                          <Link href={`/commercial/tenders/workspace?id=${row.id}`} className="block px-3 py-2 hover:bg-slate-50" onClick={() => setMenuId('')}>View enquiry</Link>
-                          <MenuButton label="Edit enquiry" onClick={() => { setEditing(row); setModalOpen(true); setMenuId(''); }} />
-                          <MenuButton label="Assign responsible officer" onClick={() => { if (!gm) { setError('Only GM Commercial can assign the responsible officer and internal response date.'); setMenuId(''); return; } setAssigning(row); setAssignee(row.ownerName); setMenuId(''); }} />
-                          <MenuButton label="Mark Not Started" onClick={() => saveStatus(row, 'Not Started')} />
-                          <MenuButton label="Mark In Progress" onClick={() => saveStatus(row, 'In Progress')} />
-                          <MenuButton label="Mark Submitted" onClick={() => saveStatus(row, 'Submitted')} />
-                          <MenuButton label="Convert to tender" onClick={() => run(() => tenderPost({ action: 'convert', id: row.id }), `${row.referenceNo} converted to a tender.`)} />
-                          <MenuButton label="Close enquiry" onClick={() => saveStatus(row, 'Closed')} />
-                          <MenuButton label="Duplicate" onClick={() => run(() => tenderPost({ action: 'duplicate', id: row.id }), `${row.referenceNo} duplicated.`)} />
-                          <MenuButton label={row.watchlisted ? 'Remove from watchlist' : 'Add to watchlist'} onClick={() => run(() => tenderPost({ action: 'watchlist', id: row.id, watchlisted: !row.watchlisted }), row.watchlisted ? 'Removed from the watchlist.' : 'Added to the watchlist.')} />
-                          <MenuButton label="Send notification" onClick={() => run(() => tenderPost({ action: 'notify', id: row.id, message: `${row.referenceNo} ${row.title} needs attention.` }), 'Notification sent.')} />
-                        </div>
-                      ) : null}
+                    <td className="px-3 py-2.5">
+                      <RowMenu open={menuId === row.id} disabled={busy} label={`Actions for ${row.referenceNo}`} onToggle={() => setMenuId(menuId === row.id ? '' : row.id)}>
+                        <Link href={`/commercial/tenders/workspace?id=${row.id}`} className="block px-3 py-2 hover:bg-slate-50" onClick={() => setMenuId('')}>View enquiry</Link>
+                        <MenuButton label="Edit enquiry" onClick={() => { setEditing(row); setModalOpen(true); setMenuId(''); }} />
+                        <MenuButton label="Assign responsible officer" onClick={() => { if (!gm) { setError('Only GM Commercial can assign the responsible officer and internal response date.'); setMenuId(''); return; } setAssigning(row); setAssignee(row.ownerName); setAssigneeCode(row.ownerEmployeeCode || ''); setInternalDate((row.clarificationDeadline || internalDeadlineFromExternal(externalOn(row))).slice(0, 10)); setAssignReason(''); setMenuId(''); }} />
+                        {row.ownerName && !row.acknowledgedAt ? <MenuButton label="Acknowledge assignment" onClick={() => run(() => tenderPost({ action: 'acknowledge', id: row.id }), `${row.referenceNo} acknowledged.`)} /> : null}
+                        <MenuButton label="Mark Not Started" onClick={() => saveStatus(row, 'Not Started')} />
+                        <MenuButton label="Mark In Progress" onClick={() => saveStatus(row, 'In Progress')} />
+                        <MenuButton label="Mark Submitted" onClick={() => saveStatus(row, 'Submitted')} />
+                        <MenuButton label="Convert to tender" onClick={() => run(() => tenderPost({ action: 'convert', id: row.id }), `${row.referenceNo} converted to a tender.`)} />
+                        <MenuButton label="Close enquiry" onClick={() => saveStatus(row, 'Closed')} />
+                        <MenuButton label="Duplicate" onClick={() => run(() => tenderPost({ action: 'duplicate', id: row.id }), `${row.referenceNo} duplicated.`)} />
+                        <MenuButton label={row.watchlisted ? 'Remove from watchlist' : 'Add to watchlist'} onClick={() => run(() => tenderPost({ action: 'watchlist', id: row.id, watchlisted: !row.watchlisted }), row.watchlisted ? 'Removed from the watchlist.' : 'Added to the watchlist.')} />
+                        <MenuButton label="Send notification" onClick={() => run(() => tenderPost({ action: 'notify', id: row.id, message: `${row.referenceNo} ${row.title} needs attention.` }), 'Notification sent.')} />
+                      </RowMenu>
                     </td>
                   </tr>
                 );
@@ -342,13 +350,38 @@ export function EnquiriesBoard() {
           <form className="w-full max-w-md rounded-2xl bg-white p-5 shadow-xl" onSubmit={(event) => {
             event.preventDefault();
             const row = assigning;
+            const name = assignee.trim();
+            if (!assigneeCode || !name) {
+              setError('Search and select a responsible officer from the employee directory.');
+              return;
+            }
             setAssigning(null);
-            run(() => tenderPost({ action: 'save', opportunity: { ...row, ownerName: assignee.trim(), stage: 'Enquiry', saveMode: 'draft' } }), `${row.referenceNo} assigned to ${assignee.trim()}.`);
+            run(() => tenderPost({
+              action: 'assign',
+              id: row.id,
+              recordType: 'enquiry',
+              officerName: name,
+              employeeCode: assigneeCode,
+              internalDeadline: internalDate,
+              reason: assignReason,
+            }), `${row.referenceNo} assigned to ${name}.`);
           }}>
             <h2 className="text-[16px] font-black text-slate-950">Assign responsible officer</h2>
-            <p className="mt-1 text-[12px] text-slate-500">{assigning.referenceNo} · {assigning.title}</p>
-            <input list="enquiry-officers" value={assignee} onChange={(event) => setAssignee(event.target.value)} required placeholder="Officer name" className="mt-4 h-10 w-full rounded-lg border border-slate-200 px-3 text-sm" />
-            <datalist id="enquiry-officers">{officers.map((name) => <option key={name} value={name} />)}</datalist>
+            <p className="mt-1 text-[12px] text-slate-500">{assigning.referenceNo} · {assigning.title}. GM Commercial confirms the internal response deadline.</p>
+            <div className="mt-4">
+              <OfficerSearch
+                employees={directory}
+                employeeId={assigneeCode}
+                name={assignee}
+                onSelect={(person) => { setAssigneeCode(person?.employeeId || ''); setAssignee(person?.fullName || ''); }}
+              />
+            </div>
+            <label className="mt-3 block text-[12px] font-semibold text-slate-600">Internal response deadline
+              <input type="date" value={internalDate} onChange={(event) => setInternalDate(event.target.value)} required className="mt-1 h-10 w-full rounded-lg border border-slate-200 px-3 text-sm font-normal" />
+            </label>
+            <label className="mt-3 block text-[12px] font-semibold text-slate-600">Reason for reassignment or deadline change
+              <textarea value={assignReason} onChange={(event) => setAssignReason(event.target.value)} className="mt-1 h-20 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm font-normal" />
+            </label>
             <div className="mt-4 flex justify-end gap-2">
               <button type="button" onClick={() => setAssigning(null)} className="h-9 rounded-lg border border-slate-200 px-3 text-[12px] font-semibold">Cancel</button>
               <button type="submit" className="h-9 rounded-lg bg-[#2563eb] px-3 text-[12px] font-bold text-white">Save assignment</button>

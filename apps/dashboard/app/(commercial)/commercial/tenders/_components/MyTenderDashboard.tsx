@@ -4,7 +4,8 @@ import Link from 'next/link';
 import { useEffect, useState } from 'react';
 import { MoreHorizontal, UserRound } from 'lucide-react';
 import type { TenderItem, TenderOpportunity } from '@/lib/commercial/tender-types';
-import { formatWhen, tenderGet } from './tender-api';
+import { internalDeadlineOf, preparationOf } from '@/lib/commercial/tender-workflow';
+import { formatWhen, tenderGet, tenderPost } from './tender-api';
 
 const isEnquiry = (row: TenderOpportunity) => row.stage === 'Enquiry' || row.tenderType === 'Enquiry' || row.opportunityType === 'Enquiry';
 
@@ -40,15 +41,28 @@ export function MyTenderDashboard() {
     return [me.name, me.code, me.username].some((part) => part && text.includes(part.toLowerCase()));
   };
 
+  const [notice, setNotice] = useState('');
+  const acknowledge = async (id: string) => {
+    setError('');
+    try {
+      await tenderPost({ action: 'acknowledge', id });
+      setNotice('Assignment acknowledged.');
+      setRows(await tenderGet<TenderOpportunity[]>('opportunities'));
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : 'The acknowledgement was not saved.');
+    }
+  };
+  const waiting = rows.filter((row) => mine(row.ownerName) && row.ownerName && !row.acknowledgedAt);
   const assigned = [
-    ...rows.filter((row) => mine(row.ownerName)).map((row) => ({
+    ...rows.filter((row) => mine(row.ownerName) || mine(row.ownerEmployeeCode)).map((row) => ({
       id: row.id,
       title: row.title,
       type: isEnquiry(row) ? 'Enquiry' as const : 'Tender' as const,
       assignedBy: row.createdBy || '—',
-      internal: row.clarificationDeadline,
-      status: row.status === 'Draft' || !row.ownerName ? 'Not Started' : 'In Progress',
+      internal: internalDeadlineOf(row),
+      status: preparationOf(row),
       href: `/commercial/tenders/workspace?id=${row.id}`,
+      acknowledge: Boolean(row.ownerName) && !row.acknowledgedAt,
     })),
     ...items.filter((item) => mine(item.assignee) && !/done|closed|cancel|complete/i.test(item.status)).map((item) => {
       const parent = rows.find((row) => row.id === item.opportunityId);
@@ -60,6 +74,7 @@ export function MyTenderDashboard() {
         internal: item.dueAt,
         status: /open|new/i.test(item.status) ? 'Not Started' : 'In Progress',
         href: `/commercial/tenders/workspace?id=${item.opportunityId}`,
+        acknowledge: false,
       };
     }),
   ];
@@ -72,11 +87,12 @@ export function MyTenderDashboard() {
           <span className="inline-flex h-11 w-11 items-center justify-center rounded-xl bg-[#2563eb] text-white"><UserRound className="h-5 w-5" /></span>
           <div>
             <h1 className="text-[22px] font-black tracking-tight text-slate-950">My Dashboard</h1>
-            <p className="text-[12px] text-slate-500">Enquiries and tenders assigned to {me.name || 'you'}.</p>
+            <p className="text-[12px] text-slate-500">Enquiries and tenders assigned to {me.name || 'you'}. {waiting.length} awaiting acknowledgement.</p>
           </div>
         </div>
       </section>
       {error ? <div className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">{error}</div> : null}
+      {notice ? <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">{notice}</div> : null}
       <article className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
         <div className="flex items-center justify-between px-4 pt-4">
           <h2 className="text-[15px] font-black text-slate-950">My Assigned Items</h2>
@@ -101,8 +117,8 @@ export function MyTenderDashboard() {
                   <td className="px-4 py-2.5">{item.type}</td>
                   <td className="px-4 py-2.5">{item.assignedBy}</td>
                   <td className="px-4 py-2.5">{item.internal ? formatWhen(item.internal) : '—'}</td>
-                  <td className="px-4 py-2.5"><span className={`rounded-md px-2 py-0.5 text-[11px] font-bold ${item.status === 'Not Started' ? 'bg-rose-50 text-rose-600' : 'bg-blue-50 text-blue-700'}`}>{item.status}</span></td>
-                  <td className="px-4 py-2.5"><Link href={item.href} aria-label={`Open ${item.title}`} className="text-slate-400"><MoreHorizontal className="h-4 w-4" /></Link></td>
+                  <td className="px-4 py-2.5"><span className={`rounded-md px-2 py-0.5 text-[11px] font-bold ${item.status === 'Submitted' ? 'bg-emerald-50 text-emerald-700' : item.status === 'In Progress' ? 'bg-blue-50 text-blue-700' : 'bg-slate-100 text-slate-600'}`}>{item.status}</span></td>
+                  <td className="px-4 py-2.5">{item.acknowledge ? <button type="button" onClick={() => acknowledge(item.id)} className="font-semibold text-blue-700">Acknowledge</button> : <Link href={item.href} aria-label={`Open ${item.title}`} className="text-slate-400"><MoreHorizontal className="h-4 w-4" /></Link>}</td>
                 </tr>
               ))}
             </tbody>

@@ -98,21 +98,40 @@ const Field = ({
   required?: boolean;
   type?: 'text' | 'number';
   hint?: string;
-}) => (
-  <div className="rounded-2xl border border-slate-200 bg-white p-3">
-    <div className="text-[11px] font-extrabold text-slate-600">
-      {label} {required ? <span className="text-red-600">*</span> : null}
+}) => {
+  const shown = value ?? '';
+  const [text, setText] = useState(shown);
+  const [focused, setFocused] = useState(false);
+  useEffect(() => {
+    if (!focused) setText(shown);
+  }, [focused, shown]);
+  return (
+    <div className="relative z-20 rounded-2xl border border-slate-200 bg-white p-3">
+      <div className="text-[11px] font-extrabold text-slate-600">
+        {label} {required ? <span className="text-red-600">*</span> : null}
+      </div>
+      <input
+        type={type}
+        value={focused ? text : shown}
+        autoComplete="off"
+        autoCorrect="off"
+        spellCheck={false}
+        onFocus={() => {
+          setText(shown);
+          setFocused(true);
+        }}
+        onChange={(e) => {
+          setText(e.target.value);
+          onChange(e.target.value);
+        }}
+        onBlur={() => setFocused(false)}
+        placeholder={placeholder}
+        className="mt-2 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm font-semibold text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-200"
+      />
+      {hint ? <div className="mt-1 text-[11px] font-semibold text-slate-500">{hint}</div> : null}
     </div>
-    <input
-      type={type}
-      value={value}
-      onChange={(e) => onChange(e.target.value)}
-      placeholder={placeholder}
-      className="mt-2 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm font-semibold text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-200"
-    />
-    {hint ? <div className="mt-1 text-[11px] font-semibold text-slate-500">{hint}</div> : null}
-  </div>
-);
+  );
+};
 
 const SelectField = ({
   label,
@@ -236,12 +255,13 @@ const SearchableBankField = ({
   const selectedMeta = items.find((item) => item.name.toLowerCase() === value.trim().toLowerCase());
 
   return (
-    <div className="relative rounded-2xl border border-slate-200 bg-white p-3">
+    <div className={`rounded-2xl border border-slate-200 bg-white p-3 ${open ? 'relative z-30' : 'relative z-0'}`}>
       <div className="text-[11px] font-extrabold text-slate-600">Bank Name</div>
       <div className="relative mt-2">
         <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
         <input
           value={open ? query : value}
+          autoComplete="off"
           onChange={(e) => {
             setQuery(e.target.value);
             setOpen(true);
@@ -476,14 +496,14 @@ export default function PayrollSetupStep({
             hint={isLumpsum ? 'Base lumpsum package only — overtime belongs in this-period lines below' : 'Total monthly pay before this-period supplements'}
           />
         ) : null}
+        <Field label="Account Number" value={payroll.accountNumber} onChange={(v) => patch({ accountNumber: v })} />
+        <Field label="Account Name" value={payroll.accountName} onChange={(v) => patch({ accountName: v })} />
         <SearchableBankField
           value={payroll.bankName}
           onChange={(v) => patch({ bankName: v })}
           banks={options.banks}
           catalog={options.bankCatalog}
         />
-        <Field label="Account Number" value={payroll.accountNumber} onChange={(v) => patch({ accountNumber: v })} />
-        <Field label="Account Name" value={payroll.accountName} onChange={(v) => patch({ accountName: v })} />
         <SelectField label="Pension Provider (PFA)" value={payroll.pensionProvider} onChange={(v) => patch({ pensionProvider: v })} options={options.pensionProviders} />
         <Field label="Pension PIN" value={payroll.pensionPin} onChange={(v) => patch({ pensionPin: v })} />
         <Field label="Tax ID (TIN)" value={payroll.taxId} onChange={(v) => patch({ taxId: v })} />

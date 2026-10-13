@@ -386,4 +386,31 @@ CREATE TABLE [commercial].[TenderAiReviews] (
   [CreatedAt] DATETIME2(0) NOT NULL CONSTRAINT [DF_TenderAi_CreatedAt] DEFAULT SYSUTCDATETIME(),
   [CreatedBy] NVARCHAR(120) NULL
 );
+
+IF COL_LENGTH(N'commercial.TenderOpportunities', N'PreparationStatus') IS NULL
+  ALTER TABLE [commercial].[TenderOpportunities] ADD [PreparationStatus] NVARCHAR(20) NULL;
+IF COL_LENGTH(N'commercial.TenderOpportunities', N'ClientStatus') IS NULL
+  ALTER TABLE [commercial].[TenderOpportunities] ADD [ClientStatus] NVARCHAR(20) NULL;
+IF COL_LENGTH(N'commercial.TenderOpportunities', N'AwardedToDle') IS NULL
+  ALTER TABLE [commercial].[TenderOpportunities] ADD [AwardedToDle] NVARCHAR(20) NULL;
+IF COL_LENGTH(N'commercial.TenderOpportunities', N'OwnerEmployeeCode') IS NULL
+  ALTER TABLE [commercial].[TenderOpportunities] ADD [OwnerEmployeeCode] NVARCHAR(80) NULL;
+IF COL_LENGTH(N'commercial.TenderOpportunities', N'AssignedAt') IS NULL
+  ALTER TABLE [commercial].[TenderOpportunities] ADD [AssignedAt] DATETIME2(0) NULL;
+IF COL_LENGTH(N'commercial.TenderOpportunities', N'AcknowledgedAt') IS NULL
+  ALTER TABLE [commercial].[TenderOpportunities] ADD [AcknowledgedAt] DATETIME2(0) NULL;
+IF COL_LENGTH(N'commercial.TenderOpportunities', N'DeadlineOverrideReason') IS NULL
+  ALTER TABLE [commercial].[TenderOpportunities] ADD [DeadlineOverrideReason] NVARCHAR(500) NULL;
+IF COL_LENGTH(N'commercial.TenderOpportunities', N'UrgentException') IS NULL
+  ALTER TABLE [commercial].[TenderOpportunities] ADD [UrgentException] BIT NOT NULL CONSTRAINT [DF_TenderOpp_Urgent] DEFAULT 0;
+
+IF OBJECT_ID(N'[commercial].[TenderReminderLog]', N'U') IS NULL
+CREATE TABLE [commercial].[TenderReminderLog] (
+  [ReminderKey] NVARCHAR(180) NOT NULL CONSTRAINT [PK_TenderReminderLog] PRIMARY KEY,
+  [OpportunityId] NVARCHAR(40) NOT NULL,
+  [SlotName] NVARCHAR(40) NOT NULL,
+  [StatusName] NVARCHAR(20) NOT NULL,
+  [Detail] NVARCHAR(500) NULL,
+  [CreatedAt] DATETIME2(0) NOT NULL CONSTRAINT [DF_TenderReminder_CreatedAt] DEFAULT SYSUTCDATETIME()
+);
 `;

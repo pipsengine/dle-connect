@@ -1,9 +1,8 @@
 'use client';
 
 import { useEffect, useState, type ReactNode } from 'react';
-import { ArrowLeft, FileText, Plus, Save, Send, X } from 'lucide-react';
-import type { TenderDocument, TenderLookups, TenderOpportunity } from '@/lib/commercial/tender-types';
-import { isManagingDirector } from '@/lib/access/commercial-access';
+import { ArrowLeft, FileText, Plus, Save, X } from 'lucide-react';
+import type { TenderDocument, TenderOpportunity } from '@/lib/commercial/tender-types';
 import { formatWhen, tenderGet, tenderPost, tenderUpload } from './tender-api';
 
 const TYPES = ['EPC', 'Supply', 'Service', 'Consultancy', 'Framework', 'Other'];
@@ -40,31 +39,20 @@ const writeExtra = (extra: Extra, notes: string) => {
   ].filter(Boolean).join('\n');
 };
 
-const dayBefore = (value: string) => {
-  const [year, month, day] = value.split('-').map(Number);
-  if (!year || !month || !day) return '';
-  const date = new Date(year, month - 1, day);
-  date.setDate(date.getDate() - 1);
-  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
-};
-
 export function TenderOpportunityModal({
   open,
   initial,
   clients,
-  officers,
   onClose,
   onSaved,
 }: {
   open: boolean;
   initial?: TenderOpportunity | null;
   clients: string[];
-  officers: string[];
+  officers?: string[];
   onClose: () => void;
   onSaved: () => void;
 }) {
-  const [md, setMd] = useState(false);
-  const [lookups, setLookups] = useState<TenderLookups | null>(null);
   const [documents, setDocuments] = useState<TenderDocument[]>([]);
   const [referenceNo, setReferenceNo] = useState('');
   const [title, setTitle] = useState('');
@@ -75,8 +63,6 @@ export function TenderOpportunityModal({
   const [sector, setSector] = useState('');
   const [source, setSource] = useState('');
   const [external, setExternal] = useState('');
-  const [internal, setInternal] = useState('');
-  const [internalTouched, setInternalTouched] = useState(false);
   const [clientRef, setClientRef] = useState('');
   const [issued, setIssued] = useState('');
   const [documentsReceived, setDocumentsReceived] = useState('');
@@ -86,11 +72,6 @@ export function TenderOpportunityModal({
   const [description, setDescription] = useState('');
   const [requirements, setRequirements] = useState('');
   const [projects, setProjects] = useState('');
-  const [officer, setOfficer] = useState('');
-  const [newOfficer, setNewOfficer] = useState(false);
-  const [lineManager, setLineManager] = useState('');
-  const [department, setDepartment] = useState('');
-  const [site, setSite] = useState('');
   const [priority, setPriority] = useState('Medium');
   const [effort, setEffort] = useState('');
   const [remarks, setRemarks] = useState('');
@@ -110,8 +91,6 @@ export function TenderOpportunityModal({
     setSector(initial?.category || '');
     setSource(initial?.source || '');
     setExternal((initial?.submissionDeadline || '').slice(0, 10));
-    setInternal((initial?.closingDate || '').slice(0, 10));
-    setInternalTouched(Boolean(initial?.closingDate));
     setClientRef(initial?.enquiryRef || '');
     setIssued((initial?.invitationDate || '').slice(0, 10));
     setDocumentsReceived(extra.documentsReceived);
@@ -121,41 +100,22 @@ export function TenderOpportunityModal({
     setDescription(initial?.description || '');
     setRequirements(initial?.scopeSummary || '');
     setProjects(extra.projects);
-    setOfficer(initial?.ownerName || '');
-    setNewOfficer(false);
-    setLineManager(extra.lineManager);
-    setDepartment(initial?.department || '');
-    setSite(initial?.site || '');
     setPriority(initial?.priority || 'Medium');
     setEffort(extra.effort);
     setRemarks(initial?.approvalNotes || '');
     setFiles([]);
     setDocuments([]);
     setError('');
-    tenderGet<TenderLookups>('lookups').then(setLookups).catch(() => setLookups(null));
     if (initial?.id) {
       tenderGet<{ documents: TenderDocument[] }>('opportunity', { id: initial.id }).then((detail) => setDocuments(detail.documents || [])).catch(() => setDocuments([]));
     }
-    fetch('/api/auth/me', { cache: 'no-store', credentials: 'same-origin' })
-      .then((response) => (response.ok ? response.json() : null))
-      .then((json) => setMd(isManagingDirector(json?.data?.roles || [], Boolean(json?.data?.isGlobalAdmin))))
-      .catch(() => setMd(false));
   }, [open, initial]);
 
   if (!open) return null;
 
-  const setExternalDate = (value: string) => {
-    setExternal(value);
-    if (md && !internalTouched) setInternal(value ? dayBefore(value) : '');
-  };
-
-  const save = async (assign: boolean) => {
+  const save = async () => {
     if (!title.trim() || !client.trim() || !tenderType || !sector || !source || !external || !description.trim() || !documentsReceived) {
       setError('Complete the required opportunity details, external deadline, and whether tender documents were received.');
-      return;
-    }
-    if (assign && (!md || !officer.trim() || !internal)) {
-      setError('The Managing Director must choose the responsible officer and internal submission date before assigning.');
       return;
     }
     setBusy(true);
@@ -181,19 +141,19 @@ export function TenderOpportunityModal({
           status: keepExisting ? initial?.status : 'Draft',
           stage: keepExisting ? initial?.stage : 'Tender/Bid',
           clientName: client.trim(),
-          department,
-          location: initial?.location || site,
-          site,
+          department: initial?.department || '',
+          location: initial?.location || '',
+          site: initial?.site || '',
           estimatedValue: initial?.estimatedValue || 0,
           currency: initial?.currency || 'NGN',
           invitationDate: issued,
           submissionDeadline: external,
-          closingDate: md ? internal : (initial?.closingDate || ''),
+          closingDate: initial?.closingDate || '',
           clarificationDeadline: clarification,
-          ownerName: md ? officer.trim() : (initial?.ownerName || ''),
+          ownerName: initial?.ownerName || '',
           approvalNotes: remarks,
           teamNotes: writeExtra({
-            lineManager: md ? lineManager : readExtra(initial?.teamNotes || '').lineManager,
+            lineManager: readExtra(initial?.teamNotes || '').lineManager,
             documentsReceived,
             platform,
             bidFormat,
@@ -204,9 +164,6 @@ export function TenderOpportunityModal({
         },
       });
       if (saved?.id && files.length) await Promise.all(files.map((file) => tenderUpload(saved.id, file, 'Tender Document')));
-      if (assign && saved?.id) {
-        await tenderPost({ action: 'notify', id: saved.id, message: `${saved.referenceNo} assigned to ${officer.trim()}. Internal submission date ${internal}.` });
-      }
       onSaved();
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : 'The opportunity was not saved.');
@@ -223,7 +180,7 @@ export function TenderOpportunityModal({
             <span className="inline-flex h-11 w-11 items-center justify-center rounded-xl bg-[#2563eb] text-white"><FileText className="h-5 w-5" /></span>
             <div>
               <h2 className="text-[20px] font-black text-slate-950">{initial ? 'Edit Tender Opportunity' : 'New Tender Opportunity'}</h2>
-              <p className="text-[12px] text-slate-500">Capture tender opportunity details, assign a responsible officer and set internal submission deadline.</p>
+              <p className="text-[12px] text-slate-500">Capture the tender opportunity. The Managing Director assigns the responsible officer afterwards.</p>
             </div>
           </div>
           <button type="button" onClick={onClose} className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-slate-200 px-3 text-[12px] font-bold text-slate-700"><ArrowLeft className="h-3.5 w-3.5" /> Back to Opportunities</button>
@@ -252,8 +209,8 @@ export function TenderOpportunityModal({
             </Card>
             <Card step="2" title="Tender Details">
               <div className="grid gap-3 md:grid-cols-2">
-                <Field label="External Submission Deadline" required><input type="date" value={external} onChange={(event) => setExternalDate(event.target.value)} className={input} /></Field>
-                <Field label="Internal Submission Deadline" required><input type="date" value={internal} disabled={!md} onChange={(event) => { setInternalTouched(true); setInternal(event.target.value); }} className={input} /></Field>
+                <Field label="External Submission Deadline" required><input type="date" value={external} onChange={(event) => setExternal(event.target.value)} className={input} /></Field>
+                <p className="text-[12px] text-sky-800 md:col-span-2">The Managing Director confirms the internal submission deadline and assigns the responsible officer after this opportunity is saved.</p>
                 <Field label="Tender Reference (Client)"><input value={clientRef} onChange={(event) => setClientRef(event.target.value)} placeholder="Enter client reference number..." className={input} /></Field>
                 <Field label="Issuing Date"><input type="date" value={issued} onChange={(event) => setIssued(event.target.value)} className={input} /></Field>
                 <Field label="Tender Documents Received" required><select value={documentsReceived} onChange={(event) => setDocumentsReceived(event.target.value)} className={input} aria-label="Documents received"><option value="">Select...</option><option>Yes</option><option>No</option></select></Field>
@@ -269,23 +226,7 @@ export function TenderOpportunityModal({
                 <Field label="Relevant Projects / Categories (if any)"><input value={projects} onChange={(event) => setProjects(event.target.value)} placeholder="Select project(s)..." className={input} /></Field>
               </div>
             </Card>
-            <Card step="4" title="Assignment (MD Approval Required)">
-              <div className="grid gap-3 md:grid-cols-2">
-                <Field label="Responsible Officer">
-                  <div className="flex gap-2">
-                    {newOfficer ? <input value={officer} disabled={!md} onChange={(event) => setOfficer(event.target.value)} placeholder="Officer name" className={input} /> : (
-                      <select value={officer} disabled={!md} onChange={(event) => setOfficer(event.target.value)} className={input} aria-label="Responsible officer"><option value="">Select officer...</option>{officers.map((name) => <option key={name}>{name}</option>)}</select>
-                    )}
-                    <button type="button" disabled={!md} onClick={() => setNewOfficer((value) => !value)} className="inline-flex h-10 w-10 items-center justify-center rounded-lg border border-slate-200 text-blue-700 disabled:opacity-40" aria-label="Add officer"><Plus className="h-4 w-4" /></button>
-                  </div>
-                </Field>
-                <Field label="Line Manager"><input value={lineManager} disabled={!md} onChange={(event) => setLineManager(event.target.value)} className={input} /></Field>
-                <Field label="Department"><select value={department} onChange={(event) => setDepartment(event.target.value)} className={input} aria-label="Department"><option value="">Select department</option>{(lookups?.departments || []).map((item) => <option key={item.id} value={item.name}>{item.name}</option>)}</select></Field>
-                <Field label="Work Centre"><select value={site} onChange={(event) => setSite(event.target.value)} className={input} aria-label="Work centre"><option value="">Select work centre</option>{(lookups?.sites || []).map((item) => <option key={item.id} value={item.name}>{item.name}</option>)}</select></Field>
-              </div>
-              <p className="mt-3 rounded-lg bg-amber-50 px-3 py-2 text-[12px] text-amber-800">This opportunity must be assigned by the Managing Director. Saving and assigning records the officer and raises a portal notification.</p>
-            </Card>
-            <Card step="5" title="Attachments">
+            <Card step="4" title="Attachments">
               <label className="flex min-h-24 cursor-pointer flex-col items-center justify-center rounded-xl border border-dashed border-slate-300 bg-slate-50 px-4 py-5 text-center text-[12px] text-slate-500">
                 <input type="file" multiple className="hidden" onChange={(event) => setFiles(Array.from(event.target.files || []))} />
                 Drag and drop files here, or click to browse
@@ -295,7 +236,7 @@ export function TenderOpportunityModal({
                 <ul className="mt-1 text-[12px] text-slate-600">{documents.map((file) => <li key={file.id}>{file.fileName} · {formatWhen(file.uploadedAt)}</li>)}{files.map((file) => <li key={file.name}>{file.name} · pending save</li>)}</ul>
               )}
             </Card>
-            <Card step="6" title="Additional Information">
+            <Card step="5" title="Additional Information">
               <div className="grid gap-3 md:grid-cols-2">
                 <Field label="Priority" required><select value={priority} onChange={(event) => setPriority(event.target.value)} className={input} aria-label="Priority">{['High', 'Medium', 'Low'].map((item) => <option key={item}>{item}</option>)}</select></Field>
                 <Field label="Estimated Submission Effort"><select value={effort} onChange={(event) => setEffort(event.target.value)} className={input} aria-label="Submission effort"><option value="">Select effort level...</option>{EFFORT.map((item) => <option key={item}>{item}</option>)}</select></Field>
@@ -306,10 +247,9 @@ export function TenderOpportunityModal({
         </div>
         <div className="flex flex-wrap items-center justify-between gap-2 border-t border-slate-200 bg-white px-5 py-4">
           <div className="flex gap-2">
-            <button type="button" disabled={busy} onClick={() => save(false)} className="inline-flex h-10 items-center gap-1.5 rounded-lg border border-slate-200 px-4 text-[13px] font-bold text-slate-700 disabled:opacity-50"><Save className="h-4 w-4" /> Save as Draft</button>
+            <button type="button" disabled={busy} onClick={() => save()} className="inline-flex h-10 items-center gap-1.5 rounded-lg bg-[#2563eb] px-4 text-[13px] font-bold text-white disabled:opacity-50"><Save className="h-4 w-4" /> {busy ? 'Saving…' : 'Save Opportunity'}</button>
             <button type="button" onClick={onClose} className="inline-flex h-10 items-center gap-1.5 rounded-lg border border-slate-200 px-4 text-[13px] font-bold text-slate-700"><X className="h-4 w-4" /> Cancel</button>
           </div>
-          {md ? <button type="button" disabled={busy} onClick={() => save(true)} className="inline-flex h-10 items-center gap-1.5 rounded-lg bg-[#2563eb] px-4 text-[13px] font-bold text-white disabled:opacity-50"><Send className="h-4 w-4" /> {busy ? 'Saving…' : 'Save and Assign to Responsible Officer'}</button> : null}
         </div>
       </div>
     </div>

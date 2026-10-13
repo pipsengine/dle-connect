@@ -1,8 +1,9 @@
 'use client';
 
 import Link from 'next/link';
-import { ChevronDown, type LucideIcon } from 'lucide-react';
-import type { ReactNode } from 'react';
+import { ChevronDown, MoreHorizontal, type LucideIcon } from 'lucide-react';
+import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
+import { createPortal } from 'react-dom';
 import type { TenderOpportunity } from '@/lib/commercial/tender-types';
 import { daysUntil } from '@/lib/commercial/tender-present';
 import { formatWhen, money } from './tender-api';
@@ -108,6 +109,78 @@ export function Panel({ title, action, children, className = '' }: { title: stri
       </div>
       {children}
     </section>
+  );
+}
+
+export function RowMenu({
+  open,
+  label,
+  disabled,
+  onToggle,
+  children,
+}: {
+  open: boolean;
+  label: string;
+  disabled?: boolean;
+  onToggle: () => void;
+  children: ReactNode;
+}) {
+  const buttonRef = useRef<HTMLButtonElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
+  const [box, setBox] = useState<{ top: number; left: number; lift: boolean } | null>(null);
+
+  useLayoutEffect(() => {
+    if (!open) return;
+    const place = () => {
+      const button = buttonRef.current;
+      const menu = menuRef.current;
+      if (!button) return;
+      const rect = button.getBoundingClientRect();
+      const width = 224;
+      const height = menu?.offsetHeight || 280;
+      const lift = rect.bottom + height + 8 > window.innerHeight && rect.top > height + 8;
+      setBox({
+        top: lift ? rect.top - 4 : rect.bottom + 4,
+        left: Math.min(Math.max(8, rect.right - width), window.innerWidth - width - 8),
+        lift,
+      });
+    };
+    place();
+    window.addEventListener('resize', place);
+    window.addEventListener('scroll', place, true);
+    return () => {
+      window.removeEventListener('resize', place);
+      window.removeEventListener('scroll', place, true);
+    };
+  }, [open]);
+
+  useEffect(() => {
+    if (!open) return;
+    const close = (event: MouseEvent) => {
+      const target = event.target as Node;
+      if (buttonRef.current?.contains(target) || menuRef.current?.contains(target)) return;
+      onToggle();
+    };
+    document.addEventListener('mousedown', close);
+    return () => document.removeEventListener('mousedown', close);
+  }, [open, onToggle]);
+
+  return (
+    <>
+      <button ref={buttonRef} type="button" aria-label={label} aria-expanded={open} disabled={disabled} onClick={onToggle} className="rounded-lg p-1 text-slate-400 hover:bg-slate-100">
+        <MoreHorizontal className="h-4 w-4" />
+      </button>
+      {open ? createPortal(
+        <div
+          ref={menuRef}
+          className="fixed z-50 w-56 rounded-xl border border-slate-200 bg-white py-1 text-[12px] shadow-lg"
+          style={{ top: box?.top ?? 0, left: box?.left ?? 0, transform: box?.lift ? 'translateY(-100%)' : undefined, visibility: box ? 'visible' : 'hidden' }}
+        >
+          {children}
+        </div>,
+        document.body,
+      ) : null}
+    </>
   );
 }
 
