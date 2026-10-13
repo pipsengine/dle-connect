@@ -40,6 +40,16 @@ export type SalaryScheduleRow = {
   paye: number;
   pension: number;
   nhf: number;
+  /** Employer ITF from the salary schedule (1% of earning total). */
+  itf?: number;
+  /** Employer NSITF from the salary schedule (1% of earning total). */
+  nsitf?: number;
+  /** Employer pension on the naira row. */
+  pensionEmployer?: number;
+  /** Naira amount of the USD employer pension, when the schedule places it on the naira row. */
+  pensionEmployerUsd?: number;
+  /** HR's Company Contribution Total. This is the employer add-on on top of gross. */
+  companyContributionTotal?: number;
   earnings: SalaryScheduleEarningLine[];
   deductions: SalaryScheduleDeductionLine[];
 };
@@ -447,6 +457,32 @@ export const isScheduleEarningHeader = (name: string) => {
   return Boolean(earningComponentFamily('', key));
 };
 
+const employerContributionColumns = (headerRow: Map<string, string>) => {
+  const cols: { itf?: string; nsitf?: string; pension?: string; pensionUsd?: string; total?: string } = {};
+  for (const [col, raw] of headerRow) {
+    const name = compact(raw);
+    if (!name) continue;
+    const key = headerKey(name);
+    if (key === 'ITF LEVY' || key.startsWith('ITF LEVY')) cols.itf = col;
+    else if (key.startsWith('NSITF')) cols.nsitf = col;
+    else if (key.includes('PENSION EMPLOYER')) cols.pensionUsd = col;
+    else if (key === 'PENSION' && /\(COMPANYCONTRIBUTION\)/i.test(name)) cols.pension = col;
+    else if (key === 'COMPANYCONTRIBUTION TOTAL') cols.total = col;
+  }
+  return cols;
+};
+
+const readEmployerContributions = (
+  row: Map<string, string>,
+  cols: ReturnType<typeof employerContributionColumns>,
+) => ({
+  itf: roundMoney(cellNum(row, cols.itf)),
+  nsitf: roundMoney(cellNum(row, cols.nsitf)),
+  pensionEmployer: roundMoney(cellNum(row, cols.pension)),
+  pensionEmployerUsd: roundMoney(cellNum(row, cols.pensionUsd)),
+  companyContributionTotal: roundMoney(cellNum(row, cols.total)),
+});
+
 const buildHeaderMap = (headerRow: Map<string, string>) => {
   const byKey = new Map<string, string>();
   const earnings: Array<{ col: string; name: string; code: string }> = [];
@@ -461,7 +497,7 @@ const buildHeaderMap = (headerRow: Map<string, string>) => {
     }
     if (/^Employee Code$/i.test(name)) byKey.set('EMPLOYEE CODE', col);
   }
-  return { byKey, earnings, deductions };
+  return { byKey, earnings, deductions, employerCols: employerContributionColumns(headerRow) };
 };
 
 const inferSplitPackageColumns = (byKey: Map<string, string>) => {
@@ -519,7 +555,7 @@ const parseEmployeeSheet = (
     skipped.push({ sheet: sheetName, reason: 'missing header row' });
     return [] as SalaryScheduleRow[];
   }
-  const { byKey, earnings: earningCols, deductions: deductionCols } = buildHeaderMap(header);
+  const { byKey, earnings: earningCols, deductions: deductionCols, employerCols } = buildHeaderMap(header);
   const codeCol = findCol(byKey, 'EMPLOYEE CODE');
   const rows: SalaryScheduleRow[] = [];
 
@@ -565,6 +601,7 @@ const parseEmployeeSheet = (
     const deductionTotal = roundMoney(cellNum(row, findCol(byKey, 'DEDUCTION TOTAL', 'DEDUCTION TOTAL')) || deductions.reduce((sum, line) => sum + line.amount, 0));
     const grossPay = roundMoney(cellNum(row, findCol(byKey, 'GROSS EARNINGS')) || earningTotal);
     const netPay = roundMoney(cellNum(row, findCol(byKey, 'NET PAY')) || (grossPay - deductionTotal));
+    const employer = readEmployerContributions(row, employerCols);
 
     rows.push({
       sheet: sheetName,
@@ -586,6 +623,7 @@ const parseEmployeeSheet = (
       paye: roundMoney(deductions.find((line) => line.code === 'PAYE')?.amount || 0),
       pension: roundMoney(deductions.find((line) => line.code === 'PENSION_EE' || line.code === 'PENSION')?.amount || 0),
       nhf: roundMoney(deductions.find((line) => line.code === 'NHF')?.amount || 0),
+      ...employer,
       earnings,
       deductions,
     });
@@ -628,6 +666,7 @@ const parseCurrencySplitSheet = (
     byKey: Map<string, string>;
     earningCols: Array<{ col: string; name: string; code: string }>;
     deductionCols: Array<{ col: string; name: string; code: string }>;
+    employerCols: ReturnType<typeof employerContributionColumns>;
   } | null = null;
   const seenCurrency = new Set<'NGN' | 'USD'>();
   for (let i = 0; i < sectionStarts.length; i += 1) {
@@ -645,17 +684,18 @@ const parseCurrencySplitSheet = (
     let byKey: Map<string, string>;
     let earningCols: Array<{ col: string; name: string; code: string }>;
     let deductionCols: Array<{ col: string; name: string; code: string }>;
+    let employerCols: ReturnType<typeof employerContributionColumns>;
     if (headerEntry) {
       headerRowNo = headerEntry[0];
-      ({ byKey, earnings: earningCols, deductions: deductionCols } = buildHeaderMap(headerEntry[1]));
+      ({ byKey, earnings: earningCols, deductions: deductionCols, employerCols } = buildHeaderMap(headerEntry[1]));
       if (!earningCols.length || !deductionCols.length) {
         const inferred = inferSplitPackageColumns(byKey);
         if (!earningCols.length) earningCols = inferred.earnings;
         if (!deductionCols.length) deductionCols = inferred.deductions;
       }
-      lastHeader = { headerRowNo, byKey, earningCols, deductionCols };
+      lastHeader = { headerRowNo, byKey, earningCols, deductionCols, employerCols };
     } else if (lastHeader) {
-      ({ headerRowNo, byKey, earningCols, deductionCols } = lastHeader);
+      ({ headerRowNo, byKey, earningCols, deductionCols, employerCols } = lastHeader);
       headerRowNo = section.rowNo;
     } else {
       skipped.push({ sheet: sheetName, reason: `${section.currency} header missing` });
@@ -705,6 +745,7 @@ const parseCurrencySplitSheet = (
       const grossPay = roundMoney(cellNum(row, findCol(byKey, 'GROSS EARNINGS')) || earningTotal);
       const netPay = roundMoney(cellNum(row, findCol(byKey, 'NET PAY')) || (grossPay - deductionTotal));
       if (!grossPay && !netPay) continue;
+      const employer = readEmployerContributions(row, employerCols);
       const rowKind: 'perm' | 'usd' = section.currency === 'USD' ? 'usd' : 'perm';
       rows.push({
         sheet: sheetName,
@@ -726,6 +767,7 @@ const parseCurrencySplitSheet = (
         paye: roundMoney(deductions.find((line) => line.code === 'PAYE')?.amount || 0),
         pension: roundMoney(deductions.find((line) => line.code === 'PENSION_EE' || line.code === 'PENSION')?.amount || 0),
         nhf: roundMoney(deductions.find((line) => line.code === 'NHF')?.amount || 0),
+        ...employer,
         earnings,
         deductions,
       });

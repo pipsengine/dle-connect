@@ -332,6 +332,28 @@ export type CreatePaymentRequestInput = {
   overrideOutstandingAdvance?: boolean;
   overrideReason?: string;
   submit?: boolean;
+  /**
+   * When set, skip the amount matrix and start approval on these stages.
+   * Used by telephone allowance: Finance Manager → CFO → MD/CEO.
+   */
+  fixedApprovalStages?: string[];
+  /** Marks the chain so later repairs do not insert Reporting Manager, GM, or HR. */
+  lockApprovalChain?: boolean;
+  sourceModule?: string;
+  telephoneCycleId?: string;
+  telephoneCycleCode?: string;
+  /**
+   * When set, these rows replace the single "Submitted" action.
+   * Used so telephone allowance shows the requester, then HR, before Finance Manager.
+   */
+  openingHistory?: Array<{
+    actionType: string;
+    stage: string;
+    actorCode?: string;
+    actorName: string;
+    comment?: string;
+    createdAt?: string;
+  }>;
   actor: string;
   /** Final metadata already saved to disk (optional). */
   attachments?: PaymentRequestAttachment[];
@@ -1164,6 +1186,9 @@ const canInsertProjectReportingManager = async (row: PaymentRequestRow) => {
 /** Re-resolve Approval Limits when payload.stages is missing/incomplete or amount band changed. */
 const ensureApprovalStages = async (row: PaymentRequestRow): Promise<string[]> => {
   const existing = stagesFromPayload(row.payload);
+  if (row.payload?.approvalChainLocked === true) {
+    return existing.length ? existing : ['Finance Manager', 'CFO', 'MD/CEO'];
+  }
   const hasFinanceManager = existing.some((stage) => /finance manager/i.test(stage));
   const onlyReportingManager = existing.length === 1 && /reporting manager|line manager|supervisor/i.test(existing[0]);
 
@@ -2153,12 +2178,14 @@ const logAction = async (input: {
   actorName: string;
   comment?: string;
   reason?: string;
+  createdAt?: string;
+  actionId?: string;
 }) => {
   const pool = await ensureFinanceDb().catch(() => null);
   if (!pool) return;
   try {
     await pool.request()
-      .input('ActionId', sql.NVarChar(60), `PRA-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`)
+      .input('ActionId', sql.NVarChar(60), input.actionId || `PRA-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`)
       .input('RequestId', sql.NVarChar(60), input.requestId)
       .input('ActionType', sql.NVarChar(40), input.actionType)
       .input('Stage', sql.NVarChar(80), input.stage || null)
@@ -2166,11 +2193,12 @@ const logAction = async (input: {
       .input('ActorName', sql.NVarChar(200), input.actorName)
       .input('Comment', sql.NVarChar(sql.MAX), input.comment || null)
       .input('Reason', sql.NVarChar(sql.MAX), input.reason || null)
+      .input('CreatedAt', sql.DateTime2, input.createdAt ? new Date(input.createdAt) : null)
       .query(`
 INSERT INTO [finance].[PaymentRequestActions]
-  ([ActionId], [RequestId], [ActionType], [Stage], [ActorCode], [ActorName], [Comment], [Reason])
+  ([ActionId], [RequestId], [ActionType], [Stage], [ActorCode], [ActorName], [Comment], [Reason], [CreatedAt])
 VALUES
-  (@ActionId, @RequestId, @ActionType, @Stage, @ActorCode, @ActorName, @Comment, @Reason)
+  (@ActionId, @RequestId, @ActionType, @Stage, @ActorCode, @ActorName, @Comment, @Reason, COALESCE(@CreatedAt, SYSUTCDATETIME()))
 `);
   } catch {
     // audit best-effort
@@ -2708,7 +2736,29 @@ export const createPaymentRequest = async (input: CreatePaymentRequestInput) => 
   const grossAmount = amount;
   const netAmount = moneyRound(grossAmount + vatAmount - whtAmount - retentionAmount);
   const submit = Boolean(input.submit);
-  const stageInfo = submit
+  const fixedStages = (input.fixedApprovalStages || []).map((stage) => compact(stage)).filter(Boolean);
+  const stageInfo = submit && fixedStages.length
+    ? await (async () => {
+      const converted = await convertAmountToNgn(amount, compact(input.currencyCode) || 'NGN').catch(() => ({
+        amountNgn: amount,
+        fxRate: 1,
+        fxRateDate: new Date().toISOString().slice(0, 10),
+        fxSource: 'Telephone allowance',
+      }));
+      return {
+        stage: fixedStages[0],
+        status: 'Pending Approval' as const,
+        matrixRuleName: input.sourceModule === 'telephone-allowance' ? 'TELEPHONE_ALLOWANCE' : 'FIXED_APPROVAL_CHAIN',
+        approvalLevel: fixedStages.length,
+        stages: fixedStages,
+        pathType: 'Non-project' as const,
+        amountNgn: converted.amountNgn,
+        fxRate: converted.fxRate,
+        fxRateDate: converted.fxRateDate,
+        fxSource: converted.fxSource,
+      };
+    })()
+    : submit
     ? await resolveInitialStage(netAmount, input.paymentType, {
       currencyCode: compact(input.currencyCode) || 'NGN',
       department,
@@ -2801,6 +2851,10 @@ export const createPaymentRequest = async (input: CreatePaymentRequestInput) => 
       expenseNature: input.paymentType === 'Expense Payment'
         ? (compact(input.expenseNature) || null)
         : null,
+      approvalChainLocked: Boolean(input.lockApprovalChain || fixedStages.length),
+      sourceModule: compact(input.sourceModule) || null,
+      telephoneCycleId: compact(input.telephoneCycleId) || null,
+      telephoneCycleCode: compact(input.telephoneCycleCode) || null,
     }))
     .input('AttachmentsJson', sql.NVarChar(sql.MAX), JSON.stringify(attachments))
     .query(`
@@ -2827,15 +2881,29 @@ INSERT INTO [finance].[PaymentRequests] (
   if (waiverId) {
     await consumeCashAdvanceWaiver(waiverId, requestId);
   }
-  await logAction({
-    requestId,
-    actionType: submit ? 'Submitted' : 'Created',
-    stage: stageInfo.stage,
-    actorName: input.actor,
-    actorCode: input.requesterCode,
-    comment: submit ? 'Payment request submitted for approval.' : 'Payment request saved as draft.',
-    reason: input.overrideReason,
-  });
+  if (input.openingHistory?.length) {
+    for (const item of input.openingHistory) {
+      await logAction({
+        requestId,
+        actionType: item.actionType,
+        stage: item.stage,
+        actorName: item.actorName,
+        actorCode: item.actorCode,
+        comment: item.comment,
+        createdAt: item.createdAt,
+      });
+    }
+  } else {
+    await logAction({
+      requestId,
+      actionType: submit ? 'Submitted' : 'Created',
+      stage: stageInfo.stage,
+      actorName: input.actor,
+      actorCode: input.requesterCode,
+      comment: submit ? 'Payment request submitted for approval.' : 'Payment request saved as draft.',
+      reason: input.overrideReason,
+    });
+  }
 
   if (submit && stageInfo.stage && stageInfo.stage !== 'Draft') {
     await assignCurrentApprover({
@@ -2863,6 +2931,33 @@ INSERT INTO [finance].[PaymentRequests] (
   }
 
   return { request, workspace };
+};
+
+/** Expense payment already raised from a telephone allowance cycle, if any. */
+export const findTelephoneAllowancePaymentRequest = async (cycleId: string) => {
+  const id = compact(cycleId);
+  if (!id) return null;
+  const pool = await ensureFinanceDb().catch(() => null);
+  if (!pool) return null;
+  try {
+    const result = await pool.request()
+      .input('CycleId', sql.NVarChar(120), id)
+      .query(`
+SELECT TOP 1 [RequestId], [RequestNumber]
+FROM [finance].[PaymentRequests]
+WHERE JSON_VALUE([PayloadJson], '$.telephoneCycleId') = @CycleId
+ORDER BY [CreatedAt] DESC
+`);
+    const row = result.recordset?.[0];
+    if (!row) return null;
+    return {
+      requestId: compact(row.RequestId),
+      requestNumber: compact(row.RequestNumber),
+    };
+  } catch (error) {
+    console.error('[payment-requests] telephone cycle lookup failed', error);
+    return null;
+  }
 };
 
 export type UpdateReturnedPaymentRequestInput = CreatePaymentRequestInput & {
@@ -3021,7 +3116,23 @@ export const updateReturnedPaymentRequest = async (input: UpdateReturnedPaymentR
   const grossAmount = amount;
   const netAmount = moneyRound(grossAmount + vatAmount - whtAmount - retentionAmount);
 
-  const stageInfo = resubmit
+  const lockedStages = existing.payload?.approvalChainLocked === true
+    ? stagesFromPayload(existing.payload)
+    : [];
+  const stageInfo = resubmit && lockedStages.length
+    ? {
+      stage: lockedStages[0],
+      status: 'Pending Approval' as const,
+      matrixRuleName: compact(existing.payload?.matrixRuleName) || 'TELEPHONE_ALLOWANCE',
+      approvalLevel: lockedStages.length,
+      stages: lockedStages,
+      pathType: 'Non-project' as const,
+      amountNgn: Number(existing.payload?.amountNgn || netAmount),
+      fxRate: Number(existing.payload?.fxRate || 1),
+      fxRateDate: compact(existing.payload?.fxRateDate) || null,
+      fxSource: compact(existing.payload?.fxSource) || null,
+    }
+    : resubmit
     ? await resolveInitialStage(netAmount, existing.paymentType, {
       currencyCode: currency,
       department,

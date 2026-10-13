@@ -304,6 +304,56 @@ export const applySalaryScheduleOverrideToRecords = (
   return [...dailyRate, ...attachCompanionNgnPay([...overlaid, ...missingUsdFromHris], companionExcel)];
 };
 
+/** Employer add-on from HR's corrected Company Contribution Total, otherwise ITF + NSITF + employer pension. */
+export const excelEmployerOnTop = (row: SalaryScheduleRow) => {
+  const components = roundMoney(
+    Number(row.itf || 0)
+    + Number(row.nsitf || 0)
+    + Number(row.pensionEmployer || 0)
+    + Number(row.pensionEmployerUsd || 0),
+  );
+  const typed = roundMoney(Number(row.companyContributionTotal || 0));
+  return typed > 0 ? typed : components;
+};
+
+/**
+ * September payroll keeps gross and net from the employee profile.
+ * Employer cost follows the salary schedule: gross plus HR's company contribution.
+ */
+export const applySalaryScheduleEmployerCost = (
+  records: PayrollCalculationRecord[],
+  period: string,
+  schedule?: SalaryScheduleUploadRecord | null,
+): PayrollCalculationRecord[] => {
+  const applied = schedule === undefined ? readAppliedSalaryScheduleOverride(period) : schedule;
+  if (!applied?.parsed?.rows?.length) return records;
+  const byKey = new Map<string, SalaryScheduleRow>();
+  for (const row of applied.parsed.rows) {
+    if (row.kind === 'usd') continue;
+    if (!normalizePayrollCompany(row.company)) continue;
+    if (!(excelEmployerOnTop(row) > 0)) continue;
+    for (const key of salaryScheduleEmployeeKeys(row.employeeCode)) {
+      if (!byKey.has(key)) byKey.set(key, row);
+    }
+  }
+  if (!byKey.size) return records;
+  return records.map((record) => {
+    if (record.isDailyRate) return record;
+    if (resolvePayCurrency(record) === 'USD') return record;
+    const excel = recordKeys(record).map((key) => byKey.get(key)).find(Boolean);
+    if (!excel) return record;
+    const onTop = excelEmployerOnTop(excel);
+    const statutoryEmployer = roundMoney(Number(excel.itf || 0) + Number(excel.nsitf || 0));
+    const grossPay = roundMoney(Number(record.grossPay || 0));
+    return {
+      ...record,
+      pensionEmployer: roundMoney(Math.max(0, onTop - statutoryEmployer)),
+      statutoryEmployer,
+      employerCost: roundMoney(grossPay + onTop),
+    };
+  });
+};
+
 const salaryRowHasPackageAmounts = (row: SalaryScheduleRow) =>
   Number(row.grossPay || 0) > 0
   || Number(row.periodSalary || 0) > 0

@@ -3,7 +3,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { AUTH_COOKIE, verifySessionToken, type SessionPayload } from '@/lib/auth/session';
 import { effectivePermissionsForUser } from '@/lib/auth/access-control-store';
 import { isSuperActor } from '@/lib/auth/role-delegation';
-import { canAccessCommercial, canEditCommercial } from '@/lib/access/commercial-access';
+import { canAccessCommercial, canEditCommercial, isGmCommercial } from '@/lib/access/commercial-access';
 import { createEnterpriseNotification } from '@/lib/enterprise-notifications-store';
 import {
   addApproval,
@@ -149,8 +149,21 @@ export async function POST(request: NextRequest) {
     if (body.company && String(body.company).toUpperCase() !== 'DLE') return err(404, 'Opportunity was not found.');
 
     switch (action) {
-      case 'save':
-        return ok(await saveOpportunity(body.opportunity || body, actor));
+      case 'save': {
+        const opportunity = body.opportunity || body;
+        const enquiry = opportunity.opportunityType === 'Enquiry' || opportunity.tenderType === 'Enquiry';
+        if (enquiry && !isGmCommercial(session.roles, session.isGlobalAdmin)) {
+          const current = opportunity.id ? await getOpportunity(String(opportunity.id)) : null;
+          const owner = String(opportunity.ownerName || '').trim();
+          const internal = String(opportunity.clarificationDeadline || '').slice(0, 10);
+          const ownerChanged = owner !== String(current?.ownerName || '').trim();
+          const internalChanged = internal !== String(current?.clarificationDeadline || '').slice(0, 10);
+          if (ownerChanged || internalChanged) {
+            return err(403, 'Only GM Commercial can assign the responsible officer and internal response date.');
+          }
+        }
+        return ok(await saveOpportunity(opportunity, actor));
+      }
       case 'duplicate':
         return ok(await duplicateOpportunity(id, actor));
       case 'watchlist':

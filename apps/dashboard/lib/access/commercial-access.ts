@@ -13,3 +13,6 @@ export const canAccessCommercial = (permissions: string[], isGlobalAdmin?: boole
 export const canEditCommercial = (permissions: string[], isGlobalAdmin?: boolean) =>
   hasUnrestrictedAccess(permissions, isGlobalAdmin) ||
   hasAnyPermission(permissions, [...COMMERCIAL_VIEW_PERMISSIONS, 'commercial.edit', 'commercial.create']);
+
+export const isGmCommercial = (roles: string[] = [], isGlobalAdmin?: boolean) =>
+  Boolean(isGlobalAdmin) || roles.some((role) => /gm\s*commercial|general\s*manager\s*.*commercial/i.test(role));

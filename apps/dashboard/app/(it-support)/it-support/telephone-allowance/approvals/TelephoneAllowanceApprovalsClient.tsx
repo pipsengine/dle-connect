@@ -136,7 +136,7 @@ export default function TelephoneAllowanceApprovalsClient() {
   return (
     <TaShell
       title="Approvals"
-      subtitle="Role-aware formal approval for HR, MD, and CFO authorization for payment."
+      subtitle="IT Manager prepares the schedule. After the HR Manager approves, it becomes an expense payment for the Finance Manager, CFO, and MD."
       toast={toast}
       error={error}
     >
@@ -215,6 +215,19 @@ export default function TelephoneAllowanceApprovalsClient() {
                     <p className="md:col-span-2 rounded-xl border border-indigo-200 bg-indigo-50 p-3 text-base font-black text-indigo-950">
                       Amount to Authorize: {moneyNgn(selected.bimonthlyTotal)}
                     </p>
+                  ) : null}
+                  {selected.status === 'EXPENSE_PAYMENT' ? (
+                    <div className="md:col-span-2 rounded-xl border border-sky-200 bg-sky-50 p-3 text-sm text-sky-950">
+                      <p className="font-black">
+                        Converted to expense payment{detail?.expensePaymentRequestNumber ? ` ${detail.expensePaymentRequestNumber}` : ''}.
+                      </p>
+                      <p className="mt-1">The employee payment list is attached as a PDF. Finance Manager, CFO, and MD approve it in Finance. After the MD approves, it follows the normal expense payment process.</p>
+                      {detail?.expensePaymentRequestId ? (
+                        <a className="mt-2 inline-block font-black text-sky-800 underline" href={`/finance/approvals/request/${encodeURIComponent(detail.expensePaymentRequestId)}`}>
+                          Open expense payment
+                        </a>
+                      ) : null}
+                    </div>
                   ) : null}
                 </div>
               ) : null}
@@ -296,7 +309,7 @@ export default function TelephoneAllowanceApprovalsClient() {
                 ) : null}
                 {caps?.canHrApprove && selected.status === 'PENDING_HR_APPROVAL' ? (
                   <button type="button" disabled={Boolean(busy)} onClick={() => void act('approve-hr')} className="inline-flex min-h-10 items-center gap-2 rounded-lg bg-emerald-700 px-3 text-xs font-black text-white disabled:opacity-50">
-                    <CheckCircle2 className="h-4 w-4" /> Approve
+                    <CheckCircle2 className="h-4 w-4" /> Approve and send to Finance
                   </button>
                 ) : null}
                 {caps?.canMdApprove && selected.status === 'PENDING_MD_APPROVAL' ? (

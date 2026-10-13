@@ -114,22 +114,29 @@ export function TaShell({
 }
 
 export function WorkflowStepper({ status }: { status?: string }) {
-  const steps = [
-    { id: 'IT_PREP', label: 'IT Preparation', match: /DRAFT|RETURNED_TO_IT|RETURNED_FOR_CORRECTION|IT_VALIDATION/ },
-    { id: 'HR_REVIEW', label: 'HR Review', match: /PENDING_HR_REVIEW/ },
-    { id: 'IT_VAL', label: 'IT Validation', match: /RETURNED_TO_IT|IT_VALIDATION/ },
-    { id: 'HR_APP', label: 'HR Approval', match: /PENDING_HR_APPROVAL/ },
-    { id: 'MD', label: 'MD Approval', match: /PENDING_MD_APPROVAL/ },
-    { id: 'CFO', label: 'CFO Authorization', match: /PENDING_CFO_AUTHORIZATION/ },
-    { id: 'PAY', label: 'Payment', match: /AUTHORIZED|PAYMENT|PAID|COMPLETED/ },
-  ];
-  const order = ['DRAFT', 'PENDING_HR_REVIEW', 'RETURNED_TO_IT', 'IT_VALIDATION', 'PENDING_HR_APPROVAL', 'PENDING_MD_APPROVAL', 'PENDING_CFO_AUTHORIZATION', 'AUTHORIZED_FOR_PAYMENT', 'PAYMENT_PROCESSING', 'PARTIALLY_PAID', 'PAID', 'COMPLETED'];
-  const idx = order.indexOf(status || 'DRAFT');
+  const legacy = ['PENDING_MD_APPROVAL', 'PENDING_CFO_AUTHORIZATION', 'AUTHORIZED_FOR_PAYMENT', 'PAYMENT_PROCESSING', 'PARTIALLY_PAID', 'PAID', 'COMPLETED'].includes(status || '');
+  const steps = legacy
+    ? [
+      { id: 'IT_PREP', label: 'IT Manager', match: /DRAFT|RETURNED_TO_IT|RETURNED_FOR_CORRECTION|IT_VALIDATION/ },
+      { id: 'HR_REVIEW', label: 'HR Review', match: /PENDING_HR_REVIEW/ },
+      { id: 'HR_APP', label: 'HR Manager', match: /PENDING_HR_APPROVAL/ },
+      { id: 'MD', label: 'MD Approval', match: /PENDING_MD_APPROVAL/ },
+      { id: 'CFO', label: 'CFO Authorization', match: /PENDING_CFO_AUTHORIZATION/ },
+      { id: 'PAY', label: 'Payment', match: /AUTHORIZED_FOR_PAYMENT|PAYMENT_PROCESSING|PARTIALLY_PAID|PAID|COMPLETED/ },
+    ]
+    : [
+      { id: 'IT_PREP', label: 'IT Manager', match: /DRAFT|RETURNED_TO_IT|RETURNED_FOR_CORRECTION|IT_VALIDATION/ },
+      { id: 'HR_REVIEW', label: 'HR Review', match: /PENDING_HR_REVIEW/ },
+      { id: 'HR_APP', label: 'HR Manager', match: /PENDING_HR_APPROVAL/ },
+      { id: 'EXP', label: 'Expense Payment', match: /EXPENSE_PAYMENT/ },
+    ];
+  const currentIndex = steps.findIndex((step) => Boolean(status && step.match.test(status)));
+  const finished = status === 'COMPLETED' || status === 'PAID';
   return (
     <ol className="flex flex-wrap gap-2">
       {steps.map((step, i) => {
-        const done = idx > i || (status === 'COMPLETED' && i <= 6);
-        const current = Boolean(status && step.match.test(status) && status !== 'COMPLETED');
+        const done = finished || (currentIndex > i);
+        const current = !finished && currentIndex === i;
         return (
           <li
             key={step.id}

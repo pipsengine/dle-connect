@@ -1,407 +1,500 @@
 'use client';
 
 import Link from 'next/link';
-import { useState, type ReactNode } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import {
-  BadgeCheck,
-  Calculator,
+  ArrowLeft,
   Calendar,
-  CalendarClock,
-  ChartGantt,
   Check,
-  ChevronDown,
-  ChevronRight,
   ClipboardList,
-  FileSpreadsheet,
-  FileStack,
+  Clock3,
   FileText,
-  LayoutGrid,
+  PieChart,
   ListChecks,
-  MapPin,
-  MessageSquare,
-  Pencil,
-  Shield,
+  MoreHorizontal,
+  Plus,
+  Send,
+  Upload,
   Users,
+  Zap,
   type LucideIcon,
 } from 'lucide-react';
-import type { TenderDocument, TenderLine, TenderOpportunity } from '@/lib/commercial/tender-types';
-import { daysUntil, workspaceStepIndex } from '@/lib/commercial/tender-present';
-import { formatWhen, money } from './tender-api';
+import type { TenderBlueprint, TenderDocument, TenderLine } from '@/lib/commercial/tender-types';
+import { formatWhen, money, tenderGet, tenderPost } from './tender-api';
 import { OpportunityModal } from './OpportunityModal';
-import { DocumentCapture, ItemCapture, LineCapture } from './record-capture';
+import { DocumentCapture, ItemCapture, LineCapture, SubmissionCapture } from './record-capture';
 import { BlueprintRegisters } from './BlueprintRegisters';
-import { Pill } from './tender-widgets';
+import { ActingEmployee } from './acting-employee';
 import { useTenderRecord } from './use-tender-record';
 
-const BID_STAGES = ['Enquiry', 'Qualification', 'Bid Preparation', 'Evaluation', 'Approvals', 'Submission', 'Negotiation', 'Award'] as const;
-const STAGE_FROM_RANK = [0, 1, 2, 3, 5, 6, 7, 7] as const;
+const STEPS = [
+  { title: 'Setup', note: 'Project details' },
+  { title: 'Team & Plan', note: 'Assign team and tasks' },
+  { title: 'Technical Proposal', note: 'Prepare technical documents' },
+  { title: 'Commercial Proposal', note: 'Prepare commercial documents' },
+  { title: 'Review & Approval', note: 'Internal review and approvals' },
+  { title: 'Submission', note: 'Submit to client' },
+] as const;
 
-const TABS: Array<{ id: string; icon: LucideIcon }> = [
-  { id: 'Overview', icon: LayoutGrid },
-  { id: 'Technical Proposal', icon: FileText },
-  { id: 'BOQ & Costing', icon: Calculator },
-  { id: 'Commercial Proposal', icon: FileSpreadsheet },
-  { id: 'Contract Documents', icon: FileStack },
-  { id: 'Resource Plan', icon: Users },
-  { id: 'Compliance Matrix', icon: ListChecks },
-  { id: 'Team & Tasks', icon: Users },
-  { id: 'Timeline', icon: ChartGantt },
-  { id: 'Audit Trail', icon: ClipboardList },
-];
-
-const CHECKLIST: Array<{ label: string; group: 'technical' | 'boq' | 'commercial' | 'contract'; token: string }> = [
-  { label: 'Letter of Invitation / Tender Document', group: 'contract', token: 'invitation' },
-  { label: 'Technical Proposal', group: 'technical', token: 'technical' },
-  { label: 'BOQ & Cost Estimate', group: 'boq', token: 'boq' },
-  { label: 'Commercial Proposal', group: 'commercial', token: 'commercial' },
-  { label: 'Project Execution Plan', group: 'technical', token: 'execution' },
-  { label: 'Method Statements', group: 'technical', token: 'method' },
-  { label: 'HSE Plan', group: 'technical', token: 'hse' },
-  { label: 'Quality Plan', group: 'technical', token: 'quality' },
-  { label: 'Company Profile & Legal Documents', group: 'contract', token: 'profile' },
-  { label: 'Financial Statements', group: 'commercial', token: 'financial' },
-];
+const TABS = ['Overview', 'Team & Tasks', 'Technical Proposal', 'Commercial Proposal', 'Documents', 'Approvals', 'Submission', 'History'] as const;
 
 const percent = (done: number, total: number) => (total ? Math.round((done / total) * 100) : 0);
-
-const matchDoc = (documents: TenderDocument[], token: string) => documents.find((doc) => `${doc.category} ${doc.fileName}`.toLowerCase().includes(token));
-
-const dateTone = (value: string) => {
-  if (!value) return { label: '—', className: 'bg-slate-100 text-slate-500' };
-  const left = daysUntil(value);
-  if (left == null) return { label: 'Open', className: 'bg-slate-100 text-slate-500' };
-  if (left < 0) return { label: 'Completed', className: 'bg-emerald-50 text-emerald-700' };
-  if (left <= 90) return { label: `${left} days left`, className: 'bg-rose-50 text-rose-600' };
-  return { label: 'Upcoming', className: 'bg-amber-50 text-amber-700' };
-};
-
-const statusTone = (status: string) => {
-  if (status === 'Uploaded' || status === 'Completed') return 'bg-emerald-50 text-emerald-700';
-  if (status === 'In Progress') return 'bg-blue-50 text-blue-700';
-  if (status === 'Not Started') return 'bg-rose-50 text-rose-600';
-  return 'bg-slate-100 text-slate-500';
-};
+const matchDoc = (documents: TenderDocument[], token: string) => documents.some((doc) => `${doc.category} ${doc.fileName}`.toLowerCase().includes(token));
 
 export function BidBoard() {
   const record = useTenderRecord();
-  const [tab, setTab] = useState('Overview');
-  const [actionsOpen, setActionsOpen] = useState(false);
+  const [tab, setTab] = useState<(typeof TABS)[number]>('Overview');
   const [editing, setEditing] = useState(false);
+  const [creating, setCreating] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [formError, setFormError] = useState('');
   const opportunity = record.opportunity;
   const documents = record.detail?.documents || [];
   const lines = record.detail?.lines || [];
   const items = record.detail?.items || [];
   const approvals = record.detail?.approvals || [];
-  const awards = record.detail?.awards || [];
-  const rank = opportunity ? workspaceStepIndex(opportunity) : null;
-  const step = rank == null ? null : (rank === 3 && approvals.length > 0 ? 4 : STAGE_FROM_RANK[rank]);
-  const stageLabel = step == null ? '' : BID_STAGES[step];
-  const days = opportunity ? daysUntil(opportunity.submissionDeadline || opportunity.closingDate) : null;
+  const submissions = record.detail?.submissions || [];
+  const audit = record.detail?.audit || [];
+  const tasks = items.filter((item) => /task|team/i.test(item.kind));
+  const currency = opportunity?.currency || 'NGN';
 
-  const checklist = CHECKLIST.map((item) => ({ ...item, document: matchDoc(documents, item.token) }));
-  const uploaded = checklist.filter((item) => item.document).length;
-  const technical = checklist.filter((item) => item.group === 'technical');
-  const commercialDocs = checklist.filter((item) => item.group === 'commercial');
-  const technicalDone = technical.filter((item) => item.document).length;
-  const commercialDone = commercialDocs.filter((item) => item.document).length;
-  const pricedLines = lines.filter((line) => line.unitCost > 0 || line.sell > 0);
-  const boqDone = lines.length ? pricedLines.length : (checklist.find((item) => item.group === 'boq')?.document ? 1 : 0);
-  const boqTotal = lines.length || (checklist.some((item) => item.group === 'boq') ? 1 : 0);
-  const compliance = items.filter((item) => /comply|compliance/i.test(item.kind));
-  const complianceDone = compliance.filter((item) => /done|complete|closed|answer|uploaded/i.test(item.status)).length;
-  const scores = [
-    percent(technicalDone, technical.length),
-    percent(boqDone, boqTotal),
-    percent(commercialDone, commercialDocs.length),
-    percent(uploaded, checklist.length),
-    percent(complianceDone, compliance.length),
+  const [draft, setDraft] = useState({ title: '', currency: 'NGN', submissionDeadline: '', strategy: '' });
+  const [versionLabel, setVersionLabel] = useState('—');
+  useEffect(() => {
+    setDraft({
+      title: opportunity?.title || '',
+      currency: opportunity?.currency || 'NGN',
+      submissionDeadline: (opportunity?.submissionDeadline || opportunity?.closingDate || '').slice(0, 10),
+      strategy: opportunity?.scopeSummary || '',
+    });
+    setFormError('');
+  }, [opportunity?.id, opportunity?.updatedAt, opportunity?.title, opportunity?.currency, opportunity?.submissionDeadline, opportunity?.closingDate, opportunity?.scopeSummary]);
+
+  useEffect(() => {
+    if (!opportunity?.id) {
+      setVersionLabel('—');
+      return;
+    }
+    let active = true;
+    tenderGet<TenderBlueprint>('blueprint', { id: opportunity.id })
+      .then((pack) => {
+        if (!active) return;
+        const latest = [...(pack.estimates || [])].sort((left, right) => right.version - left.version)[0];
+        setVersionLabel(latest ? `${latest.version}.0${latest.label ? ` (${latest.label})` : ''}` : '—');
+      })
+      .catch(() => { if (active) setVersionLabel('—'); });
+    return () => { active = false; };
+  }, [opportunity?.id, opportunity?.updatedAt]);
+
+  const technicalDone = matchDoc(documents, 'technical') || documents.some((doc) => /technical/i.test(doc.category));
+  const commercialDone = matchDoc(documents, 'commercial') || lines.some((line) => line.unitCost > 0 || line.sell > 0);
+  const documentsDone = documents.length > 0;
+  const approved = approvals.filter((item) => item.decision === 'APPROVE');
+  const managementApproved = approved.some((item) => /management|md|executive/i.test(item.stage));
+  const technicalPct = technicalDone ? 100 : 0;
+  const commercialPct = commercialDone ? 100 : 0;
+  const progressParts = [
+    { label: 'Technical Proposal', value: technicalPct, color: '#3b82f6' },
+    { label: 'Commercial Proposal', value: commercialPct, color: '#22c55e' },
+    { label: 'Required Documents', value: documentsDone ? 100 : 0, color: '#f59e0b' },
+    { label: 'Internal Approvals', value: approvals.length ? percent(approved.length, approvals.length) : 0, color: '#ef4444' },
   ];
-  const overall = Math.round(scores.reduce((sum, value) => sum + value, 0) / scores.length);
-  const priced = lines.reduce((sum, line) => sum + line.quantity * line.unitCost, 0);
-  const sell = lines.reduce((sum, line) => sum + line.sell, 0);
-  const direct = lines.filter((line) => !/indirect|prelim|contingen|fee|management/i.test(`${line.section} ${line.description}`));
-  const groups = [
-    ['Direct Cost', direct],
-    ['Indirect Cost', lines.filter((line) => /indirect/i.test(`${line.section} ${line.description}`))],
-    ['Preliminaries', lines.filter((line) => /prelim/i.test(`${line.section} ${line.description}`))],
-    ['Contingency', lines.filter((line) => /contingen/i.test(`${line.section} ${line.description}`))],
-    ['Management Fee', lines.filter((line) => /fee|management/i.test(`${line.section} ${line.description}`))],
-  ] as const;
-  const directCost = direct.reduce((sum, line) => sum + line.quantity * line.unitCost, 0);
-  const groupedCost = groups.slice(1).reduce((sum, [, matched]) => sum + matched.reduce((inner, line) => inner + line.quantity * line.unitCost, 0), 0);
-  const ungrouped = Math.max(priced - directCost - groupedCost, 0);
+  const overall = Math.round(progressParts.reduce((sum, item) => sum + item.value, 0) / progressParts.length);
 
-  const keyDates: Array<{ label: string; value: string; icon: LucideIcon; tint: string }> = [
-    { label: 'Tender Briefing', value: opportunity?.invitationDate || '', icon: Calendar, tint: 'bg-blue-50 text-blue-600' },
-    { label: 'Site Visit', value: opportunity?.siteVisitDate || '', icon: MapPin, tint: 'bg-emerald-50 text-emerald-600' },
-    { label: 'Questions / Clarifications', value: opportunity?.clarificationDeadline || '', icon: MessageSquare, tint: 'bg-amber-50 text-amber-600' },
-    { label: 'Submission Deadline', value: opportunity?.submissionDeadline || opportunity?.closingDate || '', icon: CalendarClock, tint: 'bg-rose-50 text-rose-500' },
-    { label: 'Evaluation Period', value: '', icon: ClipboardList, tint: 'bg-violet-50 text-violet-600' },
-    { label: 'Award Expected', value: awards[0]?.awardDate || '', icon: BadgeCheck, tint: 'bg-sky-50 text-sky-600' },
+  const step = !opportunity ? null
+    : submissions.length ? 5
+      : approved.length ? 4
+        : commercialDone ? 3
+          : technicalDone ? 2
+            : tasks.length || opportunity.ownerName ? 1
+              : 0;
+
+  const statusLabel = !opportunity ? '—'
+    : /award/i.test(`${opportunity.stage} ${opportunity.status}`) ? 'Awarded'
+      : submissions.length || /submit/i.test(`${opportunity.stage} ${opportunity.status}`) ? 'Submitted'
+        : /bid prep/i.test(opportunity.stage) || opportunity.status === 'Open' ? 'In Preparation'
+          : opportunity.stage || opportunity.status || '—';
+
+  const checklist = [
+    { label: 'Technical proposal completed', done: technicalDone },
+    { label: 'Commercial proposal completed', done: commercialDone },
+    { label: 'Required documents uploaded', done: documentsDone },
+    { label: 'Internal review completed', done: approvals.length > 0 },
+    { label: 'MD approval completed', done: managementApproved },
+    { label: 'Submission package finalised', done: documentsDone && commercialDone && technicalDone },
+    { label: 'Submitted to client', done: submissions.length > 0 },
   ];
 
-  const metrics = [
-    { label: 'Overall Progress', value: `${overall}%`, note: overall === 100 ? 'Completed' : overall ? 'In Progress' : 'Not Started', progress: overall, icon: null as LucideIcon | null, tint: 'bg-white', iconTint: '' },
-    { label: 'Technical Proposal', value: `${technicalDone} / ${technical.length}`, note: `${percent(technicalDone, technical.length)}% completed`, progress: percent(technicalDone, technical.length), icon: Shield, tint: 'bg-[#eef5ff]', iconTint: 'bg-blue-100 text-blue-600' },
-    { label: 'BOQ & Cost Estimate', value: `${boqDone} / ${boqTotal}`, note: `${percent(boqDone, boqTotal)}% completed`, progress: percent(boqDone, boqTotal), icon: FileText, tint: 'bg-[#eefbf3]', iconTint: 'bg-emerald-100 text-emerald-600' },
-    { label: 'Commercial Proposal', value: `${commercialDone} / ${commercialDocs.length}`, note: `${percent(commercialDone, commercialDocs.length)}% completed`, progress: percent(commercialDone, commercialDocs.length), icon: FileSpreadsheet, tint: 'bg-[#fff8eb]', iconTint: 'bg-amber-100 text-amber-600' },
-    { label: 'Contract Documents', value: `${uploaded} / ${checklist.length}`, note: `${percent(uploaded, checklist.length)}% completed`, progress: percent(uploaded, checklist.length), icon: FileStack, tint: 'bg-[#f5f0ff]', iconTint: 'bg-violet-100 text-violet-600' },
-    { label: 'Compliance Requirements', value: `${complianceDone} / ${compliance.length}`, note: `${percent(complianceDone, compliance.length)}% completed`, progress: percent(complianceDone, compliance.length), icon: Shield, tint: 'bg-[#fff1f2]', iconTint: 'bg-rose-100 text-rose-500' },
+  const team = [
+    ...(opportunity?.ownerName ? [{ id: 'owner', name: opportunity.ownerName, role: 'Bid Manager', department: opportunity.department || '—', duty: 'Overall coordination', status: 'Active' }] : []),
+    ...tasks.map((item) => ({ id: item.id, name: item.assignee || '—', role: item.title, department: '—', duty: item.details || '—', status: item.status || 'OPEN' })),
+  ];
+
+  const saveDetails = async () => {
+    if (!opportunity) return;
+    setSaving(true);
+    setFormError('');
+    try {
+      await tenderPost({
+        action: 'save',
+        opportunity: { ...opportunity, title: draft.title || opportunity.title, currency: draft.currency, submissionDeadline: draft.submissionDeadline, scopeSummary: draft.strategy, saveMode: 'submit' },
+      });
+      await record.loadDetail(opportunity.id);
+      await record.reload();
+    } catch (reason) {
+      setFormError(reason instanceof Error ? reason.message : 'The bid details were not saved.');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const quickActions: Array<{ label: string; icon: LucideIcon; tint: string; tab: (typeof TABS)[number] }> = [
+    { label: 'Create Team & Assign Tasks', icon: Users, tint: 'bg-rose-50 text-rose-500', tab: 'Team & Tasks' },
+    { label: 'Upload Technical Documents', icon: Upload, tint: 'bg-blue-50 text-blue-600', tab: 'Technical Proposal' },
+    { label: 'Upload Commercial Documents', icon: FileText, tint: 'bg-emerald-50 text-emerald-600', tab: 'Commercial Proposal' },
+    { label: 'Start Internal Review', icon: ClipboardList, tint: 'bg-amber-50 text-amber-600', tab: 'Approvals' },
+    { label: 'Submit for Approval', icon: Send, tint: 'bg-violet-50 text-violet-600', tab: 'Approvals' },
+    { label: 'View Submission Checklist', icon: ListChecks, tint: 'bg-sky-50 text-sky-600', tab: 'Submission' },
   ];
 
   return (
     <div className="space-y-3">
-      <div className="flex flex-wrap items-center justify-between gap-2 text-[12px] text-slate-400">
-        <div>Tender Management <span className="px-1">›</span> <Link href="/commercial/tenders/workspace" className="hover:text-slate-700">Tender Workspace</Link> <span className="px-1">›</span> <span className="font-semibold text-slate-600">Bid Preparation</span></div>
-        {record.rows.length > 1 ? (
-          <select value={record.selectedId} onChange={(event) => record.setSelectedId(event.target.value)} className="h-8 max-w-[280px] rounded-lg border border-slate-200 bg-white px-2 text-[12px] font-semibold text-slate-600" aria-label="Open opportunity">
-            {record.rows.map((row) => <option key={row.id} value={row.id}>{row.referenceNo} · {row.title}</option>)}
-          </select>
-        ) : null}
-      </div>
       {record.error ? <div className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">{record.error}</div> : null}
-      <BlueprintRegisters opportunityId={opportunity?.id || ''} focus="bid" />
 
       <section className="rounded-2xl border border-slate-200 bg-white px-4 py-4 shadow-sm">
-        <div className="flex flex-wrap items-start justify-between gap-4">
-          <div className="flex min-w-0 items-start gap-3">
-            <span className="inline-flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-[#2563eb] text-white shadow-sm"><FileText className="h-6 w-6" /></span>
-            <div className="min-w-0">
-              <div className="flex flex-wrap items-center gap-2">
-                <h1 className="truncate text-[22px] font-black tracking-tight text-slate-950">{opportunity?.title || (record.loading ? 'Loading bid preparation…' : 'No opportunity is open')}</h1>
-                <span className="rounded-md bg-slate-100 px-2 py-0.5 text-[11px] font-semibold text-slate-500">{opportunity?.tenderType || '—'}</span>
-              </div>
-              <p className="mt-1 text-[12px] text-slate-500">
-                Client: <b className="font-semibold text-slate-700">{opportunity?.clientName || '—'}</b><span className="px-1.5 text-slate-300">|</span>Ref: <b className="font-semibold text-slate-700">{opportunity?.referenceNo || '—'}</b><span className="px-1.5 text-slate-300">|</span>Sector: <b className="font-semibold text-slate-700">{opportunity?.category || '—'}</b><span className="px-1.5 text-slate-300">|</span>Estimated Value: <b className="font-semibold text-slate-700">{opportunity ? money(opportunity.estimatedValue, opportunity.currency) : '—'}</b>
-              </p>
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="flex min-w-0 items-center gap-3">
+            <span className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-[#2563eb] text-white shadow-sm"><FileText className="h-5 w-5" /></span>
+            <div>
+              <h1 className="text-[22px] font-black tracking-tight text-slate-950">Bid Preparation</h1>
+              <p className="text-[12px] text-slate-500">Prepare, manage and consolidate DLE&apos;s technical and commercial bid proposals for each tender opportunity.</p>
             </div>
           </div>
           <div className="flex flex-wrap items-center gap-2">
-            <div className="inline-flex h-11 items-center gap-2 rounded-xl border border-amber-200 bg-amber-50 px-3 text-[12px] shadow-sm">
-              <span className="text-amber-700/70">Tender Status</span>
-              <span className="h-2 w-2 rounded-full bg-amber-500" />
-              <span className="font-bold text-amber-700">{stageLabel || '—'}</span>
-            </div>
-            <div className="inline-flex h-11 items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 shadow-sm">
-              <CalendarClock className="h-4 w-4 text-slate-400" />
-              <span>
-                <span className="block text-[10px] font-semibold uppercase tracking-wide text-slate-400">Submission Deadline</span>
-                <span className="text-[12px] font-bold text-slate-800">{opportunity ? formatWhen(opportunity.submissionDeadline || opportunity.closingDate) : '—'}</span>
-              </span>
-              {days != null ? <span className="rounded-full bg-rose-50 px-2 py-0.5 text-[11px] font-bold text-rose-600">{days} days left</span> : null}
-            </div>
-            <div className="relative">
-              <button type="button" onClick={() => setActionsOpen((value) => !value)} className="inline-flex h-11 items-center gap-2 rounded-xl bg-[#2563eb] px-4 text-sm font-bold text-white shadow-sm">Actions <ChevronDown className="h-4 w-4" /></button>
-              {actionsOpen ? (
-                <div className="absolute right-0 top-12 z-20 w-52 rounded-xl border border-slate-200 bg-white py-1 text-sm shadow-lg">
-                  <button type="button" className="block w-full px-3 py-2 text-left hover:bg-slate-50" onClick={() => { setEditing(true); setActionsOpen(false); }}>{opportunity ? 'Edit opportunity' : 'New opportunity'}</button>
-                  <Link href={opportunity ? `/commercial/tenders/workspace?id=${opportunity.id}` : '/commercial/tenders/workspace'} className="block px-3 py-2 hover:bg-slate-50" onClick={() => setActionsOpen(false)}>Open workspace</Link>
-                </div>
-              ) : null}
-            </div>
+            {record.rows.length > 1 ? (
+              <select value={record.selectedId} onChange={(event) => record.setSelectedId(event.target.value)} className="h-9 max-w-[220px] rounded-lg border border-slate-200 bg-white px-2 text-[12px] font-semibold text-slate-600" aria-label="Open opportunity">
+                {record.rows.map((row) => <option key={row.id} value={row.id}>{row.referenceNo} · {row.title}</option>)}
+              </select>
+            ) : null}
+            <Link href="/commercial/tenders/opportunities" className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 text-[12px] font-bold text-slate-700"><ArrowLeft className="h-3.5 w-3.5" /> Back to Opportunities</Link>
+            <button type="button" onClick={() => { setCreating(true); setEditing(true); }} className="inline-flex h-9 items-center gap-1.5 rounded-lg bg-[#2563eb] px-3 text-[12px] font-bold text-white"><Plus className="h-3.5 w-3.5" /> New Bid</button>
           </div>
         </div>
-        <ol className="mt-5 flex gap-1 overflow-x-auto pb-1">
-          {BID_STAGES.map((label, index) => {
-            const state = step == null ? 'Pending' : index < step ? 'Completed' : index === step ? 'In Progress' : 'Pending';
-            const tone = state === 'Completed' ? 'bg-emerald-500 text-white' : state === 'In Progress' ? 'bg-[#2563eb] text-white' : 'bg-slate-100 text-slate-400';
+      </section>
+
+      <section className="rounded-2xl border border-slate-200 bg-white px-5 py-4 shadow-sm">
+        <ol className="grid gap-3 md:grid-cols-3 xl:grid-cols-6">
+          {STEPS.map((item, index) => {
+            const state = step == null ? 'pending' : index < step ? 'done' : index === step ? 'current' : 'pending';
             return (
-              <li key={label} className="flex min-w-[118px] flex-1 items-start gap-1">
+              <li key={item.title} className="relative flex min-w-0 items-center gap-2">
+                <span className={`inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-[12px] font-black ${state === 'done' ? 'bg-emerald-500 text-white' : state === 'current' ? 'bg-[#2563eb] text-white shadow-sm' : 'bg-slate-100 text-slate-400'}`}>
+                  {state === 'done' ? <Check className="h-3.5 w-3.5" /> : index + 1}
+                </span>
                 <div className="min-w-0">
-                  <span className={`inline-flex h-7 w-7 items-center justify-center rounded-full text-[12px] font-black ${tone}`}>{state === 'Completed' ? <Check className="h-3.5 w-3.5" /> : index + 1}</span>
-                  <div className="mt-1 whitespace-nowrap text-[12px] font-bold text-slate-800">{label}</div>
-                  <div className={`whitespace-nowrap text-[11px] font-semibold ${state === 'Completed' ? 'text-emerald-600' : state === 'In Progress' ? 'text-blue-600' : 'text-slate-400'}`}>{state}</div>
+                  <div className={`truncate text-[13px] font-bold ${state === 'pending' ? 'text-slate-500' : 'text-slate-800'}`}>{item.title}</div>
+                  <div className="truncate text-[11px] text-slate-400">{item.note}</div>
                 </div>
-                {index < BID_STAGES.length - 1 ? <ChevronRight className="mt-1.5 h-4 w-4 shrink-0 text-slate-300" /> : null}
+                {index < STEPS.length - 1 ? <span className="absolute -right-2 top-3 hidden h-px w-4 bg-slate-200 xl:block" /> : null}
               </li>
             );
           })}
         </ol>
       </section>
 
-      <div className="flex gap-1 overflow-x-auto rounded-2xl border border-slate-200 bg-white px-2 shadow-sm">
-        {TABS.map((item) => {
-          const Icon = item.icon;
-          const selected = tab === item.id;
-          return (
-            <button key={item.id} type="button" onClick={() => setTab(item.id)} className={`inline-flex items-center gap-1.5 whitespace-nowrap border-b-2 px-3 py-3 text-[13px] font-semibold ${selected ? 'border-[#2563eb] text-[#2563eb]' : 'border-transparent text-slate-500'}`}>
-              <Icon className="h-3.5 w-3.5" />{item.id}
-            </button>
-          );
-        })}
+      <div className="grid gap-3 xl:grid-cols-[minmax(0,1.7fr)_320px]">
+        <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+          <h2 className="mb-3 flex items-center gap-2 text-[14px] font-black text-slate-900"><FileText className="h-4 w-4 text-slate-400" /> Tender Information</h2>
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+            <Info label="Reference No." value={opportunity?.referenceNo || '—'} />
+            <Info label="Title" value={opportunity?.title || '—'} />
+            <Info label="Client" value={opportunity?.clientName || '—'} />
+            <Info label="Sector" value={opportunity?.category || '—'} />
+            <Info label="Tender Type" value={opportunity?.tenderType || '—'} />
+          </div>
+          <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+            <Info label="External Deadline" value={opportunity ? formatWhen(opportunity.submissionDeadline || opportunity.closingDate) : '—'} />
+            <Info label="Internal Deadline" value={opportunity ? formatWhen(opportunity.clarificationDeadline) : '—'} />
+            <div>
+              <div className="mb-1 text-[11px] font-semibold text-slate-400">Status</div>
+              <div className="flex h-10 items-center rounded-lg border border-slate-200 bg-[#f8fafc] px-3">
+                <span className={`rounded-md px-2 py-1 text-[12px] font-bold ${statusLabel === 'Awarded' ? 'bg-emerald-50 text-emerald-700' : statusLabel === 'Submitted' ? 'bg-blue-50 text-blue-700' : statusLabel === '—' ? 'bg-slate-100 text-slate-400' : 'bg-amber-50 text-amber-600'}`}>{statusLabel}</span>
+              </div>
+            </div>
+            <div>
+              <div className="mb-1 text-[11px] font-semibold text-slate-400">Priority</div>
+              <div className="flex h-10 items-center rounded-lg border border-slate-200 bg-[#f8fafc] px-3">
+                <span className={`rounded-md px-2 py-1 text-[12px] font-bold ${opportunity?.priority === 'High' ? 'bg-rose-50 text-rose-500' : opportunity?.priority === 'Medium' ? 'bg-amber-50 text-amber-600' : 'bg-slate-100 text-slate-500'}`}>{opportunity?.priority || '—'}</span>
+              </div>
+            </div>
+          </div>
+        </section>
+        <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+          <h2 className="mb-2 flex items-center gap-2 text-[14px] font-black text-slate-900"><PieChart className="h-4 w-4 text-slate-400" /> Bid Progress</h2>
+          <div className="flex items-center gap-4">
+            <ProgressDonut parts={progressParts} center={overall} />
+            <ul className="space-y-1.5 text-[12px]">
+              {progressParts.map((item) => (
+                <li key={item.label} className="flex items-center gap-2 text-slate-600">
+                  <span className="h-2 w-2 rounded-full" style={{ background: item.color }} />
+                  <span className="flex-1">{item.label}</span>
+                  <b className="text-slate-800">{item.value}%</b>
+                </li>
+              ))}
+            </ul>
+          </div>
+        </section>
       </div>
 
-      {opportunity && tab !== 'Overview' ? (
-        <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-          {tab === 'BOQ & Costing' ? <><LineCapture opportunityId={opportunity.id} currency={opportunity.currency || 'NGN'} onSaved={() => record.loadDetail(opportunity.id)} /><LineTable lines={lines} currency={opportunity.currency || 'NGN'} /></> : null}
-          {tab === 'Team & Tasks' ? <><ItemCapture opportunityId={opportunity.id} kind="TASK" onSaved={() => record.loadDetail(opportunity.id)} /><TeamPanel opportunity={opportunity} /></> : null}
-          {tab === 'Timeline' || tab === 'Audit Trail' ? <AuditList events={record.detail?.audit || []} /> : null}
-          {tab === 'Compliance Matrix' ? <ItemList items={compliance} empty="No compliance items have been logged." /> : null}
-          {tab === 'Resource Plan' ? <p className="text-sm text-slate-600">{opportunity.teamNotes || 'No resource plan has been saved.'}</p> : null}
-          {tab === 'Compliance Matrix' ? <ItemCapture opportunityId={opportunity.id} kind="COMPLIANCE" onSaved={() => record.loadDetail(opportunity.id)} /> : null}
-          {tab === 'Resource Plan' ? <ItemCapture opportunityId={opportunity.id} kind="TASK" onSaved={() => record.loadDetail(opportunity.id)} /> : null}
-          {!['BOQ & Costing', 'Team & Tasks', 'Timeline', 'Audit Trail'].includes(tab) ? <DocumentCapture opportunityId={opportunity.id} category={tab} onSaved={() => record.loadDetail(opportunity.id)} /> : null}
-          {!['BOQ & Costing', 'Team & Tasks', 'Timeline', 'Audit Trail', 'Compliance Matrix', 'Resource Plan'].includes(tab) ? (
-            documents.filter((doc) => tab === 'Contract Documents' || `${doc.category} ${doc.fileName}`.toLowerCase().includes(tab.split(' ')[0].toLowerCase())).length
-              ? documents.filter((doc) => tab === 'Contract Documents' || `${doc.category} ${doc.fileName}`.toLowerCase().includes(tab.split(' ')[0].toLowerCase())).map((doc) => <a key={doc.id} className="block py-1 text-sm font-semibold text-blue-700" href={`/api/commercial/tenders?resource=document&documentId=${doc.id}`}>{doc.fileName}</a>)
-              : <p className="text-sm text-slate-500">No documents in this tab.</p>
-          ) : null}
-        </section>
-      ) : (
-        <div className="space-y-3">
-          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-6">
-            {metrics.map((item) => {
-              const Icon = item.icon;
-              return (
-              <article key={item.label} className={`rounded-2xl border border-slate-200 px-3 py-3 shadow-sm ${item.tint}`}>
-                <div className="flex items-start justify-between gap-2">
-                  <div className="min-w-0 flex-1">
-                    <div className="text-[11px] font-semibold text-slate-500">{item.label}</div>
-                    <div className="mt-1 text-[20px] font-black leading-none text-slate-950">{item.value}</div>
-                    <div className={`mt-1 text-[11px] font-semibold ${item.label === 'Overall Progress' ? 'text-emerald-600' : 'text-slate-400'}`}>{item.note}</div>
-                  </div>
-                  {Icon ? <span className={`inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-xl ${item.iconTint}`}><Icon className="h-4 w-4" /></span> : <Donut value={item.progress} />}
-                </div>
-                {item.label === 'Overall Progress' ? null : <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-white/80"><div className="h-1.5 rounded-full bg-[#3b82f6]" style={{ width: `${item.progress}%` }} /></div>}
-              </article>
-              );
-            })}
-          </div>
+      <div className="flex gap-1 overflow-x-auto rounded-2xl border border-slate-200 bg-white px-2 shadow-sm">
+        {TABS.map((item, index) => (
+          <button key={item} type="button" onClick={() => setTab(item)} className={`inline-flex items-center gap-1.5 whitespace-nowrap border-b-2 px-3 py-3 text-[13px] font-semibold ${tab === item ? 'border-[#2563eb] text-[#2563eb]' : 'border-transparent text-slate-500'}`}>
+            <span className={`inline-flex h-5 w-5 items-center justify-center rounded-full text-[10px] font-black ${tab === item ? 'bg-[#2563eb] text-white' : 'bg-slate-100 text-slate-400'}`}>{index + 1}</span>
+            {item}
+          </button>
+        ))}
+      </div>
 
+      {tab === 'Overview' ? (
+        <div className="space-y-3">
           <div className="grid items-start gap-3 xl:grid-cols-12">
-            <Panel className="xl:col-span-4" title="Key Information" action={<button type="button" onClick={() => setEditing(true)} className="inline-flex items-center gap-1 text-[12px] font-semibold text-blue-700"><Pencil className="h-3.5 w-3.5" /> Edit</button>}>
-              <dl className="text-[13px]">
-                {([
-                  ['Opportunity Title', opportunity?.title || '—'],
-                  ['Client', opportunity?.clientName || '—'],
-                  ['Reference No.', opportunity?.referenceNo || '—'],
-                  ['Tender Type', opportunity?.tenderType || '—'],
-                  ['Sector', opportunity?.category || '—'],
-                  ['Location', [opportunity?.projectLocation || opportunity?.location, opportunity?.site].filter(Boolean).join(', ') || '—'],
-                  ['Estimated Value', opportunity ? money(opportunity.estimatedValue, opportunity.currency) : '—'],
-                  ['Tendering Authority', opportunity?.clientName || '—'],
-                  ['Submission Deadline', opportunity ? `${formatWhen(opportunity.submissionDeadline || opportunity.closingDate)}${days == null ? '' : ` (${days} days)`}` : '—'],
-                  ['Project Duration', opportunity?.contractDuration ? `${opportunity.contractDuration} ${opportunity.durationUnit || 'Months'}` : '—'],
-                  ['Project Manager', opportunity?.ownerName || '—'],
-                  ['Created Date', opportunity ? formatWhen(opportunity.createdAt) : '—'],
-                  ['Last Updated', opportunity ? formatWhen(opportunity.updatedAt) : '—'],
-                ] as Array<[string, string]>).map(([label, value]) => (
-                  <div key={label} className="flex items-start justify-between gap-4 border-b border-slate-50 py-2 last:border-0">
-                    <dt className="text-slate-400">{label}</dt>
-                    <dd className={`max-w-[58%] text-right font-semibold ${label === 'Submission Deadline' && days != null ? 'text-rose-600' : 'text-slate-800'}`}>{value || '—'}</dd>
-                  </div>
-                ))}
-              </dl>
-            </Panel>
-            <Panel className="xl:col-span-5" title="Document Checklist" action={<button type="button" onClick={() => setTab('Contract Documents')} className="text-[12px] font-semibold text-blue-700">View All →</button>}>
-              <table className="w-full text-left text-[12px]">
-                <thead className="text-[11px] text-slate-400"><tr>{['#', 'Document / Requirement', 'Status', 'Version', 'Upload Date'].map((heading) => <th key={heading} className="pb-2 font-semibold">{heading}</th>)}</tr></thead>
-                <tbody>
-                  {checklist.map((item, index) => {
-                    const status = item.document ? 'Uploaded' : 'Not Started';
-                    return (
-                      <tr key={item.label} className="border-t border-slate-100">
-                        <td className="py-2 text-slate-400">{index + 1}</td>
-                        <td className="py-2 font-semibold text-slate-800">{item.label}</td>
-                        <td className="py-2"><Pill className={statusTone(status)}>{status}</Pill></td>
-                        <td className="py-2 text-slate-500">—</td>
-                        <td className="py-2 text-slate-500">{item.document ? formatWhen(item.document.uploadedAt) : '—'}</td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </Panel>
-            <div className="space-y-3 xl:col-span-3">
-              <Panel title="Key Dates" action={<button type="button" onClick={() => setTab('Timeline')} className="text-[12px] font-semibold text-blue-700">View All →</button>}>
-                {keyDates.map((item) => {
-                  const tone = dateTone(item.value);
+            <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm xl:col-span-6">
+              <h2 className="flex items-center gap-2 text-[14px] font-black text-slate-900"><FileText className="h-4 w-4 text-slate-400" /> Bid Details</h2>
+              <div className="mt-1"><ActingEmployee /></div>
+              <div className="mt-3 grid gap-3 md:grid-cols-12">
+                <Field label="Bid Reference No." className="md:col-span-3"><input readOnly value={opportunity?.referenceNo || ''} placeholder="—" className="h-10 w-full rounded-lg border border-slate-200 bg-[#f8fafc] px-3 text-[13px] font-semibold text-slate-800" /></Field>
+                <Field label="Version" className="md:col-span-3"><select disabled className="h-10 w-full rounded-lg border border-slate-200 bg-[#f8fafc] px-3 text-[13px] text-slate-500" aria-label="Version"><option>{versionLabel}</option></select></Field>
+                <Field label="Bid Title" required className="md:col-span-6"><input value={draft.title} onChange={(event) => setDraft({ ...draft, title: event.target.value })} placeholder="Bid title" className="h-10 w-full rounded-lg border border-slate-200 px-3 text-[13px] text-slate-800" /></Field>
+                <Field label="Target Submission Date" required className="md:col-span-6"><input type="date" value={draft.submissionDeadline} onChange={(event) => setDraft({ ...draft, submissionDeadline: event.target.value })} className="h-10 w-full rounded-lg border border-slate-200 px-3 text-[13px] text-slate-800" /></Field>
+                <Field label="Bid Currency" className="md:col-span-6">
+                  <select value={draft.currency} onChange={(event) => setDraft({ ...draft, currency: event.target.value })} className="h-10 w-full rounded-lg border border-slate-200 px-3 text-[13px] text-slate-800" aria-label="Bid currency">
+                    <option value="NGN">NGN - Nigerian Naira</option>
+                    <option value="USD">USD - US Dollar</option>
+                    <option value="EUR">EUR - Euro</option>
+                    <option value="GBP">GBP - British Pound</option>
+                  </select>
+                </Field>
+                <Field label="Bid Strategy / Approach" className="md:col-span-12">
+                  <textarea value={draft.strategy} maxLength={2000} onChange={(event) => setDraft({ ...draft, strategy: event.target.value })} placeholder="Enter overall bid strategy, execution approach, key strengths, and win themes..." className="min-h-[76px] w-full rounded-lg border border-slate-200 px-3 py-2 text-[13px] text-slate-800" />
+                  <div className="text-right text-[11px] text-slate-400">{draft.strategy.length}/2000</div>
+                </Field>
+              </div>
+              {formError ? <p className="mt-2 text-[12px] text-rose-600">{formError}</p> : null}
+              <div className="mt-2 flex justify-end">
+                <button type="button" disabled={!opportunity || saving} onClick={saveDetails} className="h-9 rounded-lg bg-[#2563eb] px-4 text-[12px] font-bold text-white disabled:opacity-50">{saving ? 'Saving…' : 'Save bid details'}</button>
+              </div>
+            </section>
+            <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm xl:col-span-3">
+              <h2 className="mb-1 flex items-center gap-2 text-[14px] font-black text-slate-900"><Calendar className="h-4 w-4 text-slate-400" /> Key Dates</h2>
+              {[
+                ['Tender Issue Date', opportunity?.invitationDate],
+                ['Clarification Deadline', opportunity?.clarificationDeadline],
+                ['Internal Submission Deadline', ''],
+                ['Client Submission Deadline', opportunity?.submissionDeadline || opportunity?.closingDate],
+                ['Expected Award Date', record.detail?.awards?.[0]?.awardDate],
+              ].map(([label, value]) => (
+                <div key={String(label)} className="flex items-center justify-between border-b border-slate-50 py-2 text-[12px] last:border-0">
+                  <span className="text-slate-500">{label}</span>
+                  <b className="text-slate-800">{value ? formatWhen(String(value)) : '—'}</b>
+                </div>
+              ))}
+            </section>
+            <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm xl:col-span-3">
+              <h2 className="mb-2 flex items-center gap-2 text-[14px] font-black text-slate-900"><Zap className="h-4 w-4 text-slate-400" /> Quick Actions</h2>
+              <div className="space-y-2">
+                {quickActions.map((item) => {
                   const Icon = item.icon;
                   return (
-                    <div key={item.label} className="flex items-center gap-2 border-b border-slate-50 py-2 last:border-0">
-                      <span className={`inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg ${item.tint}`}><Icon className="h-4 w-4" /></span>
-                      <div className="min-w-0 flex-1">
-                        <div className="truncate text-[12px] font-semibold text-slate-800">{item.label}</div>
-                        <div className="text-[11px] text-slate-400">{item.value ? formatWhen(item.value) : '—'}</div>
-                      </div>
-                      <Pill className={tone.className}>{tone.label}</Pill>
-                    </div>
+                    <button key={item.label} type="button" onClick={() => setTab(item.tab)} className="flex w-full items-center gap-2 rounded-xl border border-slate-200 px-3 py-2 text-left text-[12px] font-semibold text-slate-700 hover:bg-slate-50">
+                      <span className={`inline-flex h-7 w-7 items-center justify-center rounded-lg ${item.tint}`}><Icon className="h-3.5 w-3.5" /></span>
+                      {item.label}
+                    </button>
                   );
                 })}
-              </Panel>
-              <Panel title="Team Members" action={<button type="button" onClick={() => setTab('Team & Tasks')} className="text-[12px] font-semibold text-blue-700">Manage Team →</button>}>
-                <TeamPanel opportunity={opportunity} />
-              </Panel>
-            </div>
-            <Panel className="xl:col-span-4" title="BOQ Summary" action={<button type="button" onClick={() => setTab('BOQ & Costing')} className="text-[12px] font-semibold text-blue-700">View Details →</button>}>
-              <LineTable lines={lines.slice(0, 5)} currency={opportunity?.currency || 'NGN'} />
-              <div className="mt-2 flex items-center justify-between border-t border-slate-200 pt-2 text-[13px]">
-                <span className="font-semibold text-slate-500">Total Estimated Cost</span>
-                <b className="text-[16px] text-slate-950">{money(priced, opportunity?.currency || 'NGN')}</b>
               </div>
-            </Panel>
-            <Panel className="xl:col-span-4" title="Cost Estimate Summary" action={<button type="button" onClick={() => setTab('BOQ & Costing')} className="text-[12px] font-semibold text-blue-700">View Details →</button>}>
-              {groups.map(([label, matched]) => {
-                const amount = matched.reduce((sum, line) => sum + line.quantity * line.unitCost, 0) + (label === 'Direct Cost' ? ungrouped : 0);
-                const share = priced ? Math.round((amount / priced) * 100) : 0;
+            </section>
+          </div>
+          <div className="grid items-start gap-3 xl:grid-cols-12">
+            <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm xl:col-span-6">
+              <div className="mb-2 flex items-center justify-between"><h2 className="flex items-center gap-2 text-[14px] font-black text-slate-900"><Users className="h-4 w-4 text-slate-400" /> Bid Team</h2><button type="button" onClick={() => setTab('Team & Tasks')} className="text-[12px] font-semibold text-blue-600">View All</button></div>
+              <div className="overflow-x-auto"><table className="w-full min-w-[640px] text-left text-[12px]">
+                <thead className="text-[11px] uppercase text-slate-400"><tr>{['#', 'Name', 'Role', 'Department', 'Responsibilities', 'Status', 'Action'].map((heading) => <th key={heading} className="pb-2 font-semibold">{heading}</th>)}</tr></thead>
+                <tbody>
+                  {team.length === 0 ? <tr><td colSpan={7} className="py-6 text-center text-slate-500">No team members have been assigned.</td></tr> : team.map((member, index) => (
+                    <tr key={member.id} className="border-t border-slate-100">
+                      <td className="py-2 text-slate-400">{index + 1}</td>
+                      <td className="py-2">
+                        <span className="inline-flex items-center gap-2 font-semibold text-slate-800">
+                          <span className={`inline-flex h-7 w-7 items-center justify-center rounded-full text-[10px] font-black ${AVATAR[index % AVATAR.length]}`}>{initials(member.name)}</span>
+                          {member.name}
+                        </span>
+                      </td>
+                      <td className="py-2 text-slate-600">{member.role}</td>
+                      <td className="py-2 text-slate-600">{member.department}</td>
+                      <td className="py-2 text-slate-600">{member.duty}</td>
+                      <td className="py-2"><span className={`rounded-md px-2 py-0.5 text-[11px] font-bold ${/active|open/i.test(member.status) ? 'bg-emerald-50 text-emerald-600' : 'bg-slate-100 text-slate-500'}`}>{member.status}</span></td>
+                      <td className="py-2"><button type="button" onClick={() => setTab('Team & Tasks')} className="text-slate-400" aria-label={`Open ${member.name}`}><MoreHorizontal className="h-4 w-4" /></button></td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table></div>
+            </section>
+            <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm xl:col-span-3">
+              <div className="mb-2 flex items-center justify-between"><h2 className="flex items-center gap-2 text-[14px] font-black text-slate-900"><Clock3 className="h-4 w-4 text-slate-400" /> Recent Activities</h2><button type="button" onClick={() => setTab('History')} className="text-[12px] font-semibold text-blue-600">View All</button></div>
+              {audit.length === 0 ? <p className="py-6 text-center text-[12px] text-slate-500">No activity has been recorded.</p> : audit.slice(0, 5).map((event) => {
+                const ActivityIcon = activityIcon(event.action, event.details);
                 return (
-                  <div key={label} className="mb-2.5">
-                    <div className="mb-1 flex items-center justify-between text-[12px]"><span className="text-slate-600">{label}</span><b className="text-slate-800">{money(amount, opportunity?.currency || 'NGN')} <span className="font-semibold text-slate-400">{share}%</span></b></div>
-                    <div className="h-1.5 overflow-hidden rounded-full bg-slate-100"><div className="h-1.5 rounded-full bg-[#3b82f6]" style={{ width: `${share}%` }} /></div>
+                  <div key={event.id} className="flex items-start gap-2 border-t border-slate-50 py-2 text-[12px] first:border-0">
+                    <span className={`mt-0.5 inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-lg ${activityTint(event.action, event.details)}`}><ActivityIcon className="h-3.5 w-3.5" /></span>
+                    <div className="min-w-0">
+                      <div className="font-semibold text-slate-800">{event.details || event.action}</div>
+                      <div className="text-slate-400">{event.actor || '—'} · {activityWhen(event.createdAt)}</div>
+                    </div>
                   </div>
                 );
               })}
-              <div className="mt-2 text-right text-[13px] font-black text-slate-950">Total Estimated Cost {money(priced, opportunity?.currency || 'NGN')}</div>
-            </Panel>
-            <Panel className="xl:col-span-4" title="Commercial Inputs (Target)" action={<button type="button" onClick={() => setEditing(true)} className="inline-flex items-center gap-1 text-[12px] font-semibold text-blue-700"><Pencil className="h-3.5 w-3.5" /> Edit</button>}>
-              <dl className="text-[13px]">
-                {([
-                  ['Proposed Selling Price', sell ? money(sell, opportunity?.currency || 'NGN') : opportunity ? money(opportunity.estimatedValue, opportunity.currency) : '—'],
-                  ['Expected Gross Margin', sell ? `${money(sell - priced, opportunity?.currency || 'NGN')} (${sell ? Math.round(((sell - priced) / sell) * 100) : 0}%)` : '—'],
-                  ['Project Duration', opportunity?.contractDuration ? `${opportunity.contractDuration} ${opportunity.durationUnit || 'Months'}` : '—'],
-                  ['Mobilization Advance', '—'],
-                  ['Retention', opportunity ? (opportunity.retentions ? 'Applicable' : '—') : '—'],
-                  ['Payment Terms', opportunity?.contractType || '—'],
-                ] as Array<[string, string]>).map(([label, value]) => (
-                  <div key={label} className="flex items-start justify-between gap-4 border-b border-slate-50 py-2 last:border-0"><dt className="text-slate-400">{label}</dt><dd className="text-right font-semibold text-slate-800">{value}</dd></div>
+            </section>
+            <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm xl:col-span-3">
+              <div className="mb-2 flex items-center justify-between"><h2 className="flex items-center gap-2 text-[14px] font-black text-slate-900"><ListChecks className="h-4 w-4 text-slate-400" /> Submission Checklist</h2><button type="button" onClick={() => setTab('Submission')} className="text-[12px] font-semibold text-blue-600">View All</button></div>
+              <ul className="space-y-2">
+                {checklist.map((item) => (
+                  <li key={item.label} className="flex items-center gap-2 text-[12px] text-slate-700">
+                    <span className={`inline-flex h-4 w-4 items-center justify-center rounded-full border ${item.done ? 'border-emerald-500 bg-emerald-500 text-white' : 'border-slate-300'}`}>{item.done ? <Check className="h-3 w-3" /> : null}</span>
+                    {item.label}
+                  </li>
                 ))}
-              </dl>
-            </Panel>
+              </ul>
+            </section>
           </div>
         </div>
+      ) : (
+        <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+          {!opportunity ? <p className="text-sm text-slate-500">Open or create a bid before adding records.</p> : null}
+          {opportunity && tab === 'Team & Tasks' ? <><ItemCapture opportunityId={opportunity.id} kind="TASK" onSaved={() => record.loadDetail(opportunity.id)} /><TeamTable team={team} /></> : null}
+          {opportunity && tab === 'Technical Proposal' ? <><DocumentCapture opportunityId={opportunity.id} category="Technical Proposal" onSaved={() => record.loadDetail(opportunity.id)} /><DocList documents={documents.filter((doc) => /technical/i.test(`${doc.category} ${doc.fileName}`))} /></> : null}
+          {opportunity && tab === 'Commercial Proposal' ? (
+            <div className="space-y-3">
+              <DocumentCapture opportunityId={opportunity.id} category="Commercial Proposal" onSaved={() => record.loadDetail(opportunity.id)} />
+              <LineCapture opportunityId={opportunity.id} currency={currency} onSaved={() => record.loadDetail(opportunity.id)} />
+              <LineTable lines={lines} currency={currency} />
+              <BlueprintRegisters opportunityId={opportunity.id} focus="bid" />
+            </div>
+          ) : null}
+          {opportunity && tab === 'Documents' ? <><DocumentCapture opportunityId={opportunity.id} category="Bid Document" onSaved={() => record.loadDetail(opportunity.id)} /><DocList documents={documents} /></> : null}
+          {opportunity && tab === 'Approvals' ? <ApprovalList approvals={approvals} /> : null}
+          {opportunity && tab === 'Submission' ? <><SubmissionCapture opportunityId={opportunity.id} onSaved={() => record.reload()} /><p className="text-sm text-slate-600">{submissions[0] ? `${submissions[0].channel} · ${submissions[0].receiptReference} · ${formatWhen(submissions[0].submittedAt)}` : 'No submission has been recorded.'}</p></> : null}
+          {tab === 'History' ? <AuditList events={audit} /> : null}
+        </section>
       )}
 
-      <OpportunityModal open={editing} initial={opportunity} onClose={() => setEditing(false)} onSaved={() => { setEditing(false); if (opportunity) record.loadDetail(opportunity.id); record.reload(); }} />
+      <OpportunityModal open={editing} initial={creating ? null : opportunity} onClose={() => { setEditing(false); setCreating(false); }} onSaved={() => { setEditing(false); setCreating(false); record.reload(); }} />
     </div>
   );
 }
 
-function Donut({ value }: { value: number }) {
-  const radius = 26;
-  const circumference = 2 * Math.PI * radius;
-  const offset = circumference - (Math.max(0, Math.min(100, value)) / 100) * circumference;
+function Info({ label, value }: { label: string; value: string }) {
   return (
-    <svg viewBox="0 0 72 72" className="h-14 w-14 shrink-0" aria-hidden="true">
-      <circle cx="36" cy="36" r={radius} fill="none" stroke="#e2e8f0" strokeWidth="7" />
-      <circle cx="36" cy="36" r={radius} fill="none" stroke="#22c55e" strokeWidth="7" strokeLinecap="round" strokeDasharray={circumference} strokeDashoffset={offset} transform="rotate(-90 36 36)" />
+    <div>
+      <div className="mb-1 text-[11px] font-semibold text-slate-400">{label}</div>
+      <div className="flex h-10 items-center truncate rounded-lg border border-slate-200 bg-[#f8fafc] px-3 text-[13px] font-semibold text-slate-800">{value}</div>
+    </div>
+  );
+}
+
+function Field({ label, required = false, children, className = '' }: { label: string; required?: boolean; children: ReactNode; className?: string }) {
+  return <label className={`block text-[12px] font-semibold text-slate-500 ${className}`}>{label}{required ? <span className="text-rose-500"> *</span> : null}<div className="mt-1">{children}</div></label>;
+}
+
+const AVATAR = ['bg-blue-100 text-blue-700', 'bg-emerald-100 text-emerald-700', 'bg-amber-100 text-amber-700', 'bg-violet-100 text-violet-700', 'bg-rose-100 text-rose-700'];
+const initials = (name: string) => name.split(/\s+/).filter(Boolean).slice(0, 2).map((part) => part[0]?.toUpperCase() || '').join('') || '—';
+
+function activityIcon(action: string, details: string): LucideIcon {
+  const text = `${action} ${details}`.toLowerCase();
+  if (/team|member|assign/.test(text)) return Users;
+  if (/approv|review/.test(text)) return Send;
+  if (/commercial|price|line/.test(text)) return FileText;
+  if (/clarif/.test(text)) return ClipboardList;
+  if (/upload|document|technical/.test(text)) return Upload;
+  return Clock3;
+}
+
+function activityTint(action: string, details: string) {
+  const text = `${action} ${details}`.toLowerCase();
+  if (/team|member|assign/.test(text)) return 'bg-violet-50 text-violet-600';
+  if (/approv|review/.test(text)) return 'bg-amber-50 text-amber-600';
+  if (/commercial|price|line/.test(text)) return 'bg-emerald-50 text-emerald-600';
+  if (/clarif/.test(text)) return 'bg-sky-50 text-sky-600';
+  return 'bg-blue-50 text-blue-600';
+}
+
+function activityWhen(value: string) {
+  if (!value) return '—';
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return value;
+  const dayStart = (date: Date) => new Date(date.getFullYear(), date.getMonth(), date.getDate()).getTime();
+  const day = dayStart(parsed);
+  const today = dayStart(new Date());
+  const time = parsed.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
+  if (day === today) return `Today, ${time}`;
+  if (day === today - 86_400_000) return `Yesterday, ${time}`;
+  return `${formatWhen(value)}, ${time}`;
+}
+
+function ProgressDonut({ parts, center }: { parts: Array<{ value: number; color: string }>; center: number }) {
+  const radius = 42;
+  const circumference = 2 * Math.PI * radius;
+  const slot = circumference / parts.length;
+  const gap = 6;
+  return (
+    <svg viewBox="0 0 120 120" className="h-[118px] w-[118px] shrink-0">
+      <circle cx="60" cy="60" r={radius} fill="none" stroke="#e8eef5" strokeWidth="11" />
+      {parts.map((item, index) => {
+        const length = Math.max(0, (item.value / 100) * (slot - gap));
+        if (!length) return null;
+        return (
+          <circle
+            key={item.color}
+            cx="60"
+            cy="60"
+            r={radius}
+            fill="none"
+            stroke={item.color}
+            strokeWidth="11"
+            strokeLinecap="butt"
+            strokeDasharray={`${length} ${circumference - length}`}
+            strokeDashoffset={-(index * slot)}
+            transform="rotate(-90 60 60)"
+          />
+        );
+      })}
+      <text x="60" y="58" textAnchor="middle" fill="#0f172a" fontSize="20" fontWeight="800">{center}%</text>
+      <text x="60" y="72" textAnchor="middle" fill="#94a3b8" fontSize="7">Overall Completion</text>
     </svg>
   );
 }
 
-function Panel({ title, action, children, className = '' }: { title: string; action?: ReactNode; children: ReactNode; className?: string }) {
-  return (
-    <section className={`rounded-2xl border border-slate-200 bg-white p-4 shadow-sm ${className}`}>
-      <div className="mb-3 flex items-center justify-between gap-2">
-        <h2 className="text-[14px] font-black text-slate-900">{title}</h2>
-        {action}
-      </div>
-      {children}
-    </section>
-  );
+function TeamTable({ team }: { team: Array<{ id: string; name: string; role: string; department: string; duty: string; status: string }> }) {
+  if (team.length === 0) return <p className="text-sm text-slate-500">No team members have been assigned.</p>;
+  return <p className="text-sm text-slate-600">{team.map((member) => `${member.name} · ${member.role}`).join(' · ')}</p>;
+}
+
+function DocList({ documents }: { documents: TenderDocument[] }) {
+  if (documents.length === 0) return <p className="mt-2 text-sm text-slate-500">No documents in this tab.</p>;
+  return <ul className="mt-2 divide-y divide-slate-100">{documents.map((doc) => <li key={doc.id} className="py-1"><a className="text-sm font-semibold text-blue-700" href={`/api/commercial/tenders?resource=document&documentId=${doc.id}`}>{doc.fileName}</a></li>)}</ul>;
+}
+
+function ApprovalList({ approvals }: { approvals: Array<{ id: string; stage: string; decision: string; actor: string; comments: string; createdAt: string }> }) {
+  if (approvals.length === 0) return <p className="text-sm text-slate-500">No approvals have been recorded.</p>;
+  return <ul className="divide-y divide-slate-100 text-sm">{approvals.map((item) => <li key={item.id} className="py-2"><b>{item.stage}</b> · {item.decision} · {item.actor} · {item.comments} · {formatWhen(item.createdAt)}</li>)}</ul>;
+}
+
+function AuditList({ events }: { events: Array<{ id: number; action: string; actor: string; details: string; createdAt: string }> }) {
+  if (events.length === 0) return <p className="text-sm text-slate-500">No activity has been recorded.</p>;
+  return <ul className="divide-y divide-slate-100 text-sm">{events.map((event) => <li key={event.id} className="py-2"><b>{event.action}</b> · {event.actor} · {event.details} · {formatWhen(event.createdAt)}</li>)}</ul>;
 }
 
 function LineTable({ lines, currency = 'NGN' }: { lines: TenderLine[]; currency?: string }) {
-  const symbol = currency === 'USD' ? 'USD' : currency === 'NGN' ? 'NGN' : currency;
+  const symbol = currency || 'NGN';
   return (
     <table className="w-full text-left text-[12px]">
       <thead className="text-[11px] text-slate-400"><tr>{['#', 'Description', 'Qty', 'Unit', `Unit Rate (${symbol})`, `Total (${symbol})`].map((heading) => <th key={heading} className="pb-2 font-semibold">{heading}</th>)}</tr></thead>
@@ -419,34 +512,4 @@ function LineTable({ lines, currency = 'NGN' }: { lines: TenderLine[]; currency?
       </tbody>
     </table>
   );
-}
-
-function TeamPanel({ opportunity }: { opportunity?: TenderOpportunity }) {
-  if (!opportunity?.ownerName) return <p className="py-4 text-center text-sm text-slate-500">No team members have been assigned.</p>;
-  const initials = opportunity.ownerName.split(/\s+/).slice(0, 2).map((part) => part[0]?.toUpperCase() || '').join('');
-  return (
-    <div className="flex items-center gap-2 py-1.5">
-      <span className="inline-flex h-8 w-8 items-center justify-center rounded-full bg-blue-100 text-[11px] font-black text-blue-700">{initials}</span>
-      <div className="min-w-0 flex-1">
-        <div className="truncate text-[13px] font-bold text-slate-800">{opportunity.ownerName}</div>
-        <div className="truncate text-[11px] text-slate-400">{opportunity.designation || 'Owner'}</div>
-      </div>
-      <Pill className="bg-blue-50 text-blue-700">Lead</Pill>
-    </div>
-  );
-}
-
-function ItemList({ items, empty }: { items: Array<{ id: string; title: string; assignee: string; dueAt: string; status: string }>; empty: string }) {
-  if (items.length === 0) return <p className="text-sm text-slate-500">{empty}</p>;
-  return (
-    <table className="w-full text-left text-[13px]">
-      <thead className="text-[11px] uppercase text-slate-400"><tr>{['Title', 'Owner', 'Due', 'Status'].map((heading) => <th key={heading} className="py-2 font-semibold">{heading}</th>)}</tr></thead>
-      <tbody>{items.map((item) => <tr key={item.id} className="border-t border-slate-100"><td className="py-2 font-semibold">{item.title}</td><td className="py-2">{item.assignee || '—'}</td><td className="py-2">{formatWhen(item.dueAt)}</td><td className="py-2">{item.status}</td></tr>)}</tbody>
-    </table>
-  );
-}
-
-function AuditList({ events }: { events: Array<{ id: number; action: string; actor: string; details: string; createdAt: string }> }) {
-  if (events.length === 0) return <p className="text-sm text-slate-500">No activity has been recorded.</p>;
-  return <ul className="divide-y divide-slate-100 text-sm">{events.map((event) => <li key={event.id} className="py-2"><b>{event.action}</b> · {event.actor} · {event.details} · {formatWhen(event.createdAt)}</li>)}</ul>;
 }

@@ -12,7 +12,7 @@ import { activeLoansVersion, calculateLoanRecovery, loanInputsFromApplications, 
 import { normalizePayrollPeriod, syncLeaveAllowanceEventsForPayroll } from '@/lib/payroll-leave-allowance-store';
 import { ensureDayrateScheduleOverrideLoaded } from '@/lib/dayrate-schedule-upload-sql';
 import { ensureSalaryScheduleOverrideLoaded } from '@/lib/salary-schedule-upload-sql';
-import { applySalaryScheduleCompanionPay, applySalaryScheduleFallbackForMissingGross, applySalaryScheduleOverrideToRecords, ngnSalaryScheduleKpi } from '@/lib/salary-schedule-overlay';
+import { applySalaryScheduleCompanionPay, applySalaryScheduleEmployerCost, applySalaryScheduleFallbackForMissingGross, applySalaryScheduleOverrideToRecords, ngnSalaryScheduleKpi } from '@/lib/salary-schedule-overlay';
 import { persistAppliedPayrollSchedulesToHris } from '@/lib/payroll-schedule-hris-persist';
 import { applyDayrateScheduleOverrideToRecords } from '@/lib/dayrate-schedule-overlay';
 import { applyApprovedFinalSettlementsToRecords } from '@/lib/final-payroll-settlement-overlay';
@@ -791,13 +791,14 @@ export const buildPayrollCalculationFromSnapshot = async (period: string, snapsh
   if (cachedView && cachedView.expiresAt > Date.now()) return cachedView.value;
   const shell = await buildPayrollCalculationShell(period, { fromSnapshot: true, employeeCount: snapshot.records.length });
   const toleranceMode = shell.toleranceMode;
-  if (payrollExcelAmountOverlayApplies(period)) {
-    await ensureSalaryScheduleOverrideLoaded(normalizePayrollPeriod(period) || period);
-  }
-  const records = applySalaryScheduleCompanionPay(
-    reapplyPayrollValidationPolicy(
-      enrichCalculationRecordsWithReadiness(snapshot.records),
-      toleranceMode,
+  await ensureSalaryScheduleOverrideLoaded(normalizePayrollPeriod(period) || period);
+  const records = applySalaryScheduleEmployerCost(
+    applySalaryScheduleCompanionPay(
+      reapplyPayrollValidationPolicy(
+        enrichCalculationRecordsWithReadiness(snapshot.records),
+        toleranceMode,
+      ),
+      period,
     ),
     period,
   );
@@ -1285,11 +1286,14 @@ const computePayrollForPeriod = async (requestedPeriod: string): Promise<Payroll
     });
   });
 
-  const records = applyLockedPayrollPackageToRecords(
-    await applyApprovedFinalSettlementsToRecords(
-      applyDayrateScheduleOverrideToRecords(
-        applySalaryScheduleFallbackForMissingGross(
-          applySalaryScheduleOverrideToRecords(builtRecords, requestedPeriod),
+  const records = applySalaryScheduleEmployerCost(
+    applyLockedPayrollPackageToRecords(
+      await applyApprovedFinalSettlementsToRecords(
+        applyDayrateScheduleOverrideToRecords(
+          applySalaryScheduleFallbackForMissingGross(
+            applySalaryScheduleOverrideToRecords(builtRecords, requestedPeriod),
+            requestedPeriod,
+          ),
           requestedPeriod,
         ),
         requestedPeriod,

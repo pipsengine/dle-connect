@@ -6,6 +6,7 @@ import {
   Inbox,
   LayoutDashboard,
   Send,
+  UserRound,
   ShieldCheck,
   SquareCheckBig,
   type LucideIcon,
@@ -34,6 +35,7 @@ export const TENDER_NAV: TenderNavItem[] = [
     icon: FolderKanban,
     children: [
       { id: 'dashboard', label: 'Dashboard', href: '/commercial/tenders', icon: LayoutDashboard },
+      { id: 'my-dashboard', label: 'My Dashboard', href: '/commercial/tenders/my-dashboard', icon: UserRound },
       { id: 'enquiries', label: 'Enquiries', href: '/commercial/tenders/enquiries', icon: Inbox },
       { id: 'opportunities', label: 'Tender Opportunities', href: '/commercial/tenders/opportunities', icon: ClipboardList },
       { id: 'workspace', label: 'Tender Workspace', href: '/commercial/tenders/workspace', icon: FolderKanban },

@@ -36,6 +36,8 @@ type Cycle = {
   preparedBy: string;
   currentOwnerRole: string;
   updatedAt: string;
+  expensePaymentRequestId?: string | null;
+  expensePaymentRequestNumber?: string | null;
   changes?: Array<{ changeType: string }>;
 };
 
@@ -47,15 +49,23 @@ type DashboardPayload = {
   capabilities: TaCapabilities;
 };
 
-const stages = [
-  { label: 'IT Preparation', match: ['DRAFT', 'RETURNED_FOR_CORRECTION'] },
+const legacyStages = [
+  { label: 'IT Manager', match: ['DRAFT', 'RETURNED_FOR_CORRECTION', 'RETURNED_TO_IT', 'IT_VALIDATION'] },
   { label: 'HR Review', match: ['PENDING_HR_REVIEW'] },
-  { label: 'IT Validation', match: ['RETURNED_TO_IT', 'IT_VALIDATION'] },
-  { label: 'HR Approval', match: ['PENDING_HR_APPROVAL'] },
+  { label: 'HR Manager', match: ['PENDING_HR_APPROVAL'] },
   { label: 'MD Approval', match: ['PENDING_MD_APPROVAL'] },
   { label: 'CFO Authorization', match: ['PENDING_CFO_AUTHORIZATION'] },
   { label: 'Payment', match: ['AUTHORIZED_FOR_PAYMENT', 'PAYMENT_PROCESSING', 'PARTIALLY_PAID', 'PAID', 'COMPLETED'] },
 ];
+
+const currentStages = [
+  { label: 'IT Manager', match: ['DRAFT', 'RETURNED_FOR_CORRECTION', 'RETURNED_TO_IT', 'IT_VALIDATION'] },
+  { label: 'HR Review', match: ['PENDING_HR_REVIEW'] },
+  { label: 'HR Manager', match: ['PENDING_HR_APPROVAL'] },
+  { label: 'Expense Payment', match: ['EXPENSE_PAYMENT'] },
+];
+
+const LEGACY_PAYMENT_STATUSES = ['PENDING_MD_APPROVAL', 'PENDING_CFO_AUTHORIZATION', 'AUTHORIZED_FOR_PAYMENT', 'PAYMENT_PROCESSING', 'PARTIALLY_PAID', 'PAID', 'COMPLETED'];
 
 const monthName = (year: number, month: number, style: 'long' | 'short' = 'long') =>
   new Date(Date.UTC(year, month - 1, 1)).toLocaleString('en', { month: style });
@@ -100,6 +110,8 @@ export default function TelephoneAllowanceDashboardClient() {
   const removed = changes.filter((row) => row.changeType === 'REMOVE').length;
   const amountChanges = changes.filter((row) => row.changeType === 'AMOUNT' || row.changeType === 'ELIGIBILITY').length;
   const peopleDelta = (cycle?.beneficiaryCount || 0) - (previous?.beneficiaryCount || 0);
+  const legacyPayment = Boolean(cycle && LEGACY_PAYMENT_STATUSES.includes(cycle.status));
+  const stages = legacyPayment ? legacyStages : currentStages;
   const stageIndex = Math.max(0, stages.findIndex((stage) => cycle && stage.match.includes(cycle.status)));
   const currentStage = stages[stageIndex];
   const nextStage = stages[stageIndex + 1];
@@ -107,7 +119,9 @@ export default function TelephoneAllowanceDashboardClient() {
   const month2 = cycle ? monthName(cycle.year, cycle.month2) : 'Month 2';
   const pair = cycle ? `${monthName(cycle.year, cycle.month1, 'short').toUpperCase()} – ${monthName(cycle.year, cycle.month2, 'short').toUpperCase()} ${cycle.year}` : 'No active cycle';
   const exceptions = data?.openExceptions?.length || 0;
-  const continueHref = data?.pendingActions?.[0]?.href || '/it-support/telephone-allowance/manage';
+  const continueHref = cycle?.status === 'EXPENSE_PAYMENT' && cycle.expensePaymentRequestId
+    ? `/finance/approvals/request/${encodeURIComponent(cycle.expensePaymentRequestId)}`
+    : data?.pendingActions?.[0]?.href || '/it-support/telephone-allowance/manage';
   const continueTitle = cycle?.status === 'DRAFT' || cycle?.status === 'RETURNED_FOR_CORRECTION'
     ? 'Continue cycle preparation'
     : cycle
@@ -160,7 +174,7 @@ export default function TelephoneAllowanceDashboardClient() {
           </div>
           {cycle ? <span className="rounded-full bg-slate-100 px-2.5 py-1 text-[10px] font-extrabold text-slate-700">{cycle.status.replaceAll('_', ' ')}</span> : null}
         </div>
-        <div className="mt-5 grid grid-cols-2 gap-4 md:grid-cols-4 xl:grid-cols-7">
+        <div className={`mt-5 grid grid-cols-2 gap-4 md:grid-cols-4 ${legacyPayment ? 'xl:grid-cols-6' : 'xl:grid-cols-4'}`}>
           {stages.map((stage, index) => {
             const complete = Boolean(cycle) && index < stageIndex;
             const current = Boolean(cycle) && index === stageIndex;
@@ -224,7 +238,11 @@ export default function TelephoneAllowanceDashboardClient() {
           <p className="mt-4 text-[11px] font-extrabold tracking-wide text-teal-700">PENDING ACTION</p>
           <h2 className="mt-1 text-xl font-black">{continueTitle}</h2>
           <p className="mt-2 text-xs leading-5 text-slate-600">
-            {cycle ? <><b>{cycle.cycleCode}</b> is {cycle.status.replaceAll('_', ' ').toLowerCase()} and currently owned by {cycle.currentOwnerRole}.</> : 'Create the next cycle from Allowance Management.'}
+            {cycle?.status === 'EXPENSE_PAYMENT'
+              ? <>{cycle.cycleCode} is expense payment {cycle.expensePaymentRequestNumber || ''}. Finance Manager, CFO, and MD approve it in Finance. After the MD approves, it is paid like any other expense payment.</>
+              : cycle
+                ? <><b>{cycle.cycleCode}</b> is {cycle.status.replaceAll('_', ' ').toLowerCase()} and currently owned by {cycle.currentOwnerRole}.</>
+                : 'Create the next cycle from Allowance Management.'}
           </p>
           <div className="mt-3 grid grid-cols-2 gap-2">
             <div className="rounded-lg border border-teal-100 bg-white p-3">
@@ -233,11 +251,11 @@ export default function TelephoneAllowanceDashboardClient() {
             </div>
             <div className="rounded-lg border border-teal-100 bg-white p-3">
               <p className="text-[10px] text-slate-500">Next stage</p>
-              <p className="text-xs font-bold">{nextStage?.label || 'Complete'}</p>
+              <p className="text-xs font-bold">{cycle?.status === 'EXPENSE_PAYMENT' ? 'Finance Manager, CFO, MD' : (nextStage?.label || 'Complete')}</p>
             </div>
           </div>
           <Link href={continueHref} className="mt-4 inline-flex h-11 w-full items-center justify-center gap-2 rounded-lg bg-teal-700 text-xs font-bold text-white">
-            Continue Preparation <ArrowRight className="h-4 w-4" />
+            {cycle?.status === 'EXPENSE_PAYMENT' ? 'Open expense payment' : 'Continue Preparation'} <ArrowRight className="h-4 w-4" />
           </Link>
           <p className="mt-3 flex gap-2 text-[11px] leading-5 text-slate-500">
             <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />

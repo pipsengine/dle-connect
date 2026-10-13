@@ -504,7 +504,7 @@ export default function TelephoneAllowanceManageClient() {
                 {cycle && caps?.canPrepare && ['RETURNED_TO_IT', 'IT_VALIDATION'].includes(cycle.status) ? (
                   <MenuBtn label="Initiate Approval" onClick={() => {
                     setShowWorkflow(false);
-                    if (!window.confirm('This will lock the schedule and initiate formal approval. Continue?')) return;
+                    if (!window.confirm('This will lock the schedule and send it to the HR Manager. After HR approves, it becomes an expense payment for the Finance Manager, CFO, and MD. Continue?')) return;
                     void run('initiate-approval');
                   }} />
                 ) : null}

@@ -283,8 +283,20 @@ export async function POST(request: NextRequest) {
         const cycle = await getCycle(cycleId);
         if (!cycle) return err(404, 'Cycle not found.');
         const canOwn = canFormallyApproveOwnPrep(cycle.preparedBy, actor, session.username || '');
-        const updated = await approveHr(cycleId, rowVersion, actor, body.comment, canOwn);
-        return ok({ cycle: updated, message: 'HR approved.' });
+        const updated = await approveHr(
+          cycleId,
+          rowVersion,
+          actor,
+          body.comment,
+          canOwn,
+          session.employeeCode || session.username,
+        );
+        return ok({
+          cycle: updated,
+          message: updated.expensePaymentRequestNumber
+            ? `HR approved. Converted to expense payment ${updated.expensePaymentRequestNumber}. Finance Manager, CFO, and MD continue the approval.`
+            : 'HR approved and converted to an expense payment.',
+        });
       }
       case 'approve-md': {
         require(caps.canMdApprove);

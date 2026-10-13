@@ -17,6 +17,7 @@ export type TelephoneAllowanceStatus =
   | 'RETURNED_TO_IT'
   | 'IT_VALIDATION'
   | 'PENDING_HR_APPROVAL'
+  | 'EXPENSE_PAYMENT'
   | 'PENDING_MD_APPROVAL'
   | 'PENDING_CFO_AUTHORIZATION'
   | 'AUTHORIZED_FOR_PAYMENT'
@@ -141,6 +142,9 @@ export type TelephoneCycle = {
   versions: CycleVersion[];
   changes: CycleChange[];
   approvals: CycleApproval[];
+  /** Finance expense payment created when HR approves. */
+  expensePaymentRequestId?: string | null;
+  expensePaymentRequestNumber?: string | null;
   createdAt: string;
   updatedAt: string;
   createdBy: string;
@@ -356,11 +360,14 @@ export const canEditSchedule = (status: TelephoneAllowanceStatus, locked: boolea
 
 export const canHrReviewEdit = (status: TelephoneAllowanceStatus) => HR_REVIEWABLE.includes(status);
 
+/** After HR approval the schedule becomes an expense payment on this chain. */
+export const TELEPHONE_EXPENSE_APPROVAL_STAGES = ['Finance Manager', 'CFO', 'MD/CEO'] as const;
+
 export const WORKFLOW_STEPS = [
-  { key: 'IT_PREP', label: 'IT Preparation', statuses: ['DRAFT', 'RETURNED_TO_IT', 'RETURNED_FOR_CORRECTION', 'IT_VALIDATION'] },
+  { key: 'IT_PREP', label: 'IT Manager', statuses: ['DRAFT', 'RETURNED_TO_IT', 'RETURNED_FOR_CORRECTION', 'IT_VALIDATION'] },
   { key: 'HR_REVIEW', label: 'HR Review', statuses: ['PENDING_HR_REVIEW'] },
-  { key: 'IT_VALIDATION', label: 'IT Validation', statuses: ['RETURNED_TO_IT', 'IT_VALIDATION'] },
-  { key: 'HR_APPROVAL', label: 'HR Approval', statuses: ['PENDING_HR_APPROVAL'] },
+  { key: 'HR_APPROVAL', label: 'HR Manager', statuses: ['PENDING_HR_APPROVAL'] },
+  { key: 'EXPENSE', label: 'Expense Payment', statuses: ['EXPENSE_PAYMENT'] },
   { key: 'MD_APPROVAL', label: 'MD Approval', statuses: ['PENDING_MD_APPROVAL'] },
   { key: 'CFO_AUTH', label: 'CFO Authorization', statuses: ['PENDING_CFO_AUTHORIZATION'] },
   { key: 'PAYMENT', label: 'Payment', statuses: ['AUTHORIZED_FOR_PAYMENT', 'PAYMENT_PROCESSING', 'PARTIALLY_PAID', 'PAID', 'COMPLETED'] },
@@ -371,9 +378,10 @@ export const ALLOWED_TRANSITIONS: Record<TelephoneAllowanceStatus, TelephoneAllo
   PENDING_HR_REVIEW: ['RETURNED_TO_IT'],
   RETURNED_TO_IT: ['IT_VALIDATION', 'PENDING_HR_REVIEW', 'PENDING_HR_APPROVAL'],
   IT_VALIDATION: ['PENDING_HR_APPROVAL', 'PENDING_HR_REVIEW'],
-  PENDING_HR_APPROVAL: ['PENDING_MD_APPROVAL', 'RETURNED_FOR_CORRECTION'],
-  PENDING_MD_APPROVAL: ['PENDING_CFO_AUTHORIZATION', 'RETURNED_FOR_CORRECTION'],
-  PENDING_CFO_AUTHORIZATION: ['AUTHORIZED_FOR_PAYMENT', 'RETURNED_FOR_CORRECTION'],
+  PENDING_HR_APPROVAL: ['EXPENSE_PAYMENT', 'RETURNED_FOR_CORRECTION'],
+  EXPENSE_PAYMENT: [],
+  PENDING_MD_APPROVAL: ['PENDING_CFO_AUTHORIZATION', 'EXPENSE_PAYMENT', 'RETURNED_FOR_CORRECTION'],
+  PENDING_CFO_AUTHORIZATION: ['AUTHORIZED_FOR_PAYMENT', 'EXPENSE_PAYMENT', 'RETURNED_FOR_CORRECTION'],
   AUTHORIZED_FOR_PAYMENT: ['PAYMENT_PROCESSING', 'PAID'],
   PAYMENT_PROCESSING: ['PARTIALLY_PAID', 'PAID', 'COMPLETED'],
   PARTIALLY_PAID: ['PAID', 'COMPLETED', 'PAYMENT_PROCESSING'],

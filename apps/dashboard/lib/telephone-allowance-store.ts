@@ -39,6 +39,7 @@ import {
   type CycleChange,
   type CycleEmployeeLine,
   type CycleVersion,
+  TELEPHONE_EXPENSE_APPROVAL_STAGES,
   type TelephoneAllowanceStatus,
   type TelephoneAudit,
   type TelephoneCycle,
@@ -49,6 +50,12 @@ import {
   type EntitlementStatus,
 } from '@/lib/telephone-allowance-cycle';
 import { ensureTelephoneAllowanceSchemaSql } from '@/lib/telephone-allowance-sql-schema';
+import { buildTelephoneAllowanceSchedulePdf } from '@/lib/telephone-allowance-schedule-pdf';
+import {
+  buildTelephoneAllowanceScheduleWorkbook,
+  telephoneAllowanceScheduleWorkbookMime,
+  telephoneAllowanceScheduleWorkbookName,
+} from '@/lib/telephone-allowance-schedule-workbook';
 
 export type {
   ChangeBadge,
@@ -167,6 +174,8 @@ type CyclePayload = {
   versions: CycleVersion[];
   changes: CycleChange[];
   approvals: CycleApproval[];
+  expensePaymentRequestId?: string | null;
+  expensePaymentRequestNumber?: string | null;
 };
 
 type JsonStoreFile = {
@@ -237,6 +246,8 @@ const ownerRoleForStatus = (status: TelephoneAllowanceStatus): string => {
       return 'HR Review';
     case 'PENDING_HR_APPROVAL':
       return 'HR Approver';
+    case 'EXPENSE_PAYMENT':
+      return 'Finance';
     case 'PENDING_MD_APPROVAL':
       return 'MD';
     case 'PENDING_CFO_AUTHORIZATION':
@@ -267,15 +278,19 @@ const parsePayload = (raw: unknown): CyclePayload => {
     versions: Array.isArray(obj.versions) ? obj.versions : [],
     changes: Array.isArray(obj.changes) ? obj.changes : [],
     approvals: Array.isArray(obj.approvals) ? obj.approvals : [],
+    expensePaymentRequestId: compact(obj.expensePaymentRequestId) || null,
+    expensePaymentRequestNumber: compact(obj.expensePaymentRequestNumber) || null,
   };
 };
 
-const serializePayload = (cycle: Pick<TelephoneCycle, 'employees' | 'versions' | 'changes' | 'approvals'>) =>
+const serializePayload = (cycle: Pick<TelephoneCycle, 'employees' | 'versions' | 'changes' | 'approvals' | 'expensePaymentRequestId' | 'expensePaymentRequestNumber'>) =>
   JSON.stringify({
     employees: cycle.employees || [],
     versions: cycle.versions || [],
     changes: cycle.changes || [],
     approvals: cycle.approvals || [],
+    expensePaymentRequestId: cycle.expensePaymentRequestId || null,
+    expensePaymentRequestNumber: cycle.expensePaymentRequestNumber || null,
   } satisfies CyclePayload);
 
 const lineTotalsConsistent = (line: CycleEmployeeLine) => {
@@ -678,6 +693,8 @@ const mapCycleRow = (row: Record<string, unknown>): TelephoneCycle => {
     versions: payload.versions,
     changes: payload.changes,
     approvals: payload.approvals,
+    expensePaymentRequestId: payload.expensePaymentRequestId || null,
+    expensePaymentRequestNumber: payload.expensePaymentRequestNumber || null,
     createdAt: row.CreatedAt instanceof Date ? row.CreatedAt.toISOString() : compact(row.CreatedAt) || nowIso(),
     updatedAt: row.UpdatedAt instanceof Date ? row.UpdatedAt.toISOString() : compact(row.UpdatedAt) || nowIso(),
     createdBy: compact(row.CreatedBy) || 'System',
@@ -1975,41 +1992,469 @@ const pushApproval = (
   ],
 });
 
+type TelephoneExpenseOrigin = {
+  requesterCode: string;
+  requesterName: string;
+  requesterJobTitle: string;
+  submittedAt: string;
+  hrActorName: string;
+  hrActorCode?: string | null;
+  hrComment?: string | null;
+  hrApprovedAt: string;
+};
+
+const personNameKey = (value: string) =>
+  compact(value)
+    .toLowerCase()
+    .replace(/^(mr|mrs|ms|miss|dr)\.?\s+/, '')
+    .replace(/[^a-z\s]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+const findEmployeeByHint = async (hint: string) => {
+  const key = compact(hint).toUpperCase();
+  if (!key) return null;
+  const { readDirectoryEmployees } = await import('@/lib/payroll-employee-source');
+  const { employees } = await readDirectoryEmployees().catch(() => ({ employees: [] as Array<{ employeeCode?: string; employeeId?: string; fullName?: string; jobTitle?: string }> }));
+  const nameKey = personNameKey(hint);
+  const fromDirectory = (employees || []).find((employee) => {
+    const code = compact(employee.employeeCode).toUpperCase();
+    const id = compact(employee.employeeId).toUpperCase();
+    const name = personNameKey(compact(employee.fullName));
+    return code === key || id === key || (nameKey && name === nameKey);
+  });
+  if (fromDirectory) {
+    return {
+      code: compact(fromDirectory.employeeCode || fromDirectory.employeeId).toUpperCase(),
+      name: compact(fromDirectory.fullName),
+      jobTitle: compact(fromDirectory.jobTitle),
+    };
+  }
+  const users = await readUsers().catch(() => [] as UserAccount[]);
+  const user = users.find((item) => {
+    const code = compact(item.employeeCode).toUpperCase();
+    const username = compact(item.username).toUpperCase();
+    return code === key || username === key || personNameKey(item.fullName) === nameKey;
+  });
+  if (!user) return null;
+  return {
+    code: compact(user.employeeCode || user.username).toUpperCase(),
+    name: compact(user.fullName),
+    jobTitle: compact(user.jobTitle),
+  };
+};
+
+const resolveTelephoneExpenseOrigin = async (
+  cycle: TelephoneCycle,
+  hr: { actorName?: string | null; actorCode?: string | null; comment?: string | null; approvedAt?: string | null },
+  requesterCodeOverride?: string | null,
+): Promise<TelephoneExpenseOrigin> => {
+  const recordedHr = cycle.approvals.find((item) => item.stage === 'HR' && item.action === 'APPROVE');
+  const hrHint = compact(hr.actorCode) || compact(hr.actorName) || compact(recordedHr?.actor) || compact(cycle.hrReviewedBy);
+  const hrEmployee = await findEmployeeByHint(hrHint);
+  const requesterHint = compact(requesterCodeOverride) || compact(cycle.preparedBy) || compact(cycle.createdBy);
+  const requester = await findEmployeeByHint(requesterHint);
+  const requesterCode = compact(requester?.code || requesterCodeOverride).toUpperCase();
+  const requesterName = compact(requester?.name) || compact(cycle.preparedBy) || requesterCode;
+  if (!requesterName) throw new Error('The telephone allowance requester could not be identified.');
+  const hrName = compact(hrEmployee?.name) || compact(hr.actorName) || compact(recordedHr?.actor) || compact(cycle.hrReviewedBy) || 'HR Manager';
+  const submittedAt = cycle.createdAt || nowIso();
+  const hrApprovedAt = compact(hr.approvedAt) || compact(recordedHr?.createdAt) || nowIso();
+  return {
+    requesterCode,
+    requesterName: requesterCode && !requesterName.includes(requesterCode) ? `${requesterName} (${requesterCode})` : requesterName,
+    requesterJobTitle: compact(requester?.jobTitle) || 'Requester',
+    submittedAt,
+    hrActorName: hrEmployee?.code && !hrName.includes(hrEmployee.code) ? `${hrName} (${hrEmployee.code})` : hrName,
+    hrActorCode: hrEmployee?.code || compact(hr.actorCode) || null,
+    hrComment: hr.comment ?? recordedHr?.comment ?? null,
+    hrApprovedAt: hrApprovedAt > submittedAt ? hrApprovedAt : new Date(new Date(submittedAt).getTime() + 1000).toISOString(),
+  };
+};
+
+const telephoneExpenseNarrative = (cycle: TelephoneCycle, origin: TelephoneExpenseOrigin, payableCount: number) =>
+  `${origin.requesterName} submitted telephone allowance ${cycle.cycleCode} for ${payableCount} employees. The HR Manager approved it. The attached PDF and Excel file are the employee payment list. It is awaiting the Finance Manager, then the CFO, then the MD.`;
+
+const raiseTelephoneExpensePayment = async (
+  cycle: TelephoneCycle,
+  origin: TelephoneExpenseOrigin,
+) => {
+  const payable = cycle.employees.filter((line) => line.changeBadge !== 'REMOVED' && line.bimonthlyTotal > 0);
+  if (!(Number(cycle.bimonthlyTotal) > 0) || !payable.length) {
+    throw new Error('Cannot convert a schedule with no payable employees to an expense payment.');
+  }
+
+  const { createPaymentRequest, findTelephoneAllowancePaymentRequest } = await import('@/lib/finance-intelligence/payment-requests-service');
+  let linked = cycle.expensePaymentRequestId
+    ? { requestId: cycle.expensePaymentRequestId, requestNumber: cycle.expensePaymentRequestNumber || '' }
+    : await findTelephoneAllowancePaymentRequest(cycle.id);
+  if (linked?.requestId) return linked;
+
+  const narrative = telephoneExpenseNarrative(cycle, origin, payable.length);
+  const pdf = buildTelephoneAllowanceSchedulePdf(cycle, origin.hrActorName);
+  const fileName = `${cycle.cycleCode}-employee-payment-list.pdf`;
+  const created = await createPaymentRequest({
+    paymentType: 'Expense Payment',
+    title: `Telephone Allowance ${cycle.pairLabel} ${cycle.year}`,
+    purpose: `Staff telephone allowance for ${cycle.pairLabel} ${cycle.year} (${cycle.cycleCode}).`,
+    businessJustification: narrative,
+    beneficiaryName: 'Staff Telephone Allowance',
+    beneficiaryBankSummary: 'Employee bank details are on the attached payment schedule.',
+    description: `Bimonthly telephone allowance ${cycle.cycleCode}. ${payable.length} employees. Total NGN ${roundMoney(cycle.bimonthlyTotal).toFixed(2)}.`,
+    amount: roundMoney(cycle.bimonthlyTotal),
+    currencyCode: 'NGN',
+    companyCode: 'DLE',
+    paymentSiteCode: 'DLE',
+    department: 'HUMAN RESOURCES',
+    location: 'Head Office',
+    costCentre: 'HUMAN RESOURCES',
+    priority: 'Normal',
+    requesterCode: origin.requesterCode,
+    requesterName: origin.requesterName,
+    requesterJobTitle: origin.requesterJobTitle,
+    requestCategory: 'Expense (No PO)',
+    expenseNature: 'Telecom / Internet',
+    invoiceNumber: cycle.cycleCode,
+    invoiceDate: nowIso().slice(0, 10),
+    submit: true,
+    actor: origin.requesterName,
+    fixedApprovalStages: [...TELEPHONE_EXPENSE_APPROVAL_STAGES],
+    lockApprovalChain: true,
+    sourceModule: 'telephone-allowance',
+    telephoneCycleId: cycle.id,
+    telephoneCycleCode: cycle.cycleCode,
+    openingHistory: [
+      {
+        actionType: 'Submitted',
+        stage: 'Requester',
+        actorCode: origin.requesterCode,
+        actorName: origin.requesterName,
+        comment: 'Submitted the telephone allowance schedule for HR Manager approval.',
+        createdAt: origin.submittedAt,
+      },
+      {
+        actionType: 'Approved',
+        stage: 'HR Manager',
+        actorCode: origin.hrActorCode || undefined,
+        actorName: origin.hrActorName,
+        comment: compact(origin.hrComment) || 'HR Manager approved the schedule. Awaiting the Finance Manager.',
+        createdAt: origin.hrApprovedAt,
+      },
+    ],
+    attachmentUploads: [
+      {
+        fileName,
+        mimeType: 'application/pdf',
+        contentBase64: pdf.toString('base64'),
+      },
+      {
+        fileName: telephoneAllowanceScheduleWorkbookName(cycle.cycleCode),
+        mimeType: telephoneAllowanceScheduleWorkbookMime,
+        contentBase64: buildTelephoneAllowanceScheduleWorkbook(cycle, origin.hrActorName).toString('base64'),
+      },
+    ],
+  });
+  const requestId = created.request?.requestId || '';
+  const requestNumber = created.request?.requestNumber || '';
+  linked = requestId
+    ? { requestId, requestNumber }
+    : await findTelephoneAllowancePaymentRequest(cycle.id);
+  if (!linked?.requestId) {
+    throw new Error('The expense payment was not created.');
+  }
+  return linked;
+};
+
 export const approveHr = async (
   cycleId: string,
   rowVersion: number,
   actor: TelephoneActor,
   comment: string | null | undefined,
   canApproveOwn: boolean,
+  requesterCode?: string | null,
 ): Promise<TelephoneCycle> => {
   const mode = await resolveMode();
   let cycle = await loadCycle(mode, cycleId);
   if (!cycle) throw new Error('Cycle not found.');
   assertRowVersion(cycle, rowVersion);
   assertCanApproveOwn(cycle, actor, canApproveOwn);
-  assertTransition(cycle.status, 'PENDING_MD_APPROVAL');
+  assertTransition(cycle.status, 'EXPENSE_PAYMENT');
+  const origin = await resolveTelephoneExpenseOrigin(cycle, {
+    actorName: actor,
+    actorCode: requesterCode,
+    comment,
+    approvedAt: nowIso(),
+  });
+  const linked = await raiseTelephoneExpensePayment(cycle, origin);
 
   cycle = bumpRowVersion(pushApproval({
     ...cycle,
-    status: 'PENDING_MD_APPROVAL',
-    currentOwnerRole: ownerRoleForStatus('PENDING_MD_APPROVAL'),
-  }, 'HR', 'APPROVE', actor, 'HR Approver', comment));
+    status: 'EXPENSE_PAYMENT',
+    currentOwnerRole: ownerRoleForStatus('EXPENSE_PAYMENT'),
+    locked: true,
+    expensePaymentRequestId: linked.requestId,
+    expensePaymentRequestNumber: linked.requestNumber || null,
+  }, 'HR', 'APPROVE', actor, 'HR Manager', comment));
   cycle = await saveCycle(mode, cycle);
   await appendAudit(mode, {
     cycleId: cycle.id,
     user: actor,
-    role: 'HR Approver',
+    role: 'HR Manager',
     action: 'APPROVE_HR',
-    newValue: cycle.status,
+    newValue: `${cycle.status}:${linked.requestNumber || linked.requestId}`,
     reason: comment || null,
     workflowStage: cycle.status,
   });
   await notifyHandoff({
     actor,
-    title: `HR approved — ${cycle.cycleCode}`,
-    body: `Awaiting MD approval.`,
-    href: approvalHref(cycle.id),
-    roles: ['MD', 'CEO', 'Executive'],
+    title: `HR approved — ${cycle.cycleCode} is an expense payment`,
+    body: `${cycle.cycleCode} is expense payment ${linked.requestNumber || linked.requestId}. Finance Manager, CFO, and MD approve it in Finance. After the MD approves, it follows the normal expense payment process.`,
+    href: `/finance/approvals/request/${encodeURIComponent(linked.requestId)}`,
+    roles: ['Finance Manager', 'Finance Controller'],
+    severity: 'success',
+  });
+  return cycle;
+};
+
+/** Point an existing telephone expense payment at the real requester and write requester → HR Manager history. */
+export const correctTelephoneExpensePaymentOrigin = async (
+  cycleId: string,
+  requesterCode: string,
+) => {
+  const mode = await resolveMode();
+  const cycle = await loadCycle(mode, cycleId);
+  if (!cycle) throw new Error('Cycle not found.');
+  if (!cycle.expensePaymentRequestId) throw new Error('This cycle is not linked to an expense payment.');
+
+  const origin = await resolveTelephoneExpenseOrigin(cycle, {}, requesterCode);
+  const payableCount = cycle.employees.filter((line) => line.changeBadge !== 'REMOVED' && line.bimonthlyTotal > 0).length;
+  const narrative = telephoneExpenseNarrative(cycle, origin, payableCount);
+  const pdf = buildTelephoneAllowanceSchedulePdf(cycle, origin.hrActorName);
+  const {
+    getPaymentRequestById,
+    savePaymentAttachmentFile,
+  } = await import('@/lib/finance-intelligence/payment-requests-service');
+  const request = await getPaymentRequestById(cycle.expensePaymentRequestId);
+  if (!request) throw new Error('Expense payment not found.');
+
+  const attachments = await Promise.all((request.attachments || []).map(async (attachment) => {
+    const isSchedule = /\.pdf$/i.test(attachment.fileName) || /\.pdf$/i.test(attachment.originalName);
+    if (!isSchedule) return attachment;
+    await savePaymentAttachmentFile(request.requestId, attachment.fileName, pdf);
+    return {
+      ...attachment,
+      size: pdf.length,
+      uploadedBy: origin.requesterName,
+    };
+  }));
+
+  const pool = await getDleEnterpriseDbPool();
+  if (!pool) throw new Error('Finance database is unavailable.');
+  await pool.request()
+    .input('RequestId', sql.NVarChar(60), request.requestId)
+    .input('RequesterCode', sql.NVarChar(60), origin.requesterCode)
+    .input('RequesterName', sql.NVarChar(200), origin.requesterName)
+    .input('RequesterJobTitle', sql.NVarChar(150), origin.requesterJobTitle)
+    .input('BusinessJustification', sql.NVarChar(sql.MAX), narrative)
+    .input('Description', sql.NVarChar(sql.MAX), `Bimonthly telephone allowance ${cycle.cycleCode}. ${payableCount} employees. Total NGN ${roundMoney(cycle.bimonthlyTotal).toFixed(2)}. Submitted by ${origin.requesterName} and approved by ${origin.hrActorName}. Awaiting the Finance Manager.`)
+    .input('AttachmentsJson', sql.NVarChar(sql.MAX), JSON.stringify(attachments))
+    .query(`
+UPDATE [finance].[PaymentRequests]
+SET [RequesterCode] = @RequesterCode,
+    [RequesterName] = @RequesterName,
+    [RequesterJobTitle] = @RequesterJobTitle,
+    [BusinessJustification] = @BusinessJustification,
+    [Description] = @Description,
+    [AttachmentsJson] = @AttachmentsJson,
+    [UpdatedAt] = SYSUTCDATETIME()
+WHERE [RequestId] = @RequestId
+`);
+
+  const submitActionId = `PRA-${request.requestId}-submit`.slice(0, 60);
+  const hrActionId = `PRA-${request.requestId}-hr`.slice(0, 60);
+  await pool.request()
+    .input('RequestId', sql.NVarChar(60), request.requestId)
+    .input('SubmitActionId', sql.NVarChar(60), submitActionId)
+    .input('HrActionId', sql.NVarChar(60), hrActionId)
+    .query(`
+DELETE FROM [finance].[PaymentRequestActions]
+WHERE [RequestId] = @RequestId
+  AND (
+    [ActionId] IN (@SubmitActionId, @HrActionId)
+    OR (
+      [ActionType] = N'Submitted'
+      AND [Stage] = N'Finance Manager'
+      AND ([ActorName] = N'System' OR [ActorCode] = N'HR' OR [ActorCode] IS NULL OR [ActorName] = N'')
+    )
+  )
+`);
+
+  await pool.request()
+    .input('ActionId', sql.NVarChar(60), submitActionId)
+    .input('RequestId', sql.NVarChar(60), request.requestId)
+    .input('ActorCode', sql.NVarChar(60), origin.requesterCode)
+    .input('ActorName', sql.NVarChar(200), origin.requesterName)
+    .input('CreatedAt', sql.DateTime2, new Date(origin.submittedAt))
+    .query(`
+INSERT INTO [finance].[PaymentRequestActions]
+  ([ActionId], [RequestId], [ActionType], [Stage], [ActorCode], [ActorName], [Comment], [CreatedAt])
+VALUES
+  (@ActionId, @RequestId, N'Submitted', N'Requester', @ActorCode, @ActorName,
+   N'Submitted the telephone allowance schedule for HR Manager approval.', @CreatedAt)
+`);
+  await pool.request()
+    .input('ActionId', sql.NVarChar(60), hrActionId)
+    .input('RequestId', sql.NVarChar(60), request.requestId)
+    .input('ActorCode', sql.NVarChar(60), origin.hrActorCode)
+    .input('ActorName', sql.NVarChar(200), origin.hrActorName)
+    .input('Comment', sql.NVarChar(sql.MAX), compact(origin.hrComment) || 'HR Manager approved the schedule. Awaiting the Finance Manager.')
+    .input('CreatedAt', sql.DateTime2, new Date(origin.hrApprovedAt))
+    .query(`
+INSERT INTO [finance].[PaymentRequestActions]
+  ([ActionId], [RequestId], [ActionType], [Stage], [ActorCode], [ActorName], [Comment], [CreatedAt])
+VALUES
+  (@ActionId, @RequestId, N'Approved', N'HR Manager', @ActorCode, @ActorName, @Comment, @CreatedAt)
+`);
+
+  return {
+    cycleCode: cycle.cycleCode,
+    requestId: request.requestId,
+    requestNumber: request.requestNumber,
+    requesterCode: origin.requesterCode,
+    requesterName: origin.requesterName,
+    hrActorName: origin.hrActorName,
+    hrActorCode: origin.hrActorCode,
+    currentStage: request.currentStage,
+  };
+};
+
+/** Add the Excel employee payment list to an expense payment that already has the PDF. */
+export const attachTelephoneExpensePaymentWorkbook = async (cycleId: string) => {
+  const mode = await resolveMode();
+  const cycle = await loadCycle(mode, cycleId);
+  if (!cycle) throw new Error('Cycle not found.');
+  if (!cycle.expensePaymentRequestId) throw new Error('This cycle is not linked to an expense payment.');
+
+  const origin = await resolveTelephoneExpenseOrigin(cycle, {});
+  const workbook = buildTelephoneAllowanceScheduleWorkbook(cycle, origin.hrActorName);
+  const originalName = telephoneAllowanceScheduleWorkbookName(cycle.cycleCode);
+  const {
+    getPaymentRequestById,
+    savePaymentAttachmentFile,
+    appendPaymentRequestAttachments,
+  } = await import('@/lib/finance-intelligence/payment-requests-service');
+  const request = await getPaymentRequestById(cycle.expensePaymentRequestId);
+  if (!request) throw new Error('Expense payment not found.');
+
+  const existing = (request.attachments || []).find((attachment) =>
+    /employee-payment-list\.xls/i.test(attachment.originalName || '')
+    || /employee-payment-list\.xls/i.test(attachment.fileName || ''));
+  let attachments = request.attachments || [];
+  if (existing) {
+    await savePaymentAttachmentFile(request.requestId, existing.fileName, workbook);
+    attachments = attachments.map((attachment) => attachment.id === existing.id
+      ? {
+        ...attachment,
+        originalName,
+        mimeType: telephoneAllowanceScheduleWorkbookMime,
+        size: workbook.length,
+        uploadedBy: origin.requesterName,
+      }
+      : attachment);
+  } else {
+    const id = `att-${cycle.cycleCode}-xls`.replace(/[^a-zA-Z0-9-]/g, '').slice(0, 40);
+    const fileName = `${id}-${originalName}`.slice(0, 120);
+    await savePaymentAttachmentFile(request.requestId, fileName, workbook);
+    const added = {
+      id,
+      fileName,
+      originalName,
+      mimeType: telephoneAllowanceScheduleWorkbookMime,
+      size: workbook.length,
+      uploadedAt: nowIso(),
+      uploadedBy: origin.requesterName,
+      kind: 'supporting' as const,
+    };
+    attachments = await appendPaymentRequestAttachments(request.requestId, [added]);
+  }
+
+  const pool = await getDleEnterpriseDbPool();
+  if (!pool) throw new Error('Finance database is unavailable.');
+  await pool.request()
+    .input('RequestId', sql.NVarChar(60), request.requestId)
+    .input('AttachmentsJson', sql.NVarChar(sql.MAX), JSON.stringify(attachments))
+    .query(`
+UPDATE [finance].[PaymentRequests]
+SET [AttachmentsJson] = @AttachmentsJson,
+    [BusinessJustification] = REPLACE(
+      [BusinessJustification],
+      N'The attached PDF is the employee payment list.',
+      N'The attached PDF and Excel file are the employee payment list.'
+    ),
+    [UpdatedAt] = SYSUTCDATETIME()
+WHERE [RequestId] = @RequestId
+`);
+
+  return {
+    cycleCode: cycle.cycleCode,
+    requestId: request.requestId,
+    requestNumber: request.requestNumber,
+    fileName: originalName,
+    size: workbook.length,
+    attachmentCount: attachments.length,
+  };
+};
+
+/** Move a schedule that already passed HR on the old path into Finance at the Finance Manager. */
+export const handoffInFlightCycleToExpensePayment = async (
+  cycleId: string,
+  actor: TelephoneActor,
+  requesterCode?: string | null,
+  comment?: string | null,
+): Promise<TelephoneCycle> => {
+  const mode = await resolveMode();
+  let cycle = await loadCycle(mode, cycleId);
+  if (!cycle) throw new Error('Cycle not found.');
+  if (cycle.status === 'EXPENSE_PAYMENT' && cycle.expensePaymentRequestId) return cycle;
+  if (cycle.status !== 'PENDING_MD_APPROVAL' && cycle.status !== 'PENDING_CFO_AUTHORIZATION') {
+    throw new Error(`Only a schedule already past HR can be moved this way (current: ${cycle.status}).`);
+  }
+  assertTransition(cycle.status, 'EXPENSE_PAYMENT');
+
+  const note = comment
+    || 'Moved from the telephone approval path. Finance approval continues with the Finance Manager, then the CFO, then the MD.';
+  const origin = await resolveTelephoneExpenseOrigin(cycle, {
+    actorName: actor === 'System' ? null : actor,
+    actorCode: requesterCode && !/^hr$/i.test(requesterCode) ? requesterCode : null,
+    comment: note,
+  }, null);
+  const linked = await raiseTelephoneExpensePayment(cycle, origin);
+  const previous = cycle.status;
+  cycle = bumpRowVersion({
+    ...cycle,
+    status: 'EXPENSE_PAYMENT',
+    currentOwnerRole: ownerRoleForStatus('EXPENSE_PAYMENT'),
+    locked: true,
+    expensePaymentRequestId: linked.requestId,
+    expensePaymentRequestNumber: linked.requestNumber || null,
+  });
+  cycle = await saveCycle(mode, cycle);
+  await appendAudit(mode, {
+    cycleId: cycle.id,
+    user: actor,
+    role: 'Finance',
+    action: 'HANDOFF_EXPENSE_PAYMENT',
+    previousValue: previous,
+    newValue: `${cycle.status}:${linked.requestNumber || linked.requestId}`,
+    reason: note,
+    workflowStage: cycle.status,
+  });
+  await notifyHandoff({
+    actor,
+    title: `${cycle.cycleCode} is now an expense payment`,
+    body: `${cycle.cycleCode} is expense payment ${linked.requestNumber || linked.requestId}, waiting for the Finance Manager. After that it goes to the CFO and the MD, then follows the normal expense payment process.`,
+    href: `/finance/approvals/request/${encodeURIComponent(linked.requestId)}`,
+    roles: ['Finance Manager', 'Finance Controller'],
     severity: 'success',
   });
   return cycle;
@@ -2150,6 +2595,9 @@ export const generatePaymentSchedule = async (
   const mode = await resolveMode();
   let cycle = await loadCycle(mode, cycleId);
   if (!cycle) throw new Error('Cycle not found.');
+  if (cycle.status === 'EXPENSE_PAYMENT') {
+    throw new Error('This schedule is an expense payment. Finance pays it after the MD approves, the same way as other expense payments.');
+  }
   if (!['AUTHORIZED_FOR_PAYMENT', 'PAYMENT_PROCESSING', 'PARTIALLY_PAID'].includes(cycle.status)) {
     throw new Error(`Payment schedule can only be generated after CFO authorization (current: ${cycle.status}).`);
   }
@@ -2528,7 +2976,7 @@ export const buildApprovalsPayload = async (
 
   const pendingMyAction = cycles.filter((c) => isPendingMine(c.status));
   const inProgress = cycles.filter((c) =>
-    ['PENDING_HR_REVIEW', 'RETURNED_TO_IT', 'IT_VALIDATION', 'PENDING_HR_APPROVAL', 'PENDING_MD_APPROVAL', 'PENDING_CFO_AUTHORIZATION', 'RETURNED_FOR_CORRECTION'].includes(c.status)
+    ['PENDING_HR_REVIEW', 'RETURNED_TO_IT', 'IT_VALIDATION', 'PENDING_HR_APPROVAL', 'EXPENSE_PAYMENT', 'PENDING_MD_APPROVAL', 'PENDING_CFO_AUTHORIZATION', 'RETURNED_FOR_CORRECTION'].includes(c.status)
     && !isPendingMine(c.status));
   const completed = cycles.filter((c) =>
     ['AUTHORIZED_FOR_PAYMENT', 'PAYMENT_PROCESSING', 'PARTIALLY_PAID', 'PAID', 'COMPLETED'].includes(c.status));
