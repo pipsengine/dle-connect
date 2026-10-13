@@ -3,7 +3,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { AUTH_COOKIE, verifySessionToken, type SessionPayload } from '@/lib/auth/session';
 import { effectivePermissionsForUser } from '@/lib/auth/access-control-store';
 import { isSuperActor } from '@/lib/auth/role-delegation';
-import { canAccessCommercial, canEditCommercial, isGmCommercial } from '@/lib/access/commercial-access';
+import { canAccessCommercial, canEditCommercial, isGmCommercial, isManagingDirector } from '@/lib/access/commercial-access';
 import { createEnterpriseNotification } from '@/lib/enterprise-notifications-store';
 import {
   addApproval,
@@ -160,6 +160,16 @@ export async function POST(request: NextRequest) {
           const internalChanged = internal !== String(current?.clarificationDeadline || '').slice(0, 10);
           if (ownerChanged || internalChanged) {
             return err(403, 'Only GM Commercial can assign the responsible officer and internal response date.');
+          }
+        }
+        if (!enquiry && !isManagingDirector(session.roles, session.isGlobalAdmin)) {
+          const current = opportunity.id ? await getOpportunity(String(opportunity.id)) : null;
+          const owner = String(opportunity.ownerName || '').trim();
+          const internal = String(opportunity.closingDate || '').slice(0, 10);
+          const ownerChanged = owner !== String(current?.ownerName || '').trim();
+          const internalChanged = internal !== String(current?.closingDate || '').slice(0, 10);
+          if (ownerChanged || internalChanged) {
+            return err(403, 'Only the Managing Director can assign the responsible officer and internal submission date.');
           }
         }
         return ok(await saveOpportunity(opportunity, actor));

@@ -193,7 +193,7 @@ const bindOpportunity = (request: sql.Request, input: TenderOpportunityInput, st
     .input('InvitationDate', sql.Date, dateOrNull(input.invitationDate))
     .input('SiteVisitDate', sql.Date, dateOrNull(input.siteVisitDate))
     .input('ClarificationDeadline', sql.Date, dateOrNull(input.clarificationDeadline))
-    .input('OwnerName', sql.NVarChar(180), clean(input.ownerName, 180) || clean(actor, 180))
+    .input('OwnerName', sql.NVarChar(180), clean(input.ownerName, 180))
     .input('TeamNotes', sql.NVarChar(sql.MAX), clean(input.teamNotes))
     .input('ApprovalNotes', sql.NVarChar(sql.MAX), clean(input.approvalNotes))
     .input('UpdatedBy', sql.NVarChar(120), clean(actor, 120));
@@ -270,11 +270,12 @@ export const saveOpportunity = async (input: TenderOpportunityInput, actor: stri
     const current = await getOpportunity(existingId);
     if (!current) throw new Error('Opportunity was not found.');
     const referenceNo = clean(input.referenceNo, 80) || current.referenceNo;
-    const request = pool.request().input('Id', sql.NVarChar(40), existingId).input('ReferenceNo', sql.NVarChar(80), referenceNo);
+    const enquiryRef = clean(input.enquiryRef, 80) || current.enquiryRef;
+    const request = pool.request().input('Id', sql.NVarChar(40), existingId).input('ReferenceNo', sql.NVarChar(80), referenceNo).input('EnquiryRef', sql.NVarChar(80), enquiryRef);
     bindOpportunity(request, input, status, stage, actor);
     await request.query(`
       UPDATE [commercial].[TenderOpportunities] SET
-        [ReferenceNo]=@ReferenceNo,[Title]=@Title,[Description]=@Description,[OpportunityType]=@OpportunityType,
+        [ReferenceNo]=@ReferenceNo,[EnquiryRef]=@EnquiryRef,[Title]=@Title,[Description]=@Description,[OpportunityType]=@OpportunityType,
         [SourceName]=@SourceName,[TenderType]=@TenderType,[Category]=@Category,[SubCategory]=@SubCategory,
         [BusinessUnit]=@BusinessUnit,[Status]=@Status,[Stage]=@Stage,[Priority]=@Priority,[BidDecision]=@BidDecision,
         [ClientName]=@ClientName,[ClientAddress]=@ClientAddress,[ContactPerson]=@ContactPerson,[Designation]=@Designation,
@@ -307,7 +308,8 @@ export const saveOpportunity = async (input: TenderOpportunityInput, actor: stri
 
   const id = idFor('TOP');
   const referenceNo = clean(input.referenceNo, 80) || (await nextCode(pool, 'ReferenceNo', 'DLE-T'));
-  const enquiryRef = clean(input.enquiryRef, 80) || (await nextCode(pool, 'EnquiryRef', 'ENQ'));
+  const enquiryRecord = clean(input.opportunityType, 40) === 'Enquiry' || clean(input.tenderType, 40) === 'Enquiry';
+  const enquiryRef = clean(input.enquiryRef, 80) || (enquiryRecord ? await nextCode(pool, 'EnquiryRef', 'ENQ') : '');
   const request = pool
     .request()
     .input('Id', sql.NVarChar(40), id)
@@ -345,14 +347,16 @@ export const patchOpportunity = async (id: string, patch: Partial<TenderOpportun
 export const duplicateOpportunity = async (id: string, actor: string) => {
   const current = await getOpportunity(id);
   if (!current) throw new Error('Opportunity was not found.');
+  const enquiry = current.opportunityType === 'Enquiry' || current.tenderType === 'Enquiry' || current.stage === 'Enquiry';
   const copy: TenderOpportunityInput = {
     ...current,
     id: '',
     referenceNo: '',
-    enquiryRef: '',
+    enquiryRef: enquiry ? '' : current.enquiryRef,
     title: `${current.title} (copy)`,
     status: 'Draft',
-    stage: 'Enquiry',
+    stage: enquiry ? 'Enquiry' : 'Tender/Bid',
+    ownerName: enquiry ? current.ownerName : '',
     saveMode: 'draft',
   };
   return saveOpportunity(copy, actor);

@@ -813,6 +813,52 @@ export const listReviewSupervisors = async (input: { periodId: string; workDate?
   return (result.recordset || []).map((row) => text(row.SupervisorName)).filter(Boolean);
 };
 
+/** Crew & Assignments stores "P0013 - Mr SAMUEL KARONWI"; Timesheet Entry searches by the display name. Match either. */
+const bindCrewSupervisor = (request: sql.Request, supervisor: string, supervisorCode?: string) => {
+  const variants = supervisorCodeLookupVariants(supervisorCode || supervisor);
+  request.input('Supervisor', sql.NVarChar(180), supervisor);
+  variants.forEach((code, index) => request.input(`CrewCode${index}`, sql.NVarChar(50), code));
+  const parts = ['a.[SupervisorName] = @Supervisor'];
+  variants.forEach((_, index) => {
+    parts.push(`a.[SupervisorName] = @CrewCode${index}`);
+    parts.push(`a.[SupervisorName] LIKE @CrewCode${index} + N' - %'`);
+  });
+  return `(${parts.join(' OR ')})`;
+};
+
+const loadCoveringCrewAssignments = async (
+  connection: sql.ConnectionPool,
+  workDate: string,
+  supervisor: string,
+  supervisorCode?: string,
+) => {
+  const request = connection.request().input('WorkDate', sql.Date, workDate);
+  const match = bindCrewSupervisor(request, supervisor, supervisorCode);
+  const result = await request.query(`
+    SELECT a.[EmployeeCode], a.[EmployeeName], a.[AssignmentType], a.[SupervisorName], a.[LocationName], a.[WorkCenterName], a.[OperationalStatus]
+    FROM [tsmgmt].[CrewAssignments] a
+    WHERE a.[Status] = N'Active'
+      AND a.[EffectiveFrom] <= @WorkDate
+      AND (a.[EffectiveTo] IS NULL OR a.[EffectiveTo] >= @WorkDate)
+      AND a.[OperationalStatus] <> N'Assignment Ended'
+      AND ${match}
+  `);
+  const rows = (result.recordset || []).filter((row) => namesMatchSupervisor(text(row.SupervisorName), supervisor) || namesMatchSupervisor(text(row.SupervisorName), supervisorCode || ''));
+  const away = await connection.request().input('WorkDate', sql.Date, workDate).query(`
+    SELECT [EmployeeCode], [SupervisorName]
+    FROM [tsmgmt].[CrewAssignments]
+    WHERE [Status] = N'Active' AND [AssignmentType] = N'Temporary'
+      AND [EffectiveFrom] <= @WorkDate AND ([EffectiveTo] IS NULL OR [EffectiveTo] >= @WorkDate)
+      AND [OperationalStatus] <> N'Assignment Ended'
+  `);
+  const awayCodes = new Set(
+    (away.recordset || [])
+      .filter((row) => !namesMatchSupervisor(text(row.SupervisorName), supervisor) && !namesMatchSupervisor(text(row.SupervisorName), supervisorCode || ''))
+      .map((row) => text(row.EmployeeCode).toUpperCase()),
+  );
+  return rows.filter((row) => text(row.AssignmentType) !== 'Primary' || !awayCodes.has(text(row.EmployeeCode).toUpperCase()));
+};
+
 export const resolveTimesheetEntry = async (input: { periodId: string; workDate: string; supervisor: string; supervisorCode?: string; shift?: string; location?: string }) => {
   const connection = await pool();
   const periodId = text(input.periodId);
@@ -863,14 +909,9 @@ export const resolveTimesheetEntry = async (input: { periodId: string; workDate:
   };
   let crew: Array<Record<string, unknown>> = [];
   let legacyOffshoreCodes = new Set<string>();
+  const assignedHere = new Set<string>();
   if (!timesheet) {
-    const crewResult = await connection.request().input('WorkDate', sql.Date, workDate).input('Supervisor', sql.NVarChar(180), supervisor).query(`
-      SELECT a.[EmployeeCode], a.[EmployeeName], a.[AssignmentType], a.[LocationName], a.[WorkCenterName], a.[OperationalStatus], a.[EffectiveFrom], a.[EffectiveTo]
-      FROM [tsmgmt].[CrewAssignments] a
-      WHERE a.[Status] = N'Active' AND a.[SupervisorName] = @Supervisor
-        AND a.[EffectiveFrom] <= @WorkDate AND (a.[EffectiveTo] IS NULL OR a.[EffectiveTo] >= @WorkDate)
-        AND a.[OperationalStatus] <> N'Assignment Ended'
-    `);
+    const coveringRows = await loadCoveringCrewAssignments(connection, workDate, supervisor, supervisorCode);
     const offshore = await connection.request().input('WorkDate', sql.Date, workDate).query(`
       SELECT [EmployeeCode] FROM [tsmgmt].[Records]
       WHERE [Area] = N'offshore' AND [Status] = N'Active' AND [WorkDate] <= @WorkDate AND ([EffectiveTo] IS NULL OR [EffectiveTo] >= @WorkDate)
@@ -879,16 +920,11 @@ export const resolveTimesheetEntry = async (input: { periodId: string; workDate:
     legacyOffshoreCodes = offshoreCodes;
     const seen = new Set<string>();
     crew = [];
-    for (const row of crewResult.recordset || []) {
+    for (const row of coveringRows) {
       const code = text(row.EmployeeCode);
       if (!isContractEmployee(code) || seen.has(code)) continue;
       seen.add(code);
-      const away = await connection.request().input('Code', sql.NVarChar(80), code).input('WorkDate', sql.Date, workDate).input('Supervisor', sql.NVarChar(180), supervisor).query(`
-        SELECT TOP 1 [SupervisorName] FROM [tsmgmt].[CrewAssignments]
-        WHERE [EmployeeCode]=@Code AND [AssignmentType]=N'Temporary' AND [Status]=N'Active' AND [SupervisorName]<>@Supervisor
-          AND [EffectiveFrom] <= @WorkDate AND ([EffectiveTo] IS NULL OR [EffectiveTo] >= @WorkDate)
-      `);
-      if (text(row.AssignmentType) === 'Primary' && away.recordset?.[0]) continue;
+      assignedHere.add(code.toUpperCase());
       let operationalStatus = text(row.OperationalStatus) || 'Active on Crew';
       if (leaveCodes.has(code.toUpperCase())) operationalStatus = 'Approved Leave';
       else if (offshoreCodes.has(code.toUpperCase())) operationalStatus = 'Mobilized Offshore';
@@ -902,7 +938,7 @@ export const resolveTimesheetEntry = async (input: { periodId: string; workDate:
         allocations: contractLeaveIdle(code),
       });
     }
-    if (!crew.length && supervisorCode) {
+    if (supervisorCode) {
       const request = connection.request();
       const variants = supervisorCodeLookupVariants(supervisorCode).filter(Boolean);
       if (variants.length) {
@@ -1117,7 +1153,54 @@ export const resolveTimesheetEntry = async (input: { periodId: string; workDate:
       ? 'These employees are mobilized to this offshore site. Hours stay empty until they are booked on this timesheet.'
       : 'No employees are mobilized to this offshore site for this supervisor on this date.';
   } else if (!timesheet) {
-    crew = crew.filter((row) => !mobilizedCodes.has(text(row.employeeCode).toUpperCase()) && !legacyOffshoreCodes.has(text(row.employeeCode).toUpperCase()));
+    crew = crew.filter((row) => {
+      const code = text(row.employeeCode).toUpperCase();
+      if (assignedHere.has(code)) return true;
+      return !mobilizedCodes.has(code) && !legacyOffshoreCodes.has(code);
+    });
+  }
+  if (timesheet) {
+    const coveringRows = await loadCoveringCrewAssignments(connection, workDate, supervisor, supervisorCode);
+    const assignmentByCode = new Map<string, Record<string, unknown>>();
+    for (const row of coveringRows) {
+      const code = text(row.EmployeeCode).toUpperCase();
+      const current = assignmentByCode.get(code);
+      if (!current || text(row.AssignmentType) === 'Primary') assignmentByCode.set(code, row);
+    }
+    timesheet.lines = timesheet.lines.map((line) => {
+      const row = assignmentByCode.get(text(line.employeeCode).toUpperCase());
+      if (!row) return line;
+      return {
+        ...line,
+        location: text(row.LocationName) || line.location,
+        workCenter: text(row.WorkCenterName) || line.workCenter,
+      };
+    });
+    const removed = await confirmedRemovalEmployeeCodes(supervisor);
+    const present = new Set(timesheet.lines.map((row) => text(row.employeeCode).toUpperCase()));
+    for (const row of coveringRows) {
+      const code = text(row.EmployeeCode);
+      if (!isBookableCrewCode(code) || present.has(code.toUpperCase()) || removed.has(code.toUpperCase()) || (supervisorCode && code.toUpperCase() === supervisorCode.toUpperCase())) continue;
+      present.add(code.toUpperCase());
+      const onLeave = leaveCodes.has(code.toUpperCase());
+      timesheet.lines.push({
+        id: '',
+        employeeCode: code,
+        employeeName: text(row.EmployeeName),
+        location: text(row.LocationName),
+        workCenter: text(row.WorkCenterName),
+        operationalStatus: onLeave ? 'Approved Leave' : (text(row.OperationalStatus) || 'Active on Crew'),
+        attendanceStatus: onLeave ? 'Approved Leave' : '',
+        attendanceNote: '',
+        exceptional: false,
+        exceptionReason: '',
+        allocations: !leaveBookable && onLeave ? [] : contractLeaveIdle(code),
+        nightSession: false,
+        nightStart: '',
+        nightEnd: '',
+        nightNote: '',
+      });
+    }
   }
   if (!leaveBookable) {
     const onNonWorkingLeave = (row: { employeeCode?: unknown; operationalStatus?: unknown; attendanceStatus?: unknown }) => {

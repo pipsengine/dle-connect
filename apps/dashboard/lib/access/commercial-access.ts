@@ -16,3 +16,6 @@ export const canEditCommercial = (permissions: string[], isGlobalAdmin?: boolean
 
 export const isGmCommercial = (roles: string[] = [], isGlobalAdmin?: boolean) =>
   Boolean(isGlobalAdmin) || roles.some((role) => /gm\s*commercial|general\s*manager\s*.*commercial/i.test(role));
+
+export const isManagingDirector = (roles: string[] = [], isGlobalAdmin?: boolean) =>
+  Boolean(isGlobalAdmin) || roles.some((role) => /managing\s*director|^md(\/ceo)?$|\bmd\/ceo\b/i.test(role));

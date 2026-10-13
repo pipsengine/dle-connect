@@ -2,80 +2,95 @@
 
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
-import { useEffect, useMemo, useState } from 'react';
-import { ArrowRight, Columns3, Download, FileText, Filter, MoreHorizontal, Search } from 'lucide-react';
+import { useEffect, useMemo, useState, type ReactNode } from 'react';
+import { CalendarDays, Check, FileText, MoreHorizontal, Play, Plus, Search, UserRound, X } from 'lucide-react';
 import type { TenderOpportunity } from '@/lib/commercial/tender-types';
-import {
-  MONTHS,
-  SECTORS,
-  closedOut,
-  compactNaira,
-  daysUntil,
-  downloadCsv,
-  expectedValue,
-  opportunityStage,
-  opportunityTabMatch,
-  sectorOf,
-  stageRank,
-  winProbability,
-} from '@/lib/commercial/tender-present';
-import { formatWhen, money, tenderGet, tenderPost } from './tender-api';
-import { OpportunityModal } from './OpportunityModal';
-import { Donut, Pager, Pill, SplitButton, TodayChip } from './tender-widgets';
+import { closedOut, daysUntil, receivedOn, sectorOf } from '@/lib/commercial/tender-present';
+import { isManagingDirector } from '@/lib/access/commercial-access';
+import { formatWhen, tenderGet, tenderPost } from './tender-api';
+import { TenderOpportunityModal } from './TenderOpportunityModal';
 
-const TABS = ['All Opportunities', 'Invitations to Tender', 'Prequalification', 'Bid/No-Bid Decision', 'Shortlisted', 'Lost / Withdrawn', 'Archived'] as const;
-const FUNNEL = [
-  { label: 'Enquiries', rank: 0, icon: 'bg-blue-50 text-blue-600', card: 'bg-blue-50/60' },
-  { label: 'Qualified', rank: 1, icon: 'bg-emerald-50 text-emerald-600', card: 'bg-emerald-50/70' },
-  { label: 'Tender/Bid', rank: 2, icon: 'bg-violet-50 text-violet-600', card: 'bg-violet-50/70' },
-  { label: 'Submission', rank: 3, icon: 'bg-teal-50 text-teal-600', card: 'bg-teal-50/70' },
-  { label: 'Negotiation', rank: 4, icon: 'bg-rose-50 text-rose-500', card: 'bg-rose-50/70' },
-  { label: 'Awarded', rank: 5, icon: 'bg-green-50 text-green-600', card: 'bg-green-50/80' },
-] as const;
-const STAGE_CLASS: Record<string, string> = {
-  Enquiry: 'bg-cyan-50 text-cyan-700',
-  Qualified: 'bg-emerald-50 text-emerald-700',
-  Prequalification: 'bg-orange-50 text-orange-700',
-  'Tender/Bid': 'bg-blue-50 text-blue-700',
-  Submission: 'bg-violet-50 text-violet-700',
-  Negotiation: 'bg-pink-50 text-pink-700',
-  Shortlisted: 'bg-fuchsia-50 text-fuchsia-700',
-  Awarded: 'bg-green-50 text-green-700',
-  'Bid/No-Bid': 'bg-slate-100 text-slate-600',
+type OpportunityStatus = 'Not Started' | 'In Progress' | 'Submitted' | 'Closed';
+type Tab = 'All Opportunities' | 'Awaiting Assignment' | OpportunityStatus | 'Overdue';
+
+const TABS: Tab[] = ['All Opportunities', 'Awaiting Assignment', 'Not Started', 'In Progress', 'Submitted', 'Overdue', 'Closed'];
+const STATUSES: OpportunityStatus[] = ['Not Started', 'In Progress', 'Submitted', 'Closed'];
+const PRIORITIES = ['High', 'Medium', 'Low'];
+
+const isTenderRow = (row: TenderOpportunity) =>
+  row.opportunityType !== 'Enquiry' && row.tenderType !== 'Enquiry' && row.stage !== 'Enquiry';
+
+const opportunityStatus = (row: TenderOpportunity): OpportunityStatus => {
+  if (row.status === 'Closed' || closedOut(row) || row.status === 'Lost') return 'Closed';
+  if (/submit/.test(`${row.stage} ${row.status}`)) return 'Submitted';
+  if (row.status === 'Draft') return 'Not Started';
+  return 'In Progress';
 };
-const SECTOR_COLORS = ['#3b82f6', '#22c55e', '#f59e0b', '#8b5cf6', '#14b8a6', '#64748b'];
-const LINE_COLORS = ['#3b82f6', '#22c55e', '#f59e0b', '#a855f7'];
 
-const funnelRank = (row: TenderOpportunity) => {
-  const rank = stageRank(row);
-  if (rank >= 6) return 5;
-  if (rank === 5) return 4;
-  if (rank === 4) return 3;
-  if (rank >= 2) return 2;
-  return rank;
+const awaitingAssignment = (row: TenderOpportunity) => !row.ownerName.trim() && opportunityStatus(row) !== 'Closed' && opportunityStatus(row) !== 'Submitted';
+const internalOn = (row: TenderOpportunity) => (row.submissionDeadline ? row.closingDate : '');
+const externalOn = (row: TenderOpportunity) => row.submissionDeadline || row.closingDate;
+const overdue = (row: TenderOpportunity) => {
+  if (opportunityStatus(row) === 'Closed' || opportunityStatus(row) === 'Submitted') return false;
+  const internal = daysUntil(internalOn(row));
+  const external = daysUntil(externalOn(row));
+  return (internal != null && internal < 0) || (external != null && external < 0);
+};
+
+const dateTone = (value: string) => {
+  const days = daysUntil(value);
+  if (!value || days == null) return 'text-slate-400';
+  if (days < 0) return 'rounded-md bg-rose-50 px-2 py-0.5 font-semibold text-rose-600';
+  if (days <= 3) return 'rounded-md bg-orange-50 px-2 py-0.5 font-semibold text-orange-600';
+  if (days <= 7) return 'rounded-md bg-amber-50 px-2 py-0.5 font-semibold text-amber-700';
+  return 'rounded-md bg-emerald-50 px-2 py-0.5 font-semibold text-emerald-700';
+};
+
+const statusTone: Record<OpportunityStatus, string> = {
+  'Not Started': 'bg-rose-50 text-rose-600',
+  'In Progress': 'bg-blue-50 text-blue-700',
+  Submitted: 'bg-emerald-50 text-emerald-700',
+  Closed: 'bg-slate-100 text-slate-600',
+};
+
+const priorityTone = (value: string) => value === 'High' ? 'bg-rose-50 text-rose-600' : value === 'Low' ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-700';
+const initials = (name: string) => name.split(/\s+/).filter(Boolean).slice(0, 2).map((part) => part[0]?.toUpperCase() || '').join('') || '—';
+const within = (value: string, from: string, to: string) => {
+  const day = (value || '').slice(0, 10);
+  if (!day) return !from && !to;
+  if (from && day < from) return false;
+  if (to && day > to) return false;
+  return true;
 };
 
 export function OpportunitiesRegister() {
   const searchParams = useSearchParams();
   const [rows, setRows] = useState<TenderOpportunity[]>([]);
   const [error, setError] = useState('');
+  const [notice, setNotice] = useState('');
   const [loading, setLoading] = useState(true);
-  const [tab, setTab] = useState<(typeof TABS)[number]>('All Opportunities');
+  const [tab, setTab] = useState<Tab>('All Opportunities');
   const [search, setSearch] = useState(searchParams.get('q') || '');
-  const [stage, setStage] = useState('All Stages');
-  const [category, setCategory] = useState('All Categories');
-  const [unit, setUnit] = useState('All Business Units');
   const [client, setClient] = useState('All Clients');
-  const [country, setCountry] = useState('All Countries');
-  const [fromDate, setFromDate] = useState('');
-  const [toDate, setToDate] = useState('');
+  const [sector, setSector] = useState('All Sectors');
+  const [officer, setOfficer] = useState('All Officers');
+  const [status, setStatus] = useState('All Statuses');
+  const [priority, setPriority] = useState('All Priorities');
+  const [source, setSource] = useState('All Sources');
+  const [internalFrom, setInternalFrom] = useState('');
+  const [internalTo, setInternalTo] = useState('');
+  const [externalFrom, setExternalFrom] = useState('');
+  const [externalTo, setExternalTo] = useState('');
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
+  const [picked, setPicked] = useState<string[]>([]);
+  const [menuId, setMenuId] = useState('');
   const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing] = useState<TenderOpportunity | null>(null);
-  const [menuOpen, setMenuOpen] = useState(false);
-  const [menuId, setMenuId] = useState('');
-  const [showDays, setShowDays] = useState(true);
+  const [md, setMd] = useState(false);
+  const [assigning, setAssigning] = useState<TenderOpportunity | null>(null);
+  const [assignee, setAssignee] = useState('');
+  const [busy, setBusy] = useState(false);
 
   const load = async () => {
     setLoading(true);
@@ -83,13 +98,19 @@ export function OpportunitiesRegister() {
     try {
       setRows(await tenderGet<TenderOpportunity[]>('opportunities'));
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : 'Unable to read opportunities.');
+      setError(reason instanceof Error ? reason.message : 'Unable to read tender opportunities.');
     } finally {
       setLoading(false);
     }
   };
 
   useEffect(() => { load(); }, []);
+  useEffect(() => {
+    fetch('/api/auth/me', { cache: 'no-store', credentials: 'same-origin' })
+      .then((response) => (response.ok ? response.json() : null))
+      .then((json) => setMd(isManagingDirector(json?.data?.roles || [], Boolean(json?.data?.isGlobalAdmin))))
+      .catch(() => setMd(false));
+  }, []);
   useEffect(() => {
     const query = searchParams.get('q') || '';
     if (query) setSearch(query);
@@ -99,172 +120,195 @@ export function OpportunitiesRegister() {
     }
   }, [searchParams]);
 
-  const openRows = rows.filter((row) => row.status !== 'Closed' && !closedOut(row));
-  const funnelBase = openRows.length || rows.filter((row) => row.status !== 'Closed').length;
-  const reached = (rank: number) => openRows.filter((row) => funnelRank(row) >= rank);
-  const funnel = FUNNEL.map((item) => {
-    const matched = item.rank === 5 ? rows.filter((row) => opportunityStage(row) === 'Awarded') : reached(item.rank);
-    const count = matched.length;
-    return { ...item, count, value: matched.reduce((sum, row) => sum + row.estimatedValue, 0), pct: funnelBase ? Math.round((count / funnelBase) * 100) : 0 };
+  const tenders = useMemo(() => rows.filter(isTenderRow), [rows]);
+  const counts = {
+    all: tenders.length,
+    awaiting: tenders.filter(awaitingAssignment).length,
+    'Not Started': tenders.filter((row) => opportunityStatus(row) === 'Not Started').length,
+    'In Progress': tenders.filter((row) => opportunityStatus(row) === 'In Progress').length,
+    Submitted: tenders.filter((row) => opportunityStatus(row) === 'Submitted').length,
+    Closed: tenders.filter((row) => opportunityStatus(row) === 'Closed').length,
+    Overdue: tenders.filter(overdue).length,
+  };
+  const share = (count: number) => (counts.all ? Math.round((count / counts.all) * 100) : 0);
+  const now = new Date();
+  const windowCount = (fromDays: number, toDays: number) => tenders.filter((row) => {
+    const created = new Date(row.createdAt);
+    return !Number.isNaN(created.getTime()) && created >= new Date(now.getTime() - fromDays * 86400000) && created < new Date(now.getTime() - toDays * 86400000);
+  }).length;
+  const recent = windowCount(30, 0);
+  const prior = windowCount(60, 30);
+  const delta = prior ? Math.round(((recent - prior) / prior) * 100) : recent ? 100 : 0;
+  const internalDue = tenders.filter((row) => {
+    if (opportunityStatus(row) === 'Closed' || opportunityStatus(row) === 'Submitted') return false;
+    const days = daysUntil(internalOn(row));
+    return days != null && days <= 3;
   });
-  const pipelineRows = openRows.filter((row) => {
-    const rank = funnelRank(row);
-    return rank >= 2 && rank < 5;
-  });
-  const pipelineValue = pipelineRows.reduce((sum, row) => sum + row.estimatedValue, 0);
-  const weighted = pipelineRows.reduce((sum, row) => sum + expectedValue(row), 0);
-  const weightedPct = pipelineValue ? Math.round((weighted / pipelineValue) * 100) : 0;
 
-  const categories = useMemo(() => Array.from(new Set(rows.map((row) => row.category).filter(Boolean))).sort(), [rows]);
-  const units = useMemo(() => Array.from(new Set(rows.map((row) => row.businessUnit).filter(Boolean))).sort(), [rows]);
-  const clients = useMemo(() => Array.from(new Set(rows.map((row) => row.clientName).filter(Boolean))).sort(), [rows]);
-  const countries = useMemo(() => Array.from(new Set(rows.map((row) => row.location).filter(Boolean))).sort(), [rows]);
+  const clients = useMemo(() => Array.from(new Set(tenders.map((row) => row.clientName).filter(Boolean))).sort(), [tenders]);
+  const sectors = useMemo(() => Array.from(new Set(tenders.map((row) => sectorOf(row)))).sort(), [tenders]);
+  const officers = useMemo(() => Array.from(new Set(tenders.map((row) => row.ownerName).filter(Boolean))).sort(), [tenders]);
+  const sources = useMemo(() => Array.from(new Set(tenders.map((row) => row.source).filter(Boolean))).sort(), [tenders]);
 
-  const filtered = useMemo(() => rows.filter((row) => {
-    if (!opportunityTabMatch(row, tab)) return false;
-    const haystack = `${row.title} ${row.clientName} ${row.referenceNo} ${row.enquiryRef}`.toLowerCase();
+  const filtered = useMemo(() => tenders.filter((row) => {
+    if (tab === 'Awaiting Assignment' && !awaitingAssignment(row)) return false;
+    if (tab === 'Overdue' && !overdue(row)) return false;
+    if (tab !== 'All Opportunities' && tab !== 'Awaiting Assignment' && tab !== 'Overdue' && opportunityStatus(row) !== tab) return false;
+    const haystack = `${row.title} ${row.clientName} ${row.referenceNo} ${row.enquiryRef} ${row.ownerName}`.toLowerCase();
     if (search && !haystack.includes(search.toLowerCase())) return false;
-    if (stage !== 'All Stages' && opportunityStage(row) !== stage) return false;
-    if (category !== 'All Categories' && row.category !== category) return false;
-    if (unit !== 'All Business Units' && row.businessUnit !== unit) return false;
     if (client !== 'All Clients' && row.clientName !== client) return false;
-    if (country !== 'All Countries' && row.location !== country && row.projectLocation !== country) return false;
-    const closing = (row.submissionDeadline || row.closingDate || '').slice(0, 10);
-    if (fromDate && closing && closing < fromDate) return false;
-    if (toDate && closing && closing > toDate) return false;
+    if (sector !== 'All Sectors' && sectorOf(row) !== sector) return false;
+    if (officer !== 'All Officers' && row.ownerName !== officer) return false;
+    if (status !== 'All Statuses' && opportunityStatus(row) !== status) return false;
+    if (priority !== 'All Priorities' && row.priority !== priority) return false;
+    if (source !== 'All Sources' && row.source !== source) return false;
+    if (!within(internalOn(row), internalFrom, internalTo)) return false;
+    if (!within(externalOn(row), externalFrom, externalTo)) return false;
     return true;
-  }), [category, client, country, fromDate, rows, search, stage, tab, toDate, unit]);
+  }), [client, externalFrom, externalTo, internalFrom, internalTo, officer, priority, search, sector, source, status, tab, tenders]);
 
-  useEffect(() => { setPage(1); }, [tab, search, stage, category, unit, client, country, fromDate, toDate, pageSize]);
+  useEffect(() => { setPage(1); }, [tab, search, client, sector, officer, status, priority, source, internalFrom, internalTo, externalFrom, externalTo, pageSize]);
   const pageCount = Math.max(1, Math.ceil(filtered.length / pageSize));
-  const pageRows = filtered.slice((page - 1) * pageSize, page * pageSize);
-  const year = new Date().getUTCFullYear();
-  const trends = MONTHS.map((month, index) => ({
-    month,
-    enquiries: rows.filter((row) => createdIn(row, year, index)).length,
-    qualified: rows.filter((row) => createdIn(row, year, index) && funnelRank(row) >= 1).length,
-    bids: rows.filter((row) => createdIn(row, year, index) && funnelRank(row) >= 2 && funnelRank(row) < 5).length,
-    awards: rows.filter((row) => createdIn(row, year, index) && opportunityStage(row) === 'Awarded').length,
-  }));
-  const maxTrend = Math.max(1, ...trends.flatMap((item) => [item.enquiries, item.qualified, item.bids, item.awards]));
-  const sectorSlices = SECTORS.map((label, index) => ({
-    label,
-    value: openRows.filter((row) => sectorOf(row) === label).reduce((sum, row) => sum + row.estimatedValue, 0),
-    color: SECTOR_COLORS[index],
-  }));
-  const sectorTotal = sectorSlices.reduce((sum, slice) => sum + slice.value, 0);
-  const clientBars = Array.from(openRows.reduce((map, row) => {
-    const name = row.clientName || 'Unassigned';
-    map.set(name, (map.get(name) || 0) + row.estimatedValue);
-    return map;
-  }, new Map<string, number>())).sort((a, b) => b[1] - a[1]).slice(0, 6);
-  const clientMax = Math.max(1, ...clientBars.map((item) => item[1]));
-  const clientSum = clientBars.reduce((sum, item) => sum + item[1], 0);
+  const safePage = Math.min(page, pageCount);
+  const pageRows = filtered.slice((safePage - 1) * pageSize, safePage * pageSize);
+  const pageIds = pageRows.map((row) => row.id);
+  const allPicked = pageIds.length > 0 && pageIds.every((id) => picked.includes(id));
 
-  const exportRows = () => downloadCsv('tender-opportunities.csv', ['Opportunity Title', 'Client', 'Reference No.', 'Category', 'Stage', 'Estimated Value', 'Probability', 'Expected Value', 'Closing Date', 'Owner'], filtered.map((row) => [
-    row.title, row.clientName, row.referenceNo, row.category, opportunityStage(row), money(row.estimatedValue, row.currency), `${winProbability(row)}%`, money(expectedValue(row), row.currency), formatWhen(row.submissionDeadline || row.closingDate), row.ownerName,
-  ]));
+  const clearFilters = () => {
+    setSearch('');
+    setClient('All Clients');
+    setSector('All Sectors');
+    setOfficer('All Officers');
+    setStatus('All Statuses');
+    setPriority('All Priorities');
+    setSource('All Sources');
+    setInternalFrom('');
+    setInternalTo('');
+    setExternalFrom('');
+    setExternalTo('');
+  };
+
+  const run = async (work: () => Promise<unknown>, done: string) => {
+    setBusy(true);
+    setError('');
+    setNotice('');
+    try {
+      await work();
+      setNotice(done);
+      setMenuId('');
+      await load();
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : 'The action was not saved.');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const saveStatus = (row: TenderOpportunity, next: OpportunityStatus) => {
+    const patch = next === 'Not Started'
+      ? { status: 'Draft', stage: row.stage === 'Enquiry' ? 'Tender/Bid' : row.stage || 'Tender/Bid', saveMode: 'draft' as const }
+      : next === 'In Progress'
+        ? { status: 'Open', stage: 'Tender/Bid', saveMode: 'submit' as const }
+        : next === 'Submitted'
+          ? { status: 'Submitted', stage: 'Submitted', saveMode: 'submit' as const }
+          : { status: 'Closed', stage: row.stage || 'Tender/Bid', saveMode: 'submit' as const };
+    return run(() => tenderPost({ action: 'save', opportunity: { ...row, ...patch } }), `${row.referenceNo} marked ${next}.`);
+  };
+
+  const tabCount = (item: Tab) => item === 'All Opportunities' ? counts.all : item === 'Awaiting Assignment' ? counts.awaiting : item === 'Overdue' ? counts.Overdue : counts[item];
 
   return (
-    <div className="space-y-4">
-      <div className="text-[12px] text-slate-400">Tender Management <span className="px-1">›</span> <span className="font-semibold text-slate-600">Tender Opportunities</span></div>
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div className="flex items-start gap-3">
-          <span className="inline-flex h-12 w-12 items-center justify-center rounded-2xl bg-[#2563eb] text-white shadow-sm"><FileText className="h-6 w-6" /></span>
+    <div className="space-y-3">
+      <section className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-white px-4 py-4 shadow-sm">
+        <div className="flex items-center gap-3">
+          <span className="inline-flex h-11 w-11 items-center justify-center rounded-xl bg-[#2563eb] text-white"><FileText className="h-5 w-5" /></span>
           <div>
-            <h1 className="text-[26px] font-black leading-tight tracking-tight text-slate-950">Tender Opportunities</h1>
-            <p className="text-[13px] text-slate-500">Manage all qualified opportunities and invitations to tender from clients</p>
+            <h1 className="text-[22px] font-black tracking-tight text-slate-950">Tender Opportunities</h1>
+            <p className="text-[12px] text-slate-500">Manage tender opportunities, assign responsible officers, set deadlines and track progress</p>
           </div>
         </div>
-        <div className="flex items-center gap-2">
-          <TodayChip />
-          <SplitButton href="/commercial/tenders/opportunities?compose=1" label="New Opportunity" open={menuOpen} onToggle={() => setMenuOpen((value) => !value)}>
-            <button type="button" className="block w-full px-3 py-2 text-left font-semibold hover:bg-slate-50" onClick={() => { setEditing(null); setModalOpen(true); setMenuOpen(false); }}>New opportunity</button>
-            <Link href="/commercial/tenders/enquiries?compose=1" className="block px-3 py-2 font-semibold hover:bg-slate-50">New enquiry</Link>
-          </SplitButton>
-        </div>
-      </div>
-      {error ? <div className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">{error}</div> : null}
+        <button type="button" onClick={() => { setEditing(null); setModalOpen(true); }} className="inline-flex h-10 items-center gap-1.5 rounded-lg bg-[#2563eb] px-4 text-[13px] font-bold text-white"><Plus className="h-4 w-4" /> New Opportunity</button>
+      </section>
 
-      <div className="grid items-stretch gap-2 xl:grid-cols-[repeat(6,minmax(0,1fr))_200px]">
-        {funnel.map((item, index) => (
-          <div key={item.label} className="flex items-center gap-1">
-            <article className={`min-w-0 flex-1 rounded-2xl border border-white px-3 py-3 shadow-sm ${item.card}`}>
-              <div className="text-[11px] font-semibold text-slate-500">{item.label}</div>
-              <div className="text-[26px] font-black leading-none text-slate-950">{loading ? '—' : item.count}</div>
-              <div className="mt-1 text-[12px] font-bold text-slate-700">{compactNaira(item.value)}</div>
-              <div className="text-[11px] font-semibold text-slate-400">{item.pct}%</div>
-            </article>
-            {index < funnel.length - 1 ? <ArrowRight className="hidden h-4 w-4 shrink-0 text-slate-300 xl:block" /> : null}
-          </div>
-        ))}
-        <article className="rounded-2xl border border-slate-200 bg-white px-3 py-3 shadow-sm">
-          <div className="text-[11px] font-semibold text-slate-500">Total Pipeline Value</div>
-          <div className="mt-1 text-[22px] font-black leading-none text-slate-950">{compactNaira(pipelineValue)}</div>
-          <div className="mt-2 text-[11px] text-slate-500">Weighted Forecast</div>
-          <div className="text-[13px] font-bold text-slate-800">{compactNaira(weighted)} <span className="font-semibold text-slate-400">({weightedPct}%)</span></div>
-        </article>
-      </div>
+      {error ? <div className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">{error}</div> : null}
+      {notice ? <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">{notice}</div> : null}
+
+      <section className="grid gap-3 md:grid-cols-2 xl:grid-cols-5">
+        <Kpi icon={FileText} tint="bg-blue-50 text-blue-600" value={counts.all} label="Total Opportunities" foot={<span className={delta >= 0 ? 'text-emerald-600' : 'text-rose-600'}>{delta >= 0 ? '↑' : '↓'} {Math.abs(delta)}% vs. last 30 days</span>} />
+        <Kpi icon={UserRound} tint="bg-rose-50 text-rose-500" value={counts.awaiting} label="Awaiting MD Assignment" foot={<span className="text-rose-500">{share(counts.awaiting)}% require attention</span>} />
+        <Kpi icon={Play} tint="bg-blue-50 text-blue-600" value={counts['In Progress']} label="In Progress" foot={<span className="text-slate-400">{share(counts['In Progress'])}% of total</span>} />
+        <Kpi icon={Check} tint="bg-emerald-50 text-emerald-600" value={counts.Submitted} label="Submitted" foot={<span className="text-slate-400">{share(counts.Submitted)}% of total</span>} />
+        <Kpi icon={CalendarDays} tint="bg-rose-50 text-rose-500" value={internalDue.length} label="Internal Deadline Due" foot={<span><span className="text-orange-600">{internalDue.filter((row) => (daysUntil(internalOn(row)) ?? 0) >= 0).length} in next 3 days</span> · <span className="text-rose-600">{internalDue.filter((row) => (daysUntil(internalOn(row)) ?? 0) < 0).length} Overdue</span></span>} />
+      </section>
 
       <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
         <div className="flex gap-1 overflow-x-auto border-b border-slate-100 px-3 pt-2">
           {TABS.map((item) => (
-            <button key={item} type="button" onClick={() => setTab(item)} className={`whitespace-nowrap border-b-2 px-3 py-2.5 text-[13px] font-semibold ${tab === item ? 'border-[#2563eb] text-[#2563eb]' : 'border-transparent text-slate-500 hover:text-slate-800'}`}>{item}</button>
+            <button key={item} type="button" onClick={() => setTab(item)} className={`whitespace-nowrap border-b-2 px-3 py-2.5 text-[13px] font-semibold ${tab === item ? 'border-[#2563eb] text-[#2563eb]' : 'border-transparent text-slate-500'}`}>{item} ({tabCount(item)})</button>
           ))}
         </div>
-        <div className="flex flex-wrap items-center gap-2 px-3 py-3">
-          <label className="relative min-w-[200px] flex-1">
+        <div className="grid gap-2 px-3 py-3 md:grid-cols-3 xl:grid-cols-6">
+          <label className="relative md:col-span-2">
             <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-            <input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search by title, client, reference no..." className="h-10 w-full rounded-xl border border-slate-200 bg-[#f8fafc] pl-9 pr-3 text-[13px] outline-none focus:border-blue-500 focus:bg-white" />
+            <input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search by title, client, reference..." className="h-10 w-full rounded-lg border border-slate-200 bg-[#f8fafc] pl-9 pr-3 text-[13px]" />
           </label>
-          <Select value={stage} onChange={setStage} options={['All Stages', 'Enquiry', 'Qualified', 'Prequalification', 'Tender/Bid', 'Submission', 'Negotiation', 'Shortlisted', 'Awarded', 'Bid/No-Bid']} />
-          <Select value={category} onChange={setCategory} options={['All Categories', ...categories]} />
-          <Select value={unit} onChange={setUnit} options={['All Business Units', ...units]} />
-          <Select value={client} onChange={setClient} options={['All Clients', ...clients]} />
-          <Select value={country} onChange={setCountry} options={['All Countries', ...countries]} />
-          <input type="date" value={fromDate} onChange={(event) => setFromDate(event.target.value)} className="h-10 rounded-xl border border-slate-200 px-2 text-[12px]" aria-label="From date" />
-          <input type="date" value={toDate} onChange={(event) => setToDate(event.target.value)} className="h-10 rounded-xl border border-slate-200 px-2 text-[12px]" aria-label="To date" />
-          <button type="button" onClick={() => { setStage('All Stages'); setCategory('All Categories'); setUnit('All Business Units'); setClient('All Clients'); setCountry('All Countries'); setFromDate(''); setToDate(''); }} className="inline-flex h-10 items-center gap-1.5 rounded-xl border border-slate-200 px-3 text-[13px] font-semibold text-slate-600"><Filter className="h-3.5 w-3.5" /> Filter</button>
-          <button type="button" onClick={exportRows} className="inline-flex h-10 items-center gap-1.5 rounded-xl border border-slate-200 px-3 text-[13px] font-semibold text-slate-600"><Download className="h-3.5 w-3.5" /> Export</button>
-          <button type="button" onClick={() => setShowDays((value) => !value)} className="inline-flex h-10 items-center gap-1.5 rounded-xl border border-slate-200 px-3 text-[13px] font-semibold text-slate-600"><Columns3 className="h-3.5 w-3.5" /> Columns</button>
+          <Select label="Client" value={client} onChange={setClient} options={['All Clients', ...clients]} />
+          <Select label="Sector" value={sector} onChange={setSector} options={['All Sectors', ...sectors]} />
+          <Select label="Responsible Officer" value={officer} onChange={setOfficer} options={['All Officers', ...officers]} />
+          <Select label="Status" value={status} onChange={setStatus} options={['All Statuses', ...STATUSES]} />
+          <Select label="Priority" value={priority} onChange={setPriority} options={['All Priorities', ...PRIORITIES]} />
+          <Select label="Source" value={source} onChange={setSource} options={['All Sources', ...sources]} />
+          <DateRange label="Internal Deadline" from={internalFrom} to={internalTo} onFrom={setInternalFrom} onTo={setInternalTo} />
+          <DateRange label="External Deadline" from={externalFrom} to={externalTo} onFrom={setExternalFrom} onTo={setExternalTo} />
+          <div className="flex items-end gap-2">
+            <button type="button" onClick={clearFilters} className="inline-flex h-10 items-center gap-1 rounded-lg border border-slate-200 px-3 text-[12px] font-semibold text-slate-600"><X className="h-3.5 w-3.5" /> Clear Filters</button>
+            <button type="button" onClick={() => setPage(1)} className="inline-flex h-10 items-center gap-1 rounded-lg bg-[#2563eb] px-3 text-[12px] font-bold text-white"><Search className="h-3.5 w-3.5" /> Search</button>
+          </div>
         </div>
         <div className="overflow-x-auto">
-          <table className="min-w-[1200px] w-full text-left text-[13px]">
-            <thead className="bg-[#f8fafc] text-[11px] font-semibold uppercase tracking-wide text-slate-400">
+          <table className="w-full min-w-[1100px] text-left text-[12px]">
+            <thead className="bg-[#f8fafc] text-[11px] uppercase text-slate-400">
               <tr>
-                {['', 'S/N', 'Opportunity Title', 'Client', 'Reference No.', 'Category', 'Stage', 'Estimated Value', 'Probability', 'Expected Value', 'Closing Date', ...(showDays ? ['Days Left'] : []), 'Owner', 'Action'].map((heading) => (
-                  <th key={heading || 'check'} className="px-3 py-3 font-semibold">{heading}</th>
-                ))}
+                <th className="px-3 py-3"><input type="checkbox" checked={allPicked} onChange={() => setPicked(allPicked ? picked.filter((id) => !pageIds.includes(id)) : Array.from(new Set([...picked, ...pageIds])))} aria-label="Select page" /></th>
+                {['#', 'Reference No.', 'Client', 'Project Title', 'Sector', 'Date Received', 'Internal Deadline', 'External Deadline', 'Priority', 'Assigned Officer', 'Status', 'Actions'].map((heading) => <th key={heading} className="px-3 py-3 font-semibold">{heading}</th>)}
               </tr>
             </thead>
             <tbody>
-              {pageRows.length === 0 ? (
-                <tr><td colSpan={14} className="px-4 py-10 text-center text-sm text-slate-500">{loading ? 'Loading register…' : 'No opportunities match this view.'}</td></tr>
-              ) : pageRows.map((row, index) => {
-                const label = opportunityStage(row);
-                const left = daysUntil(row.submissionDeadline || row.closingDate);
+              {pageRows.length === 0 ? <tr><td colSpan={13} className="px-4 py-10 text-center text-slate-500">{loading ? 'Loading register…' : 'No tender opportunities match this view.'}</td></tr> : pageRows.map((row, index) => {
+                const state = opportunityStatus(row);
                 return (
-                  <tr key={row.id} className="border-t border-slate-100 hover:bg-slate-50/70">
-                    <td className="px-3 py-3"><input type="checkbox" aria-label={`Select ${row.title}`} /></td>
-                    <td className="px-3 py-3 text-slate-400">{(page - 1) * pageSize + index + 1}</td>
-                    <td className="max-w-[220px] px-3 py-3 font-semibold text-slate-800"><Link href={`/commercial/tenders/workspace?id=${row.id}`} className="hover:text-blue-700">{row.title}</Link></td>
-                    <td className="px-3 py-3">{row.clientName || '—'}</td>
-                    <td className="px-3 py-3 text-slate-500">{row.referenceNo}</td>
-                    <td className="px-3 py-3">{row.category || '—'}</td>
-                    <td className="px-3 py-3"><Pill className={STAGE_CLASS[label]}>{label}</Pill></td>
-                    <td className="px-3 py-3 font-semibold">{money(row.estimatedValue, row.currency)}</td>
-                    <td className="px-3 py-3 font-bold text-slate-700">{winProbability(row)}%</td>
-                    <td className="px-3 py-3">{money(expectedValue(row), row.currency)}</td>
-                    <td className="px-3 py-3">{formatWhen(row.submissionDeadline || row.closingDate)}</td>
-                    {showDays ? <td className="px-3 py-3">{left == null ? '—' : <Pill className={left <= 30 ? 'bg-rose-50 text-rose-600' : left <= 60 ? 'bg-amber-50 text-amber-700' : 'bg-emerald-50 text-emerald-700'}>{left} days</Pill>}</td> : null}
-                    <td className="px-3 py-3">{row.ownerName || '—'}</td>
-                    <td className="relative px-3 py-3">
-                      <button type="button" aria-label="Row actions" onClick={() => setMenuId(menuId === row.id ? '' : row.id)} className="rounded-lg p-1 text-slate-400 hover:bg-slate-100"><MoreHorizontal className="h-4 w-4" /></button>
+                  <tr key={row.id} className="border-t border-slate-100">
+                    <td className="px-3 py-2.5"><input type="checkbox" checked={picked.includes(row.id)} onChange={() => setPicked((current) => current.includes(row.id) ? current.filter((id) => id !== row.id) : [...current, row.id])} aria-label={`Select ${row.referenceNo}`} /></td>
+                    <td className="px-3 py-2.5 text-slate-400">{(safePage - 1) * pageSize + index + 1}</td>
+                    <td className="px-3 py-2.5 font-semibold text-blue-700">{row.referenceNo || '—'}</td>
+                    <td className="px-3 py-2.5">{row.clientName || '—'}</td>
+                    <td className="px-3 py-2.5 font-semibold text-slate-800"><Link href={`/commercial/tenders/workspace?id=${row.id}`}>{row.title}</Link></td>
+                    <td className="px-3 py-2.5">{row.category || sectorOf(row)}</td>
+                    <td className="px-3 py-2.5">{formatWhen(receivedOn(row))}</td>
+                    <td className="px-3 py-2.5"><span className={dateTone(internalOn(row))}>{internalOn(row) ? formatWhen(internalOn(row)) : '—'}</span></td>
+                    <td className="px-3 py-2.5">{externalOn(row) ? formatWhen(externalOn(row)) : '—'}</td>
+                    <td className="px-3 py-2.5"><span className={`rounded-md px-2 py-0.5 text-[11px] font-bold ${priorityTone(row.priority)}`}>{row.priority || '—'}</span></td>
+                    <td className="px-3 py-2.5">
+                      <span className="inline-flex items-center gap-2">
+                        <span className="inline-flex h-7 w-7 items-center justify-center rounded-full bg-blue-100 text-[10px] font-black text-blue-700">{initials(row.ownerName || '—')}</span>
+                        {row.ownerName || '—'}
+                      </span>
+                    </td>
+                    <td className="px-3 py-2.5"><span className={`rounded-md px-2 py-0.5 text-[11px] font-bold ${statusTone[state]}`}>{state}</span></td>
+                    <td className="relative px-3 py-2.5">
+                      <button type="button" aria-label={`Actions for ${row.referenceNo}`} disabled={busy} onClick={() => setMenuId(menuId === row.id ? '' : row.id)} className="rounded-lg p-1 text-slate-400 hover:bg-slate-100"><MoreHorizontal className="h-4 w-4" /></button>
                       {menuId === row.id ? (
-                        <div className="absolute right-3 z-10 w-44 rounded-xl border border-slate-200 bg-white py-1 text-sm shadow-lg">
-                          <Link href={`/commercial/tenders/workspace?id=${row.id}`} className="block px-3 py-2 hover:bg-slate-50">Open workspace</Link>
-                          <button type="button" className="block w-full px-3 py-2 text-left hover:bg-slate-50" onClick={() => { setEditing(row); setModalOpen(true); setMenuId(''); }}>Edit</button>
-                          <button type="button" className="block w-full px-3 py-2 text-left hover:bg-slate-50" onClick={() => tenderPost({ action: 'duplicate', id: row.id }).then(load)}>Duplicate</button>
+                        <div className="absolute right-3 z-20 w-56 rounded-xl border border-slate-200 bg-white py-1 text-[12px] shadow-lg">
+                          <Link href={`/commercial/tenders/workspace?id=${row.id}`} className="block px-3 py-2 hover:bg-slate-50" onClick={() => setMenuId('')}>View workspace</Link>
+                          <MenuButton label="Edit opportunity" onClick={() => { setEditing(row); setModalOpen(true); setMenuId(''); }} />
+                          <MenuButton label="Assign responsible officer" onClick={() => { if (!md) { setError('Only the Managing Director can assign the responsible officer and internal submission date.'); setMenuId(''); return; } setAssigning(row); setAssignee(row.ownerName); setMenuId(''); }} />
+                          <MenuButton label="Mark Not Started" onClick={() => saveStatus(row, 'Not Started')} />
+                          <MenuButton label="Mark In Progress" onClick={() => saveStatus(row, 'In Progress')} />
+                          <MenuButton label="Mark Submitted" onClick={() => saveStatus(row, 'Submitted')} />
+                          <MenuButton label="Close opportunity" onClick={() => saveStatus(row, 'Closed')} />
+                          <MenuButton label="Duplicate" onClick={() => run(() => tenderPost({ action: 'duplicate', id: row.id }), `${row.referenceNo} duplicated.`)} />
+                          <MenuButton label={row.watchlisted ? 'Remove from watchlist' : 'Add to watchlist'} onClick={() => run(() => tenderPost({ action: 'watchlist', id: row.id, watchlisted: !row.watchlisted }), row.watchlisted ? 'Removed from the watchlist.' : 'Added to the watchlist.')} />
+                          <MenuButton label="Send notification" onClick={() => run(() => tenderPost({ action: 'notify', id: row.id, message: `${row.referenceNo} ${row.title} needs attention.` }), 'Portal notification raised.')} />
                         </div>
                       ) : null}
                     </td>
@@ -274,73 +318,99 @@ export function OpportunitiesRegister() {
             </tbody>
           </table>
         </div>
-        <Pager page={Math.min(page, pageCount)} pageCount={pageCount} pageSize={pageSize} total={filtered.length} onPage={setPage} onPageSize={setPageSize} />
+        <div className="flex flex-wrap items-center justify-between gap-2 border-t border-slate-100 px-4 py-3 text-[12px] text-slate-500">
+          <span>Showing {filtered.length === 0 ? 0 : (safePage - 1) * pageSize + 1} to {Math.min(safePage * pageSize, filtered.length)} of {filtered.length} opportunities</span>
+          <div className="flex items-center gap-2">
+            <button type="button" disabled={safePage <= 1} onClick={() => setPage(safePage - 1)} className="h-8 rounded-lg border border-slate-200 px-2 disabled:opacity-40">‹</button>
+            {Array.from({ length: pageCount }, (_, index) => (
+              <button key={index} type="button" onClick={() => setPage(index + 1)} className={`h-8 min-w-8 rounded-lg px-2 ${safePage === index + 1 ? 'bg-[#2563eb] text-white' : 'border border-slate-200'}`}>{index + 1}</button>
+            ))}
+            <button type="button" disabled={safePage >= pageCount} onClick={() => setPage(safePage + 1)} className="h-8 rounded-lg border border-slate-200 px-2 disabled:opacity-40">›</button>
+            <label className="inline-flex items-center gap-1">Show
+              <select value={pageSize} onChange={(event) => setPageSize(Number(event.target.value))} className="h-8 rounded-lg border border-slate-200 px-2" aria-label="Rows per page">
+                {[10, 25, 50].map((size) => <option key={size} value={size}>{size}</option>)}
+              </select>
+            </label>
+          </div>
+        </div>
       </section>
 
-      <div className="grid gap-3 xl:grid-cols-3">
-        <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-          <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
-            <h2 className="text-sm font-black">Opportunity Trends</h2>
-            <div className="flex flex-wrap gap-2 text-[10px] text-slate-500">
-              {['Enquiries', 'Qualified', 'Bids', 'Awards'].map((label, index) => <span key={label} className="inline-flex items-center gap-1"><span className="h-2 w-2 rounded-full" style={{ background: LINE_COLORS[index] }} />{label}</span>)}
+      {assigning ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-4">
+          <form className="w-full max-w-md rounded-2xl bg-white p-5 shadow-xl" onSubmit={(event) => {
+            event.preventDefault();
+            const row = assigning;
+            const name = assignee.trim();
+            setAssigning(null);
+            const complete = row.status !== 'Draft' && row.estimatedValue > 0 && Boolean(row.department && row.location && row.site);
+            run(async () => {
+              await tenderPost({
+                action: 'save',
+                opportunity: {
+                  ...row,
+                  ownerName: name,
+                  stage: row.stage === 'Enquiry' ? 'Tender/Bid' : row.stage || 'Tender/Bid',
+                  status: complete ? row.status : 'Draft',
+                  saveMode: complete ? 'submit' : 'draft',
+                },
+              });
+              await tenderPost({ action: 'notify', id: row.id, message: `${row.referenceNo} assigned to ${name}.` });
+            }, `${row.referenceNo} assigned to ${name}.`);
+          }}>
+            <h2 className="text-[16px] font-black text-slate-950">Assign responsible officer</h2>
+            <p className="mt-1 text-[12px] text-slate-500">{assigning.referenceNo} · {assigning.title}</p>
+            <input list="tender-officers" value={assignee} onChange={(event) => setAssignee(event.target.value)} required placeholder="Officer name" className="mt-4 h-10 w-full rounded-lg border border-slate-200 px-3 text-sm" />
+            <datalist id="tender-officers">{officers.map((name) => <option key={name} value={name} />)}</datalist>
+            <p className="mt-2 text-[12px] text-amber-700">The internal submission date is set from Edit opportunity. Only the Managing Director can change it.</p>
+            <div className="mt-4 flex justify-end gap-2">
+              <button type="button" onClick={() => setAssigning(null)} className="h-9 rounded-lg border border-slate-200 px-3 text-[12px] font-semibold">Cancel</button>
+              <button type="submit" className="h-9 rounded-lg bg-[#2563eb] px-3 text-[12px] font-bold text-white">Save assignment</button>
             </div>
-          </div>
-          <TrendChart points={trends} max={maxTrend} />
-        </section>
-        <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-          <h2 className="mb-2 text-sm font-black">Opportunity by Sector (Value)</h2>
-          <Donut slices={sectorSlices} center={compactNaira(sectorTotal)} caption="Total" />
-        </section>
-        <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-          <h2 className="mb-3 text-sm font-black">Top Clients (Pipeline Value)</h2>
-          {clientBars.length === 0 ? <p className="text-sm text-slate-500">No client values yet.</p> : (
-            <ul className="space-y-2.5">
-              {clientBars.map(([name, value]) => (
-                <li key={name}>
-                  <div className="mb-1 flex justify-between text-[12px]"><span className="font-semibold text-slate-700">{name}</span><span className="text-slate-500">{compactNaira(value)} ({clientSum ? Math.round((value / clientSum) * 100) : 0}%)</span></div>
-                  <div className="h-2 rounded-full bg-slate-100"><div className="h-2 rounded-full bg-[#3b82f6]" style={{ width: `${(value / clientMax) * 100}%` }} /></div>
-                </li>
-              ))}
-            </ul>
-          )}
-        </section>
-      </div>
-      <OpportunityModal open={modalOpen} initial={editing} onClose={() => setModalOpen(false)} onSaved={() => { setModalOpen(false); load(); }} />
+          </form>
+        </div>
+      ) : null}
+
+      <TenderOpportunityModal open={modalOpen} initial={editing} clients={clients} officers={officers} onClose={() => setModalOpen(false)} onSaved={() => { setModalOpen(false); load(); }} />
     </div>
   );
 }
 
-function createdIn(row: TenderOpportunity, year: number, month: number) {
-  const parsed = new Date(row.createdAt);
-  return !Number.isNaN(parsed.getTime()) && parsed.getUTCFullYear() === year && parsed.getUTCMonth() === month;
-}
-
-function Select({ value, onChange, options }: { value: string; onChange: (value: string) => void; options: string[] }) {
+function Kpi({ icon: Icon, tint, value, label, foot }: { icon: typeof FileText; tint: string; value: number; label: string; foot: ReactNode }) {
   return (
-    <select value={value} onChange={(event) => onChange(event.target.value)} className="h-10 max-w-[170px] rounded-xl border border-slate-200 bg-white px-2 text-[12px] font-semibold text-slate-600">
-      {options.map((option) => <option key={option}>{option}</option>)}
-    </select>
+    <article className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+      <div className="flex items-start justify-between">
+        <div>
+          <div className="text-[26px] font-black leading-none text-slate-950">{value}</div>
+          <div className="mt-1 text-[12px] font-semibold text-slate-500">{label}</div>
+        </div>
+        <span className={`inline-flex h-9 w-9 items-center justify-center rounded-xl ${tint}`}><Icon className="h-4 w-4" /></span>
+      </div>
+      <div className="mt-2 text-[11px] font-semibold">{foot}</div>
+    </article>
   );
 }
 
-function TrendChart({ points, max }: { points: Array<{ month: string; enquiries: number; qualified: number; bids: number; awards: number }>; max: number }) {
-  const width = 360;
-  const height = 150;
-  const series = [
-    points.map((item) => item.enquiries),
-    points.map((item) => item.qualified),
-    points.map((item) => item.bids),
-    points.map((item) => item.awards),
-  ];
-  const path = (values: number[]) => values.map((value, index) => {
-    const x = 16 + (index * (width - 32)) / 11;
-    const y = 120 - (value / max) * 100;
-    return `${index === 0 ? 'M' : 'L'}${x},${y}`;
-  }).join(' ');
+function Select({ label, value, onChange, options }: { label: string; value: string; onChange: (value: string) => void; options: string[] }) {
   return (
-    <svg viewBox={`0 0 ${width} ${height}`} className="h-40 w-full">
-      {series.map((values, index) => <path key={LINE_COLORS[index]} d={path(values)} fill="none" stroke={LINE_COLORS[index]} strokeWidth="2" />)}
-      {points.map((item, index) => <text key={item.month} x={16 + (index * (width - 32)) / 11} y="142" textAnchor="middle" fontSize="8" fill="#94a3b8">{item.month}</text>)}
-    </svg>
+    <label className="block text-[11px] font-semibold text-slate-400">{label}
+      <select value={value} onChange={(event) => onChange(event.target.value)} className="mt-1 h-10 w-full rounded-lg border border-slate-200 bg-white px-2 text-[12px] font-semibold text-slate-700" aria-label={label}>
+        {options.map((option) => <option key={option}>{option}</option>)}
+      </select>
+    </label>
   );
+}
+
+function DateRange({ label, from, to, onFrom, onTo }: { label: string; from: string; to: string; onFrom: (value: string) => void; onTo: (value: string) => void }) {
+  return (
+    <label className="block text-[11px] font-semibold text-slate-400">{label}
+      <span className="mt-1 flex gap-1">
+        <input type="date" value={from} onChange={(event) => onFrom(event.target.value)} className="h-10 w-full rounded-lg border border-slate-200 px-2 text-[12px]" aria-label={`${label} from`} />
+        <input type="date" value={to} onChange={(event) => onTo(event.target.value)} className="h-10 w-full rounded-lg border border-slate-200 px-2 text-[12px]" aria-label={`${label} to`} />
+      </span>
+    </label>
+  );
+}
+
+function MenuButton({ label, onClick }: { label: string; onClick: () => void }) {
+  return <button type="button" onClick={onClick} className="block w-full px-3 py-2 text-left hover:bg-slate-50">{label}</button>;
 }
