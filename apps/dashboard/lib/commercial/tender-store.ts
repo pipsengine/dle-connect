@@ -15,6 +15,7 @@ import {
   departmentalReviewAllowed,
   DEPARTMENT_REVIEW_STAGES,
   internalDeadlineFromExternal,
+  internalDeadlineOf,
   isEnquiryRecord,
   preparationOf,
   requiresUrgentAuthorization,
@@ -272,8 +273,9 @@ const withDefaultInternalDeadline = (input: TenderOpportunityInput): TenderOppor
     if (clean(input.clarificationDeadline, 40)) return input;
     return { ...input, clarificationDeadline: internalDeadlineFromExternal(external) };
   }
-  if (clean(input.submissionDeadline, 40) && !clean(input.closingDate, 40)) {
-    return { ...input, closingDate: internalDeadlineFromExternal(external) };
+  const internal = internalDeadlineOf(input);
+  if (internal && internal !== clean(input.closingDate, 40).slice(0, 10)) {
+    return { ...input, closingDate: internal };
   }
   return input;
 };
@@ -1365,17 +1367,15 @@ const stampWorkflow = async (pool: sql.ConnectionPool, opportunityId: string) =>
   if (!current) return;
   const external = externalDeadlineOf(current);
   const urgent = Boolean(external) && requiresUrgentAuthorization(external);
-  const submitted = /submit/i.test(`${current.stage} ${current.status}`);
   await pool.request()
     .input('Id', sql.NVarChar(40), opportunityId)
-    .input('PreparationStatus', sql.NVarChar(20), submitted ? 'Submitted' : preparationOf({ ...current, preparationStatus: '' }))
-    .input('ForceSubmitted', sql.Bit, submitted)
+    .input('PreparationStatus', sql.NVarChar(20), preparationOf({ ...current, preparationStatus: '' }))
     .input('ClientStatus', sql.NVarChar(20), current.clientStatus || clientStatusOf({ ...current, clientStatus: '' }))
     .input('AwardedToDle', sql.NVarChar(20), current.awardedToDle || awardedToDleOf(current))
     .input('UrgentException', sql.Bit, urgent)
     .query(`
       UPDATE [commercial].[TenderOpportunities]
-      SET [PreparationStatus]=CASE WHEN @ForceSubmitted = 1 THEN N'Submitted' ELSE COALESCE(NULLIF([PreparationStatus], N''), @PreparationStatus) END,
+      SET [PreparationStatus]=@PreparationStatus,
           [ClientStatus]=COALESCE(NULLIF([ClientStatus], N''), @ClientStatus),
           [AwardedToDle]=COALESCE(NULLIF([AwardedToDle], N''), @AwardedToDle),
           [UrgentException]=@UrgentException

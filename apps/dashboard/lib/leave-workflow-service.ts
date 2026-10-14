@@ -33,6 +33,8 @@ import {
   approvalStatusForEss,
   isLeaveEssRequest,
   isPendingLeaveStatus,
+  leaveRequestStillNeedsLineManagerEmail,
+  lineManagerApprovalAlreadyRecorded,
   workflowStageForEssStatus,
 } from '@/lib/leave-request-shared';
 import { invalidatePayrollEmployeeCache, readPayrollEmployees } from '@/lib/payroll-employee-source';
@@ -274,31 +276,95 @@ WHERE ([StatusName] IN (N'Under Review', N'Submitted', N'Line Manager Review', N
   }
 };
 
-const managerEmailDeliveredInComments = (request: EssLeaveRequest) =>
-  (request.comments || []).some((entry) => /line manager email delivered/i.test(entry.comment));
-
-const managerEmailFailedInComments = (request: EssLeaveRequest) =>
-  (request.comments || []).some((entry) => /line manager email failed/i.test(entry.comment));
-
 const managerEmailDeliveryComplete = async (request: EssLeaveRequest) =>
-  managerEmailDeliveredInComments(request) || await wasLeaveManagerEmailDelivered(request.id);
+  lineManagerApprovalAlreadyRecorded(request) || await wasLeaveManagerEmailDelivered(request.id);
+
+const deliveryCommentPresent = (comments: EssLeaveRequest['comments'], comment: string) =>
+  (comments || []).some((entry) => compact(entry.comment) === comment
+    || (/line manager email delivered/i.test(comment) && /line manager email delivered/i.test(entry.comment)));
+
+const mergeLeaveComments = (
+  left: EssLeaveRequest['comments'],
+  right: EssLeaveRequest['comments'],
+): EssLeaveRequest['comments'] => {
+  const seen = new Set<string>();
+  const merged = [];
+  for (const entry of [...(left || []), ...(right || [])]) {
+    const comment = compact(entry?.comment);
+    if (!comment) continue;
+    const key = `${compact(entry.at)}|${comment}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    merged.push({ at: compact(entry.at), actor: compact(entry.actor) || 'Leave Workflow', comment });
+  }
+  return merged.sort((a, b) => a.at.localeCompare(b.at));
+};
+
+/** Store the send receipt on the SQL row. JSON copies are often stale and must not be the only copy. */
+const appendLeaveApplicationSqlComment = async (
+  requestId: string,
+  entry: { at: string; actor: string; comment: string },
+) => {
+  const pool = await getDleEnterpriseDbPool();
+  if (!pool) return false;
+  const transaction = new sql.Transaction(pool);
+  await transaction.begin(sql.ISOLATION_LEVEL.READ_COMMITTED);
+  try {
+    const existing = await new sql.Request(transaction)
+      .input('Id', sql.NVarChar(120), requestId)
+      .query(`SELECT [CommentsJson] FROM [hris].[LeaveApplications] WITH (UPDLOCK, ROWLOCK) WHERE [Id]=@Id;`);
+    const row = existing.recordset[0] as { CommentsJson?: unknown } | undefined;
+    if (!row) {
+      await transaction.rollback();
+      return false;
+    }
+    const comments = parseStoredLeaveComments(row.CommentsJson);
+    if (!deliveryCommentPresent(comments, entry.comment)) {
+      await new sql.Request(transaction)
+        .input('Id', sql.NVarChar(120), requestId)
+        .input('CommentsJson', sql.NVarChar(sql.MAX), JSON.stringify([...(comments || []), entry]))
+        .query(`UPDATE [hris].[LeaveApplications] SET [CommentsJson]=@CommentsJson WHERE [Id]=@Id;`);
+    }
+    await transaction.commit();
+    return true;
+  } catch (error) {
+    await transaction.rollback().catch(() => undefined);
+    throw error;
+  }
+};
 
 const appendRequestDeliveryComment = async (requestId: string, actorName: string, comment: string) => {
-  const requests = await readAllEssRequests();
   const now = new Date().toISOString();
-  const next = requests.map((item) => item.id === requestId
-    ? {
-        ...item,
-        updatedAt: now,
-        comments: [
-          ...(item.comments || []),
-          { at: now, actor: actorName, comment },
-        ],
-      }
-    : item);
-  await writeAllEssRequests(next);
-  invalidateEssPortalCache();
+  const entry = { at: now, actor: actorName, comment };
+  const sqlSaved = await appendLeaveApplicationSqlComment(requestId, entry).catch((error) => {
+    console.warn('[leave-workflow] unable to append delivery comment to SQL', error);
+    return false;
+  });
+  let jsonSaved = false;
+  try {
+    const requests = await readAllEssRequests();
+    const current = requests.find((item) => item.id === requestId);
+    if (current && !deliveryCommentPresent(current.comments, comment)) {
+      const next = requests.map((item) => item.id === requestId
+        ? {
+            ...item,
+            updatedAt: now,
+            comments: [...(item.comments || []), entry],
+          }
+        : item);
+      await writeAllEssRequests(next);
+      invalidateEssPortalCache();
+    }
+    jsonSaved = Boolean(current);
+  } catch (error) {
+    console.warn('[leave-workflow] unable to append delivery comment to ESS JSON', error);
+  }
+  if (!sqlSaved && !jsonSaved) {
+    throw new Error(`Delivery receipt for ${requestId} could not be stored.`);
+  }
 };
+
+const lineManagerEmailRepairClaims = new Set<string>();
 
 const assertMailSendResult = (result: MailSendResult, step: string, requestId: string) => {
   if (!result.sent) {
@@ -351,24 +417,33 @@ export const repairPendingLeaveManagerNotifications = async (input?: {
 }) => {
   const { employees } = await readPayrollEmployees();
   const requests = await loadWorkflowLeaveRequests({ repair: false });
-  for (const request of requests) {
-    if (!/leave/i.test(request.category) || !PENDING_WORKFLOW_STATUSES.has(request.status)) continue;
-    if (await managerEmailDeliveryComplete(request)) continue;
-    const requester = resolveEmployeeReference(employees, request.employeeId);
-    if (!requester) continue;
-    const manager = resolveLeaveApproverEmployee(request, requester, employees);
-    if (!manager) continue;
-    try {
-      await notifyLineManagerLeaveSubmitted({
-        request,
-        requester,
-        manager,
-        actorName: input?.actorName || 'Leave Workflow',
-        baseUrl: input?.baseUrl,
-      });
-    } catch (error) {
-      console.error('[leave-workflow] failed to repair pending manager notification', { requestId: request.id, error });
+  const due = requests.filter((request) => {
+    if (!leaveRequestStillNeedsLineManagerEmail(request)) return false;
+    if (lineManagerEmailRepairClaims.has(request.id)) return false;
+    lineManagerEmailRepairClaims.add(request.id);
+    return true;
+  });
+  try {
+    for (const request of due) {
+      if (await managerEmailDeliveryComplete(request)) continue;
+      const requester = resolveEmployeeReference(employees, request.employeeId);
+      if (!requester) continue;
+      const manager = resolveLeaveApproverEmployee(request, requester, employees);
+      if (!manager) continue;
+      try {
+        await notifyLineManagerLeaveSubmitted({
+          request,
+          requester,
+          manager,
+          actorName: input?.actorName || 'Leave Workflow',
+          baseUrl: input?.baseUrl,
+        });
+      } catch (error) {
+        console.error('[leave-workflow] failed to repair pending manager notification', { requestId: request.id, error });
+      }
     }
+  } finally {
+    for (const request of due) lineManagerEmailRepairClaims.delete(request.id);
   }
 };
 
@@ -514,7 +589,7 @@ export const repairLeaveRequestApproverRouting = async (
     || (compact(updated.lineManagerEmployeeId) ? resolveEmployeeReference(employees, updated.lineManagerEmployeeId!) : null)
     || resolveLeaveApproverEmployee(updated, requester, employees);
 
-  if (manager && options?.notify && !(await managerEmailDeliveryComplete(updated)) && PENDING_WORKFLOW_STATUSES.has(updated.status)) {
+  if (manager && options?.notify && leaveRequestStillNeedsLineManagerEmail(updated) && !(await managerEmailDeliveryComplete(updated))) {
     try {
       await notifyLineManagerLeaveSubmitted({
         request: updated,
@@ -556,8 +631,8 @@ export const loadWorkflowLeaveRequests = async (options?: {
       startDate: item.startDate || existing.startDate,
       endDate: item.endDate || existing.endDate,
       leaveType: item.leaveType || existing.leaveType,
-      comments: existing.comments?.length ? existing.comments : item.comments,
-      workflow: existing.workflow?.length ? existing.workflow : item.workflow,
+      comments: mergeLeaveComments(existing.comments, item.comments),
+      workflow: item.workflow?.length ? item.workflow : existing.workflow,
       attachmentNames: existing.attachmentNames?.length ? existing.attachmentNames : item.attachmentNames,
     });
   }
@@ -1308,13 +1383,25 @@ export const notifyLineManagerLeaveSubmitted = async (input: {
     emailStep: 'line-manager-approval-email',
     actorName: input.actorName,
     criticalEmail: true,
-    sendEmail: () => sendLeaveApprovalRequestEmail({
-      request: input.request,
-      requester: input.requester,
-      recipient: input.manager,
-      approverKind: 'line-manager',
-      baseUrl: input.baseUrl,
-    }),
+    sendEmail: async () => {
+      const sent = await sendLeaveApprovalRequestEmail({
+        request: input.request,
+        requester: input.requester,
+        recipient: input.manager,
+        approverKind: 'line-manager',
+        baseUrl: input.baseUrl,
+      });
+      if (sent?.sent) {
+        await appendRequestDeliveryComment(
+          input.request.id,
+          input.actorName,
+          `Line manager email delivered to ${input.manager.fullName} (${managerEmail}) via ${sent.provider || resolveMailProvider() || 'mail'}.`,
+        ).catch((error) => {
+          console.warn('[leave-workflow] delivery receipt was not stored after send', error);
+        });
+      }
+      return sent;
+    },
   });
 
   if (!result.email.ok) {
@@ -1344,7 +1431,7 @@ export const retryLeaveManagerNotification = async (input: {
   const { employees } = await readPayrollEmployees();
   const request = (await loadWorkflowLeaveRequests()).find((item) => item.id === input.requestId);
   if (!request) throw new Error('Leave request not found.');
-  if (!PENDING_WORKFLOW_STATUSES.has(request.status)) {
+  if (!leaveRequestStillNeedsLineManagerEmail(request)) {
     throw new Error(`Leave request ${input.requestId} is not awaiting manager approval.`);
   }
   const requester = resolveEmployeeReference(employees, request.employeeId);

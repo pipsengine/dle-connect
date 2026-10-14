@@ -9,11 +9,12 @@ import {
   CheckCircle2,
   Filter,
   FileText,
+  Pencil,
   Plus,
   Upload,
   Wallet,
 } from 'lucide-react';
-import type { ItAssetDashboardPayload } from '@/lib/it-asset-management-store';
+import type { ItAssetDashboardPayload, ItSoftwareLicenseRecord } from '@/lib/it-asset-management-store';
 import type { SoftwareLicenseMetrics } from '@/lib/it-software-alert-constants';
 import {
   fetchAssetSection,
@@ -119,6 +120,7 @@ export function SoftwareSectionClient({ title, section }: Props) {
   const [importMessage, setImportMessage] = useState('');
   const [importing, setImporting] = useState(false);
   const [showModal, setShowModal] = useState(false);
+  const [editingLicense, setEditingLicense] = useState<ItSoftwareLicenseRecord | null>(null);
   const [showAlertModal, setShowAlertModal] = useState(false);
   const [showFilters, setShowFilters] = useState(true);
 
@@ -244,10 +246,36 @@ export function SoftwareSectionClient({ title, section }: Props) {
 
   const handleCreate = async (form: Record<string, unknown>) => {
     if (recordKind === 'catalog') await postAssetManagementAction({ action: 'create-software-catalog', catalog: form });
-    else if (recordKind === 'license') await postAssetManagementAction({ action: 'create-license', license: form });
+    else if (recordKind === 'license' && editingLicense) {
+      await postAssetManagementAction({ action: 'update-license', licenseId: editingLicense.licenseId, license: form });
+    } else if (recordKind === 'license') await postAssetManagementAction({ action: 'create-license', license: form });
     else if (recordKind === 'installed') await postAssetManagementAction({ action: 'create-installed-software', installed: form });
     else if (recordKind === 'request') await postAssetManagementAction({ action: 'create-software-request', request: form });
     await load();
+  };
+
+  const licenseForm = useMemo(() => {
+    if (!editingLicense) return null;
+    return {
+      productName: editingLicense.productName || '',
+      vendorName: editingLicense.vendorName || '',
+      licenseType: editingLicense.licenseType || 'Subscription',
+      seatsTotal: String(editingLicense.seatsTotal ?? ''),
+      seatsUsed: String(editingLicense.seatsUsed ?? ''),
+      complianceStatus: editingLicense.complianceStatus || 'In Compliance',
+      expiryDate: editingLicense.expiryDate ? String(editingLicense.expiryDate).slice(0, 10) : '',
+      annualCost: editingLicense.annualCost == null ? '' : String(editingLicense.annualCost),
+    };
+  }, [editingLicense]);
+
+  const openCreate = () => {
+    setEditingLicense(null);
+    setShowModal(true);
+  };
+
+  const openEditLicense = (row: ItSoftwareLicenseRecord) => {
+    setEditingLicense(row);
+    setShowModal(true);
   };
 
   const empty = !loading && pagination.total === 0 && !licenses.length && !catalog.length
@@ -350,7 +378,7 @@ export function SoftwareSectionClient({ title, section }: Props) {
             {recordKind && section !== 'license-compliance' ? (
               <button
                 type="button"
-                onClick={() => setShowModal(true)}
+                onClick={openCreate}
                 className="inline-flex items-center gap-2 rounded-lg bg-dle-blue px-3 py-2 text-xs font-semibold text-white hover:bg-dle-blue-deep"
               >
                 <Plus className="h-4 w-4" />
@@ -384,7 +412,10 @@ export function SoftwareSectionClient({ title, section }: Props) {
         <SoftwareRecordModal
           open={showModal}
           kind={recordKind}
-          onClose={() => setShowModal(false)}
+          mode={editingLicense ? 'edit' : 'create'}
+          recordKey={editingLicense?.licenseId || null}
+          initial={licenseForm}
+          onClose={() => { setShowModal(false); setEditingLicense(null); }}
           onSubmit={handleCreate}
         />
       ) : null}
@@ -404,6 +435,7 @@ export function SoftwareSectionClient({ title, section }: Props) {
                   <th className="px-3 py-2">Compliance</th>
                   <th className="px-3 py-2">Expiry</th>
                   <th className="px-3 py-2">Annual Cost</th>
+                  <th className="px-3 py-2">Actions</th>
                 </tr>
               </thead>
               <tbody>
@@ -420,6 +452,16 @@ export function SoftwareSectionClient({ title, section }: Props) {
                     </td>
                     <td className="px-3 py-2">{row.expiryDate || 'Permanent'}</td>
                     <td className="px-3 py-2">{currency(row.annualCost)}</td>
+                    <td className="px-3 py-2">
+                      <button
+                        type="button"
+                        onClick={() => openEditLicense(row)}
+                        className="inline-flex items-center gap-1 text-xs font-semibold text-dle-blue hover:text-dle-blue-deep"
+                      >
+                        <Pencil className="h-3.5 w-3.5" />
+                        Edit
+                      </button>
+                    </td>
                   </tr>
                 ))}
               </tbody>

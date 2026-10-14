@@ -8,6 +8,7 @@ import {
   dateOnly,
   departmentalReviewAllowed,
   internalDeadlineFromExternal,
+  internalDeadlineOf,
   stageMatchesActor,
   tenderApprovalBucket,
   preparationOf,
@@ -54,9 +55,16 @@ assert.equal(draft.awardedToDle, 'Pending Decision');
 
 const decided = { status: 'Open', stage: 'Submitted', clientStatus: 'Awarded', awardedToDle: 'No', preparationStatus: 'Submitted' };
 assert.equal(preparationOf(decided), 'Submitted');
+assert.equal(preparationOf({ status: 'Open', stage: 'Open', ownerName: '', preparationStatus: 'Not Started', opportunityType: 'Client Tender' }), 'In Progress');
+assert.equal(preparationOf({ status: 'Draft', stage: 'Tender/Bid', preparationStatus: 'Not Started' }), 'Not Started');
+assert.equal(preparationOf({ status: 'Open', stage: 'Enquiry', ownerName: '', opportunityType: 'Enquiry', preparationStatus: 'In Progress' }), 'Not Started');
 assert.equal(clientStatusOf(decided), 'Awarded');
 assert.equal(awardedToDleOf(decided), 'No');
 assert.equal(awardedToDleOf({ status: 'Awarded', stage: 'Awarded' }), 'Pending Decision');
+
+assert.equal(internalDeadlineOf({ submissionDeadline: '2026-10-21', closingDate: '2001-10-19' }), '2026-10-20');
+assert.equal(internalDeadlineOf({ submissionDeadline: '2026-10-15', closingDate: '2026-10-14' }), '2026-10-14');
+assert.equal(internalDeadlineOf({ submissionDeadline: '2026-10-21', closingDate: '2026-09-01', deadlineOverrideReason: 'Client moved the internal review' }), '2026-09-01');
 
 const body = congratulationBody('Jetty rehabilitation', 'NPA');
 assert.match(body, /CONGRATULATIONS, TEAM DORMAN LONG ENGINEERING/);

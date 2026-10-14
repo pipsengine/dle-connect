@@ -116,8 +116,20 @@ export default function Entry({ setPage }) {
     if (!a || !b || a === '—' || b === '—' || a === 'unassigned' || b === 'unassigned') return false;
     return a === b || a.includes(b) || b.includes(a);
   };
+  const samePerson = (left, right) => {
+    const a = String(left || '').trim().toLowerCase();
+    const b = String(right || '').trim().toLowerCase();
+    if (!a || !b || a === '—' || b === '—' || a === 'unassigned' || b === 'unassigned') return false;
+    if (a === b) return true;
+    const shorter = a.length < b.length ? a : b;
+    const longer = a.length < b.length ? b : a;
+    return shorter.length >= 8 && longer.includes(shorter);
+  };
   const siteExact = (site) => String(site || '').trim().toLowerCase() === String(location || '').trim().toLowerCase();
-  const offshoreHere = location ? offshoreCrew.filter((row) => siteExact(row.site) && namesMatch(row.supervisor, supervisor?.name || '')) : [];
+  const mobilizedHere = (row) => samePerson(row.supervisor, supervisor?.name || '')
+    || samePerson(row.supervisor, supervisor?.code || '')
+    || lines.some((line) => samePerson(row.supervisor, line.employeeName) || samePerson(row.supervisor, line.employeeCode));
+  const offshoreHere = location ? offshoreCrew.filter((row) => siteExact(row.site) && mobilizedHere(row)) : [];
   const viewingOffshore = Boolean(location) && offshoreCrew.some((row) => siteExact(row.site));
   const visible = (viewingOffshore
     ? offshoreHere.map((row) => {

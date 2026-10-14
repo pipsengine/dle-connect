@@ -631,6 +631,40 @@ export const createItSoftwareLicense = async (input: Partial<ItSoftwareLicenseRe
   return licenseId;
 };
 
+export const updateItSoftwareLicense = async (licenseId: string, input: Partial<ItSoftwareLicenseRecord>, actor: string) => {
+  const id = clean(licenseId, 40);
+  if (!id) throw new Error('License id is required.');
+  const productName = clean(input.productName, 200);
+  if (!productName) throw new Error('Product name is required.');
+  const pool = await ensureItAssetDb();
+  const result = await pool.request()
+    .input('license_id', sql.NVarChar(40), id)
+    .input('product_name', sql.NVarChar(200), productName)
+    .input('vendor_name', sql.NVarChar(180), cleanNullable(input.vendorName, 180))
+    .input('license_type', sql.NVarChar(60), clean(input.licenseType, 60) || 'Subscription')
+    .input('seats_total', sql.Int, toNumber(input.seatsTotal))
+    .input('seats_used', sql.Int, toNumber(input.seatsUsed))
+    .input('compliance_status', sql.NVarChar(40), clean(input.complianceStatus, 40) || 'In Compliance')
+    .input('expiry_date', sql.Date, toDate(input.expiryDate))
+    .input('annual_cost', sql.Decimal(19, 2), input.annualCost ?? null)
+    .input('updated_by', sql.NVarChar(120), actor)
+    .query(`UPDATE [it].[SoftwareLicenses]
+      SET ProductName = @product_name,
+          VendorName = @vendor_name,
+          LicenseType = @license_type,
+          SeatsTotal = @seats_total,
+          SeatsUsed = @seats_used,
+          ComplianceStatus = @compliance_status,
+          ExpiryDate = @expiry_date,
+          AnnualCost = @annual_cost,
+          UpdatedAt = SYSUTCDATETIME(),
+          UpdatedBy = @updated_by
+      WHERE LicenseId = @license_id`);
+  if (!result.rowsAffected?.[0]) throw new Error('Software license was not found.');
+  await appendItAssetAudit(pool, 'license', id, 'update', actor);
+  return id;
+};
+
 export const listItSoftwareCatalog = async () => {
   const pool = await ensureItAssetDb();
   const result = await pool.request().query(`SELECT * FROM [it].[SoftwareCatalog] ORDER BY UpdatedAt DESC`);

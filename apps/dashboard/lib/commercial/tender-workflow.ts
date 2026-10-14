@@ -87,16 +87,22 @@ type StatusSource = {
   preparationStatus?: string;
   clientStatus?: string;
   awardedToDle?: string;
+  opportunityType?: string;
+  tenderType?: string;
 };
 
 const textOf = (row: StatusSource) => `${row.stage || ''} ${row.status || ''}`.toLowerCase();
 
+/** Live register status wins. A stored "Not Started" stamp must not hide a tender that has left draft. */
 export const preparationOf = (row: StatusSource): PreparationStatus => {
-  const explicit = String(row.preparationStatus || '');
-  if ((PREPARATION_STATUSES as readonly string[]).includes(explicit)) return explicit as PreparationStatus;
   const text = textOf(row);
   if (/submit/.test(text)) return 'Submitted';
-  if (row.status === 'Draft' || (!String(row.ownerName || '').trim() && /enquir|draft|open/.test(text))) return 'Not Started';
+  if (row.status === 'Draft') return 'Not Started';
+  if (isEnquiryRecord(row) && !String(row.ownerName || '').trim()) return 'Not Started';
+  if (String(row.status || '').trim()) return 'In Progress';
+  const explicit = String(row.preparationStatus || '');
+  if ((PREPARATION_STATUSES as readonly string[]).includes(explicit)) return explicit as PreparationStatus;
+  if (!String(row.ownerName || '').trim() && /enquir|draft|open/.test(text)) return 'Not Started';
   return 'In Progress';
 };
 
@@ -177,8 +183,34 @@ export const stageMatchesActor = (stage: string, department = '', roles: string[
 export const externalDeadlineOf = (row: { submissionDeadline?: string; closingDate?: string; opportunityType?: string; tenderType?: string; stage?: string }) =>
   row.submissionDeadline || (isEnquiryRecord(row) ? row.closingDate || '' : '');
 
-export const internalDeadlineOf = (row: { submissionDeadline?: string; closingDate?: string; clarificationDeadline?: string; opportunityType?: string; tenderType?: string; stage?: string }) =>
-  isEnquiryRecord(row) ? (row.clarificationDeadline || '') : (row.submissionDeadline ? row.closingDate || '' : '');
+const dayDistance = (left: string, right: string) => {
+  const from = Date.parse(`${left.slice(0, 10)}T00:00:00Z`);
+  const to = Date.parse(`${right.slice(0, 10)}T00:00:00Z`);
+  if (Number.isNaN(from) || Number.isNaN(to)) return null;
+  return Math.abs(to - from) / 86400000;
+};
+
+/** A stored internal date more than two months from the external deadline, with no override reason, is not a real deadline. */
+export const internalDeadlineOf = (row: {
+  submissionDeadline?: string;
+  closingDate?: string;
+  clarificationDeadline?: string;
+  opportunityType?: string;
+  tenderType?: string;
+  stage?: string;
+  deadlineOverrideReason?: string;
+}) => {
+  if (isEnquiryRecord(row)) return row.clarificationDeadline || '';
+  const external = row.submissionDeadline || '';
+  if (!external) return '';
+  const stored = (row.closingDate || '').slice(0, 10);
+  const derived = internalDeadlineFromExternal(external);
+  if (!stored) return derived;
+  if (stored === derived || String(row.deadlineOverrideReason || '').trim()) return stored;
+  const gap = dayDistance(stored, external);
+  if (gap == null || gap > 60) return derived;
+  return stored;
+};
 
 export type EnquiryConversion = {
   title: string;

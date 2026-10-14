@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { useEffect, useMemo, useState } from 'react';
-import { CheckCircle2, ClipboardCheck, Filter, History, Search, XCircle } from 'lucide-react';
+import { CheckCircle2, ClipboardCheck, Filter, History, Search, X, XCircle } from 'lucide-react';
 import { isManagingDirector } from '@/lib/access/commercial-access';
 import { daysUntil, fileSize } from '@/lib/commercial/tender-present';
 import {
@@ -58,6 +58,8 @@ export function ApprovalBoard() {
   const [internal, setInternal] = useState('');
   const [busy, setBusy] = useState(false);
   const [confirming, setConfirming] = useState<'decision' | 'return' | ''>('');
+  const [decisionOpen, setDecisionOpen] = useState(false);
+  const [historyOpen, setHistoryOpen] = useState(false);
 
   useEffect(() => {
     tenderGet<DirectoryEmployee[]>('directory').then(setDirectory).catch(() => setDirectory([]));
@@ -118,6 +120,18 @@ export function ApprovalBoard() {
   }, [filtered, selectedId, setSelectedId]);
 
   useEffect(() => {
+    if (!decisionOpen) return;
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape' || busy) return;
+      setDecisionOpen(false);
+      setHistoryOpen(false);
+      setConfirming('');
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [busy, decisionOpen]);
+
+  useEffect(() => {
     if (!opportunity) return;
     const draft = approvals.find((item) => item.decision.toUpperCase() === 'DRAFT');
     const draftChoice: Choice = draft?.comments.startsWith('BID:') ? 'Bid' : draft?.comments.startsWith('NO BID:') ? 'No Bid' : '';
@@ -146,6 +160,10 @@ export function ApprovalBoard() {
       });
       record.setNotice(decision === 'Draft' ? 'Draft saved.' : decision === 'Return' ? 'Returned for clarification.' : decision === 'No Bid' ? 'Opportunity declined and closed to bid preparation.' : 'Bid approved, officer assigned, and bid preparation opened.');
       setConfirming('');
+      if (decision !== 'Draft') {
+        setDecisionOpen(false);
+        setHistoryOpen(false);
+      }
       await record.reload();
     } catch (reason) {
       record.setError(reason instanceof Error ? reason.message : 'The decision was not saved.');
@@ -172,6 +190,13 @@ export function ApprovalBoard() {
     } finally {
       setBusy(false);
     }
+  };
+
+  const closeDecision = () => {
+    if (busy) return;
+    setDecisionOpen(false);
+    setHistoryOpen(false);
+    setConfirming('');
   };
 
   const currentReview = DEPARTMENT_REVIEW_STAGES.find((stage) => !approvals.some((item) => item.stage === stage && item.decision.toUpperCase() === 'APPROVE'));
@@ -231,7 +256,7 @@ export function ApprovalBoard() {
               const left = due ? daysUntil(due) : null;
               const bucket = tenderApprovalBucket(row);
               return (
-                <button key={row.id} type="button" onClick={() => record.setSelectedId(row.id)} className={`w-full rounded-xl border p-3 text-left ${selected ? 'border-[#2563eb] bg-blue-50/40 shadow-sm' : 'border-slate-200 bg-white hover:border-slate-300'}`}>
+                <button key={row.id} type="button" onClick={() => { record.setSelectedId(row.id); setHistoryOpen(false); setDecisionOpen(true); }} className={`w-full rounded-xl border p-3 text-left ${selected ? 'border-[#2563eb] bg-blue-50/40 shadow-sm' : 'border-slate-200 bg-white hover:border-slate-300'}`}>
                   <div className="flex items-start justify-between gap-2">
                     <div className="min-w-0">
                       <div className="text-[12px] font-bold text-[#2563eb]">{row.referenceNo || '—'}</div>
@@ -389,13 +414,24 @@ export function ApprovalBoard() {
                 </article>
               ) : null}
 
-              <article className="rounded-2xl border border-slate-200 bg-white p-4">
+            </>
+          )}
+        </section>
+      </div>
+
+      {decisionOpen ? (
+        <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-slate-900/40 p-4" onMouseDown={(event) => { if (event.target === event.currentTarget) closeDecision(); }}>
+          <div role="dialog" aria-modal="true" aria-labelledby="md-bid-title" className="my-4 w-full max-w-5xl rounded-2xl border border-slate-200 bg-white p-4 shadow-xl" onMouseDown={(event) => event.stopPropagation()}>
+            {!opportunity ? <p className="py-8 text-center text-sm text-slate-500">{record.loading ? 'Loading opportunity…' : 'This opportunity could not be opened.'}</p> : (
+              <>
                 <div className="mb-3 flex items-start gap-2">
                   <span className="inline-flex h-8 w-8 items-center justify-center rounded-lg bg-blue-50 text-[#2563eb]"><ClipboardCheck className="h-4 w-4" /></span>
-                  <div>
-                    <h3 className="text-[15px] font-black text-slate-950">MD Bid / No Bid Decision</h3>
+                  <div className="min-w-0 flex-1">
+                    <h3 id="md-bid-title" className="text-[15px] font-black text-slate-950">MD Bid / No Bid Decision</h3>
                     <p className="text-[12px] text-slate-500">Review all information and determine whether DLE will bid on this opportunity before assigning a responsible officer.</p>
+                    <p className="mt-1 truncate text-[12px] font-semibold text-slate-700">{opportunity.referenceNo} · {opportunity.title}</p>
                   </div>
+                  <button type="button" onClick={closeDecision} className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-slate-400 hover:bg-slate-100 hover:text-slate-700" aria-label="Close decision"><X className="h-4 w-4" /></button>
                 </div>
                 <div className="grid gap-3 lg:grid-cols-[1fr_1fr_280px]">
                   <DecisionCard
@@ -445,13 +481,22 @@ export function ApprovalBoard() {
                 <div className="mt-4 flex flex-wrap items-center justify-between gap-2">
                   <div className="flex gap-3 text-[12px] font-bold">
                     <button type="button" disabled={!md || Boolean(decided) || busy} onClick={() => setConfirming('return')} className="text-slate-600 disabled:opacity-40">Return for Clarification</button>
-                    <button type="button" onClick={() => setDetailTab('history')} className="inline-flex items-center gap-1 text-[#2563eb]"><History className="h-3.5 w-3.5" /> View History</button>
+                    <button type="button" onClick={() => setHistoryOpen((open) => !open)} className="inline-flex items-center gap-1 text-[#2563eb]"><History className="h-3.5 w-3.5" /> View History</button>
                   </div>
                   <div className="flex gap-2">
                     <button type="button" disabled={!md || Boolean(decided) || busy} onClick={() => run('Draft')} className="h-10 rounded-xl border border-slate-200 px-4 text-[13px] font-bold text-slate-700 disabled:opacity-40">Save as Draft</button>
                     <button type="button" disabled={!md || Boolean(decided) || busy || !choice} onClick={() => setConfirming('decision')} className="h-10 rounded-xl bg-[#2563eb] px-4 text-[13px] font-bold text-white disabled:opacity-40">{choice === 'Bid' ? 'Approve & Assign' : 'Confirm Decision & Proceed'}</button>
                   </div>
                 </div>
+                {historyOpen ? (
+                  <div className="mt-3 rounded-xl border border-slate-100 p-3">
+                    {audit.length === 0 ? <p className="text-sm text-slate-500">No history has been recorded.</p> : (
+                      <ol className="space-y-2">{audit.map((event) => (
+                        <li key={event.id} className="rounded-xl border border-slate-100 px-3 py-2 text-[13px]"><span className="font-bold text-slate-800">{event.action}</span> <span className="text-slate-500">{event.actor} · {formatWhen(event.createdAt)}</span><div className="text-slate-600">{event.details}</div></li>
+                      ))}</ol>
+                    )}
+                  </div>
+                ) : null}
                 {confirming ? (
                   <div className="mt-3 rounded-xl border border-slate-200 bg-slate-50 p-3 text-[13px]">
                     <p className="font-semibold text-slate-800">{confirming === 'return' ? 'Return this opportunity for clarification?' : choice === 'No Bid' ? 'Decline this opportunity and close it to bid preparation?' : 'Approve this bid, assign the officer, and open bid preparation?'}</p>
@@ -461,11 +506,11 @@ export function ApprovalBoard() {
                     </div>
                   </div>
                 ) : null}
-              </article>
-            </>
-          )}
-        </section>
-      </div>
+              </>
+            )}
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }

@@ -2,6 +2,33 @@
   "schemaVersion": 1,
   "notifications": [
     {
+      "id": "ntf-1791957080136-sdwtbb",
+      "recipientUserId": "P0429",
+      "recipientUsername": "P0429",
+      "recipientEmployeeCode": "P0429",
+      "recipientRoles": [],
+      "kind": "Approval",
+      "module": "Payroll Management",
+      "title": "Payroll approval required — September 2026 · DLPC · Salaries",
+      "body": "Finance Manager review is required for September 2026 · DLPC · Salaries. Gross ₦16,575,179.69, Net ₦14,221,245.62, 39 employees. Approvals are pack-specific (Salaries vs Wages).",
+      "severity": "warning",
+      "status": "Unread",
+      "href": "https://dleconnect.dormanlongeng.com:1432/hris/payroll/payroll-approval/authorize?token=eyJydW5JZCI6InBheXJvbGwtMjAyNi0wOS1zYWxhcmllZC1ETFBDIiwicGVyaW9kIjoiMjAyNi0wOSIsInN0YWdlSWQiOiJmaW5hbmNlLW1hbmFnZXIiLCJkZWNpc2lvbiI6ImFwcHJvdmUiLCJyZWNpcGllbnRFbWFpbCI6InJhcGhlYWxpeWFuZGFAZG9ybWFubG9uZ2VuZy5jb20iLCJyZWNpcGllbnRVc2VybmFtZSI6InAwNDI5IiwiZXhwIjoxNzkyNTYxODc5OTk3fQ.aaX9UgoRQDfl3HCJfntKVf0tJZUqh3JSX8U-gn1lTZw",
+      "createdAt": "2026-10-14T05:51:20.136Z",
+      "actor": "Payroll Approval Reminder",
+      "channels": [
+        "In-App",
+        "Email"
+      ],
+      "metadata": {
+        "runId": "payroll-2026-09-salaried-DLPC",
+        "period": "2026-09",
+        "pack": "salaried",
+        "stageId": "finance-manager",
+        "audience": "named-recipient"
+      }
+    },
+    {
       "id": "ntf-1791782579242-8y9x2m",
       "recipientUserId": "P0429",
       "recipientUsername": "P0429",

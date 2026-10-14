@@ -8,6 +8,9 @@ export type SoftwareRecordKind = 'catalog' | 'license' | 'installed' | 'request'
 type Props = {
   open: boolean;
   kind: SoftwareRecordKind;
+  mode?: 'create' | 'edit';
+  recordKey?: string | null;
+  initial?: Record<string, string> | null;
   onClose: () => void;
   onSubmit: (payload: Record<string, unknown>) => Promise<void>;
 };
@@ -21,6 +24,16 @@ const titles: Record<SoftwareRecordKind, string> = {
   installed: 'Add Installed Software',
   request: 'Add Software Request',
 };
+
+const editTitles: Record<SoftwareRecordKind, string> = {
+  catalog: 'Update Software Catalog Record',
+  license: 'Update Software License',
+  installed: 'Update Installed Software',
+  request: 'Update Software Request',
+};
+
+const LICENSE_TYPES = ['Subscription', 'Perpetual', 'Storage', 'Enterprise'];
+const COMPLIANCE_STATUSES = ['In Compliance', 'Expiring Soon', 'Expired', 'Non-Compliant'];
 
 const defaults: Record<SoftwareRecordKind, Record<string, string>> = {
   catalog: { productName: '', vendorName: '', category: '', edition: '', status: 'Approved', annualCost: '' },
@@ -41,18 +54,19 @@ function Field({ label, required, children }: { label: string; required?: boolea
   );
 }
 
-export function SoftwareRecordModal({ open, kind, onClose, onSubmit }: Props) {
+export function SoftwareRecordModal({ open, kind, mode = 'create', recordKey = null, initial = null, onClose, onSubmit }: Props) {
   const [form, setForm] = useState<Record<string, string>>(defaults[kind]);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
+  const editing = mode === 'edit';
 
   useEffect(() => {
     if (open) {
-      setForm(defaults[kind]);
+      setForm({ ...defaults[kind], ...(initial || {}) });
       setError('');
       setSaving(false);
     }
-  }, [open, kind]);
+  }, [open, kind, recordKey, initial]);
 
   if (!open) return null;
 
@@ -64,7 +78,7 @@ export function SoftwareRecordModal({ open, kind, onClose, onSubmit }: Props) {
     setError('');
     try {
       const payload: Record<string, unknown> = { ...form };
-      if (form.annualCost !== undefined) payload.annualCost = form.annualCost ? Number(form.annualCost) : null;
+      if (form.annualCost !== undefined) payload.annualCost = form.annualCost === '' ? null : Number(form.annualCost);
       if (form.seatsTotal !== undefined) payload.seatsTotal = Number(form.seatsTotal || 0);
       if (form.seatsUsed !== undefined) payload.seatsUsed = Number(form.seatsUsed || 0);
       await onSubmit(payload);
@@ -82,8 +96,8 @@ export function SoftwareRecordModal({ open, kind, onClose, onSubmit }: Props) {
       <div className="relative w-full max-w-2xl overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl">
         <div className="flex items-start justify-between border-b border-slate-100 px-6 py-4">
           <div>
-            <h2 className="text-lg font-bold text-slate-950">{titles[kind]}</h2>
-            <p className="mt-1 text-sm text-slate-500">Capture software details for tracking, licensing, and compliance.</p>
+            <h2 className="text-lg font-bold text-slate-950">{editing ? editTitles[kind] : titles[kind]}</h2>
+            <p className="mt-1 text-sm text-slate-500">{editing ? 'Update the saved software record.' : 'Capture software details for tracking, licensing, and compliance.'}</p>
           </div>
           <button type="button" onClick={onClose} className="rounded-lg p-2 text-slate-400 hover:bg-slate-100 hover:text-slate-700">
             <X className="h-5 w-5" />
@@ -114,12 +128,12 @@ export function SoftwareRecordModal({ open, kind, onClose, onSubmit }: Props) {
               <Field label="Vendor"><input className={inputClass} value={form.vendorName} onChange={(e) => set('vendorName', e.target.value)} /></Field>
               <Field label="License type">
                 <select className={inputClass} value={form.licenseType} onChange={(e) => set('licenseType', e.target.value)}>
-                  {['Subscription', 'Perpetual', 'Storage', 'Enterprise'].map((option) => <option key={option} value={option}>{option}</option>)}
+                  {(LICENSE_TYPES.includes(form.licenseType) ? LICENSE_TYPES : [form.licenseType, ...LICENSE_TYPES]).map((option) => <option key={option} value={option}>{option}</option>)}
                 </select>
               </Field>
               <Field label="Compliance">
                 <select className={inputClass} value={form.complianceStatus} onChange={(e) => set('complianceStatus', e.target.value)}>
-                  {['In Compliance', 'Expiring Soon', 'Expired', 'Non-Compliant'].map((option) => <option key={option} value={option}>{option}</option>)}
+                  {(COMPLIANCE_STATUSES.includes(form.complianceStatus) ? COMPLIANCE_STATUSES : [form.complianceStatus, ...COMPLIANCE_STATUSES]).map((option) => <option key={option} value={option}>{option}</option>)}
                 </select>
               </Field>
               <Field label="Seats total"><input type="number" min="0" className={inputClass} value={form.seatsTotal} onChange={(e) => set('seatsTotal', e.target.value)} /></Field>
@@ -171,7 +185,7 @@ export function SoftwareRecordModal({ open, kind, onClose, onSubmit }: Props) {
             </button>
             <button type="submit" disabled={saving} className="inline-flex items-center gap-2 rounded-lg bg-dle-blue px-4 py-2 text-sm font-semibold text-white hover:bg-dle-blue-deep disabled:opacity-60">
               {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
-              {saving ? 'Saving...' : 'Save record'}
+              {saving ? 'Saving...' : editing ? 'Save changes' : 'Save record'}
             </button>
           </div>
         </form>

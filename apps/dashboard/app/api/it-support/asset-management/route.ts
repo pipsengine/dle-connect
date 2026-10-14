@@ -21,6 +21,7 @@ import {
   createItProcurement,
   createItSoftwareCatalog,
   createItSoftwareLicense,
+  updateItSoftwareLicense,
   createItSoftwareRequest,
   createItVendor,
   createItWarranty,
@@ -157,7 +158,7 @@ export async function POST(request: NextRequest) {
       'save-software-alert-config', 'run-software-expiry-alerts',
       'create-asset', 'update-asset', 'delete-asset', 'create-inventory', 'update-inventory', 'delete-inventory',
       'create-maintenance', 'schedule-maintenance-batch', 'perform-maintenance-batch', 'update-maintenance', 'assign-asset', 'reassign-asset', 'return-asset', 'create-vendor', 'create-warranty',
-      'create-procurement', 'create-license', 'create-software-catalog', 'create-installed-software', 'create-software-request',
+      'create-procurement', 'create-license', 'update-license', 'create-software-catalog', 'create-installed-software', 'create-software-request',
     ]);
     const base = manageActions.has(action) ? await guardManage(request) : await guardView(request);
     if ('error' in base) return base.error;
@@ -300,6 +301,11 @@ export async function POST(request: NextRequest) {
     if (action === 'create-warranty') return ok({ warrantyId: await createItWarranty(body.warranty || {}, actor), payload: await buildItAssetDashboardPayload() });
     if (action === 'create-procurement') return ok({ orderId: await createItProcurement(body.procurement || {}, actor), payload: await buildItAssetDashboardPayload() });
     if (action === 'create-license') return ok({ licenseId: await createItSoftwareLicense(body.license || {}, actor), payload: await buildItAssetDashboardPayload() });
+    if (action === 'update-license') {
+      const licenseId = String(body.licenseId || '').trim();
+      if (!licenseId) return err(400, 'licenseId is required.');
+      return ok({ licenseId: await updateItSoftwareLicense(licenseId, body.license || {}, actor), payload: await buildItAssetDashboardPayload() });
+    }
     if (action === 'create-software-catalog') return ok({ catalogId: await createItSoftwareCatalog(body.catalog || {}, actor), payload: await buildItAssetDashboardPayload() });
     if (action === 'create-installed-software') return ok({ installId: await createItInstalledSoftware(body.installed || {}, actor), payload: await buildItAssetDashboardPayload() });
     if (action === 'create-software-request') return ok({ requestId: await createItSoftwareRequest(body.request || {}, actor), payload: await buildItAssetDashboardPayload() });

@@ -14,6 +14,7 @@ import {
   type LucideIcon,
 } from 'lucide-react';
 import type { TenderAuditEvent, TenderOpportunity, TenderSubmission } from '@/lib/commercial/tender-types';
+import { daysUntil } from '@/lib/commercial/tender-present';
 import { awardedToDleOf, CLIENT_COLORS, clientStatusOf, externalDeadlineOf, internalDeadlineOf, PREPARATION_COLORS, preparationOf, type ClientStatus } from '@/lib/commercial/tender-workflow';
 import { formatWhen, tenderGet } from './tender-api';
 
@@ -27,16 +28,6 @@ const DECISIONS: Decision[] = ['Pending', 'Suspended', 'Cancelled', 'Re-Opened',
 const isEnquiry = (row: TenderOpportunity) => row.stage === 'Enquiry' || row.tenderType === 'Enquiry' || row.opportunityType === 'Enquiry';
 const isAwardedToDle = (row: TenderOpportunity) => awardedToDleOf(row) === 'Yes';
 const isTerminal = (row: TenderOpportunity) => clientStatusOf(row) === 'Awarded' || clientStatusOf(row) === 'Cancelled';
-
-function daysUntil(value: string) {
-  if (!value) return null;
-  const parsed = new Date(value);
-  if (Number.isNaN(parsed.getTime())) return null;
-  const today = new Date();
-  const start = Date.UTC(today.getFullYear(), today.getMonth(), today.getDate());
-  const stamp = Date.UTC(parsed.getFullYear(), parsed.getMonth(), parsed.getDate());
-  return Math.round((stamp - start) / 86400000);
-}
 
 function prepOf(row: TenderOpportunity): Prep {
   return preparationOf(row);
@@ -143,6 +134,8 @@ export function TenderDashboard() {
   const submittedBids = rows.filter((row) => !isEnquiry(row) && (prepOf(row) === 'Submitted' || submittedIds.has(row.id))).length;
   const pendingDecision = rows.filter((row) => awardedToDleOf(row) === 'Pending Decision' && prepOf(row) === 'Submitted').length;
   const unsuccessful = rows.filter((row) => awardedToDleOf(row) === 'No').length;
+  const decidedOutcomes = awardedCount + unsuccessful;
+  const winRatePct = pct(awardedCount, decidedOutcomes);
 
   const upcomingRows = deadlineRows.filter((item) => (item.nearest ?? 0) >= 0);
   const pastRows = deadlineRows.filter((item) => (item.nearest ?? 0) < 0 && !met(item.row));
@@ -246,7 +239,7 @@ export function TenderDashboard() {
             <Link href="/commercial/tenders/bid-preparation" className="text-[12px] font-semibold text-blue-600">View Details</Link>
           </div>
           <div className="mt-3 flex gap-2">
-            <span className="rounded-lg bg-[#2563eb] px-3 py-1.5 text-[12px] font-bold text-white">Enquiries ({enquiries.length})</span>
+            <span className="rounded-lg bg-slate-100 px-3 py-1.5 text-[12px] font-bold text-slate-600">Enquiries ({enquiries.length})</span>
             <span className="rounded-lg bg-slate-100 px-3 py-1.5 text-[12px] font-bold text-slate-600">Tenders ({tenders.length})</span>
           </div>
           <div className="mt-4 grid gap-4 sm:grid-cols-2">
@@ -340,6 +333,13 @@ export function TenderDashboard() {
                 </li>
               ))}
             </ul>
+          </div>
+          <div className="mt-3 flex items-center justify-between border-t border-slate-100 pt-3 text-[12px]">
+            <span className="font-semibold text-slate-600">Win rate</span>
+            <span>
+              <b className="text-slate-800">{awardedCount}</b>
+              <span className="text-slate-400"> ({winRatePct}%)</span>
+            </span>
           </div>
         </article>
       </section>
