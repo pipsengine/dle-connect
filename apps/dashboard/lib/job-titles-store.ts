@@ -71,7 +71,20 @@ const clean = (value: unknown) => (typeof value === 'string' ? value.trim() : ''
 const round1 = (value: number) => Math.round(value * 10) / 10;
 const roundMoney = (value: number) => Math.round(value * 100) / 100;
 const slug = (value: string) => value.trim().toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'unassigned';
+const clip = (value: string, max: number) => value.trim().slice(0, max);
 const uniqueSorted = (values: string[]) => Array.from(new Set(values.filter(Boolean))).sort((a, b) => a.localeCompare(b));
+
+const jobTitleId = (codeSlug: string, titleSlug: string) => {
+  const id = `jt-${codeSlug}-${titleSlug}`;
+  if (id.length <= 180) return id;
+  let hash = 2166136261;
+  for (let index = 0; index < id.length; index += 1) {
+    hash ^= id.charCodeAt(index);
+    hash = Math.imul(hash, 16777619);
+  }
+  const suffix = (hash >>> 0).toString(36);
+  return `${id.slice(0, 179 - suffix.length)}-${suffix}`;
+};
 
 const mostCommon = (values: Array<string | null | undefined>, fallback: string) => {
   const counts = new Map<string, number>();
@@ -162,15 +175,24 @@ const responsibilitiesFor = (title: string, family: JobGradeRecord['family']) =>
 
 const buildTitlesFromEmployees = (employees: DleEmployeeDirectoryRow[]): JobTitleRecord[] => {
   const groups = new Map<string, DleEmployeeDirectoryRow[]>();
-  for (const employee of employees.filter((row) => !isInactive(row))) {
+  for (const employee of employees) {
+    if (isInactive(employee)) continue;
     const title = titleName(employee);
-    const key = `${titleCode(employee, title)}|||${title}`.toUpperCase();
-    groups.set(key, [...(groups.get(key) || []), employee]);
+    const code = titleCode(employee, title);
+    // The primary key ignores case, spacing, and punctuation. Group on that
+    // key so "JCJT24" / "JCJT24-" and "Fitter Mate" / "Fitter-Mate" stay one row.
+    const key = `${slug(code)}|||${slug(title)}`;
+    const rows = groups.get(key);
+    if (rows) rows.push(employee);
+    else groups.set(key, [employee]);
   }
 
-  return [...groups.values()].map((rows) => {
-    const title = mostCommon(rows.map(titleName), 'Unassigned Job Title');
-    const code = mostCommon(rows.map((row) => titleCode(row, title)), titleCode(rows[0], title));
+  return [...groups.entries()].map(([key, rows]) => {
+    const separator = key.indexOf('|||');
+    const codeSlug = key.slice(0, separator);
+    const titleSlug = key.slice(separator + 3);
+    const title = clip(mostCommon(rows.map(titleName), 'Unassigned Job Title'), 180);
+    const code = clip(mostCommon(rows.map((row) => titleCode(row, title)), titleCode(rows[0], title)), 80);
     const grade = mostCommon(rows.map(gradeCode), 'UNASSIGNED');
     const salaryValues = rows.map(monthlyPayroll).filter((value) => value > 0).sort((a, b) => a - b);
     const family = familyFor(title, rows);
@@ -183,7 +205,7 @@ const buildTitlesFromEmployees = (employees: DleEmployeeDirectoryRow[]): JobTitl
     const tenureRows = rows.map((employee) => Number(employee.yearsOfService || 0)).filter((value) => value >= 3);
 
     return {
-      id: `jt-${slug(code)}-${slug(title)}`,
+      id: jobTitleId(codeSlug, titleSlug),
       code,
       title,
       family,
@@ -324,11 +346,13 @@ const syncSageJobTitles = async () => {
         .input('KeyResponsibilitiesJson', sql.NVarChar(sql.MAX), JSON.stringify(title.keyResponsibilities))
         .input('SourceSnapshotJson', sql.NVarChar(sql.MAX), JSON.stringify({ migratedAt: new Date().toISOString(), source: SOURCE_SYSTEM }))
         .query(`
+DELETE FROM [hris].[OrganizationJobTitles]
+WHERE [Code]=@Code AND [Title]=@Title AND [Id]<>@Id;
 MERGE [hris].[OrganizationJobTitles] AS target
-USING (SELECT @Code AS [Code], @Title AS [Title]) AS source
-ON target.[Code] = source.[Code] AND target.[Title] = source.[Title]
+USING (SELECT @Id AS [Id]) AS source
+ON target.[Id] = source.[Id]
 WHEN MATCHED THEN UPDATE SET
-  [Id]=@Id,[SourceSystem]=@SourceSystem,[Family]=@Family,[TitleLevel]=@TitleLevel,[GradeCode]=@GradeCode,[GradeName]=@GradeName,
+  [SourceSystem]=@SourceSystem,[Code]=@Code,[Title]=@Title,[Family]=@Family,[TitleLevel]=@TitleLevel,[GradeCode]=@GradeCode,[GradeName]=@GradeName,
   [ReportingLevel]=@ReportingLevel,[BenchmarkSalaryNgn]=@BenchmarkSalaryNgn,[EmployeeCount]=@EmployeeCount,[OpenPositions]=@OpenPositions,
   [DepartmentCount]=@DepartmentCount,[LocationCount]=@LocationCount,[SuccessionCoveragePct]=@SuccessionCoveragePct,[AttritionRiskPct]=@AttritionRiskPct,
   [InternalMobilityPct]=@InternalMobilityPct,[HealthStatus]=@HealthStatus,[StandardizationStatus]=@StandardizationStatus,[BenchmarkPosition]=@BenchmarkPosition,

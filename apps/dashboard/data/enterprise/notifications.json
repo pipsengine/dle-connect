@@ -2,6 +2,33 @@
   "schemaVersion": 1,
   "notifications": [
     {
+      "id": "ntf-1791990638880-q1wnzj",
+      "recipientUserId": "P0392",
+      "recipientUsername": "P0392",
+      "recipientEmployeeCode": "P0392",
+      "recipientRoles": [],
+      "kind": "Approval",
+      "module": "Finance Approvals",
+      "title": "Payment approval required",
+      "body": "Mr. ADESINA ADEKUNLE submitted Cash Advance Payment DLPC261013 (NGN 40,000) for Reporting Manager approval.",
+      "severity": "warning",
+      "status": "Unread",
+      "href": "/finance/approvals/request/PREQ-1791904226498",
+      "createdAt": "2026-10-14T15:10:38.881Z",
+      "actor": "Payment Approval Reminder",
+      "channels": [
+        "In-App",
+        "Email"
+      ],
+      "metadata": {
+        "requestId": "PREQ-1791904226498",
+        "requestNumber": "DLPC261013",
+        "stage": "Reporting Manager",
+        "recipientCode": "P0392",
+        "recipientName": "Mr. UMUKORO JUDE"
+      }
+    },
+    {
       "id": "ntf-1791957080136-sdwtbb",
       "recipientUserId": "P0429",
       "recipientUsername": "P0429",
