@@ -49,6 +49,12 @@ export type TenderOpportunity = {
   acknowledgedAt: string;
   deadlineOverrideReason: string;
   urgentException: boolean;
+  commercialKind: string;
+  commercialReview: string;
+  commercialReviewNote: string;
+  commercialReviewedBy: string;
+  commercialReviewedAt: string;
+  originalInternalDeadline: string;
   createdAt: string;
   updatedAt: string;
   createdBy: string;

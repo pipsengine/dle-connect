@@ -135,6 +135,147 @@ export const DEPARTMENT_REVIEW_STAGES = [
   'Management Approval',
 ] as const;
 
+export const COMMERCIAL_KINDS = ['ITT', 'RFQ', 'EOI'] as const;
+export const COMMERCIAL_REVIEWS = ['Awaiting Review', 'Returned for Correction', 'Reviewed'] as const;
+export const REGISTER_STATUSES = ['Not Started', 'In Progress', 'Submitted', 'Awaiting GM Review', 'Awaiting MD Decision', 'Closed'] as const;
+
+export type CommercialKind = (typeof COMMERCIAL_KINDS)[number];
+export type CommercialReview = (typeof COMMERCIAL_REVIEWS)[number];
+export type RegisterStatus = (typeof REGISTER_STATUSES)[number];
+export type MdDecision = 'Pending' | 'BID' | 'NO BID';
+
+export type CommercialTab =
+  | 'All Opportunities'
+  | 'ITT'
+  | 'RFQ'
+  | 'EOI'
+  | 'Awaiting GM Review'
+  | 'Awaiting MD Decision'
+  | 'Not Started'
+  | 'In Progress'
+  | 'Submitted'
+  | 'Overdue'
+  | 'Closed';
+
+const asText = (value: unknown) => String(value || '');
+
+export const commercialKindOf = (row: { commercialKind?: string; opportunityType?: string; tenderType?: string; contractType?: string; stage?: string; source?: string }): CommercialKind => {
+  const explicit = asText(row.commercialKind).toUpperCase();
+  if (explicit === 'ITT' || explicit === 'RFQ' || explicit === 'EOI') return explicit;
+  const text = `${row.opportunityType || ''} ${row.tenderType || ''} ${row.contractType || ''} ${row.stage || ''} ${row.source || ''}`.toLowerCase();
+  if (/request for quotation|\brfq\b|quotation/.test(text)) return 'RFQ';
+  if (/expression of interest|\beoi\b/.test(text)) return 'EOI';
+  if (/invitation to tender|\bitt\b|invit/.test(text)) return 'ITT';
+  if (isEnquiryRecord(row)) return 'EOI';
+  return 'ITT';
+};
+
+export const commercialReviewOf = (row: {
+  commercialReview?: string;
+  bidDecision?: string;
+  status?: string;
+  stage?: string;
+  opportunityType?: string;
+  tenderType?: string;
+}): CommercialReview => {
+  const explicit = asText(row.commercialReview);
+  if ((COMMERCIAL_REVIEWS as readonly string[]).includes(explicit)) return explicit as CommercialReview;
+  if (bidChoiceOf(row)) return 'Reviewed';
+  const text = `${row.status || ''} ${row.stage || ''}`.toLowerCase();
+  if (/bid preparation|submitted|awarded|no-?bid|negotiation/.test(text)) return 'Reviewed';
+  if (!isEnquiryRecord(row) && asText(row.status) && row.status !== 'Draft') return 'Reviewed';
+  return 'Awaiting Review';
+};
+
+export const mdDecisionOf = (row: { bidDecision?: string }): MdDecision => {
+  const choice = bidChoiceOf(row);
+  if (choice === 'Bid') return 'BID';
+  if (choice === 'No Bid') return 'NO BID';
+  return 'Pending';
+};
+
+/** The register shows the current operational state. The underlying review, decision and preparation fields stay separate. */
+export const registerStatusOf = (row: StatusSource & {
+  commercialReview?: string;
+  bidDecision?: string;
+  acknowledgedAt?: string;
+}): RegisterStatus => {
+  const decision = bidChoiceOf(row);
+  const text = textOf(row);
+  if (decision === 'No Bid' || row.status === 'Closed' || row.status === 'Lost' || row.status === 'Cancelled' || row.status === 'Withdrawn' || row.status === 'No-Bid' || clientStatusOf(row) === 'Cancelled') return 'Closed';
+  if (preparationOf(row) === 'Submitted' || /submit/.test(text)) return 'Submitted';
+  if (decision === 'Bid') {
+    if (row.preparationStatus === 'Submitted') return 'Submitted';
+    if (row.acknowledgedAt || row.preparationStatus === 'In Progress') return 'In Progress';
+    return 'Not Started';
+  }
+  const review = commercialReviewOf(row);
+  if (review === 'Returned for Correction' || review === 'Awaiting Review') {
+    if (row.status === 'Draft' && review !== 'Returned for Correction') return 'Not Started';
+    return 'Awaiting GM Review';
+  }
+  return 'Awaiting MD Decision';
+};
+
+export const overdueOpportunity = (row: {
+  submissionDeadline?: string;
+  closingDate?: string;
+  clarificationDeadline?: string;
+  opportunityType?: string;
+  tenderType?: string;
+  stage?: string;
+  status?: string;
+  deadlineOverrideReason?: string;
+  commercialReview?: string;
+  bidDecision?: string;
+  preparationStatus?: string;
+  clientStatus?: string;
+  acknowledgedAt?: string;
+  ownerName?: string;
+}, now = new Date()) => {
+  const status = registerStatusOf(row);
+  if (status === 'Closed' || status === 'Submitted') return false;
+  const clocks = [internalDeadlineOf(row), externalDeadlineOf(row)];
+  return clocks.some((value) => {
+    const parsed = parseDeadline(value);
+    return Boolean(parsed) && parsed!.getTime() < now.getTime();
+  });
+};
+
+export const matchesCommercialTab = (row: Parameters<typeof overdueOpportunity>[0], tab: CommercialTab, now = new Date()) => {
+  if (tab === 'All Opportunities') return true;
+  if (tab === 'ITT' || tab === 'RFQ' || tab === 'EOI') return commercialKindOf(row) === tab;
+  if (tab === 'Overdue') return overdueOpportunity(row, now);
+  return registerStatusOf(row) === tab;
+};
+
+/** MD-approved work that is still being prepared. NO BID, GM review and MD decision queues are excluded. */
+export const isActiveResponse = (row: Parameters<typeof registerStatusOf>[0]) => {
+  if (bidChoiceOf(row) !== 'Bid') return false;
+  const status = registerStatusOf(row);
+  return status === 'Not Started' || status === 'In Progress';
+};
+
+/** Preparation statistics cover BID approvals only, including those already submitted. */
+export const isPreparationRecord = (row: Parameters<typeof registerStatusOf>[0]) => {
+  if (bidChoiceOf(row) !== 'Bid') return false;
+  const status = registerStatusOf(row);
+  return status === 'Not Started' || status === 'In Progress' || status === 'Submitted';
+};
+
+export const documentChecklistFor = (kind: CommercialKind) => {
+  if (kind === 'EOI') return ['Company profile', 'Relevant project experience', 'Key personnel', 'Compliance declarations'];
+  if (kind === 'RFQ') return ['Client quotation forms', 'Technical compliance statement', 'Delivery schedule', 'Supporting certificates'];
+  return ['Invitation documents', 'Technical proposal', 'Commercial proposal', 'HSE documents', 'Legal documents', 'Form of tender'];
+};
+
+/** GM Commercial review is complete, or the MD recorded an explicit audited exception. */
+export const mdDecisionPermitted = (row: { commercialReview?: string; bidDecision?: string; status?: string; stage?: string; opportunityType?: string; tenderType?: string }, exceptionReason = '') => {
+  if (commercialReviewOf(row) === 'Reviewed') return { ok: true, exception: false as const };
+  if (asText(exceptionReason).trim()) return { ok: true, exception: true as const };
+  return { ok: false, exception: false as const };
+};
+
 export type BidChoice = 'Bid' | 'No Bid';
 
 export const bidChoiceOf = (row: { bidDecision?: string }): BidChoice | '' => {
@@ -155,7 +296,8 @@ export const tenderApprovalBucket = (row: {
   opportunityType?: string;
   tenderType?: string;
 }): ApprovalBucket => {
-  if (isEnquiryRecord(row)) return 'enquiry';
+  if (!bidChoiceOf(row) && commercialReviewOf(row) !== 'Reviewed') return 'enquiry';
+  if (isEnquiryRecord(row) && commercialReviewOf(row) !== 'Reviewed') return 'enquiry';
   const choice = bidChoiceOf(row);
   const text = `${row.status || ''} ${row.stage || ''} ${row.preparationStatus || ''}`.toLowerCase();
   if (choice === 'No Bid') return 'completed';

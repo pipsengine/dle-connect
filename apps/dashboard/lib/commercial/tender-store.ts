@@ -12,6 +12,7 @@ import {
   externalDeadlineOf,
   bidChoiceOf,
   dateOnly,
+  mdDecisionPermitted,
   departmentalReviewAllowed,
   DEPARTMENT_REVIEW_STAGES,
   internalDeadlineFromExternal,
@@ -133,6 +134,12 @@ const mapOpportunity = (row: Record<string, unknown>): TenderOpportunity => ({
   acknowledgedAt: iso(row.AcknowledgedAt),
   deadlineOverrideReason: clean(row.DeadlineOverrideReason, 500),
   urgentException: bit(row.UrgentException),
+  commercialKind: clean(row.CommercialKind, 10),
+  commercialReview: clean(row.CommercialReview, 40),
+  commercialReviewNote: clean(row.CommercialReviewNote),
+  commercialReviewedBy: clean(row.CommercialReviewedBy, 120),
+  commercialReviewedAt: iso(row.CommercialReviewedAt),
+  originalInternalDeadline: dateOnly(row.OriginalInternalDeadline),
   createdAt: iso(row.CreatedAt),
   updatedAt: iso(row.UpdatedAt),
   createdBy: clean(row.CreatedBy, 120),
@@ -230,7 +237,8 @@ const OPPORTUNITY_COLUMNS = `
   [SubmissionDeadline],[ClosingDate],[InvitationDate],[SiteVisitDate],[ClarificationDeadline],[OwnerName],
   [TeamNotes],[ApprovalNotes],[Watchlisted],[CreatedAt],[UpdatedAt],[CreatedBy],[UpdatedBy],
   [PreparationStatus],[ClientStatus],[AwardedToDle],[OwnerEmployeeCode],[AssignedAt],[AcknowledgedAt],
-  [DeadlineOverrideReason],[UrgentException]
+  [DeadlineOverrideReason],[UrgentException],[CommercialKind],[CommercialReview],[CommercialReviewNote],
+  [CommercialReviewedBy],[CommercialReviewedAt],[OriginalInternalDeadline]
 `;
 
 export const listOpportunities = async (): Promise<TenderOpportunity[]> => {
@@ -253,10 +261,23 @@ export const getOpportunity = async (id: string): Promise<TenderOpportunity | nu
   return row ? mapOpportunity(row) : null;
 };
 
+const commercialKindInput = (input: TenderOpportunityInput) => {
+  const kind = clean(input.commercialKind, 10).toUpperCase();
+  return kind === 'ITT' || kind === 'RFQ' || kind === 'EOI' ? kind : '';
+};
+
 const validate = (input: TenderOpportunityInput, mode: 'draft' | 'submit') => {
-  if (!clean(input.title, 300)) throw new Error('Tender title is required.');
+  if (!clean(input.title, 300)) throw new Error('Project title is required.');
   if (!clean(input.clientName, 220)) throw new Error('Client name is required.');
   if (!clean(input.source, 80)) throw new Error('Source is required.');
+  if (commercialKindInput(input)) {
+    if (mode === 'submit') {
+      if (!clean(input.category, 80)) throw new Error('Sector is required.');
+      if (!externalDeadlineOf(input)) throw new Error('External deadline is required.');
+      if (!clean(input.description)) throw new Error('Description is required.');
+    }
+    return;
+  }
   if (mode === 'submit') {
     if (!clean(input.department, 180)) throw new Error('Select a department.');
     if (!clean(input.location, 180)) throw new Error('Select a location.');
@@ -278,6 +299,34 @@ const withDefaultInternalDeadline = (input: TenderOpportunityInput): TenderOppor
     return { ...input, closingDate: internal };
   }
   return input;
+};
+
+const persistCommercial = async (pool: sql.ConnectionPool, id: string, input: TenderOpportunityInput, mode: 'draft' | 'submit') => {
+  const kind = commercialKindInput(input);
+  if (!kind) return;
+  const current = await getOpportunity(id);
+  if (!current) return;
+  const locked = current.commercialReview === 'Reviewed' || Boolean(bidChoiceOf(current));
+  const review = mode === 'submit' ? (locked ? 'Reviewed' : 'Awaiting Review') : current.commercialReview;
+  const request = pool.request()
+    .input('Id', sql.NVarChar(40), id)
+    .input('Kind', sql.NVarChar(10), kind)
+    .input('Review', sql.NVarChar(40), review);
+  if (mode === 'submit' && !locked) {
+    await request.query(`
+      UPDATE [commercial].[TenderOpportunities]
+      SET [CommercialKind]=@Kind, [CommercialReview]=@Review, [Status]=N'Under Review', [Stage]=N'GM Commercial Review', [UpdatedAt]=SYSUTCDATETIME()
+      WHERE [OpportunityId]=@Id AND ISNULL([BidDecision], N'')=N''
+    `);
+    return;
+  }
+  await request.query(`
+    UPDATE [commercial].[TenderOpportunities]
+    SET [CommercialKind]=@Kind,
+        [CommercialReview]=CASE WHEN @Review=N'' THEN [CommercialReview] ELSE @Review END,
+        [UpdatedAt]=SYSUTCDATETIME()
+    WHERE [OpportunityId]=@Id
+  `);
 };
 
 export const saveOpportunity = async (input: TenderOpportunityInput, actor: string) => {
@@ -345,6 +394,7 @@ export const saveOpportunity = async (input: TenderOpportunityInput, actor: stri
     }
     await audit(pool, existingId, actor, mode === 'submit' ? 'SUBMITTED_FOR_REVIEW' : 'UPDATED', referenceNo);
     await stampWorkflow(pool, existingId);
+    await persistCommercial(pool, existingId, input, mode);
     return getOpportunity(existingId);
   }
 
@@ -378,6 +428,7 @@ export const saveOpportunity = async (input: TenderOpportunityInput, actor: stri
   `);
   await audit(pool, id, actor, mode === 'submit' ? 'SUBMITTED_FOR_REVIEW' : 'CREATED', referenceNo);
   await stampWorkflow(pool, id);
+  await persistCommercial(pool, id, input, mode);
   return getOpportunity(id);
 };
 
@@ -399,7 +450,13 @@ export const duplicateOpportunity = async (id: string, actor: string) => {
     title: `${current.title} (copy)`,
     status: 'Draft',
     stage: enquiry ? 'Enquiry' : 'Tender/Bid',
-    ownerName: enquiry ? current.ownerName : '',
+    ownerName: '',
+    ownerEmployeeCode: '',
+    bidDecision: '',
+    commercialReview: '',
+    commercialReviewNote: '',
+    acknowledgedAt: '',
+    assignedAt: '',
     saveMode: 'draft',
   };
   return saveOpportunity(copy, actor);
@@ -1411,10 +1468,11 @@ export const assignTenderOfficer = async (
     .input('OwnerEmployeeCode', sql.NVarChar(80), clean(input.employeeCode, 80))
     .input('Reason', sql.NVarChar(500), clean(input.reason, 500))
     .input('UpdatedBy', sql.NVarChar(120), clean(actor, 120));
-  if (enquiry) request.input('Internal', sql.Date, dateOrNull(internal));
-  else request.input('Internal', sql.Date, dateOrNull(internal));
+  request.input('Internal', sql.Date, dateOrNull(internal));
+  request.input('OriginalInternal', sql.Date, dateOrNull(defaultInternal || internal));
   const assignmentSql = `
     SET [OwnerName]=@OwnerName, [OwnerEmployeeCode]=@OwnerEmployeeCode, ${enquiry ? '[ClarificationDeadline]' : '[ClosingDate]'}=@Internal,
+        [OriginalInternalDeadline]=COALESCE([OriginalInternalDeadline], @OriginalInternal),
         [AssignedAt]=SYSUTCDATETIME(), [AcknowledgedAt]=NULL, [DeadlineOverrideReason]=@Reason,
         [PreparationStatus]=CASE WHEN [PreparationStatus] IN (N'Submitted', N'In Progress') THEN [PreparationStatus] ELSE N'Not Started' END,
         [UpdatedAt]=SYSUTCDATETIME(), [UpdatedBy]=@UpdatedBy
@@ -1424,19 +1482,79 @@ export const assignTenderOfficer = async (
   return getOpportunity(id);
 };
 
-export const decideBid = async (
+export const reviewCommercialOpportunity = async (
   id: string,
-  input: { decision: string; comments?: string; officerName?: string; employeeCode?: string; internalDeadline?: string },
+  input: { decision: string; comments?: string },
   actor: string,
 ) => {
   const current = await getOpportunity(id);
   if (!current) throw new Error('Opportunity was not found.');
-  if (isEnquiryRecord(current)) throw new Error('Bid or no-bid decisions apply to tender opportunities.');
+  if (bidChoiceOf(current)) throw new Error('This opportunity already has an MD decision.');
+  const comments = clean(input.comments);
+  const decision = clean(input.decision, 20).toLowerCase();
+  const pool = await ensureTenderDb();
+  if (decision === 'return') {
+    if (!comments) throw new Error('A comment is required to return this opportunity for correction.');
+    const updated = await pool.request()
+      .input('Id', sql.NVarChar(40), id)
+      .input('Note', sql.NVarChar(sql.MAX), comments)
+      .input('Actor', sql.NVarChar(120), clean(actor, 120))
+      .query(`
+        UPDATE [commercial].[TenderOpportunities]
+        SET [CommercialReview]=N'Returned for Correction', [CommercialReviewNote]=@Note,
+            [CommercialReviewedBy]=@Actor, [CommercialReviewedAt]=SYSUTCDATETIME(),
+            [Status]=N'Draft', [Stage]=N'Correction', [UpdatedAt]=SYSUTCDATETIME(), [UpdatedBy]=@Actor
+        WHERE [OpportunityId]=@Id AND ISNULL([BidDecision], N'')=N''
+      `);
+    if (!updated.rowsAffected[0]) throw new Error('This opportunity can no longer be returned.');
+    await audit(pool, id, actor, 'RETURNED_FOR_CORRECTION', comments);
+    return getOpportunity(id);
+  }
+  if (decision !== 'forward') throw new Error('Choose whether to forward the opportunity or return it for correction.');
+  const updated = await pool.request()
+    .input('Id', sql.NVarChar(40), id)
+    .input('Note', sql.NVarChar(sql.MAX), comments)
+    .input('Actor', sql.NVarChar(120), clean(actor, 120))
+    .query(`
+      UPDATE [commercial].[TenderOpportunities]
+      SET [CommercialReview]=N'Reviewed', [CommercialReviewNote]=@Note,
+          [CommercialReviewedBy]=@Actor, [CommercialReviewedAt]=SYSUTCDATETIME(),
+          [Status]=N'Under Review', [Stage]=N'MD Decision', [UpdatedAt]=SYSUTCDATETIME(), [UpdatedBy]=@Actor
+      WHERE [OpportunityId]=@Id AND ISNULL([BidDecision], N'')=N''
+    `);
+  if (!updated.rowsAffected[0]) throw new Error('This opportunity can no longer be forwarded.');
+  await audit(pool, id, actor, 'FORWARDED_TO_MD', comments || 'GM Commercial review completed.');
+  return getOpportunity(id);
+};
+
+export const decideBid = async (
+  id: string,
+  input: { decision: string; comments?: string; officerName?: string; employeeCode?: string; internalDeadline?: string; exceptionReason?: string },
+  actor: string,
+) => {
+  const current = await getOpportunity(id);
+  if (!current) throw new Error('Opportunity was not found.');
+  const permission = mdDecisionPermitted(current, input.exceptionReason || '');
+  if (!permission.ok) throw new Error('GM Commercial review must be completed before the Managing Director can decide.');
   const existing = bidChoiceOf(current);
   const normalized = clean(input.decision, 20).toLowerCase();
   const comments = clean(input.comments);
   if (existing && normalized !== 'draft') throw new Error('A bid decision has already been recorded for this opportunity.');
   const pool = await ensureTenderDb();
+  if (permission.exception && normalized !== 'draft') {
+    const reason = clean(input.exceptionReason, 500);
+    await pool.request()
+      .input('Id', sql.NVarChar(40), id)
+      .input('Note', sql.NVarChar(sql.MAX), reason)
+      .input('Actor', sql.NVarChar(120), clean(actor, 120))
+      .query(`
+        UPDATE [commercial].[TenderOpportunities]
+        SET [CommercialReview]=N'Reviewed', [CommercialReviewNote]=@Note,
+            [CommercialReviewedBy]=@Actor, [CommercialReviewedAt]=SYSUTCDATETIME(), [UpdatedAt]=SYSUTCDATETIME(), [UpdatedBy]=@Actor
+        WHERE [OpportunityId]=@Id
+      `);
+    await audit(pool, id, actor, 'GM_REVIEW_EXCEPTION', reason);
+  }
   const recordApproval = async (result: string, note: string) => {
     await pool.request()
       .input('Id', sql.NVarChar(40), idFor('TAP'))

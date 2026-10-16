@@ -10,6 +10,15 @@ import {
   internalDeadlineFromExternal,
   internalDeadlineOf,
   stageMatchesActor,
+  commercialKindOf,
+  commercialReviewOf,
+  documentChecklistFor,
+  isActiveResponse,
+  isPreparationRecord,
+  matchesCommercialTab,
+  mdDecisionOf,
+  mdDecisionPermitted,
+  registerStatusOf,
   tenderApprovalBucket,
   preparationOf,
   reminderKey,
@@ -74,10 +83,57 @@ assert.doesNotMatch(body, /NGN|value|amount/i);
 
 assert.equal(bidChoiceOf({ bidDecision: 'Bid' }), 'Bid');
 assert.equal(bidChoiceOf({ bidDecision: 'No Bid' }), 'No Bid');
-assert.equal(tenderApprovalBucket({ opportunityType: 'Client Tender', status: 'Draft', stage: 'Tender/Bid' }), 'pending');
+assert.equal(tenderApprovalBucket({ opportunityType: 'Client Tender', status: 'Draft', stage: 'Tender/Bid' }), 'enquiry');
+assert.equal(tenderApprovalBucket({ opportunityType: 'Client Tender', status: 'Open', stage: 'Tender/Bid' }), 'pending');
+assert.equal(tenderApprovalBucket({ opportunityType: 'ITT', commercialReview: 'Awaiting Review', status: 'Under Review', stage: 'GM Commercial Review' }), 'enquiry');
+assert.equal(tenderApprovalBucket({ opportunityType: 'ITT', commercialReview: 'Reviewed', status: 'Under Review', stage: 'MD Decision' }), 'pending');
 assert.equal(tenderApprovalBucket({ opportunityType: 'Client Tender', bidDecision: 'Bid', status: 'Open', stage: 'Bid Preparation', ownerName: 'Ada' }), 'review');
 assert.equal(tenderApprovalBucket({ opportunityType: 'Client Tender', bidDecision: 'No Bid', status: 'Closed', stage: 'No Bid' }), 'completed');
 assert.equal(tenderApprovalBucket({ opportunityType: 'Enquiry', stage: 'Enquiry' }), 'enquiry');
+
+assert.equal(commercialKindOf({ opportunityType: 'Enquiry', stage: 'Enquiry' }), 'EOI');
+assert.equal(commercialKindOf({ commercialKind: 'RFQ', opportunityType: 'Enquiry' }), 'RFQ');
+assert.equal(commercialKindOf({ tenderType: 'Request for Quotation' }), 'RFQ');
+assert.equal(commercialKindOf({ opportunityType: 'Client Tender' }), 'ITT');
+assert.equal(commercialReviewOf({ commercialReview: 'Awaiting Review', status: 'Under Review', opportunityType: 'ITT' }), 'Awaiting Review');
+assert.equal(commercialReviewOf({ status: 'Open', opportunityType: 'Client Tender' }), 'Reviewed');
+assert.equal(mdDecisionOf({ bidDecision: 'Bid' }), 'BID');
+assert.equal(mdDecisionOf({ bidDecision: '' }), 'Pending');
+assert.equal(registerStatusOf({ commercialReview: 'Awaiting Review', status: 'Under Review', stage: 'GM Commercial Review', opportunityType: 'ITT', preparationStatus: 'Not Started' }), 'Awaiting GM Review');
+assert.equal(registerStatusOf({ commercialReview: 'Reviewed', status: 'Under Review', stage: 'MD Decision', opportunityType: 'RFQ', preparationStatus: 'Not Started' }), 'Awaiting MD Decision');
+assert.equal(registerStatusOf({ commercialReview: 'Reviewed', bidDecision: 'Bid', status: 'Open', stage: 'Bid Preparation', opportunityType: 'ITT', preparationStatus: 'Not Started' }), 'Not Started');
+assert.equal(registerStatusOf({ commercialReview: 'Reviewed', bidDecision: 'Bid', status: 'Open', stage: 'Bid Preparation', opportunityType: 'ITT', preparationStatus: 'In Progress', acknowledgedAt: '2026-10-16' }), 'In Progress');
+assert.equal(registerStatusOf({ bidDecision: 'No Bid', status: 'Closed', stage: 'No Bid', opportunityType: 'EOI' }), 'Closed');
+assert.equal(registerStatusOf({ status: 'Draft', stage: 'Registration', opportunityType: 'ITT', commercialKind: 'ITT' }), 'Not Started');
+assert.equal(matchesCommercialTab({ commercialKind: 'EOI', commercialReview: 'Awaiting Review', status: 'Under Review', opportunityType: 'EOI' }, 'EOI'), true);
+assert.equal(matchesCommercialTab({ commercialKind: 'EOI', commercialReview: 'Awaiting Review', status: 'Under Review', opportunityType: 'EOI' }, 'ITT'), false);
+assert.equal(documentChecklistFor('EOI').length < documentChecklistFor('ITT').length, true);
+assert.equal(mdDecisionPermitted({ commercialReview: 'Awaiting Review', status: 'Under Review', opportunityType: 'ITT' }).ok, false);
+assert.equal(mdDecisionPermitted({ commercialReview: 'Reviewed', status: 'Under Review', opportunityType: 'ITT' }).ok, true);
+assert.equal(mdDecisionPermitted({ commercialReview: 'Awaiting Review', status: 'Under Review', opportunityType: 'ITT' }, 'Client deadline leaves no time for the normal review.').exception, true);
+
+const dashboardRows = [
+  { status: 'Draft', stage: 'Registration', opportunityType: 'ITT', commercialKind: 'ITT' },
+  { commercialReview: 'Awaiting Review', status: 'Under Review', stage: 'GM Commercial Review', opportunityType: 'ITT' },
+  { commercialReview: 'Reviewed', status: 'Under Review', stage: 'MD Decision', opportunityType: 'RFQ' },
+  { commercialReview: 'Reviewed', bidDecision: 'Bid', status: 'Open', stage: 'Bid Preparation', opportunityType: 'ITT', preparationStatus: 'Not Started' },
+  { commercialReview: 'Reviewed', bidDecision: 'Bid', status: 'Open', stage: 'Bid Preparation', opportunityType: 'EOI', preparationStatus: 'In Progress', acknowledgedAt: '2026-10-16' },
+  { bidDecision: 'Bid', status: 'Submitted', stage: 'Submitted', opportunityType: 'RFQ', preparationStatus: 'Submitted' },
+  { bidDecision: 'No Bid', status: 'Closed', stage: 'No Bid', opportunityType: 'EOI' },
+];
+const statusCounts = dashboardRows.map((row) => registerStatusOf(row));
+const statusTally = statusCounts.reduce<Record<string, number>>((map, status) => ({ ...map, [status]: (map[status] || 0) + 1 }), {});
+assert.equal(Object.values(statusTally).reduce((sum, count) => sum + count, 0), dashboardRows.length, 'each opportunity is counted in exactly one dashboard status');
+assert.equal(statusTally['Not Started'], 2);
+assert.equal(statusTally.Closed, 1);
+assert.equal(statusTally['Awaiting GM Review'], 1);
+assert.equal(statusTally['Awaiting MD Decision'], 1);
+assert.equal(isActiveResponse(dashboardRows[3]), true);
+assert.equal(isActiveResponse(dashboardRows[1]), false);
+assert.equal(isActiveResponse(dashboardRows[6]), false);
+assert.equal(isPreparationRecord(dashboardRows[5]), true);
+assert.equal(isPreparationRecord(dashboardRows[6]), false);
+assert.equal(isPreparationRecord(dashboardRows[2]), false);
 assert.equal(departmentalReviewAllowed({ bidDecision: 'Bid', ownerName: 'Ada' }), true);
 assert.equal(departmentalReviewAllowed({ bidDecision: 'Bid', ownerName: '' }), false);
 assert.equal(departmentalReviewAllowed({ bidDecision: 'No Bid', ownerName: 'Ada' }), false);

@@ -12,7 +12,6 @@ import {
   PieChart,
   ListChecks,
   MoreHorizontal,
-  Plus,
   Send,
   Upload,
   Users,
@@ -20,7 +19,7 @@ import {
   type LucideIcon,
 } from 'lucide-react';
 import type { TenderBlueprint, TenderDocument, TenderLine } from '@/lib/commercial/tender-types';
-import { externalDeadlineOf, internalDeadlineOf } from '@/lib/commercial/tender-workflow';
+import { bidChoiceOf, externalDeadlineOf, internalDeadlineOf } from '@/lib/commercial/tender-workflow';
 import { formatWhen, money, tenderGet, tenderPost } from './tender-api';
 import { OpportunityModal } from './OpportunityModal';
 import { DocumentCapture, ItemCapture, LineCapture, SubmissionCapture } from './record-capture';
@@ -158,6 +157,27 @@ export function BidBoard() {
     { label: 'View Submission Checklist', icon: ListChecks, tint: 'bg-sky-50 text-sky-600', tab: 'Submission' },
   ];
 
+  const approvedId = record.rows.find((row) => bidChoiceOf(row) === 'Bid')?.id || '';
+  useEffect(() => {
+    if (!approvedId) return;
+    const selected = record.rows.find((row) => row.id === record.selectedId);
+    if (selected && bidChoiceOf(selected) === 'Bid') return;
+    record.setSelectedId(approvedId);
+  }, [approvedId, record]);
+  const preparationOpen = Boolean(opportunity && bidChoiceOf(opportunity) === 'Bid');
+  if (record.loading || (approvedId && !preparationOpen)) return <p className="text-sm text-slate-500">Loading bid preparation…</p>;
+  if (!preparationOpen) {
+    return (
+      <div className="space-y-3">
+        <section className="rounded-2xl border border-slate-200 bg-white px-4 py-4 shadow-sm">
+          <h1 className="text-[22px] font-black tracking-tight text-slate-950">Bid Preparation</h1>
+          <p className="mt-1 text-[13px] text-slate-500">Bid preparation opens after the Managing Director approves BID and assigns a responsible officer.</p>
+          <Link href="/commercial/tenders/approvals" className="mt-3 inline-flex h-9 items-center rounded-lg bg-[#2563eb] px-3 text-[12px] font-bold text-white">Open Approvals</Link>
+        </section>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-3">
       {record.error ? <div className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">{record.error}</div> : null}
@@ -172,13 +192,12 @@ export function BidBoard() {
             </div>
           </div>
           <div className="flex flex-wrap items-center gap-2">
-            {record.rows.length > 1 ? (
+            {record.rows.filter((row) => bidChoiceOf(row) === 'Bid').length > 1 ? (
               <select value={record.selectedId} onChange={(event) => record.setSelectedId(event.target.value)} className="h-9 max-w-[220px] rounded-lg border border-slate-200 bg-white px-2 text-[12px] font-semibold text-slate-600" aria-label="Open opportunity">
-                {record.rows.map((row) => <option key={row.id} value={row.id}>{row.referenceNo} · {row.title}</option>)}
+                {record.rows.filter((row) => bidChoiceOf(row) === 'Bid').map((row) => <option key={row.id} value={row.id}>{row.referenceNo} · {row.title}</option>)}
               </select>
             ) : null}
             <Link href="/commercial/tenders/opportunities" className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 text-[12px] font-bold text-slate-700"><ArrowLeft className="h-3.5 w-3.5" /> Back to Opportunities</Link>
-            <button type="button" onClick={() => { setCreating(true); setEditing(true); }} className="inline-flex h-9 items-center gap-1.5 rounded-lg bg-[#2563eb] px-3 text-[12px] font-bold text-white"><Plus className="h-3.5 w-3.5" /> New Bid</button>
           </div>
         </div>
       </section>

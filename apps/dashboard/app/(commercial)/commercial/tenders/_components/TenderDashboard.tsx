@@ -1,78 +1,156 @@
 'use client';
 
 import Link from 'next/link';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import {
+  Briefcase,
   CalendarDays,
   CheckCircle2,
+  ChevronDown,
   Clock3,
   FileText,
-  Mail,
+  LayoutDashboard,
+  Plane,
+  Plus,
+  Search,
   Send,
   Trophy,
   UserRound,
+  Users,
+  X,
   type LucideIcon,
 } from 'lucide-react';
+import { isBusinessGmCommercial, isBusinessManagingDirector } from '@/lib/access/commercial-access';
 import type { TenderAuditEvent, TenderOpportunity, TenderSubmission } from '@/lib/commercial/tender-types';
-import { daysUntil } from '@/lib/commercial/tender-present';
-import { awardedToDleOf, CLIENT_COLORS, clientStatusOf, externalDeadlineOf, internalDeadlineOf, PREPARATION_COLORS, preparationOf, type ClientStatus } from '@/lib/commercial/tender-workflow';
+import { daysUntil, receivedOn, sectorOf } from '@/lib/commercial/tender-present';
+import {
+  awardedToDleOf,
+  bidChoiceOf,
+  clientStatusOf,
+  commercialKindOf,
+  externalDeadlineOf,
+  internalDeadlineOf,
+  isActiveResponse,
+  isPreparationRecord,
+  registerStatusOf,
+  type CommercialKind,
+  type RegisterStatus,
+} from '@/lib/commercial/tender-workflow';
 import { formatWhen, tenderGet } from './tender-api';
+import { CommercialOpportunityModal } from './CommercialOpportunityModal';
+import { RowMenu } from './record-frame';
 
-type Prep = 'Not Started' | 'In Progress' | 'Submitted';
-type Decision = ClientStatus;
+type DashTab = 'All Opportunities' | 'ITT' | 'RFQ' | 'EOI' | 'Awaiting GM Review' | 'Awaiting MD Decision' | 'Not Started' | 'In Progress' | 'Submitted' | 'Overdue' | 'Closed';
+type PrepFilter = 'All Types' | CommercialKind;
+type ClientSlice = 'Pending' | 'Suspended' | 'Cancelled' | 'Re-Opened' | 'Awarded (Yes)' | 'Awarded (No)';
 
-const PREP_COLORS: Record<Prep, string> = PREPARATION_COLORS;
-const DECISION_COLORS: Record<Decision, string> = CLIENT_COLORS;
-const DECISIONS: Decision[] = ['Pending', 'Suspended', 'Cancelled', 'Re-Opened', 'Awarded'];
-
-const isEnquiry = (row: TenderOpportunity) => row.stage === 'Enquiry' || row.tenderType === 'Enquiry' || row.opportunityType === 'Enquiry';
-const isAwardedToDle = (row: TenderOpportunity) => awardedToDleOf(row) === 'Yes';
-const isTerminal = (row: TenderOpportunity) => clientStatusOf(row) === 'Awarded' || clientStatusOf(row) === 'Cancelled';
-
-function prepOf(row: TenderOpportunity): Prep {
-  return preparationOf(row);
-}
-
-function decisionOf(row: TenderOpportunity): Decision {
-  return clientStatusOf(row);
-}
-
-function dueLabel(days: number) {
-  if (days < 0) return 'Overdue';
-  if (days === 0) return 'Due today';
-  if (days === 1) return 'Due in 1 day';
-  return `Due in ${days} days`;
-}
-
-function dueTone(days: number) {
-  if (days <= 1) return 'bg-orange-50 text-orange-600';
-  if (days === 2) return 'bg-amber-50 text-amber-600';
-  return 'bg-sky-50 text-sky-700';
-}
-
-function activityWhen(value: string) {
-  if (!value) return '—';
-  const parsed = new Date(value);
-  if (Number.isNaN(parsed.getTime())) return value;
-  const dayStart = (date: Date) => new Date(date.getFullYear(), date.getMonth(), date.getDate()).getTime();
-  const day = dayStart(parsed);
-  const today = dayStart(new Date());
-  const time = parsed.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
-  if (day === today) return `Today, ${time}`;
-  if (day === today - 86_400_000) return `Yesterday, ${time}`;
-  return formatWhen(value);
-}
-
-function activityIcon(action: string, details: string): { icon: LucideIcon; tint: string } {
-  const text = `${action} ${details}`.toLowerCase();
-  if (/award|won/.test(text)) return { icon: Trophy, tint: 'bg-emerald-50 text-emerald-600' };
-  if (/submit/.test(text)) return { icon: Send, tint: 'bg-blue-50 text-blue-600' };
-  if (/approv|review/.test(text)) return { icon: CheckCircle2, tint: 'bg-emerald-50 text-emerald-600' };
-  if (/clarif|enquir/.test(text)) return { icon: Mail, tint: 'bg-sky-50 text-sky-600' };
-  return { icon: FileText, tint: 'bg-violet-50 text-violet-600' };
-}
+const MAIN_TABS: DashTab[] = ['All Opportunities', 'ITT', 'RFQ', 'EOI', 'Awaiting GM Review', 'Awaiting MD Decision', 'Not Started', 'In Progress', 'Submitted'];
+const MORE_TABS: DashTab[] = ['Overdue', 'Closed'];
+const STATUS_ORDER: RegisterStatus[] = ['Awaiting GM Review', 'Awaiting MD Decision', 'Not Started', 'In Progress', 'Submitted', 'Closed'];
+const STATUS_COLOR: Record<RegisterStatus, string> = {
+  'Awaiting GM Review': '#f59e0b',
+  'Awaiting MD Decision': '#ef4444',
+  'Not Started': '#94a3b8',
+  'In Progress': '#2563eb',
+  Submitted: '#22c55e',
+  Closed: '#0f172a',
+};
+const TYPE_COLOR: Record<CommercialKind, string> = { ITT: '#2563eb', RFQ: '#7c3aed', EOI: '#16a34a' };
+const PREP_COLOR = { 'Not Started': '#94a3b8', 'In Progress': '#2563eb', Submitted: '#22c55e' };
+const CLIENT_COLOR: Record<ClientSlice, string> = {
+  Pending: '#94a3b8',
+  Suspended: '#f59e0b',
+  Cancelled: '#ef4444',
+  'Re-Opened': '#a855f7',
+  'Awarded (Yes)': '#16a34a',
+  'Awarded (No)': '#0f172a',
+};
+const KIND_TONE: Record<CommercialKind, string> = {
+  ITT: 'bg-blue-50 text-blue-700',
+  RFQ: 'bg-violet-50 text-violet-700',
+  EOI: 'bg-emerald-50 text-emerald-700',
+};
+const STATUS_TONE: Record<RegisterStatus, string> = {
+  'Not Started': 'bg-slate-100 text-slate-600',
+  'In Progress': 'bg-blue-50 text-blue-700',
+  Submitted: 'bg-emerald-50 text-emerald-700',
+  'Awaiting GM Review': 'bg-orange-50 text-orange-700',
+  'Awaiting MD Decision': 'bg-rose-50 text-rose-600',
+  Closed: 'bg-slate-100 text-slate-500',
+};
 
 const pct = (count: number, total: number) => (total ? Math.round((count / total) * 100) : 0);
+const priorityTone = (value: string) => value === 'High' ? 'bg-rose-50 text-rose-600' : value === 'Low' ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-700';
+const deadlineTone = (days: number) => {
+  if (days < 0) return 'text-rose-600';
+  if (days <= 2) return 'text-orange-600';
+  if (days <= 4) return 'text-blue-600';
+  return 'text-emerald-600';
+};
+const within = (value: string, from: string, to: string) => {
+  const day = (value || '').slice(0, 10);
+  if (!day) return !from && !to;
+  if (from && day < from) return false;
+  if (to && day > to) return false;
+  return true;
+};
+const overdue = (row: TenderOpportunity) => {
+  const state = registerStatusOf(row);
+  if (state === 'Closed' || state === 'Submitted') return false;
+  const internal = daysUntil(internalDeadlineOf(row));
+  const external = daysUntil(externalDeadlineOf(row));
+  return (internal != null && internal < 0) || (external != null && external < 0);
+};
+const matchesTab = (row: TenderOpportunity, tab: DashTab) => {
+  if (tab === 'All Opportunities') return true;
+  if (tab === 'ITT' || tab === 'RFQ' || tab === 'EOI') return commercialKindOf(row) === tab;
+  if (tab === 'Overdue') return overdue(row);
+  return registerStatusOf(row) === tab;
+};
+const clientSliceOf = (row: TenderOpportunity): ClientSlice => {
+  const award = awardedToDleOf(row);
+  if (award === 'Yes') return 'Awarded (Yes)';
+  if (award === 'No') return 'Awarded (No)';
+  const client = clientStatusOf(row);
+  if (client === 'Suspended' || client === 'Cancelled' || client === 'Re-Opened') return client;
+  return 'Pending';
+};
+const clientHref = (label: ClientSlice) => {
+  if (label === 'Awarded (Yes)') return '/commercial/tenders/awards';
+  if (label === 'Awarded (No)') return '/commercial/tenders/submission?status=Not%20Successful';
+  if (label === 'Pending') return '/commercial/tenders/submission?status=Awaiting%20Response';
+  return '/commercial/tenders/submission';
+};
+const activityWhen = (value: string) => {
+  const parsed = new Date(value);
+  if (!value || Number.isNaN(parsed.getTime())) return '—';
+  const date = parsed.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
+  const time = parsed.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
+  return `${date} ${time}`;
+};
+const activityText = (event: TenderAuditEvent, reference: string) => {
+  const action = event.action.toUpperCase();
+  const ref = reference || 'Opportunity';
+  if (action.includes('SUBMITTED_FOR_REVIEW') || action === 'CREATED') return `${ref} registered for GM Commercial review`;
+  if (action.includes('FORWARDED')) return `${ref} forwarded to the MD`;
+  if (action.includes('RETURNED')) return `${ref} returned for correction`;
+  if (action === 'BID') return `${ref} approved as BID`;
+  if (action.includes('NO_BID')) return `${ref} recorded as NO BID`;
+  if (action.includes('ASSIGN')) return `${ref} assigned to a responsible officer`;
+  if (action.includes('ACKNOWLEDG')) return `${ref} assignment acknowledged`;
+  if (action.includes('SUBMIT')) return `${ref} submitted to the client`;
+  if (action.includes('AWARD')) return `${ref} award updated`;
+  if (action.includes('DEADLINE') || action.includes('REASSIGN')) return `${ref} deadline or assignment updated`;
+  return `${ref} ${event.details || event.action}`;
+};
+const activityIcon = (action: string): { icon: LucideIcon; tint: string } => {
+  const text = action.toLowerCase();
+  if (/award/.test(text)) return { icon: Trophy, tint: 'bg-emerald-50 text-emerald-600' };
+  if (/submit/.test(text)) return { icon: Send, tint: 'bg-blue-50 text-blue-600' };
+  if (/bid|review|forward/.test(text)) return { icon: CheckCircle2, tint: 'bg-orange-50 text-orange-600' };
+  if (/assign|ack/.test(text)) return { icon: UserRound, tint: 'bg-violet-50 text-violet-600' };
+  return { icon: FileText, tint: 'bg-sky-50 text-sky-600' };
+};
 
 export function TenderDashboard() {
   const [rows, setRows] = useState<TenderOpportunity[]>([]);
@@ -80,82 +158,177 @@ export function TenderDashboard() {
   const [audit, setAudit] = useState<TenderAuditEvent[]>([]);
   const [error, setError] = useState('');
   const [ready, setReady] = useState(false);
-  const [deadlineTab, setDeadlineTab] = useState<'All' | 'Enquiries' | 'Tenders'>('All');
-  const [pastTab, setPastTab] = useState<'All' | 'Enquiries' | 'Tenders'>('All');
+  const [viewer, setViewer] = useState<{ name: string; code: string; roles: string[]; admin: boolean } | null>(null);
+  const [tab, setTab] = useState<DashTab>('All Opportunities');
+  const [moreOpen, setMoreOpen] = useState(false);
+  const [search, setSearch] = useState('');
+  const [appliedSearch, setAppliedSearch] = useState('');
+  const [client, setClient] = useState('All Clients');
+  const [sector, setSector] = useState('All Sectors');
+  const [officer, setOfficer] = useState('All Officers');
+  const [status, setStatus] = useState('All Statuses');
+  const [priority, setPriority] = useState('All Priorities');
+  const [type, setType] = useState('All Types');
+  const [internalFrom, setInternalFrom] = useState('');
+  const [internalTo, setInternalTo] = useState('');
+  const [externalFrom, setExternalFrom] = useState('');
+  const [externalTo, setExternalTo] = useState('');
+  const [applied, setApplied] = useState({ client: 'All Clients', sector: 'All Sectors', officer: 'All Officers', status: 'All Statuses', priority: 'All Priorities', type: 'All Types', internalFrom: '', internalTo: '', externalFrom: '', externalTo: '' });
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(5);
+  const [picked, setPicked] = useState<string[]>([]);
+  const [menuId, setMenuId] = useState('');
+  const [prepFilter, setPrepFilter] = useState<PrepFilter>('All Types');
+  const [modalOpen, setModalOpen] = useState(false);
+  const today = useMemo(() => new Date().toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' }), []);
 
-  useEffect(() => {
-    let active = true;
-    Promise.all([
+  const load = async () => {
+    const [opportunities, submissionRows, auditRows] = await Promise.all([
       tenderGet<TenderOpportunity[]>('opportunities'),
       tenderGet<TenderSubmission[]>('submissions'),
       tenderGet<TenderAuditEvent[]>('audit'),
-    ]).then(([opportunities, submissionRows, auditRows]) => {
-      if (!active) return;
-      setRows(opportunities);
-      setSubmittedIds(new Set(submissionRows.map((item) => item.opportunityId)));
-      setAudit(auditRows);
-    }).catch((reason) => {
-      if (active) setError(reason instanceof Error ? reason.message : 'Unable to read the tender register.');
-    }).finally(() => { if (active) setReady(true); });
+    ]);
+    setRows(opportunities);
+    setSubmittedIds(new Set(submissionRows.map((item) => item.opportunityId)));
+    setAudit(auditRows);
+  };
+
+  useEffect(() => {
+    let active = true;
+    load()
+      .catch((reason) => { if (active) setError(reason instanceof Error ? reason.message : 'Unable to read the tender register.'); })
+      .finally(() => { if (active) setReady(true); });
+    fetch('/api/auth/me', { cache: 'no-store', credentials: 'same-origin' })
+      .then((response) => (response.ok ? response.json() : null))
+      .then((json) => {
+        const data = json?.data || {};
+        if (!active) return;
+        setViewer({
+          name: String(data.fullName || ''),
+          code: String(data.employeeCode || ''),
+          roles: Array.isArray(data.roles) ? data.roles : [],
+          admin: Boolean(data.isGlobalAdmin) || (Array.isArray(data.roles) && data.roles.includes('Super Administrator')),
+        });
+      })
+      .catch(() => { if (active) setViewer({ name: '', code: '', roles: [], admin: false }); });
     return () => { active = false; };
   }, []);
 
-  const today = useMemo(() => new Date().toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' }), []);
-  const year = new Date().getFullYear();
+  const scoped = useMemo(() => {
+    if (!viewer) return rows;
+    if (viewer.admin || isBusinessManagingDirector(viewer.roles) || isBusinessGmCommercial(viewer.roles)) return rows;
+    const broad = viewer.roles.some((role) => /engineer|finance|legal|hse|commercial|proposal|sales|cfo|operations/i.test(role));
+    if (broad) return rows;
+    const mine = (value: string) => {
+      const text = value.toLowerCase();
+      return [viewer.name, viewer.code].filter(Boolean).some((part) => text.includes(part.toLowerCase()));
+    };
+    return rows.filter((row) => mine(row.ownerName) || mine(row.ownerEmployeeCode) || mine(row.createdBy));
+  }, [rows, viewer]);
 
-  const openRows = rows.filter((row) => !isTerminal(row));
-  const met = (row: TenderOpportunity) => prepOf(row) === 'Submitted' || isAwardedToDle(row) || submittedIds.has(row.id);
-  const enquiries = rows.filter(isEnquiry);
-  const tenders = rows.filter((row) => !isEnquiry(row));
-  const tally = (list: TenderOpportunity[]) => ({
-    notStarted: list.filter((row) => prepOf(row) === 'Not Started').length,
-    inProgress: list.filter((row) => prepOf(row) === 'In Progress').length,
-    submitted: list.filter((row) => prepOf(row) === 'Submitted').length,
-  });
-  const enquiryPrep = tally(enquiries);
-  const tenderPrep = tally(tenders);
-  const unassignedEnquiries = enquiries.filter((row) => !row.ownerName.trim()).length;
-  const unassignedTenders = tenders.filter((row) => !row.ownerName.trim()).length;
+  const countStatus = (statusName: RegisterStatus) => scoped.filter((row) => registerStatusOf(row) === statusName).length;
+  const countKind = (kind: CommercialKind) => scoped.filter((row) => commercialKindOf(row) === kind).length;
+  const submittedRows = scoped.filter((row) => bidChoiceOf(row) !== 'No Bid' && (submittedIds.has(row.id) || registerStatusOf(row) === 'Submitted'));
+  const activeRows = scoped.filter(isActiveResponse);
+  const overdueRows = scoped.filter(overdue);
+  const awardedRows = scoped.filter((row) => awardedToDleOf(row) === 'Yes');
+  const prepRows = scoped.filter((row) => isPreparationRecord(row) && (prepFilter === 'All Types' || commercialKindOf(row) === prepFilter));
+  const prepParts = (['Not Started', 'In Progress', 'Submitted'] as const).map((label) => ({
+    label,
+    count: prepRows.filter((row) => registerStatusOf(row) === label).length,
+    color: PREP_COLOR[label],
+    href: `/commercial/tenders/opportunities?tab=${encodeURIComponent(label)}`,
+  }));
+  const clientPopulation = scoped.filter((row) => bidChoiceOf(row) !== 'No Bid' && (submittedIds.has(row.id) || registerStatusOf(row) === 'Submitted' || clientStatusOf(row) !== 'Pending' || awardedToDleOf(row) !== 'Pending Decision'));
+  const clientParts = (Object.keys(CLIENT_COLOR) as ClientSlice[]).map((label) => ({
+    label,
+    count: clientPopulation.filter((row) => clientSliceOf(row) === label).length,
+    color: CLIENT_COLOR[label],
+    href: clientHref(label),
+  }));
+  const typeParts = (['ITT', 'RFQ', 'EOI'] as const).map((label) => ({
+    label: label === 'ITT' ? 'Invitation to Tender (ITT)' : label === 'RFQ' ? 'Request for Quotation (RFQ)' : 'Expression of Interest (EOI)',
+    short: label,
+    count: countKind(label),
+    color: TYPE_COLOR[label],
+    href: `/commercial/tenders/opportunities?tab=${label}`,
+  }));
+  const statusParts = STATUS_ORDER.map((label) => ({
+    label: label === 'Closed' ? 'Closed (No Bid)' : label,
+    count: countStatus(label),
+    color: STATUS_COLOR[label],
+    href: `/commercial/tenders/opportunities?tab=${encodeURIComponent(label)}`,
+  }));
 
-  const deadlineRows = openRows.map((row) => {
+  const deadlines = scoped.flatMap((row) => {
+    const items: Array<{ id: string; row: TenderOpportunity; kind: 'Internal Deadline' | 'External Deadline'; date: string; days: number; officer: string }> = [];
     const internal = internalDeadlineOf(row);
     const external = externalDeadlineOf(row);
     const internalDays = daysUntil(internal);
     const externalDays = daysUntil(external);
-    const nearest = [internalDays, externalDays].filter((value): value is number => value != null).sort((left, right) => left - right)[0];
-    return { row, internal, external, internalDays, externalDays, nearest };
-  }).filter((item) => item.nearest != null).sort((left, right) => (left.nearest ?? 0) - (right.nearest ?? 0));
+    if (internal && internalDays != null && internalDays >= 0 && internalDays <= 7) items.push({ id: `${row.id}-internal`, row, kind: 'Internal Deadline', date: internal, days: internalDays, officer: row.ownerName });
+    if (external && externalDays != null && externalDays >= 0 && externalDays <= 7) items.push({ id: `${row.id}-external`, row, kind: 'External Deadline', date: external, days: externalDays, officer: row.ownerName });
+    return items;
+  }).sort((left, right) => left.days - right.days || left.date.localeCompare(right.date));
 
-  const internalDue = deadlineRows.filter((item) => item.internalDays != null && item.internalDays <= 3);
-  const externalDue = deadlineRows.filter((item) => item.externalDays != null && item.externalDays <= 7);
-  const awardedRows = rows.filter(isAwardedToDle);
-  const awardedThisYear = awardedRows.filter((row) => (row.updatedAt || row.createdAt || '').startsWith(String(year))).length;
-  const awardedCount = awardedRows.length;
-  const submittedBids = rows.filter((row) => !isEnquiry(row) && (prepOf(row) === 'Submitted' || submittedIds.has(row.id))).length;
-  const pendingDecision = rows.filter((row) => awardedToDleOf(row) === 'Pending Decision' && prepOf(row) === 'Submitted').length;
-  const unsuccessful = rows.filter((row) => awardedToDleOf(row) === 'No').length;
-  const decidedOutcomes = awardedCount + unsuccessful;
-  const winRatePct = pct(awardedCount, decidedOutcomes);
+  const clients = useMemo(() => Array.from(new Set(scoped.map((row) => row.clientName).filter(Boolean))).sort(), [scoped]);
+  const sectors = useMemo(() => Array.from(new Set(scoped.map((row) => sectorOf(row)))).sort(), [scoped]);
+  const officers = useMemo(() => Array.from(new Set(scoped.map((row) => row.ownerName).filter(Boolean))).sort(), [scoped]);
+  const tabCount = (item: DashTab) => scoped.filter((row) => matchesTab(row, item)).length;
+  const filtered = useMemo(() => scoped.filter((row) => {
+    if (!matchesTab(row, tab)) return false;
+    const haystack = `${row.title} ${row.clientName} ${row.referenceNo} ${row.enquiryRef}`.toLowerCase();
+    if (appliedSearch && !haystack.includes(appliedSearch.toLowerCase())) return false;
+    if (applied.client !== 'All Clients' && row.clientName !== applied.client) return false;
+    if (applied.sector !== 'All Sectors' && sectorOf(row) !== applied.sector) return false;
+    if (applied.officer !== 'All Officers' && row.ownerName !== applied.officer) return false;
+    if (applied.status !== 'All Statuses' && registerStatusOf(row) !== applied.status) return false;
+    if (applied.priority !== 'All Priorities' && row.priority !== applied.priority) return false;
+    if (applied.type !== 'All Types' && commercialKindOf(row) !== applied.type) return false;
+    if (!within(internalDeadlineOf(row), applied.internalFrom, applied.internalTo)) return false;
+    if (!within(externalDeadlineOf(row), applied.externalFrom, applied.externalTo)) return false;
+    return true;
+  }), [applied, appliedSearch, scoped, tab]);
 
-  const upcomingRows = deadlineRows.filter((item) => (item.nearest ?? 0) >= 0);
-  const pastRows = deadlineRows.filter((item) => (item.nearest ?? 0) < 0 && !met(item.row));
-  const visibleDeadlines = upcomingRows.filter((item) => deadlineTab === 'All' || (deadlineTab === 'Enquiries' ? isEnquiry(item.row) : !isEnquiry(item.row)));
-  const visiblePast = pastRows.filter((item) => pastTab === 'All' || (pastTab === 'Enquiries' ? isEnquiry(item.row) : !isEnquiry(item.row)));
-  const classified = rows.map((row) => decisionOf(row));
-  const decisionCounts = DECISIONS.map((label) => ({ label, count: classified.filter((item) => item === label).length }));
-  const decisionTotal = rows.length;
+  useEffect(() => { setPage(1); }, [applied, appliedSearch, pageSize, tab]);
+  const pageCount = Math.max(1, Math.ceil(filtered.length / pageSize));
+  const safePage = Math.min(page, pageCount);
+  const pageRows = filtered.slice((safePage - 1) * pageSize, safePage * pageSize);
+  const pageIds = pageRows.map((row) => row.id);
+  const allPicked = pageIds.length > 0 && pageIds.every((id) => picked.includes(id));
+  const activities = audit.filter((event) => !event.opportunityId || scoped.some((row) => row.id === event.opportunityId)).slice(0, 5);
+
+  const applyFilters = () => {
+    setAppliedSearch(search.trim());
+    setApplied({ client, sector, officer, status, priority, type, internalFrom, internalTo, externalFrom, externalTo });
+  };
+  const clearFilters = () => {
+    setSearch('');
+    setAppliedSearch('');
+    setClient('All Clients');
+    setSector('All Sectors');
+    setOfficer('All Officers');
+    setStatus('All Statuses');
+    setPriority('All Priorities');
+    setType('All Types');
+    setInternalFrom('');
+    setInternalTo('');
+    setExternalFrom('');
+    setExternalTo('');
+    setApplied({ client: 'All Clients', sector: 'All Sectors', officer: 'All Officers', status: 'All Statuses', priority: 'All Priorities', type: 'All Types', internalFrom: '', internalTo: '', externalFrom: '', externalTo: '' });
+  };
 
   return (
     <div className="space-y-3">
       <section className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-white px-4 py-4 shadow-sm">
         <div className="flex items-center gap-3">
-          <span className="inline-flex h-11 w-11 items-center justify-center rounded-xl bg-[#2563eb] text-white"><FileText className="h-5 w-5" /></span>
+          <span className="inline-flex h-11 w-11 items-center justify-center rounded-xl bg-[#2563eb] text-white"><LayoutDashboard className="h-5 w-5" /></span>
           <div>
             <h1 className="text-[22px] font-black tracking-tight text-slate-950">Tender Management Dashboard</h1>
-            <p className="text-[12px] text-slate-500">Overview of enquiries, tender opportunities, assignments, deadlines and outcomes</p>
+            <p className="text-[12px] text-slate-500">Overview of commercial opportunities, key activities, deadlines and outcomes</p>
           </div>
         </div>
-        <div className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-[#f8fafc] px-3 py-2">
+        <div className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 shadow-sm">
           <CalendarDays className="h-4 w-4 text-slate-400" />
           <span>
             <span className="block text-[10px] font-semibold uppercase tracking-wide text-slate-400">Today</span>
@@ -163,227 +336,247 @@ export function TenderDashboard() {
           </span>
         </div>
       </section>
-
       {error ? <div className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">{error}</div> : null}
 
       <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-        <Kpi icon={Mail} tint="bg-blue-50 text-blue-600" value={enquiries.length} label="Total Enquiries" lines={[
-          [enquiryPrep.notStarted, 'Not Started', 'bg-slate-400'],
-          [enquiryPrep.inProgress, 'In Progress', 'bg-blue-500'],
-          [enquiryPrep.submitted, 'Submitted', 'bg-emerald-500'],
-        ]} />
-        <Kpi icon={FileText} tint="bg-orange-50 text-orange-500" value={tenders.length} label="Total Tender Opportunities" lines={[
-          [tenderPrep.notStarted, 'Not Started', 'bg-slate-400'],
-          [tenderPrep.inProgress, 'In Progress', 'bg-blue-500'],
-          [tenderPrep.submitted, 'Submitted', 'bg-emerald-500'],
-        ]} />
-        <Kpi icon={UserRound} tint="bg-amber-50 text-amber-600" value={unassignedEnquiries} label="Enquiries Awaiting GM Commercial Assignment" lines={[
-          [unassignedEnquiries, 'Awaiting assignment', 'bg-amber-500'],
-        ]} />
-        <Kpi icon={UserRound} tint="bg-rose-50 text-rose-500" value={unassignedTenders} label="Tenders Awaiting MD Assignment" lines={[
-          [unassignedTenders, 'Awaiting assignment', 'bg-rose-500'],
-        ]} />
-        <Kpi icon={Clock3} tint="bg-rose-50 text-rose-500" value={internalDue.length} label="Internal Deadlines Due" lines={[
-          [internalDue.filter((item) => (item.internalDays ?? 0) >= 0).length, 'in next 3 days', 'bg-rose-400'],
-          [internalDue.filter((item) => (item.internalDays ?? 0) < 0).length, 'Overdue', 'bg-rose-600'],
-        ]} />
-        <Kpi icon={CalendarDays} tint="bg-orange-50 text-orange-500" value={externalDue.length} label="External Deadlines Due" lines={[
-          [externalDue.filter((item) => (item.externalDays ?? 0) >= 0).length, 'in next 7 days', 'bg-orange-400'],
-          [externalDue.filter((item) => (item.externalDays ?? 0) < 0).length, 'Overdue', 'bg-orange-600'],
-        ]} />
-        <Kpi icon={Send} tint="bg-blue-50 text-blue-600" value={submittedBids} label="Submitted Bids" lines={[
-          [pendingDecision, 'Pending Decision', 'bg-slate-400'],
-        ]} />
-        <Kpi icon={Trophy} tint="bg-emerald-50 text-emerald-600" value={awardedCount} label="Awarded to DLE" lines={[
-          [awardedThisYear, 'Yes, this year', 'bg-emerald-500'],
-          [unsuccessful, 'No', 'bg-rose-500'],
-          [pendingDecision, 'Pending Decision', 'bg-slate-400'],
-        ]} />
+        <Metric href="/commercial/tenders/opportunities" icon={Briefcase} tint="bg-blue-50 text-blue-600" value={scoped.length} label="Total Opportunities" loading={!ready} />
+        <Metric href="/commercial/tenders/opportunities?tab=ITT" icon={FileText} tint="bg-blue-50 text-blue-600" value={countKind('ITT')} label="Invitation to Tender (ITT)" loading={!ready} />
+        <Metric href="/commercial/tenders/opportunities?tab=RFQ" icon={FileText} tint="bg-emerald-50 text-emerald-600" value={countKind('RFQ')} label="Request for Quotation (RFQ)" loading={!ready} />
+        <Metric href="/commercial/tenders/opportunities?tab=EOI" icon={FileText} tint="bg-violet-50 text-violet-600" value={countKind('EOI')} label="Expression of Interest (EOI)" loading={!ready} />
+      </section>
+      <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-6">
+        <Metric href="/commercial/tenders/opportunities?tab=Awaiting%20GM%20Review" icon={Users} tint="bg-orange-100 text-orange-600" surface="bg-[#fff6ec]" value={countStatus('Awaiting GM Review')} label="Awaiting GM Commercial Review" loading={!ready} />
+        <Metric href="/commercial/tenders/opportunities?tab=Awaiting%20MD%20Decision" icon={UserRound} tint="bg-rose-100 text-rose-600" surface="bg-[#fff1f2]" value={countStatus('Awaiting MD Decision')} label="Awaiting MD Decision" loading={!ready} />
+        <Metric href="/commercial/tenders/opportunities?view=active" icon={Clock3} tint="bg-blue-100 text-blue-600" surface="bg-[#eef6ff]" value={activeRows.length} label="Active Responses" loading={!ready} />
+        <Metric href="/commercial/tenders/opportunities?tab=Overdue" icon={Clock3} tint="bg-rose-100 text-rose-500" surface="bg-[#fff1f4]" value={overdueRows.length} label="Overdue Deadlines" loading={!ready} />
+        <Metric href="/commercial/tenders/opportunities?tab=Submitted" icon={Plane} tint="bg-blue-100 text-blue-600" surface="bg-[#eef6ff]" value={submittedRows.length} label="Submitted Bids" loading={!ready} />
+        <Metric href="/commercial/tenders/awards" icon={Trophy} tint="bg-emerald-100 text-emerald-600" surface="bg-[#eefbf3]" value={awardedRows.length} label="Awarded to DLE" loading={!ready} />
       </section>
 
-      <section className="grid items-start gap-3 xl:grid-cols-12">
-        <article className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm xl:col-span-7">
-          <div className="flex flex-wrap items-center justify-between gap-2 px-4 pt-4">
-            <h2 className="text-[15px] font-black text-slate-950">Upcoming Deadlines</h2>
-            <Link href="/commercial/tenders/opportunities" className="text-[12px] font-semibold text-blue-600">View All</Link>
-          </div>
-          <div className="flex gap-2 px-4 py-3">
-            {(['All', 'Enquiries', 'Tenders'] as const).map((tab) => {
-              const count = tab === 'All' ? upcomingRows.length : upcomingRows.filter((item) => (tab === 'Enquiries' ? isEnquiry(item.row) : !isEnquiry(item.row))).length;
-              return <TabButton key={tab} active={deadlineTab === tab} label={`${tab} (${count})`} onClick={() => setDeadlineTab(tab)} />;
-            })}
-          </div>
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-[640px] text-left text-[12px]">
-              <thead className="text-[11px] uppercase text-slate-400"><tr>{['#', 'Type', 'Title', 'Officer', 'Internal Deadline', 'External Deadline', 'Status'].map((heading) => <th key={heading} className="px-4 pb-2 font-semibold">{heading}</th>)}</tr></thead>
-              <tbody>
-                {visibleDeadlines.length === 0 ? <tr><td colSpan={7} className="px-4 py-8 text-center text-slate-500">{ready ? 'No upcoming deadlines.' : 'Loading register…'}</td></tr> : visibleDeadlines.slice(0, 6).map((item, index) => (
-                  <tr key={item.row.id} className="border-t border-slate-100">
-                    <td className="px-4 py-2.5 text-slate-400">{index + 1}</td>
-                    <td className="px-4 py-2.5 text-slate-600">{isEnquiry(item.row) ? 'Enquiry' : 'Tender'}</td>
-                    <td className="px-4 py-2.5 font-semibold text-slate-800"><Link href={`/commercial/tenders/workspace?id=${item.row.id}`}>{item.row.title}</Link></td>
-                    <td className="px-4 py-2.5">{item.row.ownerName || 'Unassigned'}</td>
-                    <td className="px-4 py-2.5">{item.internal ? formatWhen(item.internal) : '—'}</td>
-                    <td className="px-4 py-2.5">{item.external ? formatWhen(item.external) : '—'}</td>
-                    <td className="px-4 py-2.5">{item.nearest == null ? '—' : <span className={`rounded-md px-2 py-0.5 text-[11px] font-bold ${dueTone(item.nearest)}`}>{dueLabel(item.nearest)}</span>}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </article>
-
-        <article className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm xl:col-span-5">
-          <div className="flex items-center justify-between">
-            <h2 className="text-[15px] font-black text-slate-950">Preparation & Submission Status</h2>
-            <Link href="/commercial/tenders/bid-preparation" className="text-[12px] font-semibold text-blue-600">View Details</Link>
-          </div>
-          <div className="mt-3 flex gap-2">
-            <span className="rounded-lg bg-slate-100 px-3 py-1.5 text-[12px] font-bold text-slate-600">Enquiries ({enquiries.length})</span>
-            <span className="rounded-lg bg-slate-100 px-3 py-1.5 text-[12px] font-bold text-slate-600">Tenders ({tenders.length})</span>
-          </div>
-          <div className="mt-4 grid gap-4 sm:grid-cols-2">
-            <StatusDonut title="Enquiries" total={enquiries.length} parts={[
-              ['Not Started', enquiryPrep.notStarted, PREP_COLORS['Not Started']],
-              ['In Progress', enquiryPrep.inProgress, PREP_COLORS['In Progress']],
-              ['Submitted', enquiryPrep.submitted, PREP_COLORS.Submitted],
-            ]} />
-            <StatusDonut title="Tenders" total={tenders.length} parts={[
-              ['Not Started', tenderPrep.notStarted, PREP_COLORS['Not Started']],
-              ['In Progress', tenderPrep.inProgress, PREP_COLORS['In Progress']],
-              ['Submitted', tenderPrep.submitted, PREP_COLORS.Submitted],
-            ]} />
-          </div>
-        </article>
-      </section>
-
-      <section className="grid items-start gap-3 xl:grid-cols-12">
-        <article className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm xl:col-span-6">
-          <div className="flex items-center justify-between px-4 pt-4">
-            <h2 className="text-[15px] font-black text-slate-950">Past Deadlines</h2>
-            <Link href="/commercial/tenders/opportunities" className="text-[12px] font-semibold text-blue-600">View All</Link>
-          </div>
-          <p className="px-4 pt-1 text-[12px] text-slate-500">Deadlines that have passed and were not met.</p>
-          <div className="flex gap-2 px-4 py-3">
-            {(['All', 'Enquiries', 'Tenders'] as const).map((tab) => {
-              const count = tab === 'All' ? pastRows.length : pastRows.filter((item) => (tab === 'Enquiries' ? isEnquiry(item.row) : !isEnquiry(item.row))).length;
-              return <TabButton key={tab} active={pastTab === tab} label={`${tab} (${count})`} onClick={() => setPastTab(tab)} />;
-            })}
-          </div>
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-[640px] text-left text-[12px]">
-              <thead className="text-[11px] uppercase text-slate-400"><tr>{['#', 'Type', 'Title', 'Officer', 'Internal Deadline', 'External Deadline', 'Status'].map((heading) => <th key={heading} className="px-4 pb-2 font-semibold">{heading}</th>)}</tr></thead>
-              <tbody>
-                {visiblePast.length === 0 ? <tr><td colSpan={7} className="px-4 py-8 text-center text-slate-500">{ready ? 'No past deadlines were missed.' : 'Loading register…'}</td></tr> : visiblePast.slice(0, 6).map((item, index) => (
-                  <tr key={item.row.id} className="border-t border-slate-100">
-                    <td className="px-4 py-2.5 text-slate-400">{index + 1}</td>
-                    <td className="px-4 py-2.5 text-slate-600">{isEnquiry(item.row) ? 'Enquiry' : 'Tender'}</td>
-                    <td className="px-4 py-2.5 font-semibold text-slate-800"><Link href={`/commercial/tenders/workspace?id=${item.row.id}`}>{item.row.title}</Link></td>
-                    <td className="px-4 py-2.5">{item.row.ownerName || 'Unassigned'}</td>
-                    <td className="px-4 py-2.5">{item.internal ? formatWhen(item.internal) : '—'}</td>
-                    <td className="px-4 py-2.5">{item.external ? formatWhen(item.external) : '—'}</td>
-                    <td className="px-4 py-2.5"><span className="rounded-md bg-rose-50 px-2 py-0.5 text-[11px] font-bold text-rose-600">{item.nearest == null ? 'Not met' : `${dueLabel(item.nearest)} · Escalated`}</span></td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </article>
-
-        <article className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm xl:col-span-3">
-          <div className="mb-2 flex items-center justify-between">
-            <h2 className="text-[15px] font-black text-slate-950">Recent Activities</h2>
-            <Link href="/commercial/tenders/reports" className="text-[12px] font-semibold text-blue-600">View All</Link>
-          </div>
-          {audit.length === 0 ? <p className="py-8 text-center text-[12px] text-slate-500">{ready ? 'No activity has been recorded.' : 'Loading register…'}</p> : audit.slice(0, 6).map((event) => {
-            const visual = activityIcon(event.action, event.details);
-            const Icon = visual.icon;
-            const parent = rows.find((row) => row.id === event.opportunityId);
-            return (
-              <div key={event.id} className="flex items-start gap-2 border-t border-slate-50 py-2 first:border-0">
-                <span className={`inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-lg ${visual.tint}`}><Icon className="h-3.5 w-3.5" /></span>
-                <div className="min-w-0 flex-1">
-                  <div className="truncate text-[12px] font-semibold text-slate-800">{event.details || event.action}</div>
-                  <div className="truncate text-[11px] text-slate-400">{parent?.title || event.actor || '—'}</div>
-                </div>
-                <div className="shrink-0 text-[11px] text-slate-400">{activityWhen(event.createdAt)}</div>
-              </div>
-            );
-          })}
-        </article>
-
-        <article className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm xl:col-span-3">
-          <div className="mb-3 flex items-center justify-between">
-            <h2 className="text-[15px] font-black text-slate-950">Client Decision Status</h2>
-            <Link href="/commercial/tenders/awards" className="text-[12px] font-semibold text-blue-600">View Details</Link>
-          </div>
-          <div className="flex items-center gap-3">
-            <Ring
-              parts={decisionCounts.map((item) => ({ value: item.count, color: DECISION_COLORS[item.label] }))}
-              center={String(decisionTotal)}
-              caption="Opportunities"
-            />
-            <ul className="space-y-2 text-[12px]">
-              {decisionCounts.map((item) => (
-                <li key={item.label} className="flex items-center gap-2">
-                  <i className="h-2 w-2 rounded-full" style={{ background: DECISION_COLORS[item.label] }} />
-                  <span className="w-28 text-slate-600">{item.label}</span>
-                  <b className="text-slate-800">{item.count}</b>
-                  <span className="text-slate-400">({pct(item.count, decisionTotal)}%)</span>
+      <section className="grid items-stretch gap-3 xl:grid-cols-3">
+        <Panel title="Opportunities by Type">
+          <Donut parts={typeParts} total={scoped.length} caption="Total" />
+        </Panel>
+        <Panel title="Opportunities by Status">
+          <Donut parts={statusParts} total={scoped.length} caption="Total" />
+        </Panel>
+        <Panel title="Key Deadlines (Next 7 Days)" action={<Link href="/commercial/tenders/opportunities" className="text-[12px] font-semibold text-blue-600">View All</Link>}>
+          {deadlines.length === 0 ? <p className="py-8 text-center text-[12px] text-slate-500">{ready ? 'No deadlines fall in the next 7 days.' : 'Loading deadlines…'}</p> : (
+            <ul className="divide-y divide-slate-100">
+              {deadlines.slice(0, 5).map((item) => (
+                <li key={item.id}>
+                  <Link href={`/commercial/tenders/opportunities?id=${item.row.id}`} className="grid grid-cols-[92px_minmax(0,1fr)_auto] items-center gap-2 py-2.5 hover:bg-slate-50" title={`${item.row.title}${item.officer ? ` · ${item.officer}` : ''}`}>
+                    <span className="text-[12px] font-semibold text-slate-700">{formatWhen(item.date)}</span>
+                    <span className="min-w-0">
+                      <span className="block truncate text-[12px] font-bold text-slate-800">{item.row.referenceNo}</span>
+                      <span className="block truncate text-[11px] text-slate-400">{item.kind}{item.officer ? ` · ${item.officer}` : ''}</span>
+                    </span>
+                    <span className={`text-[12px] font-bold ${deadlineTone(item.days)}`}>{item.days === 0 ? 'Due today' : item.days === 1 ? '1 day left' : `${item.days} days left`}</span>
+                  </Link>
                 </li>
               ))}
             </ul>
+          )}
+        </Panel>
+      </section>
+
+      <section className="grid items-start gap-3 xl:grid-cols-[minmax(0,1fr)_320px]">
+        <article className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+          <div className="flex flex-wrap items-center justify-between gap-2 px-4 pt-4">
+            <h2 className="text-[15px] font-black text-slate-950">Recent Opportunities</h2>
+            <div className="flex items-center gap-2">
+              <Link href="/commercial/tenders/opportunities" className="text-[12px] font-semibold text-blue-600">View All</Link>
+              <button type="button" onClick={() => setModalOpen(true)} className="inline-flex h-9 items-center gap-1 rounded-lg bg-[#2563eb] px-3 text-[12px] font-bold text-white"><Plus className="h-3.5 w-3.5" /> New Opportunity <ChevronDown className="h-3.5 w-3.5" /></button>
+            </div>
           </div>
-          <div className="mt-3 flex items-center justify-between border-t border-slate-100 pt-3 text-[12px]">
-            <span className="font-semibold text-slate-600">Win rate</span>
-            <span>
-              <b className="text-slate-800">{awardedCount}</b>
-              <span className="text-slate-400"> ({winRatePct}%)</span>
-            </span>
+          <div className="mt-2 flex items-center gap-1 overflow-x-auto border-b border-slate-100 px-3">
+            {MAIN_TABS.map((item) => (
+              <button key={item} type="button" onClick={() => setTab(item)} className={`whitespace-nowrap border-b-2 px-2.5 py-2 text-[12px] font-semibold ${tab === item ? 'border-[#2563eb] text-[#2563eb]' : 'border-transparent text-slate-500'}`}>
+                {item === 'All Opportunities' ? 'All Opportunities' : item === 'Awaiting GM Review' ? 'Awaiting GM Review' : item === 'Awaiting MD Decision' ? 'Awaiting MD Decision' : item} ({tabCount(item)})
+              </button>
+            ))}
+            <div className="relative">
+              <button type="button" onClick={() => setMoreOpen((value) => !value)} className={`border-b-2 px-2 py-2 ${MORE_TABS.includes(tab) ? 'border-[#2563eb] text-[#2563eb]' : 'border-transparent text-slate-500'}`} aria-label="More register tabs"><ChevronDown className="h-4 w-4" /></button>
+              {moreOpen ? (
+                <div className="absolute right-0 z-10 w-40 rounded-xl border border-slate-200 bg-white py-1 text-[12px] shadow-lg">
+                  {MORE_TABS.map((item) => (
+                    <button key={item} type="button" onClick={() => { setTab(item); setMoreOpen(false); }} className="block w-full px-3 py-2 text-left hover:bg-slate-50">{item} ({tabCount(item)})</button>
+                  ))}
+                </div>
+              ) : null}
+            </div>
+          </div>
+          <div className="space-y-2 px-3 py-3">
+            <div className="grid gap-2 lg:grid-cols-[minmax(180px,1.3fr)_repeat(4,minmax(120px,1fr))]">
+              <label className="relative">
+                <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                <input value={search} onChange={(event) => setSearch(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') applyFilters(); }} placeholder="Search by title, client, reference no..." className="h-10 w-full rounded-lg border border-slate-200 bg-[#f8fafc] pl-9 pr-3 text-[12px]" aria-label="Search opportunities" />
+              </label>
+              <Filter label="Client" value={client} onChange={setClient} options={['All Clients', ...clients]} />
+              <Filter label="Sector" value={sector} onChange={setSector} options={['All Sectors', ...sectors]} />
+              <Filter label="Officer" value={officer} onChange={setOfficer} options={['All Officers', ...officers]} />
+              <Filter label="Status" value={status} onChange={setStatus} options={['All Statuses', ...STATUS_ORDER]} />
+            </div>
+            <div className="grid gap-2 lg:grid-cols-[repeat(4,minmax(110px,1fr))_auto]">
+              <Filter label="Priority" value={priority} onChange={setPriority} options={['All Priorities', 'High', 'Medium', 'Low']} />
+              <Filter label="Type" value={type} onChange={setType} options={['All Types', 'ITT', 'RFQ', 'EOI']} />
+              <label className="text-[11px] font-semibold text-slate-400">Internal
+                <span className="mt-1 flex gap-1"><input type="date" value={internalFrom} onChange={(event) => setInternalFrom(event.target.value)} aria-label="Internal deadline from" className="h-10 w-full rounded-lg border border-slate-200 px-1 text-[11px]" /><input type="date" value={internalTo} onChange={(event) => setInternalTo(event.target.value)} aria-label="Internal deadline to" className="h-10 w-full rounded-lg border border-slate-200 px-1 text-[11px]" /></span>
+              </label>
+              <label className="text-[11px] font-semibold text-slate-400">External
+                <span className="mt-1 flex gap-1"><input type="date" value={externalFrom} onChange={(event) => setExternalFrom(event.target.value)} aria-label="External deadline from" className="h-10 w-full rounded-lg border border-slate-200 px-1 text-[11px]" /><input type="date" value={externalTo} onChange={(event) => setExternalTo(event.target.value)} aria-label="External deadline to" className="h-10 w-full rounded-lg border border-slate-200 px-1 text-[11px]" /></span>
+              </label>
+              <div className="flex items-end gap-2">
+                <button type="button" onClick={clearFilters} className="inline-flex h-10 items-center gap-1 text-[12px] font-semibold text-slate-500"><X className="h-3.5 w-3.5" /> Clear Filters</button>
+                <button type="button" onClick={applyFilters} className="inline-flex h-10 items-center gap-1 rounded-lg bg-[#2563eb] px-3 text-[12px] font-bold text-white"><Search className="h-3.5 w-3.5" /> Search</button>
+              </div>
+            </div>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[1100px] text-left text-[12px]">
+              <thead className="bg-[#f8fafc] text-[11px] uppercase tracking-wide text-slate-400">
+                <tr>{['', '#', 'Reference No.', 'Client', 'Project Title', 'Type', 'Sector', 'Received', 'Internal Deadline', 'External Deadline', 'Priority', 'Status', 'Actions'].map((heading) => <th key={heading || 'select'} className="px-3 py-2.5 font-semibold">{heading === '' ? <input type="checkbox" checked={allPicked} onChange={() => setPicked(allPicked ? picked.filter((id) => !pageIds.includes(id)) : Array.from(new Set([...picked, ...pageIds])))} aria-label="Select page" /> : heading}</th>)}</tr>
+              </thead>
+              <tbody>
+                {!ready ? Array.from({ length: 5 }, (_, index) => <tr key={index} className="border-t border-slate-100"><td colSpan={13} className="px-3 py-3"><div className="h-4 animate-pulse rounded bg-slate-100" /></td></tr>) : pageRows.length === 0 ? <tr><td colSpan={13} className="px-4 py-10 text-center text-slate-500">No commercial opportunities match this view.</td></tr> : pageRows.map((row, index) => {
+                  const kind = commercialKindOf(row);
+                  const state = registerStatusOf(row);
+                  const internal = internalDeadlineOf(row);
+                  const external = externalDeadlineOf(row);
+                  const internalDays = daysUntil(internal);
+                  return (
+                    <tr key={row.id} className="border-t border-slate-100 hover:bg-slate-50/70">
+                      <td className="px-3 py-2.5"><input type="checkbox" checked={picked.includes(row.id)} onChange={() => setPicked((current) => current.includes(row.id) ? current.filter((id) => id !== row.id) : [...current, row.id])} aria-label={`Select ${row.referenceNo}`} /></td>
+                      <td className="px-3 py-2.5 text-slate-400">{(safePage - 1) * pageSize + index + 1}</td>
+                      <td className="px-3 py-2.5 font-semibold text-blue-700"><Link href={`/commercial/tenders/opportunities?id=${row.id}`}>{row.referenceNo || '—'}</Link></td>
+                      <td className="px-3 py-2.5 font-semibold text-slate-800">{row.clientName || '—'}</td>
+                      <td className="max-w-[240px] truncate px-3 py-2.5 text-slate-700" title={row.ownerName ? `Officer: ${row.ownerName}` : row.title}><Link href={`/commercial/tenders/opportunities?id=${row.id}`}>{row.title}</Link></td>
+                      <td className="px-3 py-2.5"><span className={`rounded-md px-2 py-0.5 text-[11px] font-bold ${KIND_TONE[kind]}`}>{kind}</span></td>
+                      <td className="px-3 py-2.5 text-slate-600">{sectorOf(row)}</td>
+                      <td className="px-3 py-2.5 text-slate-600">{formatWhen(receivedOn(row))}</td>
+                      <td className={`px-3 py-2.5 font-semibold ${internalDays != null && internalDays < 0 ? 'text-rose-600' : internalDays != null && internalDays <= 3 ? 'text-orange-600' : 'text-slate-700'}`}>{internal ? formatWhen(internal) : '—'}</td>
+                      <td className="px-3 py-2.5 text-slate-700">{external ? formatWhen(external) : '—'}</td>
+                      <td className="px-3 py-2.5"><span className={`rounded-md px-2 py-0.5 text-[11px] font-bold ${priorityTone(row.priority)}`}>{row.priority || '—'}</span></td>
+                      <td className="px-3 py-2.5"><span className={`rounded-md px-2 py-0.5 text-[11px] font-bold ${STATUS_TONE[state]}`}>{state}</span></td>
+                      <td className="px-3 py-2.5">
+                        <RowMenu open={menuId === row.id} label={`Actions for ${row.referenceNo}`} onToggle={() => setMenuId(menuId === row.id ? '' : row.id)}>
+                          <Link href={`/commercial/tenders/opportunities?id=${row.id}`} className="block px-3 py-2 hover:bg-slate-50" onClick={() => setMenuId('')}>View details</Link>
+                          <Link href={`/commercial/tenders/approvals?id=${row.id}`} className="block px-3 py-2 hover:bg-slate-50" onClick={() => setMenuId('')}>Open approval</Link>
+                        </RowMenu>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+          <div className="flex flex-wrap items-center justify-between gap-2 border-t border-slate-100 px-4 py-3 text-[12px] text-slate-500">
+            <span>Showing {filtered.length === 0 ? 0 : (safePage - 1) * pageSize + 1} to {Math.min(safePage * pageSize, filtered.length)} of {filtered.length} opportunities</span>
+            <div className="flex items-center gap-1">
+              <button type="button" disabled={safePage <= 1} onClick={() => setPage(safePage - 1)} className="h-8 rounded-lg border border-slate-200 px-2 disabled:opacity-40" aria-label="Previous page">‹</button>
+              {Array.from({ length: pageCount }, (_, index) => index + 1).filter((number) => Math.abs(number - safePage) <= 2).map((number) => (
+                <button key={number} type="button" onClick={() => setPage(number)} className={`h-8 min-w-8 rounded-lg px-2 ${safePage === number ? 'bg-[#2563eb] text-white' : 'border border-slate-200'}`}>{number}</button>
+              ))}
+              <button type="button" disabled={safePage >= pageCount} onClick={() => setPage(safePage + 1)} className="h-8 rounded-lg border border-slate-200 px-2 disabled:opacity-40" aria-label="Next page">›</button>
+              <label className="ml-2 inline-flex items-center gap-1">Show
+                <select value={pageSize} onChange={(event) => setPageSize(Number(event.target.value))} className="h-8 rounded-lg border border-slate-200 px-2" aria-label="Rows per page">{[5, 10, 25].map((size) => <option key={size}>{size}</option>)}</select>
+              </label>
+            </div>
           </div>
         </article>
+
+        <div className="space-y-3">
+          <Panel title="Preparation & Submission Status" action={<Link href="/commercial/tenders/bid-preparation" className="text-[12px] font-semibold text-blue-600">View Details</Link>}>
+            <div className="mb-3 flex gap-1">
+              {(['All Types', 'ITT', 'RFQ', 'EOI'] as const).map((item) => (
+                <button key={item} type="button" onClick={() => setPrepFilter(item)} className={`rounded-lg px-2.5 py-1 text-[11px] font-bold ${prepFilter === item ? 'bg-[#2563eb] text-white' : 'bg-slate-100 text-slate-600'}`}>{item}</button>
+              ))}
+            </div>
+            <Donut parts={prepParts} total={prepRows.length} caption="Active" />
+          </Panel>
+          <Panel title="Client Decision Status" action={<Link href="/commercial/tenders/submission" className="text-[12px] font-semibold text-blue-600">View Details</Link>}>
+            <Donut parts={clientParts} total={clientPopulation.length} caption="Submitted" />
+          </Panel>
+          <Panel title="Recent Activities" action={<Link href="/commercial/tenders/reports" className="text-[12px] font-semibold text-blue-600">View All</Link>}>
+            {activities.length === 0 ? <p className="py-6 text-center text-[12px] text-slate-500">{ready ? 'No activity has been recorded.' : 'Loading activity…'}</p> : activities.map((event) => {
+              const parent = scoped.find((row) => row.id === event.opportunityId);
+              const visual = activityIcon(event.action);
+              const Icon = visual.icon;
+              return (
+                <Link key={event.id} href={parent ? `/commercial/tenders/opportunities?id=${parent.id}` : '/commercial/tenders/reports'} className="flex items-start gap-2 border-t border-slate-50 py-2 first:border-0">
+                  <span className={`inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full ${visual.tint}`}><Icon className="h-3.5 w-3.5" /></span>
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate text-[12px] font-semibold text-slate-800">{activityText(event, parent?.referenceNo || '')}</span>
+                    <span className="block truncate text-[11px] text-slate-400">{event.actor} · {activityWhen(event.createdAt)}</span>
+                  </span>
+                </Link>
+              );
+            })}
+          </Panel>
+        </div>
       </section>
+
+      <CommercialOpportunityModal
+        open={modalOpen}
+        clients={clients}
+        onClose={() => setModalOpen(false)}
+        onSaved={() => { setModalOpen(false); void load().catch((reason) => setError(reason instanceof Error ? reason.message : 'Unable to refresh the dashboard.')); }}
+      />
     </div>
   );
 }
 
-function Kpi({ icon: Icon, tint, value, label, lines }: { icon: LucideIcon; tint: string; value: number; label: string; lines: Array<[number, string, string]> }) {
+function Metric({ href, icon: Icon, tint, surface = 'bg-white', value, label, loading }: { href: string; icon: LucideIcon; tint: string; surface?: string; value: number; label: string; loading: boolean }) {
   return (
-    <article className="rounded-2xl border border-slate-200 bg-white p-3 shadow-sm">
-      <div className="flex items-start gap-2">
-        <span className={`inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-xl ${tint}`}><Icon className="h-4 w-4" /></span>
-        <div>
-          <div className="text-[22px] font-black leading-none text-slate-950">{value}</div>
-          <div className="mt-1 text-[11px] font-semibold leading-tight text-slate-500">{label}</div>
-        </div>
+    <Link href={href} className={`flex min-h-[84px] items-center gap-3 rounded-2xl border border-slate-200/80 px-4 py-3 shadow-sm transition hover:-translate-y-0.5 hover:shadow-md ${surface}`}>
+      <span className={`inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ${tint}`}><Icon className="h-4 w-4" /></span>
+      <span>
+        <span className="block text-[26px] font-black leading-none text-slate-950">{loading ? '—' : value}</span>
+        <span className="mt-1 block text-[12px] font-semibold leading-tight text-slate-500">{label}</span>
+      </span>
+    </Link>
+  );
+}
+
+function Panel({ title, action, children }: { title: string; action?: ReactNode; children: ReactNode }) {
+  return (
+    <article className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+      <div className="mb-2 flex items-center justify-between gap-2">
+        <h2 className="text-[15px] font-black text-slate-950">{title}</h2>
+        {action}
       </div>
-      <ul className="mt-3 space-y-1">
-        {lines.map(([count, caption, dot]) => (
-          <li key={caption} className="flex items-center gap-1.5 text-[11px] text-slate-500">
-            <i className={`h-1.5 w-1.5 rounded-full ${dot}`} />
-            <b className="text-slate-700">{count}</b> {caption}
-          </li>
-        ))}
-      </ul>
+      {children}
     </article>
   );
 }
 
-function TabButton({ active, label, onClick }: { active: boolean; label: string; onClick: () => void }) {
-  return <button type="button" onClick={onClick} className={`rounded-lg px-3 py-1.5 text-[12px] font-bold ${active ? 'bg-[#2563eb] text-white' : 'bg-slate-100 text-slate-600'}`}>{label}</button>;
-}
-
-function StatusDonut({ title, total, parts }: { title: string; total: number; parts: Array<[string, number, string]> }) {
+function Donut({ parts, total, caption }: { parts: Array<{ label: string; count: number; color: string; href: string }>; total: number; caption: string }) {
+  const radius = 38;
+  const circumference = 2 * Math.PI * radius;
+  let cursor = 0;
   return (
-    <div className="flex items-center gap-3">
-      <Ring parts={parts.map(([, count, color]) => ({ value: count, color }))} center={String(total)} caption={title} />
-      <ul className="space-y-1.5 text-[12px]">
-        {parts.map(([label, count, color]) => (
-          <li key={label} className="flex items-center gap-2 text-slate-600">
-            <i className="h-2 w-2 rounded-full" style={{ background: color }} />
-            <span className="flex-1">{label}</span>
-            <b className="text-slate-800">{count}</b>
-            <span className="w-10 text-right text-slate-400">{pct(count, total)}%</span>
+    <div className="flex items-center gap-4">
+      <svg viewBox="0 0 100 100" className="h-[132px] w-[132px] shrink-0">
+        <circle cx="50" cy="50" r={radius} fill="none" stroke="#eef2f7" strokeWidth="12" />
+        {total > 0 ? parts.map((part) => {
+          if (!part.count) return null;
+          const length = (part.count / total) * circumference;
+          const node = <circle key={part.label} cx="50" cy="50" r={radius} fill="none" stroke={part.color} strokeWidth="12" strokeDasharray={`${length} ${circumference - length}`} strokeDashoffset={-cursor} strokeLinecap="butt" transform="rotate(-90 50 50)" />;
+          cursor += length;
+          return node;
+        }) : null}
+        <text x="50" y="48" textAnchor="middle" fill="#0f172a" fontSize="16" fontWeight="800">{total}</text>
+        <text x="50" y="62" textAnchor="middle" fill="#94a3b8" fontSize="8">{caption}</text>
+      </svg>
+      <ul className="min-w-0 flex-1 space-y-1.5">
+        {parts.map((part) => (
+          <li key={part.label}>
+            <Link href={part.href} className="flex items-center gap-2 text-[12px] text-slate-600 hover:text-blue-700">
+              <i className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ background: part.color }} />
+              <span className="min-w-0 flex-1 truncate">{part.label}</span>
+              <b className="text-slate-900">{part.count}</b>
+              <span className="w-10 text-right text-slate-400">({pct(part.count, total)}%)</span>
+            </Link>
           </li>
         ))}
       </ul>
@@ -391,23 +584,10 @@ function StatusDonut({ title, total, parts }: { title: string; total: number; pa
   );
 }
 
-function Ring({ parts, center, caption }: { parts: Array<{ value: number; color: string }>; center: string; caption: string }) {
-  const radius = 36;
-  const circumference = 2 * Math.PI * radius;
-  const total = parts.reduce((sum, part) => sum + part.value, 0);
-  let cursor = 0;
+function Filter({ label, value, onChange, options }: { label: string; value: string; onChange: (value: string) => void; options: string[] }) {
   return (
-    <svg viewBox="0 0 100 100" className="h-[118px] w-[118px] shrink-0">
-      <circle cx="50" cy="50" r={radius} fill="none" stroke="#e8eef5" strokeWidth="10" />
-      {total > 0 ? parts.map((part) => {
-        if (!part.value) return null;
-        const length = (part.value / total) * circumference;
-        const node = <circle key={part.color} cx="50" cy="50" r={radius} fill="none" stroke={part.color} strokeWidth="10" strokeDasharray={`${length} ${circumference - length}`} strokeDashoffset={-cursor} transform="rotate(-90 50 50)" />;
-        cursor += length;
-        return node;
-      }) : null}
-      <text x="50" y="48" textAnchor="middle" fill="#0f172a" fontSize="16" fontWeight="800">{center}</text>
-      <text x="50" y="62" textAnchor="middle" fill="#94a3b8" fontSize="8">{caption}</text>
-    </svg>
+    <select value={value} onChange={(event) => onChange(event.target.value)} aria-label={label} className="h-10 rounded-lg border border-slate-200 bg-white px-2 text-[12px] text-slate-700">
+      {options.map((option) => <option key={option}>{option}</option>)}
+    </select>
   );
 }

@@ -2,6 +2,33 @@
   "schemaVersion": 1,
   "notifications": [
     {
+      "id": "ntf-1792139408078-3f7te7",
+      "recipientUserId": "P0458",
+      "recipientUsername": "P0458",
+      "recipientEmployeeCode": "P0458",
+      "recipientRoles": [],
+      "kind": "Approval",
+      "module": "Finance Approvals",
+      "title": "Payment approval required",
+      "body": "Mr. ADESINA ADEKUNLE submitted Cash Advance Payment DLE261079 (NGN 544,000) for CFO approval.",
+      "severity": "warning",
+      "status": "Unread",
+      "href": "/finance/approvals/request/PREQ-1791996128624",
+      "createdAt": "2026-10-16T08:30:08.078Z",
+      "actor": "Payment Approval Reminder",
+      "channels": [
+        "In-App",
+        "Email"
+      ],
+      "metadata": {
+        "requestId": "PREQ-1791996128624",
+        "requestNumber": "DLE261079",
+        "stage": "CFO",
+        "recipientCode": "P0458",
+        "recipientName": "Mrs. MAMORA OLUWAFUNMI ABIODUN"
+      }
+    },
+    {
       "id": "ntf-1791990638880-q1wnzj",
       "recipientUserId": "P0392",
       "recipientUsername": "P0392",

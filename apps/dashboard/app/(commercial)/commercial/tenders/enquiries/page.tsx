@@ -1,10 +1,5 @@
-import { Suspense } from 'react';
-import { EnquiriesBoard } from '../_components/EnquiriesBoard';
+import { redirect } from 'next/navigation';
 
 export default function EnquiriesPage() {
-  return (
-    <Suspense fallback={<p className="text-sm text-slate-500">Loading enquiries…</p>}>
-      <EnquiriesBoard />
-    </Suspense>
-  );
+  redirect('/commercial/tenders/opportunities');
 }

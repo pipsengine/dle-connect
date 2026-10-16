@@ -4,10 +4,10 @@ import Link from 'next/link';
 import { useEffect, useState } from 'react';
 import { MoreHorizontal, UserRound } from 'lucide-react';
 import type { TenderItem, TenderOpportunity } from '@/lib/commercial/tender-types';
-import { internalDeadlineOf, preparationOf } from '@/lib/commercial/tender-workflow';
+import { commercialKindOf, internalDeadlineOf, registerStatusOf } from '@/lib/commercial/tender-workflow';
 import { formatWhen, tenderGet, tenderPost } from './tender-api';
 
-const isEnquiry = (row: TenderOpportunity) => row.stage === 'Enquiry' || row.tenderType === 'Enquiry' || row.opportunityType === 'Enquiry';
+type WorkTab = 'All' | 'ITT' | 'RFQ' | 'EOI';
 
 export function MyTenderDashboard() {
   const [rows, setRows] = useState<TenderOpportunity[]>([]);
@@ -15,7 +15,7 @@ export function MyTenderDashboard() {
   const [me, setMe] = useState({ name: '', code: '', username: '' });
   const [error, setError] = useState('');
   const [ready, setReady] = useState(false);
-  const [tab, setTab] = useState<'All' | 'Enquiries' | 'Tenders'>('All');
+  const [tab, setTab] = useState<WorkTab>('All');
 
   useEffect(() => {
     let active = true;
@@ -57,10 +57,10 @@ export function MyTenderDashboard() {
     ...rows.filter((row) => mine(row.ownerName) || mine(row.ownerEmployeeCode)).map((row) => ({
       id: row.id,
       title: row.title,
-      type: isEnquiry(row) ? 'Enquiry' as const : 'Tender' as const,
+      type: commercialKindOf(row),
       assignedBy: row.createdBy || '—',
       internal: internalDeadlineOf(row),
-      status: preparationOf(row),
+      status: registerStatusOf(row),
       href: `/commercial/tenders/workspace?id=${row.id}`,
       acknowledge: Boolean(row.ownerName) && !row.acknowledgedAt,
     })),
@@ -69,7 +69,7 @@ export function MyTenderDashboard() {
       return {
         id: item.id,
         title: item.title,
-        type: parent && isEnquiry(parent) ? 'Enquiry' as const : 'Tender' as const,
+        type: parent ? commercialKindOf(parent) : 'ITT' as const,
         assignedBy: item.createdBy || '—',
         internal: item.dueAt,
         status: /open|new/i.test(item.status) ? 'Not Started' : 'In Progress',
@@ -78,7 +78,7 @@ export function MyTenderDashboard() {
       };
     }),
   ];
-  const visible = assigned.filter((item) => tab === 'All' || item.type === (tab === 'Enquiries' ? 'Enquiry' : 'Tender'));
+  const visible = assigned.filter((item) => tab === 'All' || item.type === tab);
 
   return (
     <div className="space-y-3">
@@ -87,7 +87,7 @@ export function MyTenderDashboard() {
           <span className="inline-flex h-11 w-11 items-center justify-center rounded-xl bg-[#2563eb] text-white"><UserRound className="h-5 w-5" /></span>
           <div>
             <h1 className="text-[22px] font-black tracking-tight text-slate-950">My Dashboard</h1>
-            <p className="text-[12px] text-slate-500">Enquiries and tenders assigned to {me.name || 'you'}. {waiting.length} awaiting acknowledgement.</p>
+            <p className="text-[12px] text-slate-500">Assignments and acknowledgements for {me.name || 'you'}. {waiting.length} awaiting acknowledgement.</p>
           </div>
         </div>
       </section>
@@ -99,8 +99,8 @@ export function MyTenderDashboard() {
           <Link href="/commercial/tenders/workspace" className="text-[12px] font-semibold text-blue-600">View All</Link>
         </div>
         <div className="flex gap-2 px-4 py-3">
-          {(['All', 'Enquiries', 'Tenders'] as const).map((item) => {
-            const count = item === 'All' ? assigned.length : assigned.filter((row) => row.type === (item === 'Enquiries' ? 'Enquiry' : 'Tender')).length;
+          {(['All', 'ITT', 'RFQ', 'EOI'] as const).map((item) => {
+            const count = item === 'All' ? assigned.length : assigned.filter((row) => row.type === item).length;
             return (
               <button key={item} type="button" onClick={() => setTab(item)} className={`rounded-lg px-3 py-1.5 text-[12px] font-bold ${tab === item ? 'bg-[#2563eb] text-white' : 'bg-slate-100 text-slate-600'}`}>{item} ({count})</button>
             );

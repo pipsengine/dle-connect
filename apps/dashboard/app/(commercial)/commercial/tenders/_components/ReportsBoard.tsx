@@ -5,15 +5,13 @@ import { useEffect, useMemo, useState } from 'react';
 import { CalendarRange, Download, FileBarChart2 } from 'lucide-react';
 import type { TenderApproval, TenderAuditEvent, TenderAward, TenderDashboard, TenderItem, TenderOpportunity, TenderSubmission } from '@/lib/commercial/tender-types';
 import { MONTHS, closedOut, daysUntil, downloadCsv, inMonth, monthDelta } from '@/lib/commercial/tender-present';
-import { awardedToDleOf } from '@/lib/commercial/tender-workflow';
+import { awardedToDleOf, commercialKindOf, mdDecisionOf, registerStatusOf } from '@/lib/commercial/tender-workflow';
 import { formatWhen, tenderGet } from './tender-api';
 import { Donut, Pill } from './tender-widgets';
 import { Crumbs, Empty, Panel, TabBar } from './record-frame';
 import { BlueprintRegisters } from './BlueprintRegisters';
 
 const TABS = ['Executive Overview', 'Tender Pipeline', 'Bid Success Analysis', 'Contract Performance', 'Spend Analysis', 'Supplier / Client Analysis', 'Risk & Compliance', 'Custom Reports'] as const;
-const STATUS_LABELS = ['Open', 'Bid Submitted', 'Under Evaluation', 'Awarded', 'Closed', 'Withdrawn'] as const;
-const STATUS_COLORS = ['#3b82f6', '#22c55e', '#eab308', '#a855f7', '#94a3b8', '#ef4444'];
 const SECTORS = ['Oil & Gas', 'Engineering', 'Construction', 'Fabrication', 'Mechanical'] as const;
 const COMPLIANCE = ['Compliant', 'Under Review', 'Non-Compliant', 'Missing'] as const;
 const COMPLIANCE_COLORS = ['#22c55e', '#eab308', '#ef4444', '#94a3b8'];
@@ -110,7 +108,6 @@ export function ReportsBoard() {
   const cycle = cycles.length ? Math.round(cycles.reduce((sum, value) => sum + value, 0) / cycles.length) : 0;
   const countDelta = (pick: (row: TenderOpportunity) => boolean) => monthDelta(scoped.filter((row) => inWindow(row.createdAt, thisStart, new Date()) && pick(row)).length, rows.filter((row) => inWindow(row.createdAt, prevStart, thisStart) && pick(row)).length);
 
-  const statusSlices = STATUS_LABELS.map((label, index) => ({ label, value: scoped.filter((row) => reportStatus(row) === label).length, color: STATUS_COLORS[index] }));
   const activity = MONTHS.map((month, index) => ({
     month,
     opportunities: scoped.filter((row) => inMonth(row.createdAt, year, index)).length,
@@ -141,10 +138,10 @@ export function ReportsBoard() {
     .sort((a, b) => (a.days || 0) - (b.days || 0))
     .slice(0, 5);
 
-  const exportReport = () => downloadCsv('tender-report.csv', ['Reference', 'Title', 'Client', 'Preparation', 'Client Status', 'Awarded to DLE', 'Owner'], scoped.map((row) => [row.referenceNo, row.title, row.clientName, reportStatus(row), row.clientStatus || 'Pending', awardedToDleOf(row), row.ownerName]));
+  const exportReport = () => downloadCsv('commercial-opportunities-report.csv', ['Reference', 'Title', 'Client', 'Type', 'Review Status', 'MD Decision', 'Preparation', 'Client Status', 'Awarded to DLE', 'Owner'], scoped.map((row) => [row.referenceNo, row.title, row.clientName, commercialKindOf(row), registerStatusOf(row), mdDecisionOf(row), reportStatus(row), row.clientStatus || 'Pending', awardedToDleOf(row), row.ownerName]));
 
   const kpis = [
-    ['Total Tender Opportunities', String(scoped.length), countDelta(() => true)],
+    ['Commercial Opportunities', String(scoped.length), countDelta(() => true)],
     ['Bids Submitted', String(bids.length), countDelta((row) => submittedIds.has(row.id))],
     ['Awarded to DLE', String(won.length), countDelta((row) => awardedToDleOf(row) === 'Yes')],
     ['Unsuccessful Bids', String(unsuccessful.length), countDelta((row) => awardedToDleOf(row) === 'No')],
@@ -189,8 +186,14 @@ export function ReportsBoard() {
             ))}
           </div>
           <div className="grid gap-3 xl:grid-cols-3">
-            <Panel title="Tender Status Distribution" action={<Link href="/commercial/tenders/opportunities" className="text-[12px] font-semibold text-blue-700">View Details →</Link>}>
-              <Donut slices={statusSlices} center={String(scoped.length)} caption="Opportunities" />
+            <Panel title="Opportunity Type and Decisions" action={<Link href="/commercial/tenders/opportunities" className="text-[12px] font-semibold text-blue-700">View Details →</Link>}>
+              <ul className="space-y-2 text-[13px] text-slate-700">
+                {(['ITT', 'RFQ', 'EOI'] as const).map((kind) => <li key={kind} className="flex justify-between"><span>{kind}</span><b>{scoped.filter((row) => commercialKindOf(row) === kind).length}</b></li>)}
+                <li className="flex justify-between"><span>Awaiting GM Review</span><b>{scoped.filter((row) => registerStatusOf(row) === 'Awaiting GM Review').length}</b></li>
+                <li className="flex justify-between"><span>Awaiting MD Decision</span><b>{scoped.filter((row) => registerStatusOf(row) === 'Awaiting MD Decision').length}</b></li>
+                <li className="flex justify-between"><span>BID</span><b>{scoped.filter((row) => mdDecisionOf(row) === 'BID').length}</b></li>
+                <li className="flex justify-between"><span>NO BID</span><b>{scoped.filter((row) => mdDecisionOf(row) === 'NO BID').length}</b></li>
+              </ul>
             </Panel>
             <Panel title="Monthly Tender Activity" action={<span className="text-[12px] font-semibold text-blue-700">View Details →</span>}>
               <svg viewBox="0 0 360 150" className="h-36 w-full">

@@ -82,7 +82,8 @@ export function SubmissionBoard() {
   const [client, setClient] = useState('All Clients');
   const [sector, setSector] = useState('All Sectors');
   const [tenderType, setTenderType] = useState('All Types');
-  const [status, setStatus] = useState('All Statuses');
+  const requestedStatus = searchParams.get('status') || '';
+  const [status, setStatus] = useState((STATUSES as string[]).includes(requestedStatus) ? requestedStatus : 'All Statuses');
   const [officer, setOfficer] = useState('All Officers');
   const [submittedFrom, setSubmittedFrom] = useState('');
   const [submittedTo, setSubmittedTo] = useState('');

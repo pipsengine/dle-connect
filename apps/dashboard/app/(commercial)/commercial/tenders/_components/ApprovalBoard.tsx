@@ -8,6 +8,7 @@ import { daysUntil, fileSize } from '@/lib/commercial/tender-present';
 import {
   DEPARTMENT_REVIEW_STAGES,
   bidChoiceOf,
+  commercialReviewOf,
   departmentalReviewAllowed,
   externalDeadlineOf,
   internalDeadlineFromExternal,
@@ -75,7 +76,7 @@ export function ApprovalBoard() {
       .catch(() => setMd(false));
   }, []);
 
-  const tenders = useMemo(() => record.rows.filter((row) => !isEnquiryRecord(row)), [record.rows]);
+  const tenders = useMemo(() => record.rows.filter((row) => !isEnquiryRecord(row) || commercialReviewOf(row) === 'Reviewed' || Boolean(bidChoiceOf(row))), [record.rows]);
   const pendingMine = useMemo(() => tenders.filter((row) => {
     const bucket = tenderApprovalBucket(row);
     if (md && bucket === 'pending') return true;

@@ -23,7 +23,6 @@ import {
   ListChecks,
   MessageSquare,
   Plus,
-  Receipt,
   ScrollText,
   Search,
   ShieldAlert,
@@ -32,7 +31,7 @@ import {
 } from 'lucide-react';
 import type { TenderApproval, TenderAward, TenderDocument, TenderItem, TenderLine, TenderOpportunity, TenderSubmission } from '@/lib/commercial/tender-types';
 import { closedOut, daysUntil, plainNaira, sectorOf, stageSave, WORKSPACE_STAGES, workspaceStepIndex } from '@/lib/commercial/tender-present';
-import { internalDeadlineFromExternal } from '@/lib/commercial/tender-workflow';
+import { bidChoiceOf, internalDeadlineFromExternal } from '@/lib/commercial/tender-workflow';
 import { formatWhen, money, tenderGet, tenderPost, tenderUpload } from './tender-api';
 import { OpportunityModal } from './OpportunityModal';
 import { ItemCapture, LineCapture } from './record-capture';
@@ -59,7 +58,6 @@ const TABS: Array<{ id: string; icon: LucideIcon }> = [
   { id: 'Addenda', icon: ScrollText },
   { id: 'Clarifications (Q&A)', icon: MessageSquare },
   { id: 'Risks & Issues', icon: ShieldAlert },
-  { id: 'Financials', icon: Receipt },
   { id: 'Timeline', icon: ChartGantt },
   { id: 'Audit Trail', icon: ClipboardList },
 ];
@@ -67,7 +65,7 @@ const TABS: Array<{ id: string; icon: LucideIcon }> = [
 const PAGE_SIZE = 5;
 const STAGE_BASE = [18, 32, 48, 62, 74, 84, 94, 100];
 
-const isTender = (row: TenderOpportunity) => row.opportunityType !== 'Enquiry' && row.tenderType !== 'Enquiry';
+const isTender = (row: TenderOpportunity) => bidChoiceOf(row) === 'Bid';
 const isComplete = (row: TenderOpportunity) => workspaceStepIndex(row) >= 6 || row.status === 'Awarded' || row.clientStatus === 'Awarded';
 const isDone = (status: string) => /done|complete|closed|answer|approved|filed|resolved/i.test(status);
 const clamp = (value: number) => Math.max(0, Math.min(100, Math.round(value)));
@@ -157,7 +155,11 @@ export function TenderWorkspace() {
   const loadList = async () => {
     const opportunities = await tenderGet<TenderOpportunity[]>('opportunities');
     setRows(opportunities);
-    setSelectedId((current) => current || searchParams.get('id') || opportunities.find(isTender)?.id || opportunities[0]?.id || '');
+    setSelectedId((current) => {
+      const requested = searchParams.get('id') || current;
+      if (requested && opportunities.some((row) => row.id === requested && isTender(row))) return requested;
+      return opportunities.find(isTender)?.id || '';
+    });
     return opportunities;
   };
 
@@ -207,10 +209,7 @@ export function TenderWorkspace() {
   const submittedValue = (detail?.lines || []).reduce((sum, line) => sum + line.sell, 0) || (detail?.awards || []).reduce((sum, award) => sum + award.awardedValue, 0);
   const readiness = opportunity ? readinessOf(opportunity, detail) : 0;
 
-  const tenders = useMemo(() => {
-    const real = rows.filter(isTender);
-    return real.length ? real : rows;
-  }, [rows]);
+  const tenders = useMemo(() => rows.filter(isTender), [rows]);
   const activeTenders = tenders.filter((row) => !closedOut(row) && !isComplete(row));
   const kpis = {
     active: activeTenders.length,
@@ -332,7 +331,7 @@ export function TenderWorkspace() {
             <FilterSelect label="Priority" allLabel="All Priorities" value={priorityFilter} onChange={setPriorityFilter} options={['All', 'High', 'Medium', 'Low']} />
           </div>
           <div className="space-y-2 px-3 pb-3">
-            {pageRows.length === 0 ? <p className="px-2 py-10 text-center text-[12px] text-slate-500">{loading ? 'Loading register…' : 'No tenders match these filters.'}</p> : pageRows.map((row) => {
+            {pageRows.length === 0 ? <p className="px-2 py-10 text-center text-[12px] text-slate-500">{loading ? 'Loading register…' : 'No MD-approved BID opportunities are open in the workspace.'}</p> : pageRows.map((row) => {
               const selected = row.id === selectedId;
               const score = readinessOf(row, detail);
               const due = row.submissionDeadline || row.closingDate;
@@ -375,7 +374,7 @@ export function TenderWorkspace() {
               <span className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-[#2563eb] text-white"><FileText className="h-5 w-5" /></span>
               <div className="min-w-0">
                 <div className="flex flex-wrap items-center gap-2">
-                  <h2 className="text-[18px] font-black tracking-tight text-slate-950">{opportunity?.title || (loading ? 'Loading workspace…' : 'No tender is open')}</h2>
+                  <h2 className="text-[18px] font-black tracking-tight text-slate-950">{opportunity?.title || (loading ? 'Loading workspace…' : 'Workspace opens after an MD BID approval')}</h2>
                   {opportunity ? <span className="rounded-md bg-slate-100 px-2 py-0.5 text-[11px] font-semibold text-slate-500">{opportunity.tenderType || 'Tender'}</span> : null}
                 </div>
                 <p className="mt-1 text-[12px] text-slate-500">

@@ -20,6 +20,13 @@ export const isGmCommercial = (roles: string[] = [], isGlobalAdmin?: boolean) =>
 export const isManagingDirector = (roles: string[] = [], isGlobalAdmin?: boolean) =>
   Boolean(isGlobalAdmin) || roles.some((role) => /managing\s*director|^md(\/ceo)?$|\bmd\/ceo\b/i.test(role));
 
+/** Business approval authority. A super administrator does not inherit GM Commercial or MD authority from the technical role alone. */
+export const isBusinessGmCommercial = (roles: string[] = []) =>
+  roles.some((role) => /gm\s*commercial|general\s*manager\s*.*commercial/i.test(role));
+
+export const isBusinessManagingDirector = (roles: string[] = []) =>
+  roles.some((role) => /managing\s*director|^md(\/ceo)?$|\bmd\/ceo\b/i.test(role));
+
 export type TenderPortalActor = {
   department?: string | null;
   unit?: string | null;

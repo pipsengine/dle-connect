@@ -3,7 +3,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { AUTH_COOKIE, verifySessionToken, type SessionPayload } from '@/lib/auth/session';
 import { effectivePermissionsForUser } from '@/lib/auth/access-control-store';
 import { isSuperActor } from '@/lib/auth/role-delegation';
-import { canAccessTenderPortal, isGmCommercial, isManagingDirector } from '@/lib/access/commercial-access';
+import { canAccessTenderPortal, isBusinessGmCommercial, isBusinessManagingDirector, isGmCommercial, isManagingDirector } from '@/lib/access/commercial-access';
 import { createEnterpriseNotification } from '@/lib/enterprise-notifications-store';
 import {
   addApproval,
@@ -32,6 +32,7 @@ import {
   decideBid,
   acknowledgeAssignment,
   convertEnquiryToTender,
+  reviewCommercialOpportunity,
   setClientOutcome,
   assertSubmissionEvidence,
   updateItemStatus,
@@ -39,7 +40,7 @@ import {
 } from '@/lib/commercial/tender-store';
 import { announceVerifiedAward, runTenderDeadlineReminders } from '@/lib/commercial/tender-reminder-service';
 import { loadEmployeeFormOptions } from '@/lib/employee-form-options';
-import { departmentalReviewAllowed, preparationOf } from '@/lib/commercial/tender-workflow';
+import { departmentalReviewAllowed, internalDeadlineFromExternal, preparationOf } from '@/lib/commercial/tender-workflow';
 import { getTenderBlueprint, saveBlueprintRecord } from '@/lib/commercial/tender-blueprint-store';
 import type { BlueprintViewer } from '@/lib/commercial/tender-types';
 
@@ -185,8 +186,11 @@ export async function POST(request: NextRequest) {
           const owner = String(opportunity.ownerName || '').trim();
           const internal = String(opportunity.closingDate || '').slice(0, 10);
           const ownerChanged = owner !== String(current?.ownerName || '').trim();
+          const creating = !current;
+          const defaultInternal = internalDeadlineFromExternal(String(opportunity.submissionDeadline || ''));
           const internalChanged = internal !== String(current?.closingDate || '').slice(0, 10);
-          if (ownerChanged || internalChanged) {
+          const calculatedDefault = creating && !owner && (!internal || internal === defaultInternal);
+          if (!calculatedDefault && (ownerChanged || internalChanged || (creating && Boolean(owner)))) {
             return err(403, 'Only the Managing Director can assign the responsible officer and internal submission date.');
           }
         }
@@ -195,7 +199,43 @@ export async function POST(request: NextRequest) {
           const current = await getOpportunity(String(opportunity.id));
           if (current && preparationOf(current) !== 'Submitted') await assertSubmissionEvidence(String(opportunity.id));
         }
-        return ok(await saveOpportunity(opportunity, actor));
+        const before = opportunity.id ? await getOpportunity(String(opportunity.id)) : null;
+        const saved = await saveOpportunity(opportunity, actor);
+        if (saved && saved.commercialReview === 'Awaiting Review' && opportunity.saveMode === 'submit' && before?.commercialReview !== 'Awaiting Review') {
+          await createEnterpriseNotification(session, {
+            title: `GM Commercial review · ${saved.referenceNo}`,
+            body: `${saved.title} (${saved.commercialKind || 'opportunity'}) is awaiting GM Commercial review.`,
+            module: 'Commercial',
+            kind: 'Workflow',
+            severity: 'info',
+            href: `/commercial/tenders/opportunities?id=${saved.id}`,
+            actor,
+            recipientRoles: ['GM Commercial', 'General Manager Commercial'],
+            channels: ['In-App', 'Email'],
+          });
+        }
+        return ok(saved);
+      }
+      case 'gm-review': {
+        if (!isBusinessGmCommercial(session.roles)) return err(403, 'Only GM Commercial can review a commercial opportunity.');
+        const saved = await reviewCommercialOpportunity(id, {
+          decision: String(body.decision || ''),
+          comments: String(body.comments || ''),
+        }, actor);
+        if (saved && String(body.decision || '').toLowerCase() === 'forward') {
+          await createEnterpriseNotification(session, {
+            title: `MD decision · ${saved.referenceNo}`,
+            body: `${saved.title} has completed GM Commercial review and is awaiting a BID or NO BID decision.`,
+            module: 'Commercial',
+            kind: 'Workflow',
+            severity: 'info',
+            href: `/commercial/tenders/approvals?id=${saved.id}`,
+            actor,
+            recipientRoles: ['Managing Director', 'MD'],
+            channels: ['In-App', 'Email'],
+          });
+        }
+        return ok(saved);
       }
       case 'assign': {
         const enquiry = String(body.recordType || '') === 'enquiry';
@@ -266,7 +306,7 @@ export async function POST(request: NextRequest) {
       case 'line':
         return ok(await addLine(id, body.line || body, actor));
       case 'bid-decision': {
-        if (!isManagingDirector(session.roles, session.isGlobalAdmin)) {
+        if (!isBusinessManagingDirector(session.roles)) {
           return err(403, 'Only the Managing Director can record a bid or no-bid decision.');
         }
         const decision = String(body.decision || '');
@@ -276,6 +316,7 @@ export async function POST(request: NextRequest) {
           officerName: String(body.officerName || ''),
           employeeCode: String(body.employeeCode || ''),
           internalDeadline: String(body.internalDeadline || ''),
+          exceptionReason: String(body.exceptionReason || ''),
         }, actor);
         if (saved && decision.toLowerCase() === 'bid' && saved.ownerEmployeeCode) {
           await createEnterpriseNotification(session, {
@@ -287,6 +328,17 @@ export async function POST(request: NextRequest) {
             href: `/commercial/tenders/bid-preparation?id=${saved.id}`,
             actor,
             recipientEmployeeCode: saved.ownerEmployeeCode,
+            channels: ['In-App', 'Email'],
+          });
+          await createEnterpriseNotification(session, {
+            title: `Bid approved · ${saved.referenceNo}`,
+            body: `${saved.title} was approved and assigned to ${saved.ownerName}.`,
+            module: 'Commercial',
+            kind: 'Workflow',
+            severity: 'info',
+            href: `/commercial/tenders/workspace?id=${saved.id}`,
+            actor,
+            recipientRoles: ['GM Commercial', 'General Manager Commercial'],
             channels: ['In-App', 'Email'],
           });
         }

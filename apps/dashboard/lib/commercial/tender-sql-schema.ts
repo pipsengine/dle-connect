@@ -404,6 +404,25 @@ IF COL_LENGTH(N'commercial.TenderOpportunities', N'DeadlineOverrideReason') IS N
 IF COL_LENGTH(N'commercial.TenderOpportunities', N'UrgentException') IS NULL
   ALTER TABLE [commercial].[TenderOpportunities] ADD [UrgentException] BIT NOT NULL CONSTRAINT [DF_TenderOpp_Urgent] DEFAULT 0;
 
+IF COL_LENGTH(N'commercial.TenderOpportunities', N'CommercialKind') IS NULL
+  ALTER TABLE [commercial].[TenderOpportunities] ADD [CommercialKind] NVARCHAR(10) NULL;
+IF COL_LENGTH(N'commercial.TenderOpportunities', N'CommercialReview') IS NULL
+  ALTER TABLE [commercial].[TenderOpportunities] ADD [CommercialReview] NVARCHAR(40) NULL;
+IF COL_LENGTH(N'commercial.TenderOpportunities', N'CommercialReviewNote') IS NULL
+  ALTER TABLE [commercial].[TenderOpportunities] ADD [CommercialReviewNote] NVARCHAR(MAX) NULL;
+IF COL_LENGTH(N'commercial.TenderOpportunities', N'CommercialReviewedBy') IS NULL
+  ALTER TABLE [commercial].[TenderOpportunities] ADD [CommercialReviewedBy] NVARCHAR(120) NULL;
+IF COL_LENGTH(N'commercial.TenderOpportunities', N'CommercialReviewedAt') IS NULL
+  ALTER TABLE [commercial].[TenderOpportunities] ADD [CommercialReviewedAt] DATETIME2(0) NULL;
+IF COL_LENGTH(N'commercial.TenderOpportunities', N'OriginalInternalDeadline') IS NULL
+  ALTER TABLE [commercial].[TenderOpportunities] ADD [OriginalInternalDeadline] DATE NULL;
+
+IF COL_LENGTH(N'commercial.TenderOpportunities', N'CommercialKind') IS NOT NULL
+  AND NOT EXISTS (
+    SELECT 1 FROM sys.indexes WHERE name = N'IX_TenderOpp_CommercialDashboard' AND object_id = OBJECT_ID(N'[commercial].[TenderOpportunities]')
+  )
+  EXEC(N'CREATE INDEX [IX_TenderOpp_CommercialDashboard] ON [commercial].[TenderOpportunities]([CommercialKind],[CommercialReview],[BidDecision],[SubmissionDeadline],[ClosingDate])');
+
 IF OBJECT_ID(N'[commercial].[TenderReminderLog]', N'U') IS NULL
 CREATE TABLE [commercial].[TenderReminderLog] (
   [ReminderKey] NVARCHAR(180) NOT NULL CONSTRAINT [PK_TenderReminderLog] PRIMARY KEY,

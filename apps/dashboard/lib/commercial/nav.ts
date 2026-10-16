@@ -1,9 +1,9 @@
 import {
   Award,
   BarChart3,
+  Briefcase,
   ClipboardList,
   FolderKanban,
-  Inbox,
   LayoutDashboard,
   Send,
   UserRound,
@@ -36,8 +36,7 @@ export const TENDER_NAV: TenderNavItem[] = [
     children: [
       { id: 'dashboard', label: 'Dashboard', href: '/commercial/tenders', icon: LayoutDashboard },
       { id: 'my-dashboard', label: 'My Dashboard', href: '/commercial/tenders/my-dashboard', icon: UserRound },
-      { id: 'enquiries', label: 'Enquiries', href: '/commercial/tenders/enquiries', icon: Inbox },
-      { id: 'opportunities', label: 'Tender Opportunities', href: '/commercial/tenders/opportunities', icon: ClipboardList },
+      { id: 'opportunities', label: 'Commercial Opportunities', href: '/commercial/tenders/opportunities', icon: Briefcase },
       { id: 'workspace', label: 'Tender Workspace', href: '/commercial/tenders/workspace', icon: FolderKanban },
       { id: 'bid', label: 'Bid Preparation', href: '/commercial/tenders/bid-preparation', icon: ClipboardList },
       { id: 'evaluation', label: 'Tender Evaluation', href: '/commercial/tenders/evaluation', icon: SquareCheckBig },

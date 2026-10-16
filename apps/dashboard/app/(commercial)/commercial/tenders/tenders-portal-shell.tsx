@@ -175,7 +175,7 @@ export function TendersPortalShell({ children }: Props) {
               value={query}
               onChange={(event) => setQuery(event.target.value)}
               className="h-10 w-full max-w-xl rounded-xl border border-slate-200 bg-[#f8fafc] pl-10 pr-3 text-sm outline-none placeholder:text-slate-400 focus:border-blue-500 focus:bg-white focus:ring-2 focus:ring-blue-100"
-              placeholder="Search enquiries, tenders, clients, reference no, documents..."
+              placeholder="Search opportunities, clients, reference no, documents..."
               aria-label="Search tenders"
             />
           </form>
