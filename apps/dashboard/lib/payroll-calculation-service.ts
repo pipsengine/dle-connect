@@ -2,7 +2,7 @@ import type { DleEmployeeDirectoryRow } from '@/lib/dle-enterprise-db';
 import { applyPayrollEmployeeOptions } from '@/lib/payroll-employee-options-store';
 import { invalidatePayrollEmployeeCache, payrollDataSourceInfo, readDirectoryEmployees, readPayrollEmployees } from '@/lib/payroll-employee-source';
 import { mergeTimesheetDayRateEarnings, calculatePayrollEarnings, resolvePayrollEarningProfile } from '@/lib/payroll-earnings-engine';
-import { contractEmployeeCode, isEmployeeExcludedFromPayrollRun, isPensionEligibleStaff, isTimesheetWagePayrollEmployee, payrollActiveEmployees, payrollRunPackShortLabel, type PayrollRunExclusionEmployee } from '@/lib/payroll-employee-classification';
+import { contractEmployeeCode, employeeStartsAfterPayrollPeriod, isEmployeeExcludedFromPayrollRun, isPensionEligibleStaff, isTimesheetWagePayrollEmployee, payrollActiveEmployees, payrollRunPackShortLabel, type PayrollRunExclusionEmployee } from '@/lib/payroll-employee-classification';
 import { registerPayrollAdjustmentsChangeHandler, adjustmentsFileMtime } from '@/lib/payroll-period-earning-adjustments-store';
 import { enterprisePayrollSourceLabel, isEnterprisePayrollPeriod } from '@/lib/payroll-enterprise-source';
 import { activeTaxVersion, calculatePayrollTax, payrollInputFromEmployee, readPayrollTaxConfig } from '@/lib/payroll-tax-engine';
@@ -967,6 +967,7 @@ const computePayrollForPeriod = async (requestedPeriod: string): Promise<Payroll
 
   const payrollEmployees = employeeSource.employees
     .filter((employee) => !isEmployeeExcludedFromPayrollRun(employee as PayrollRunExclusionEmployee))
+    .filter((employee) => !employeeStartsAfterPayrollPeriod(employee, requestedPeriod))
     .map((employee) => applySeptemberExcelNairaPackage(applyLockedPayrollPackage(employee, requestedPeriod), requestedPeriod));
 
   type PayrollRunVariant = {

@@ -65,6 +65,7 @@ type DbJobTitleRow = {
 };
 
 const SOURCE_SYSTEM = 'Sage Payroll Migration';
+const MANUAL_SOURCE = 'HRIS';
 const dbReady = { value: false };
 
 const clean = (value: unknown) => (typeof value === 'string' ? value.trim() : '');
@@ -344,24 +345,48 @@ const syncSageJobTitles = async () => {
         .input('CommonLocationsJson', sql.NVarChar(sql.MAX), JSON.stringify(title.commonLocations))
         .input('DepartmentsJson', sql.NVarChar(sql.MAX), JSON.stringify(title.departments))
         .input('KeyResponsibilitiesJson', sql.NVarChar(sql.MAX), JSON.stringify(title.keyResponsibilities))
+        .input('ManualSource', sql.NVarChar(80), MANUAL_SOURCE)
         .input('SourceSnapshotJson', sql.NVarChar(sql.MAX), JSON.stringify({ migratedAt: new Date().toISOString(), source: SOURCE_SYSTEM }))
         .query(`
-DELETE FROM [hris].[OrganizationJobTitles]
-WHERE [Code]=@Code AND [Title]=@Title AND [Id]<>@Id;
-MERGE [hris].[OrganizationJobTitles] AS target
-USING (SELECT @Id AS [Id]) AS source
-ON target.[Id] = source.[Id]
-WHEN MATCHED THEN UPDATE SET
-  [SourceSystem]=@SourceSystem,[Code]=@Code,[Title]=@Title,[Family]=@Family,[TitleLevel]=@TitleLevel,[GradeCode]=@GradeCode,[GradeName]=@GradeName,
-  [ReportingLevel]=@ReportingLevel,[BenchmarkSalaryNgn]=@BenchmarkSalaryNgn,[EmployeeCount]=@EmployeeCount,[OpenPositions]=@OpenPositions,
-  [DepartmentCount]=@DepartmentCount,[LocationCount]=@LocationCount,[SuccessionCoveragePct]=@SuccessionCoveragePct,[AttritionRiskPct]=@AttritionRiskPct,
-  [InternalMobilityPct]=@InternalMobilityPct,[HealthStatus]=@HealthStatus,[StandardizationStatus]=@StandardizationStatus,[BenchmarkPosition]=@BenchmarkPosition,
-  [JobPurpose]=@JobPurpose,[CommonLocationsJson]=@CommonLocationsJson,[DepartmentsJson]=@DepartmentsJson,[KeyResponsibilitiesJson]=@KeyResponsibilitiesJson,
-  [SourceSnapshotJson]=@SourceSnapshotJson,[LastSyncedAt]=SYSUTCDATETIME()
-WHEN NOT MATCHED THEN INSERT
-  ([Id],[SourceSystem],[Code],[Title],[Family],[TitleLevel],[GradeCode],[GradeName],[ReportingLevel],[BenchmarkSalaryNgn],[EmployeeCount],[OpenPositions],[DepartmentCount],[LocationCount],[SuccessionCoveragePct],[AttritionRiskPct],[InternalMobilityPct],[HealthStatus],[StandardizationStatus],[BenchmarkPosition],[JobPurpose],[CommonLocationsJson],[DepartmentsJson],[KeyResponsibilitiesJson],[SourceSnapshotJson])
-VALUES
-  (@Id,@SourceSystem,@Code,@Title,@Family,@TitleLevel,@GradeCode,@GradeName,@ReportingLevel,@BenchmarkSalaryNgn,@EmployeeCount,@OpenPositions,@DepartmentCount,@LocationCount,@SuccessionCoveragePct,@AttritionRiskPct,@InternalMobilityPct,@HealthStatus,@StandardizationStatus,@BenchmarkPosition,@JobPurpose,@CommonLocationsJson,@DepartmentsJson,@KeyResponsibilitiesJson,@SourceSnapshotJson);`);
+IF EXISTS (
+  SELECT 1 FROM [hris].[OrganizationJobTitles]
+  WHERE [SourceSystem]=@ManualSource AND [Code]=@Code AND [Title]=@Title AND [Id]<>@Id
+)
+BEGIN
+  UPDATE [hris].[OrganizationJobTitles]
+  SET [EmployeeCount]=@EmployeeCount,[DepartmentCount]=@DepartmentCount,[LocationCount]=@LocationCount,
+    [SuccessionCoveragePct]=@SuccessionCoveragePct,[AttritionRiskPct]=@AttritionRiskPct,[InternalMobilityPct]=@InternalMobilityPct,
+    [BenchmarkSalaryNgn]=@BenchmarkSalaryNgn,[CommonLocationsJson]=@CommonLocationsJson,[DepartmentsJson]=@DepartmentsJson,
+    [LastSyncedAt]=SYSUTCDATETIME()
+  WHERE [SourceSystem]=@ManualSource AND [Code]=@Code AND [Title]=@Title;
+END
+ELSE
+BEGIN
+  DELETE FROM [hris].[OrganizationJobTitles]
+  WHERE [Code]=@Code AND [Title]=@Title AND [Id]<>@Id AND [SourceSystem]<>@ManualSource;
+
+  UPDATE [hris].[OrganizationJobTitles]
+  SET [EmployeeCount]=@EmployeeCount,[DepartmentCount]=@DepartmentCount,[LocationCount]=@LocationCount,
+    [SuccessionCoveragePct]=@SuccessionCoveragePct,[AttritionRiskPct]=@AttritionRiskPct,[InternalMobilityPct]=@InternalMobilityPct,
+    [BenchmarkSalaryNgn]=@BenchmarkSalaryNgn,[CommonLocationsJson]=@CommonLocationsJson,[DepartmentsJson]=@DepartmentsJson,
+    [LastSyncedAt]=SYSUTCDATETIME()
+  WHERE [Id]=@Id AND [SourceSystem]=@ManualSource;
+
+  UPDATE [hris].[OrganizationJobTitles]
+  SET [SourceSystem]=@SourceSystem,[Code]=@Code,[Title]=@Title,[Family]=@Family,[TitleLevel]=@TitleLevel,[GradeCode]=@GradeCode,[GradeName]=@GradeName,
+    [ReportingLevel]=@ReportingLevel,[BenchmarkSalaryNgn]=@BenchmarkSalaryNgn,[EmployeeCount]=@EmployeeCount,[OpenPositions]=@OpenPositions,
+    [DepartmentCount]=@DepartmentCount,[LocationCount]=@LocationCount,[SuccessionCoveragePct]=@SuccessionCoveragePct,[AttritionRiskPct]=@AttritionRiskPct,
+    [InternalMobilityPct]=@InternalMobilityPct,[HealthStatus]=@HealthStatus,[StandardizationStatus]=@StandardizationStatus,[BenchmarkPosition]=@BenchmarkPosition,
+    [JobPurpose]=@JobPurpose,[CommonLocationsJson]=@CommonLocationsJson,[DepartmentsJson]=@DepartmentsJson,[KeyResponsibilitiesJson]=@KeyResponsibilitiesJson,
+    [SourceSnapshotJson]=@SourceSnapshotJson,[LastSyncedAt]=SYSUTCDATETIME()
+  WHERE [Id]=@Id AND [SourceSystem]<>@ManualSource;
+
+  INSERT INTO [hris].[OrganizationJobTitles]
+    ([Id],[SourceSystem],[Code],[Title],[Family],[TitleLevel],[GradeCode],[GradeName],[ReportingLevel],[BenchmarkSalaryNgn],[EmployeeCount],[OpenPositions],[DepartmentCount],[LocationCount],[SuccessionCoveragePct],[AttritionRiskPct],[InternalMobilityPct],[HealthStatus],[StandardizationStatus],[BenchmarkPosition],[JobPurpose],[CommonLocationsJson],[DepartmentsJson],[KeyResponsibilitiesJson],[SourceSnapshotJson])
+  SELECT
+    @Id,@SourceSystem,@Code,@Title,@Family,@TitleLevel,@GradeCode,@GradeName,@ReportingLevel,@BenchmarkSalaryNgn,@EmployeeCount,@OpenPositions,@DepartmentCount,@LocationCount,@SuccessionCoveragePct,@AttritionRiskPct,@InternalMobilityPct,@HealthStatus,@StandardizationStatus,@BenchmarkPosition,@JobPurpose,@CommonLocationsJson,@DepartmentsJson,@KeyResponsibilitiesJson,@SourceSnapshotJson
+  WHERE NOT EXISTS (SELECT 1 FROM [hris].[OrganizationJobTitles] WHERE [Id]=@Id);
+END`);
     }
     await tx.commit();
   } catch (error) {
@@ -463,4 +488,249 @@ export const readLiveJobTitles = async (): Promise<JobTitlesPayload> => {
     migrationWarning,
     independence: 'Job titles are stored in the DLE HRIS database after migration and do not depend on live Sage reads for normal page rendering.',
   });
+};
+
+const FAMILIES = ['Executive', 'Management', 'Professional', 'Technical', 'Operations Support'] as const;
+const LEVELS = ['Strategic', 'Senior', 'Mid', 'Entry'] as const;
+const REPORTING_LEVELS = ['Enterprise', 'Division', 'Department', 'Team'] as const;
+const STANDARDIZATION = ['Standard', 'Variant', 'Needs Review'] as const;
+const HEALTH = ['Healthy', 'Needs Attention', 'Critical'] as const;
+
+export class JobTitleInputError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'JobTitleInputError';
+  }
+}
+
+export type JobTitleWriteInput = {
+  code?: unknown;
+  title?: unknown;
+  grade?: unknown;
+  gradeCode?: unknown;
+  gradeName?: unknown;
+  family?: unknown;
+  level?: unknown;
+  reportingLevel?: unknown;
+  standardizationStatus?: unknown;
+  healthStatus?: unknown;
+  openPositions?: unknown;
+  benchmarkPosition?: unknown;
+  jobPurpose?: unknown;
+  keyResponsibilities?: unknown;
+};
+
+export type NormalizedJobTitleWrite = {
+  code: string;
+  title: string;
+  gradeCode: string;
+  gradeName: string;
+  family: JobTitleRecord['family'];
+  level: JobTitleRecord['level'];
+  reportingLevel: JobTitleRecord['reportingLevel'];
+  standardizationStatus: JobTitleRecord['standardizationStatus'];
+  healthStatus: HealthStatus;
+  openPositions: number;
+  benchmarkPosition: string;
+  jobPurpose: string;
+  keyResponsibilities: string[];
+};
+
+const choice = <T extends string>(value: unknown, options: readonly T[], label: string, fallback: T): T => {
+  const text = clean(typeof value === 'string' ? value : '');
+  if (!text) return fallback;
+  const match = options.find((option) => option.toLowerCase() === text.toLowerCase());
+  if (!match) throw new JobTitleInputError(`A valid ${label} is required.`);
+  return match;
+};
+
+const responsibilityList = (value: unknown) => {
+  const rows = Array.isArray(value) ? value : typeof value === 'string' ? value.split(/\r?\n/) : [];
+  return rows.map((item) => clip(typeof item === 'string' ? item : '', 180)).filter(Boolean).slice(0, 12);
+};
+
+export const normalizeJobTitleWrite = (input: JobTitleWriteInput): NormalizedJobTitleWrite => {
+  const code = clip(clean(typeof input.code === 'string' ? input.code : '').toUpperCase(), 80);
+  const title = clip(clean(typeof input.title === 'string' ? input.title : '').replace(/\s+/g, ' '), 180);
+  if (!code) throw new JobTitleInputError('Job title code is required.');
+  if (!title) throw new JobTitleInputError('Job title name is required.');
+  const gradeSource = clean(typeof input.grade === 'string' ? input.grade : '')
+    || clean(typeof input.gradeName === 'string' ? input.gradeName : '')
+    || clean(typeof input.gradeCode === 'string' ? input.gradeCode : '');
+  if (!gradeSource) throw new JobTitleInputError('Grade is required.');
+  const family = choice(input.family, FAMILIES, 'job family', 'Professional');
+  const level = choice(input.level, LEVELS, 'job level', 'Mid');
+  const reportingLevel = choice(input.reportingLevel, REPORTING_LEVELS, 'reporting level', 'Team');
+  const standardizationStatus = choice(input.standardizationStatus, STANDARDIZATION, 'standardization status', 'Standard');
+  const healthFallback: HealthStatus = standardizationStatus === 'Needs Review' ? 'Critical' : standardizationStatus === 'Variant' ? 'Needs Attention' : 'Healthy';
+  const healthStatus = choice(input.healthStatus, HEALTH, 'health status', healthFallback);
+  const openRaw = input.openPositions;
+  const openPositions = openRaw === undefined || openRaw === null || openRaw === '' ? 0 : Number(openRaw);
+  if (!Number.isInteger(openPositions) || openPositions < 0 || openPositions > 100000) {
+    throw new JobTitleInputError('Open roles must be a whole number of 0 or more.');
+  }
+  const benchmarkPosition = clip(clean(typeof input.benchmarkPosition === 'string' ? input.benchmarkPosition : '') || title, 180);
+  const jobPurpose = clip(
+    clean(typeof input.jobPurpose === 'string' ? input.jobPurpose : '') || `${title} is a standardized HRIS job title in the ${family} family.`,
+    800,
+  );
+  const provided = responsibilityList(input.keyResponsibilities);
+  return {
+    code,
+    title,
+    gradeCode: clip(gradeSource, 80),
+    gradeName: clip(gradeSource, 180),
+    family,
+    level,
+    reportingLevel,
+    standardizationStatus,
+    healthStatus,
+    openPositions,
+    benchmarkPosition,
+    jobPurpose,
+    keyResponsibilities: provided.length ? provided : responsibilitiesFor(title, family),
+  };
+};
+
+const assertUniqueCodeTitle = async (code: string, title: string, ignoreId = '') => {
+  const pool = await ensureDb();
+  const existing = await pool.request()
+    .input('Code', sql.NVarChar(80), code)
+    .input('Title', sql.NVarChar(180), title)
+    .input('Id', sql.NVarChar(180), ignoreId)
+    .query(`SELECT TOP 1 [Id] FROM [hris].[OrganizationJobTitles] WHERE [Code]=@Code AND [Title]=@Title AND [Id]<>@Id`);
+  if (existing.recordset?.length) throw new JobTitleInputError(`Job title ${code} · ${title} already exists.`);
+  return pool;
+};
+
+const snapshotJson = (action: 'created' | 'edited', previousSource?: string) => JSON.stringify({
+  managedBy: MANUAL_SOURCE,
+  action,
+  at: new Date().toISOString(),
+  previousSource: previousSource || null,
+});
+
+export const createJobTitle = async (input: JobTitleWriteInput): Promise<JobTitleRecord> => {
+  const title = normalizeJobTitleWrite(input);
+  const pool = await assertUniqueCodeTitle(title.code, title.title);
+  let id = jobTitleId(slug(title.code), slug(title.title));
+  const idTaken = await pool.request()
+    .input('Id', sql.NVarChar(180), id)
+    .query(`SELECT TOP 1 [Id] FROM [hris].[OrganizationJobTitles] WHERE [Id]=@Id`);
+  if (idTaken.recordset?.length) id = clip(`${id}-hris-${Date.now().toString(36)}`, 180);
+  const record: JobTitleRecord = {
+    id,
+    code: title.code,
+    title: title.title,
+    family: title.family,
+    level: title.level,
+    gradeCode: title.gradeCode,
+    gradeName: title.gradeName,
+    reportingLevel: title.reportingLevel,
+    benchmarkSalaryNgn: 0,
+    employeeCount: 0,
+    openPositions: title.openPositions,
+    departmentCount: 0,
+    locationCount: 0,
+    successionCoveragePct: 0,
+    attritionRiskPct: 0,
+    internalMobilityPct: 0,
+    healthStatus: title.healthStatus,
+    standardizationStatus: title.standardizationStatus,
+    benchmarkPosition: title.benchmarkPosition,
+    jobPurpose: title.jobPurpose,
+    commonLocations: [],
+    departments: [],
+    keyResponsibilities: title.keyResponsibilities,
+  };
+  await pool.request()
+    .input('Id', sql.NVarChar(180), record.id)
+    .input('SourceSystem', sql.NVarChar(80), MANUAL_SOURCE)
+    .input('Code', sql.NVarChar(80), record.code)
+    .input('Title', sql.NVarChar(180), record.title)
+    .input('Family', sql.NVarChar(40), record.family)
+    .input('TitleLevel', sql.NVarChar(40), record.level)
+    .input('GradeCode', sql.NVarChar(80), record.gradeCode)
+    .input('GradeName', sql.NVarChar(180), record.gradeName)
+    .input('ReportingLevel', sql.NVarChar(40), record.reportingLevel)
+    .input('BenchmarkSalaryNgn', sql.Decimal(19, 2), record.benchmarkSalaryNgn)
+    .input('EmployeeCount', sql.Int, record.employeeCount)
+    .input('OpenPositions', sql.Int, record.openPositions)
+    .input('DepartmentCount', sql.Int, record.departmentCount)
+    .input('LocationCount', sql.Int, record.locationCount)
+    .input('SuccessionCoveragePct', sql.Decimal(9, 2), record.successionCoveragePct)
+    .input('AttritionRiskPct', sql.Decimal(9, 2), record.attritionRiskPct)
+    .input('InternalMobilityPct', sql.Decimal(9, 2), record.internalMobilityPct)
+    .input('HealthStatus', sql.NVarChar(40), record.healthStatus)
+    .input('StandardizationStatus', sql.NVarChar(40), record.standardizationStatus)
+    .input('BenchmarkPosition', sql.NVarChar(180), record.benchmarkPosition)
+    .input('JobPurpose', sql.NVarChar(800), record.jobPurpose)
+    .input('CommonLocationsJson', sql.NVarChar(sql.MAX), '[]')
+    .input('DepartmentsJson', sql.NVarChar(sql.MAX), '[]')
+    .input('KeyResponsibilitiesJson', sql.NVarChar(sql.MAX), JSON.stringify(record.keyResponsibilities))
+    .input('SourceSnapshotJson', sql.NVarChar(sql.MAX), snapshotJson('created'))
+    .query(`
+INSERT INTO [hris].[OrganizationJobTitles]
+  ([Id],[SourceSystem],[Code],[Title],[Family],[TitleLevel],[GradeCode],[GradeName],[ReportingLevel],[BenchmarkSalaryNgn],[EmployeeCount],[OpenPositions],[DepartmentCount],[LocationCount],[SuccessionCoveragePct],[AttritionRiskPct],[InternalMobilityPct],[HealthStatus],[StandardizationStatus],[BenchmarkPosition],[JobPurpose],[CommonLocationsJson],[DepartmentsJson],[KeyResponsibilitiesJson],[SourceSnapshotJson])
+VALUES
+  (@Id,@SourceSystem,@Code,@Title,@Family,@TitleLevel,@GradeCode,@GradeName,@ReportingLevel,@BenchmarkSalaryNgn,@EmployeeCount,@OpenPositions,@DepartmentCount,@LocationCount,@SuccessionCoveragePct,@AttritionRiskPct,@InternalMobilityPct,@HealthStatus,@StandardizationStatus,@BenchmarkPosition,@JobPurpose,@CommonLocationsJson,@DepartmentsJson,@KeyResponsibilitiesJson,@SourceSnapshotJson);`);
+  return record;
+};
+
+export const updateJobTitle = async (id: string, input: JobTitleWriteInput): Promise<JobTitleRecord> => {
+  const titleId = clip(clean(id), 180);
+  if (!titleId) throw new JobTitleInputError('Job title id is required.');
+  const title = normalizeJobTitleWrite(input);
+  const pool = await assertUniqueCodeTitle(title.code, title.title, titleId);
+  const current = await pool.request()
+    .input('Id', sql.NVarChar(180), titleId)
+    .query(`
+SELECT [Id],[SourceSystem],[Code],[Title],[Family],[TitleLevel],[GradeCode],[GradeName],[ReportingLevel],[BenchmarkSalaryNgn],[EmployeeCount],[OpenPositions],
+  [DepartmentCount],[LocationCount],[SuccessionCoveragePct],[AttritionRiskPct],[InternalMobilityPct],[HealthStatus],[StandardizationStatus],
+  [BenchmarkPosition],[JobPurpose],[CommonLocationsJson],[DepartmentsJson],[KeyResponsibilitiesJson]
+FROM [hris].[OrganizationJobTitles]
+WHERE [Id]=@Id`);
+  const row = current.recordset?.[0] as (DbJobTitleRow & { SourceSystem?: string }) | undefined;
+  if (!row) throw new JobTitleInputError('Job title was not found.');
+  const record: JobTitleRecord = {
+    ...rowToTitle(row),
+    code: title.code,
+    title: title.title,
+    family: title.family,
+    level: title.level,
+    gradeCode: title.gradeCode,
+    gradeName: title.gradeName,
+    reportingLevel: title.reportingLevel,
+    openPositions: title.openPositions,
+    healthStatus: title.healthStatus,
+    standardizationStatus: title.standardizationStatus,
+    benchmarkPosition: title.benchmarkPosition,
+    jobPurpose: title.jobPurpose,
+    keyResponsibilities: title.keyResponsibilities,
+  };
+  await pool.request()
+    .input('Id', sql.NVarChar(180), record.id)
+    .input('SourceSystem', sql.NVarChar(80), MANUAL_SOURCE)
+    .input('Code', sql.NVarChar(80), record.code)
+    .input('Title', sql.NVarChar(180), record.title)
+    .input('Family', sql.NVarChar(40), record.family)
+    .input('TitleLevel', sql.NVarChar(40), record.level)
+    .input('GradeCode', sql.NVarChar(80), record.gradeCode)
+    .input('GradeName', sql.NVarChar(180), record.gradeName)
+    .input('ReportingLevel', sql.NVarChar(40), record.reportingLevel)
+    .input('OpenPositions', sql.Int, record.openPositions)
+    .input('HealthStatus', sql.NVarChar(40), record.healthStatus)
+    .input('StandardizationStatus', sql.NVarChar(40), record.standardizationStatus)
+    .input('BenchmarkPosition', sql.NVarChar(180), record.benchmarkPosition)
+    .input('JobPurpose', sql.NVarChar(800), record.jobPurpose)
+    .input('KeyResponsibilitiesJson', sql.NVarChar(sql.MAX), JSON.stringify(record.keyResponsibilities))
+    .input('SourceSnapshotJson', sql.NVarChar(sql.MAX), snapshotJson('edited', clean(row.SourceSystem)))
+    .query(`
+UPDATE [hris].[OrganizationJobTitles] SET
+  [SourceSystem]=@SourceSystem,[Code]=@Code,[Title]=@Title,[Family]=@Family,[TitleLevel]=@TitleLevel,[GradeCode]=@GradeCode,[GradeName]=@GradeName,
+  [ReportingLevel]=@ReportingLevel,[OpenPositions]=@OpenPositions,[HealthStatus]=@HealthStatus,[StandardizationStatus]=@StandardizationStatus,
+  [BenchmarkPosition]=@BenchmarkPosition,[JobPurpose]=@JobPurpose,[KeyResponsibilitiesJson]=@KeyResponsibilitiesJson,
+  [SourceSnapshotJson]=@SourceSnapshotJson,[LastSyncedAt]=SYSUTCDATETIME()
+WHERE [Id]=@Id`);
+  return record;
 };

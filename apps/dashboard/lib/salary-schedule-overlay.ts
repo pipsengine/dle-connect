@@ -319,6 +319,8 @@ export const excelEmployerOnTop = (row: SalaryScheduleRow) => {
 /**
  * September payroll keeps gross and net from the employee profile.
  * Employer cost follows the salary schedule: gross plus HR's company contribution.
+ * USD rows stay on the USD record. A naira company contribution, including the
+ * naira "pension employer USD" column, must not be added again on DLE USD.
  */
 export const applySalaryScheduleEmployerCost = (
   records: PayrollCalculationRecord[],
@@ -327,27 +329,38 @@ export const applySalaryScheduleEmployerCost = (
 ): PayrollCalculationRecord[] => {
   const applied = schedule === undefined ? readAppliedSalaryScheduleOverride(period) : schedule;
   if (!applied?.parsed?.rows?.length) return records;
-  const byKey = new Map<string, SalaryScheduleRow>();
+  const byCurrency = {
+    NGN: new Map<string, SalaryScheduleRow>(),
+    USD: new Map<string, SalaryScheduleRow>(),
+  };
   for (const row of applied.parsed.rows) {
-    if (row.kind === 'usd') continue;
-    if (!normalizePayrollCompany(row.company)) continue;
-    if (!(excelEmployerOnTop(row) > 0)) continue;
+    const currency = excelRowCurrency(row);
+    const onTop = excelEmployerOnTop(row);
+    // Naira rows with no company contribution keep the calculated cost.
+    // A USD row with a zero contribution still wins, so engine pension is not left on top.
+    if (currency === 'NGN' && !(onTop > 0)) continue;
+    if (currency === 'NGN' && !normalizePayrollCompany(row.company)) continue;
+    const bucket = byCurrency[currency];
     for (const key of salaryScheduleEmployeeKeys(row.employeeCode)) {
-      if (!byKey.has(key)) byKey.set(key, row);
+      if (!bucket.has(key)) bucket.set(key, row);
     }
   }
-  if (!byKey.size) return records;
+  if (!byCurrency.NGN.size && !byCurrency.USD.size) return records;
   return records.map((record) => {
     if (record.isDailyRate) return record;
-    if (resolvePayCurrency(record) === 'USD') return record;
-    const excel = recordKeys(record).map((key) => byKey.get(key)).find(Boolean);
+    const currency = resolvePayCurrency(record) === 'USD' ? 'USD' : 'NGN';
+    const excel = recordKeys(record).map((key) => byCurrency[currency].get(key)).find(Boolean);
     if (!excel) return record;
     const onTop = excelEmployerOnTop(excel);
-    const statutoryEmployer = roundMoney(Number(excel.itf || 0) + Number(excel.nsitf || 0));
+    const statutoryFromColumns = roundMoney(Number(excel.itf || 0) + Number(excel.nsitf || 0));
+    const pensionFromColumns = roundMoney(Number(excel.pensionEmployer || 0) + Number(excel.pensionEmployerUsd || 0));
+    // USD company contribution is ITF + NSITF. Keep a 1-cent total rounding in that statutory figure.
+    const statutoryEmployer = pensionFromColumns > 0 ? statutoryFromColumns : onTop;
+    const pensionEmployer = pensionFromColumns > 0 ? roundMoney(Math.max(0, onTop - statutoryFromColumns)) : 0;
     const grossPay = roundMoney(Number(record.grossPay || 0));
     return {
       ...record,
-      pensionEmployer: roundMoney(Math.max(0, onTop - statutoryEmployer)),
+      pensionEmployer,
       statutoryEmployer,
       employerCost: roundMoney(grossPay + onTop),
     };

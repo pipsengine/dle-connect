@@ -7,7 +7,8 @@ import {
   summaryPayrollRecords,
   type PayrollCalculationRecord,
 } from '@/lib/payroll-calculation-service';
-import { applySalaryScheduleCompanionPay } from '@/lib/salary-schedule-overlay';
+import { applySalaryScheduleCompanionPay, applySalaryScheduleEmployerCost } from '@/lib/salary-schedule-overlay';
+import { ensureSalaryScheduleOverrideLoaded } from '@/lib/salary-schedule-upload-sql';
 import { buildPayrollJournalWorkspace } from '@/lib/payroll-journal-service';
 import { getActivePayrollPeriod, listPayrollPeriods, payrollPeriodLabel } from '@/lib/payroll-period-store';
 import {
@@ -234,7 +235,12 @@ const resolvePeriodCalculation = async (
   if (payrollComputed && run) {
     const snapshot = await readPayrollSnapshot(run.id);
     if (shouldUseSnapshot(run, periodRecord, snapshot) && snapshot) {
+      await ensureSalaryScheduleOverrideLoaded(period);
       let calculation = await buildPayrollCalculationFromSnapshot(period, snapshot);
+      calculation = {
+        ...calculation,
+        records: applySalaryScheduleEmployerCost(calculation.records, period),
+      };
       if (pack) calculation = filterPayrollCalculationByPack(calculation, pack, company);
       calculation = refreshCalculationFromRecords(
         calculation,

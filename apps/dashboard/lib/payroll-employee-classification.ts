@@ -256,6 +256,33 @@ export const payrollActiveEmployees = (employees: DleEmployeeDirectoryRow[]) =>
     return true;
   });
 
+/** Last calendar day of a payroll period (`2026-09` or `per-2026-09`). */
+export const payrollPeriodEndIso = (period: string) => {
+  const match = /^(\d{4})-(\d{2})$/.exec(compact(period).replace(/^per-/, '').slice(0, 7));
+  if (!match) return null;
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  if (!year || month < 1 || month > 12) return null;
+  const lastDay = new Date(Date.UTC(year, month, 0)).getUTCDate();
+  return `${match[1]}-${match[2]}-${String(lastDay).padStart(2, '0')}`;
+};
+
+/**
+ * Staff who join after the payroll month have no pay for that month.
+ * Leaving them on the run marks "Gross pay is missing" and blocks approval
+ * of everyone who actually worked the period.
+ */
+export const employeeStartsAfterPayrollPeriod = (
+  employee: { dateJoined?: string | null; contractStartDate?: string | null },
+  period: string,
+) => {
+  const periodEnd = payrollPeriodEndIso(period);
+  if (!periodEnd) return false;
+  const start = compact(employee.dateJoined || employee.contractStartDate).slice(0, 10);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(start)) return false;
+  return start > periodEnd;
+};
+
 export type PayrollRunExclusionEmployee = DleEmployeeDirectoryRow & { excludedFromPayrollRun?: boolean };
 
 export const isEmployeeExcludedFromPayrollRun = (employee: PayrollRunExclusionEmployee) => Boolean(employee.excludedFromPayrollRun);

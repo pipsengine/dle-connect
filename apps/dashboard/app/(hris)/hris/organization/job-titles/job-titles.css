@@ -73,7 +73,13 @@
 .jt-pro .modal>p{color:#6d829d;margin:6px 0 0}
 .jt-pro .form{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin:18px 0}
 .jt-pro .form label{font-weight:700;min-width:0}
-.jt-pro .form span,.jt-pro .form input{display:block;width:100%;box-sizing:border-box;margin-top:7px;padding:12px;border:1px solid #d7e2ef;border-radius:8px;background:#f8fbff;font-weight:600;overflow-wrap:anywhere}
+.jt-pro .form span,.jt-pro .form input,.jt-pro .form select,.jt-pro .form textarea{display:block;width:100%;box-sizing:border-box;margin-top:7px;padding:12px;border:1px solid #d7e2ef;border-radius:8px;background:#f8fbff;font-weight:600;overflow-wrap:anywhere}
+.jt-pro .form textarea{min-height:88px;resize:vertical}
+.jt-pro .form select{background:#fff}
+.jt-pro .form .wide{grid-column:1 / -1}
+.jt-pro .form-error{margin:12px 0 0;color:#991b1b;font-weight:700}
+.jt-pro .notice{margin:12px 0 0;padding:12px 14px;border-radius:10px;background:#e8f8ef;border:1px solid #b7ebc9;color:#0a7a45;font-weight:700}
+.jt-pro .modal-actions button:disabled,.jt-pro .actions button:disabled{opacity:.55;cursor:not-allowed}
 .jt-pro .chips{display:flex;flex-wrap:wrap;gap:6px;margin-top:7px}
 .jt-pro .chips i{font-style:normal;background:#f4f7fb;border:1px solid #d7e2ef;border-radius:14px;padding:5px 9px;font-size:11px;font-weight:650}
 .jt-pro .modal-actions{display:flex;justify-content:flex-end;gap:10px}

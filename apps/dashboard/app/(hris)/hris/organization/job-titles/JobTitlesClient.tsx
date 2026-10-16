@@ -57,6 +57,57 @@ const badgeClass = (status: string) => {
   return 'warn';
 };
 
+const families = ['Executive', 'Management', 'Professional', 'Technical', 'Operations Support'] as const;
+const levels = ['Strategic', 'Senior', 'Mid', 'Entry'] as const;
+const reportingLevels = ['Enterprise', 'Division', 'Department', 'Team'] as const;
+const standardizationStatuses = ['Standard', 'Variant', 'Needs Review'] as const;
+const healthStatuses = ['Healthy', 'Needs Attention', 'Critical'] as const;
+
+type Draft = {
+  code: string;
+  title: string;
+  grade: string;
+  family: (typeof families)[number];
+  level: (typeof levels)[number];
+  reportingLevel: (typeof reportingLevels)[number];
+  standardizationStatus: (typeof standardizationStatuses)[number];
+  healthStatus: (typeof healthStatuses)[number];
+  openPositions: string;
+  benchmarkPosition: string;
+  jobPurpose: string;
+  keyResponsibilities: string;
+};
+
+const emptyDraft = (): Draft => ({
+  code: '',
+  title: '',
+  grade: '',
+  family: 'Professional',
+  level: 'Mid',
+  reportingLevel: 'Team',
+  standardizationStatus: 'Standard',
+  healthStatus: 'Healthy',
+  openPositions: '0',
+  benchmarkPosition: '',
+  jobPurpose: '',
+  keyResponsibilities: '',
+});
+
+const draftFrom = (title: JobTitleRecord): Draft => ({
+  code: title.code,
+  title: title.title,
+  grade: title.gradeName || title.gradeCode,
+  family: title.family,
+  level: title.level,
+  reportingLevel: title.reportingLevel,
+  standardizationStatus: title.standardizationStatus,
+  healthStatus: title.healthStatus,
+  openPositions: String(title.openPositions ?? 0),
+  benchmarkPosition: title.benchmarkPosition || '',
+  jobPurpose: title.jobPurpose || '',
+  keyResponsibilities: (title.keyResponsibilities || []).join('\n'),
+});
+
 export default function JobTitlesClient() {
   const [payload, setPayload] = useState<Payload | null>(null);
   const [loading, setLoading] = useState(true);
@@ -68,6 +119,9 @@ export default function JobTitlesClient() {
   const [checked, setChecked] = useState<string[]>([]);
   const [menuId, setMenuId] = useState('');
   const [notice, setNotice] = useState('');
+  const [draft, setDraft] = useState<Draft>(emptyDraft);
+  const [saving, setSaving] = useState(false);
+  const [formError, setFormError] = useState('');
   const pageSize = 20;
 
   const load = async () => {
@@ -141,6 +195,57 @@ export default function JobTitlesClient() {
     setSelected(title);
     setMode(nextMode);
     setMenuId('');
+    setFormError('');
+    setDraft(nextMode === 'add' || !title ? emptyDraft() : draftFrom(title));
+  };
+
+  const closeTitle = () => {
+    if (saving) return;
+    setSelected(null);
+    setMode('view');
+    setFormError('');
+  };
+
+  const setDraftField = (key: keyof Draft, value: string) => {
+    setDraft((current) => ({ ...current, [key]: value }) as Draft);
+  };
+
+  const saveTitle = async () => {
+    if (!payload?.permissions.canEdit || saving) return;
+    setSaving(true);
+    setFormError('');
+    try {
+      const response = await fetch('/api/hris/organization/job-titles', {
+        method: mode === 'edit' ? 'PATCH' : 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          id: mode === 'edit' ? selected?.id : undefined,
+          code: draft.code,
+          title: draft.title,
+          grade: draft.grade,
+          family: draft.family,
+          level: draft.level,
+          reportingLevel: draft.reportingLevel,
+          standardizationStatus: draft.standardizationStatus,
+          healthStatus: draft.healthStatus,
+          openPositions: draft.openPositions === '' ? 0 : Number(draft.openPositions),
+          benchmarkPosition: draft.benchmarkPosition,
+          jobPurpose: draft.jobPurpose,
+          keyResponsibilities: draft.keyResponsibilities.split(/\r?\n/).map((line) => line.trim()).filter(Boolean),
+        }),
+      });
+      const json = await response.json().catch(() => null);
+      if (!response.ok || json?.status !== 'success') throw new Error(json?.error || 'Unable to save job title');
+      const savedName = draft.title.trim() || 'Job title';
+      setNotice(mode === 'edit' ? `${savedName} was updated.` : `${savedName} was added.`);
+      setSelected(null);
+      setMode('view');
+      await load();
+    } catch (saveError) {
+      setFormError(saveError instanceof Error ? saveError.message : 'Unable to save job title');
+    } finally {
+      setSaving(false);
+    }
   };
 
   const pageList = () => {
@@ -177,10 +282,10 @@ export default function JobTitlesClient() {
           <button type="button" onClick={exportCsv} disabled={!payload?.permissions.canExport}><Download size={16} />Export <ChevronDown size={14} /></button>
           <button type="button" onClick={() => document.getElementById('job-title-import')?.click()}><Upload size={16} />Import</button>
           <input id="job-title-import" type="file" accept=".csv,text/csv" hidden onChange={(event) => { const file = event.target.files?.[0]; setNotice(file ? `${file.name} was not imported. Job titles are produced from the employee register.` : ''); event.target.value = ''; }} />
-          <button type="button" className="primary" onClick={() => openTitle(null, 'add')}><Plus size={16} />Add Job Title</button>
+          <button type="button" className="primary" disabled={Boolean(payload) && !payload?.permissions.canEdit} onClick={() => openTitle(null, 'add')}><Plus size={16} />Add Job Title</button>
         </div>
       </div>
-      {notice ? <p className="empty">{notice}</p> : null}
+      {notice ? <p className="notice">{notice}</p> : null}
 
       <section className="kpis">
         {cards.map(([Icon, label, value, detail, tone]) => (
@@ -258,7 +363,7 @@ export default function JobTitlesClient() {
                   <td onClick={(event) => event.stopPropagation()}>
                     <div className="row-actions">
                       <button type="button" className="icon-btn" aria-label={`View ${title.title}`} onClick={() => openTitle(title, 'view')}><Eye size={15} /></button>
-                      <button type="button" className="icon-btn" aria-label={`Edit ${title.title}`} onClick={() => openTitle(title, 'edit')}><Pencil size={15} /></button>
+                      <button type="button" className="icon-btn" aria-label={`Edit ${title.title}`} disabled={payload ? !payload.permissions.canEdit : false} onClick={() => openTitle(title, 'edit')}><Pencil size={15} /></button>
                       <div className="menu">
                         <button type="button" className="icon-btn" aria-label={`More actions for ${title.title}`} onClick={() => setMenuId(menuId === title.id ? '' : title.id)}><MoreVertical size={15} /></button>
                         {menuId === title.id ? <div className="menu-list"><button type="button" onClick={() => openTitle(title, 'view')}>View details</button></div> : null}
@@ -275,10 +380,10 @@ export default function JobTitlesClient() {
       </section>
 
       {selected || mode === 'add' ? (
-        <div className="backdrop" onClick={() => { setSelected(null); setMode('view'); }} role="presentation">
+        <div className="backdrop" onClick={closeTitle} role="presentation">
           <div className="modal" role="dialog" aria-modal="true" aria-labelledby="job-title-detail" onClick={(event) => event.stopPropagation()}>
-            <h2 id="job-title-detail">{mode === 'add' ? 'Add Job Title' : selected?.title}</h2>
-            <p>{mode === 'view' ? selected?.jobPurpose : 'Maintain the standardized title architecture and mapping.'}</p>
+            <h2 id="job-title-detail">{mode === 'add' ? 'Add Job Title' : mode === 'edit' ? 'Edit Job Title' : selected?.title}</h2>
+            <p>{mode === 'view' ? selected?.jobPurpose : 'Maintain the standardized title architecture and mapping. Saved titles stay in the HRIS register.'}</p>
             {mode === 'view' && selected ? (
               <div className="form">
                 {[
@@ -295,15 +400,40 @@ export default function JobTitlesClient() {
               </div>
             ) : (
               <div className="form">
-                <label>Code<input defaultValue={selected?.code || ''} /></label>
-                <label>Job Title<input defaultValue={selected?.title || ''} /></label>
-                <label>Grade<input defaultValue={selected?.gradeName || selected?.gradeCode || ''} /></label>
-                <label>Family<input defaultValue={selected?.family || ''} /></label>
+                <label>Code<input value={draft.code} onChange={(event) => setDraftField('code', event.target.value)} maxLength={80} required /></label>
+                <label>Job Title<input value={draft.title} onChange={(event) => setDraftField('title', event.target.value)} maxLength={180} required /></label>
+                <label>Grade<input value={draft.grade} onChange={(event) => setDraftField('grade', event.target.value)} list="job-title-grades" maxLength={180} required />
+                  <datalist id="job-title-grades">{(payload?.filterOptions.grades || []).map((grade) => <option key={grade} value={grade} />)}</datalist>
+                </label>
+                <label>Family
+                  <select value={draft.family} onChange={(event) => setDraftField('family', event.target.value)}>{families.map((item) => <option key={item}>{item}</option>)}</select>
+                </label>
+                <label>Level
+                  <select value={draft.level} onChange={(event) => setDraftField('level', event.target.value)}>{levels.map((item) => <option key={item}>{item}</option>)}</select>
+                </label>
+                <label>Reporting level
+                  <select value={draft.reportingLevel} onChange={(event) => setDraftField('reportingLevel', event.target.value)}>{reportingLevels.map((item) => <option key={item}>{item}</option>)}</select>
+                </label>
+                <label>Standardization
+                  <select value={draft.standardizationStatus} onChange={(event) => setDraftField('standardizationStatus', event.target.value)}>{standardizationStatuses.map((item) => <option key={item}>{item}</option>)}</select>
+                </label>
+                <label>Health
+                  <select value={draft.healthStatus} onChange={(event) => setDraftField('healthStatus', event.target.value)}>{healthStatuses.map((item) => <option key={item}>{item}</option>)}</select>
+                </label>
+                <label>Open roles<input type="number" min={0} step={1} value={draft.openPositions} onChange={(event) => setDraftField('openPositions', event.target.value)} /></label>
+                <label>Benchmark position<input value={draft.benchmarkPosition} onChange={(event) => setDraftField('benchmarkPosition', event.target.value)} maxLength={180} /></label>
+                <label className="wide">Job purpose<textarea value={draft.jobPurpose} onChange={(event) => setDraftField('jobPurpose', event.target.value)} maxLength={800} /></label>
+                <label className="wide">Key responsibilities<textarea value={draft.keyResponsibilities} onChange={(event) => setDraftField('keyResponsibilities', event.target.value)} placeholder="One responsibility per line" /></label>
               </div>
             )}
+            {formError ? <p className="form-error">{formError}</p> : null}
             <div className="modal-actions">
-              <button type="button" onClick={() => { setSelected(null); setMode('view'); }}>Cancel</button>
-              <button type="button" className="primary" onClick={() => { setNotice(mode === 'view' ? '' : 'Job titles are produced from the employee register, so this change is not stored.'); setSelected(null); setMode('view'); }}>{mode === 'view' ? 'Close' : 'Save Job Title'}</button>
+              <button type="button" onClick={closeTitle} disabled={saving}>Cancel</button>
+              {mode === 'view' ? (
+                <button type="button" className="primary" onClick={closeTitle}>Close</button>
+              ) : (
+                <button type="button" className="primary" onClick={() => void saveTitle()} disabled={saving || !payload?.permissions.canEdit}>{saving ? 'Saving...' : 'Save Job Title'}</button>
+              )}
             </div>
           </div>
         </div>
