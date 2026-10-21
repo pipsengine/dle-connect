@@ -411,6 +411,9 @@ permissionCatalog.push(
   node('Page Access', 'IT & Support', 'Account Recovery', 'IT Account Recovery Page', 'Page', 'L2 - IT Support', 'Company', 'page.it-support.account-recovery'),
   node('Page Access', 'IT & Support', 'Telephone Allowance', 'Telephone Allowance Page', 'Page', 'L2 - IT Admin', 'Company', 'page.it-support.telephone-allowance'),
   node('IT Support', 'Account Recovery', 'Clear Account Issues', 'Unlock and clear login blockers', 'Button', 'L2 - IT Support', 'Company', 'it.account-recovery'),
+  node('Corporate Office', 'Front Desk', 'Correspondence Register', 'Front Desk Operations', 'Module', 'L2 - Manager', 'Company', 'corporate.front-desk'),
+  node('Page Access', 'Corporate Office', 'Corporate Office Portal', 'Corporate Office Page', 'Page', 'L2 - Manager', 'Company', 'page.corporate-office'),
+  node('Page Access', 'Corporate Office', 'Front Desk', 'Front Desk Page', 'Page', 'L2 - Manager', 'Company', 'page.corporate-office.front-desk'),
 
   node('Timesheet Controls', 'Searchable Selectors', 'Search Supervisor Dropdown', 'Search and Select Supervisor', 'Dropdown', 'L2 - Manager', 'Company', 'timesheet.controls.supervisor-search'),
   node('Timesheet Controls', 'Searchable Selectors', 'Search Location Dropdown', 'Search and Select Location', 'Dropdown', 'L2 - Manager', 'Company', 'timesheet.controls.location-search'),

@@ -12,6 +12,7 @@ import {
   BarChart4,
   UserCog,
   ShieldCheck,
+  Building2,
   FileKey,
   Webhook,
   HelpCircle,
@@ -46,6 +47,19 @@ export const navigationConfig: NavItem[] = [
     group: 'main',
     route: '/',
     permissionKey: 'view_dashboard'
+  },
+  {
+    id: 'corporate-office',
+    label: 'Corporate Office',
+    slug: 'corporate-office',
+    icon: Building2,
+    group: 'main',
+    route: '/corporate-office',
+    permissionKey: 'view_corporate_office',
+    subItems: [
+      { title: 'Overview', slug: 'overview', route: '/corporate-office', permissionKey: 'view_corporate_office' },
+      { title: 'Front Desk', slug: 'front-desk', route: '/corporate-office/front-desk', permissionKey: 'view_corporate_office' },
+    ],
   },
   {
     id: 'hris',

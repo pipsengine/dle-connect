@@ -43,7 +43,7 @@ const bookings = [
 ];
 
 const chukwudumebi = row('C1607');
-assert.equal(chukwudumebi.days.size, 2);
+assert.equal(chukwudumebi.days.size, 1, 'Saturday is not a worked day');
 assert.equal(chukwudumebi.weekdayHours, 8);
 assert.equal(chukwudumebi.saturdayHours, 6);
 assert.equal(chukwudumebi.status, 'Exception', 'a 6-hour Saturday is not a full day');
@@ -55,6 +55,7 @@ assert.equal(julius.saturdayHours, 6);
 assert.equal(julius.sundayHours, 6);
 assert.equal(julius.phHours, 6);
 assert.equal(julius.phOvt, 2);
+assert.equal(julius.days.size, 1, 'Saturday, Sunday, and the public holiday are not worked days');
 assert.equal(julius.night, 3, 'night sessions are dates, not a sum of the flag');
 assert.equal(julius.nightHours, 0, 'the night flag is not hours');
 assert.equal(julius.status, 'Exception');
@@ -67,6 +68,7 @@ assert.equal(fullDays.status, 'Balanced');
 const nightHoliday = row('C2537');
 assert.equal(nightHoliday.phHours, 0, 'night-shift hours stay out of the holiday column');
 assert.equal(nightHoliday.weekdayHours, 0);
+assert.equal(nightHoliday.days.size, 0, 'a public holiday is not a worked day');
 assert.equal(nightHoliday.night, 1);
 assert.equal(nightHoliday.nightHours, 6);
 assert.equal(nightHoliday.status, 'Exception');

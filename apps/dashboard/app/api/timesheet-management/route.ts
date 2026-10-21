@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { hasPermission } from '@/lib/auth/permission-match';
+import { canViewProjectLabourReport } from '@/lib/project-labour-cost';
 import { resolveAccessContext } from '@/lib/hris-access';
 import { canDecideCrewRemoval, decideCrewRemoval, readCrewRemovalApprover, readCrewSignals, requestCrewRemoval, saveTimesheetCrewAssignment, updateTimesheetCrewStatus } from '@/lib/timesheet-crew-store';
 import {
@@ -43,6 +44,12 @@ const snapshotFor = async (request: Request) => {
       canManagePeriods: canManageTimesheetPeriods(request),
       canDecideCrewRemoval: canDecideCrewRemoval(actor),
       crewRemovalApprover: approver.label,
+      canViewProjectLabour: canViewProjectLabourReport({
+        globalAdmin: request.headers.get('x-auth-global-admin') === '1',
+        roles: request.headers.get('x-auth-roles') || '',
+        department: request.headers.get('x-auth-department') || '',
+        unit: request.headers.get('x-auth-unit') || '',
+      }),
     },
   };
 };

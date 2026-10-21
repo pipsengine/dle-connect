@@ -17,8 +17,12 @@ import {
   isPreparationRecord,
   matchesCommercialTab,
   mdDecisionOf,
+  awaitsManagingDirector,
+  gmBidChoiceOf,
+  isCommercialOutcomeRecipient,
   mdDecisionPermitted,
   registerStatusOf,
+  overdueOpportunity,
   tenderApprovalBucket,
   preparationOf,
   reminderKey,
@@ -84,9 +88,12 @@ assert.doesNotMatch(body, /NGN|value|amount/i);
 assert.equal(bidChoiceOf({ bidDecision: 'Bid' }), 'Bid');
 assert.equal(bidChoiceOf({ bidDecision: 'No Bid' }), 'No Bid');
 assert.equal(tenderApprovalBucket({ opportunityType: 'Client Tender', status: 'Draft', stage: 'Tender/Bid' }), 'enquiry');
-assert.equal(tenderApprovalBucket({ opportunityType: 'Client Tender', status: 'Open', stage: 'Tender/Bid' }), 'pending');
-assert.equal(tenderApprovalBucket({ opportunityType: 'ITT', commercialReview: 'Awaiting Review', status: 'Under Review', stage: 'GM Commercial Review' }), 'enquiry');
-assert.equal(tenderApprovalBucket({ opportunityType: 'ITT', commercialReview: 'Reviewed', status: 'Under Review', stage: 'MD Decision' }), 'pending');
+assert.equal(tenderApprovalBucket({ opportunityType: 'Client Tender', status: 'Open', stage: 'Tender/Bid' }), 'gm');
+assert.equal(tenderApprovalBucket({ opportunityType: 'ITT', commercialReview: 'Awaiting Review', status: 'Under Review', stage: 'GM Commercial Review' }), 'gm');
+assert.equal(tenderApprovalBucket({ opportunityType: 'ITT', commercialReview: 'Reviewed', status: 'Under Review', stage: 'MD Decision' }), 'gm');
+assert.equal(tenderApprovalBucket({ commercialKind: 'ITT', gmBidDecision: 'Bid', commercialReview: 'Reviewed', status: 'Under Review', stage: 'MD Final Approval' }), 'pending');
+assert.equal(tenderApprovalBucket({ commercialKind: 'EOI', gmBidDecision: 'Bid', bidDecision: 'Bid', status: 'Open', stage: 'Bid Preparation' }), 'review');
+assert.equal(tenderApprovalBucket({ commercialKind: 'RFQ', gmBidDecision: 'No Bid', bidDecision: 'No Bid', status: 'Closed', stage: 'No Bid' }), 'completed');
 assert.equal(tenderApprovalBucket({ opportunityType: 'Client Tender', bidDecision: 'Bid', status: 'Open', stage: 'Bid Preparation', ownerName: 'Ada' }), 'review');
 assert.equal(tenderApprovalBucket({ opportunityType: 'Client Tender', bidDecision: 'No Bid', status: 'Closed', stage: 'No Bid' }), 'completed');
 assert.equal(tenderApprovalBucket({ opportunityType: 'Enquiry', stage: 'Enquiry' }), 'enquiry');
@@ -100,7 +107,20 @@ assert.equal(commercialReviewOf({ status: 'Open', opportunityType: 'Client Tende
 assert.equal(mdDecisionOf({ bidDecision: 'Bid' }), 'BID');
 assert.equal(mdDecisionOf({ bidDecision: '' }), 'Pending');
 assert.equal(registerStatusOf({ commercialReview: 'Awaiting Review', status: 'Under Review', stage: 'GM Commercial Review', opportunityType: 'ITT', preparationStatus: 'Not Started' }), 'Awaiting GM Review');
-assert.equal(registerStatusOf({ commercialReview: 'Reviewed', status: 'Under Review', stage: 'MD Decision', opportunityType: 'RFQ', preparationStatus: 'Not Started' }), 'Awaiting MD Decision');
+assert.equal(registerStatusOf({ commercialReview: 'Reviewed', gmBidDecision: 'Bid', status: 'Under Review', stage: 'MD Final Approval', opportunityType: 'RFQ', preparationStatus: 'Not Started' }), 'Awaiting MD Decision');
+assert.equal(registerStatusOf({ commercialReview: 'Reviewed', gmBidDecision: 'Bid', status: 'Under Review', stage: 'GM Commercial Approval', commercialKind: 'EOI', preparationStatus: 'Not Started' }), 'Awaiting GM Review');
+assert.equal(awaitsManagingDirector({ commercialKind: 'ITT', gmBidDecision: 'Bid' }), true);
+assert.equal(awaitsManagingDirector({ commercialKind: 'EOI', gmBidDecision: 'Bid' }), false);
+assert.equal(awaitsManagingDirector({ commercialKind: 'RFQ', gmBidDecision: 'No Bid' }), false);
+assert.equal(gmBidChoiceOf({ gmBidDecision: 'No Bid' }), 'No Bid');
+assert.equal(isCommercialOutcomeRecipient({ department: 'Proposal', jobTitle: 'Proposal Officer' }), true);
+assert.equal(isCommercialOutcomeRecipient({ department: 'Sales', jobTitle: 'Sales Executive' }), true);
+assert.equal(isCommercialOutcomeRecipient({ jobTitle: 'Managing Director' }), true);
+assert.equal(isCommercialOutcomeRecipient({ jobTitle: 'GM Operations' }), true);
+assert.equal(isCommercialOutcomeRecipient({ jobTitle: 'CFO' }), true);
+assert.equal(isCommercialOutcomeRecipient({ fullName: 'Miss Oluwatamilayo Anuoluwa Austen-Peters' }), true);
+assert.equal(isCommercialOutcomeRecipient({ email: 'tap@dormanlongeng.com', fullName: 'Timi Austen-Peters' }), true);
+assert.equal(isCommercialOutcomeRecipient({ department: 'Engineering', jobTitle: 'Engineer' }), false);
 assert.equal(registerStatusOf({ commercialReview: 'Reviewed', bidDecision: 'Bid', status: 'Open', stage: 'Bid Preparation', opportunityType: 'ITT', preparationStatus: 'Not Started' }), 'Not Started');
 assert.equal(registerStatusOf({ commercialReview: 'Reviewed', bidDecision: 'Bid', status: 'Open', stage: 'Bid Preparation', opportunityType: 'ITT', preparationStatus: 'In Progress', acknowledgedAt: '2026-10-16' }), 'In Progress');
 assert.equal(registerStatusOf({ bidDecision: 'No Bid', status: 'Closed', stage: 'No Bid', opportunityType: 'EOI' }), 'Closed');
@@ -109,13 +129,15 @@ assert.equal(matchesCommercialTab({ commercialKind: 'EOI', commercialReview: 'Aw
 assert.equal(matchesCommercialTab({ commercialKind: 'EOI', commercialReview: 'Awaiting Review', status: 'Under Review', opportunityType: 'EOI' }, 'ITT'), false);
 assert.equal(documentChecklistFor('EOI').length < documentChecklistFor('ITT').length, true);
 assert.equal(mdDecisionPermitted({ commercialReview: 'Awaiting Review', status: 'Under Review', opportunityType: 'ITT' }).ok, false);
-assert.equal(mdDecisionPermitted({ commercialReview: 'Reviewed', status: 'Under Review', opportunityType: 'ITT' }).ok, true);
-assert.equal(mdDecisionPermitted({ commercialReview: 'Awaiting Review', status: 'Under Review', opportunityType: 'ITT' }, 'Client deadline leaves no time for the normal review.').exception, true);
+assert.equal(mdDecisionPermitted({ commercialReview: 'Reviewed', status: 'Under Review', opportunityType: 'ITT' }).ok, false);
+assert.equal(mdDecisionPermitted({ commercialKind: 'ITT', gmBidDecision: 'Bid', commercialReview: 'Reviewed', status: 'Under Review' }).ok, true);
+assert.equal(mdDecisionPermitted({ commercialKind: 'EOI', gmBidDecision: 'Bid', commercialReview: 'Reviewed' }).ok, false);
+assert.equal(mdDecisionPermitted({ commercialKind: 'ITT', gmBidDecision: 'Bid' }, 'Client deadline leaves no time for the normal review.').exception, false);
 
 const dashboardRows = [
   { status: 'Draft', stage: 'Registration', opportunityType: 'ITT', commercialKind: 'ITT' },
   { commercialReview: 'Awaiting Review', status: 'Under Review', stage: 'GM Commercial Review', opportunityType: 'ITT' },
-  { commercialReview: 'Reviewed', status: 'Under Review', stage: 'MD Decision', opportunityType: 'RFQ' },
+  { commercialReview: 'Reviewed', gmBidDecision: 'Bid', status: 'Under Review', stage: 'MD Final Approval', opportunityType: 'RFQ', commercialKind: 'RFQ' },
   { commercialReview: 'Reviewed', bidDecision: 'Bid', status: 'Open', stage: 'Bid Preparation', opportunityType: 'ITT', preparationStatus: 'Not Started' },
   { commercialReview: 'Reviewed', bidDecision: 'Bid', status: 'Open', stage: 'Bid Preparation', opportunityType: 'EOI', preparationStatus: 'In Progress', acknowledgedAt: '2026-10-16' },
   { bidDecision: 'Bid', status: 'Submitted', stage: 'Submitted', opportunityType: 'RFQ', preparationStatus: 'Submitted' },
@@ -134,6 +156,9 @@ assert.equal(isActiveResponse(dashboardRows[6]), false);
 assert.equal(isPreparationRecord(dashboardRows[5]), true);
 assert.equal(isPreparationRecord(dashboardRows[6]), false);
 assert.equal(isPreparationRecord(dashboardRows[2]), false);
+assert.equal(registerStatusOf({ source: 'Proposal Register 2026', status: 'Historical', stage: 'Historical Register', commercialKind: 'RFQ', opportunityType: 'RFQ', submissionDeadline: '2026-01-05' }), 'Historical');
+assert.equal(tenderApprovalBucket({ source: 'Proposal Register 2026', status: 'Historical', stage: 'Historical Register', commercialKind: 'RFQ' }), 'enquiry');
+assert.equal(overdueOpportunity({ source: 'Proposal Register 2026', status: 'Historical', stage: 'Historical Register', commercialKind: 'RFQ', submissionDeadline: '2026-01-05' }), false);
 assert.equal(departmentalReviewAllowed({ bidDecision: 'Bid', ownerName: 'Ada' }), true);
 assert.equal(departmentalReviewAllowed({ bidDecision: 'Bid', ownerName: '' }), false);
 assert.equal(departmentalReviewAllowed({ bidDecision: 'No Bid', ownerName: 'Ada' }), false);

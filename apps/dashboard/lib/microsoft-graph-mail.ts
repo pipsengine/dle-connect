@@ -89,6 +89,7 @@ export const verifyGraphMailConnection = async () => {
 
 export const sendGraphMail = async (input: {
   to: string;
+  cc?: string;
   subject: string;
   text: string;
   html?: string;
@@ -121,6 +122,10 @@ export const sendGraphMail = async (input: {
     body: { contentType: 'HTML', content: html },
     toRecipients: [{ emailAddress: { address: to } }],
   };
+  const cc = compact(input.cc);
+  if (cc && cc.toLowerCase() !== to.toLowerCase()) {
+    message.ccRecipients = [{ emailAddress: { address: cc } }];
+  }
   if (replyTo) {
     message.replyTo = [{ emailAddress: { address: replyTo } }];
   }

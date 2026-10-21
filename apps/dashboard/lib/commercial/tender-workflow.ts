@@ -137,7 +137,12 @@ export const DEPARTMENT_REVIEW_STAGES = [
 
 export const COMMERCIAL_KINDS = ['ITT', 'RFQ', 'EOI'] as const;
 export const COMMERCIAL_REVIEWS = ['Awaiting Review', 'Returned for Correction', 'Reviewed'] as const;
-export const REGISTER_STATUSES = ['Not Started', 'In Progress', 'Submitted', 'Awaiting GM Review', 'Awaiting MD Decision', 'Closed'] as const;
+export const REGISTER_STATUSES = ['Not Started', 'In Progress', 'Submitted', 'Awaiting GM Review', 'Awaiting MD Decision', 'Closed', 'Historical'] as const;
+export const PROPOSAL_REGISTER_SOURCE = 'Proposal Register 2026';
+
+/** Past proposal-register rows kept for records and trends. They are not live approval work. */
+export const isHistoricalRegister = (row: { source?: string; stage?: string; status?: string }) =>
+  row.source === PROPOSAL_REGISTER_SOURCE || row.stage === 'Historical Register' || row.status === 'Historical';
 
 export type CommercialKind = (typeof COMMERCIAL_KINDS)[number];
 export type CommercialReview = (typeof COMMERCIAL_REVIEWS)[number];
@@ -198,8 +203,13 @@ export const mdDecisionOf = (row: { bidDecision?: string }): MdDecision => {
 export const registerStatusOf = (row: StatusSource & {
   commercialReview?: string;
   bidDecision?: string;
+  gmBidDecision?: string;
+  commercialKind?: string;
+  contractType?: string;
+  source?: string;
   acknowledgedAt?: string;
 }): RegisterStatus => {
+  if (isHistoricalRegister(row)) return 'Historical';
   const decision = bidChoiceOf(row);
   const text = textOf(row);
   if (decision === 'No Bid' || row.status === 'Closed' || row.status === 'Lost' || row.status === 'Cancelled' || row.status === 'Withdrawn' || row.status === 'No-Bid' || clientStatusOf(row) === 'Cancelled') return 'Closed';
@@ -209,12 +219,10 @@ export const registerStatusOf = (row: StatusSource & {
     if (row.acknowledgedAt || row.preparationStatus === 'In Progress') return 'In Progress';
     return 'Not Started';
   }
+  if (awaitsManagingDirector(row)) return 'Awaiting MD Decision';
   const review = commercialReviewOf(row);
-  if (review === 'Returned for Correction' || review === 'Awaiting Review') {
-    if (row.status === 'Draft' && review !== 'Returned for Correction') return 'Not Started';
-    return 'Awaiting GM Review';
-  }
-  return 'Awaiting MD Decision';
+  if (row.status === 'Draft' && review !== 'Returned for Correction') return 'Not Started';
+  return 'Awaiting GM Review';
 };
 
 export const overdueOpportunity = (row: {
@@ -232,9 +240,10 @@ export const overdueOpportunity = (row: {
   clientStatus?: string;
   acknowledgedAt?: string;
   ownerName?: string;
+  source?: string;
 }, now = new Date()) => {
   const status = registerStatusOf(row);
-  if (status === 'Closed' || status === 'Submitted') return false;
+  if (status === 'Closed' || status === 'Submitted' || status === 'Historical') return false;
   const clocks = [internalDeadlineOf(row), externalDeadlineOf(row)];
   return clocks.some((value) => {
     const parsed = parseDeadline(value);
@@ -269,10 +278,20 @@ export const documentChecklistFor = (kind: CommercialKind) => {
   return ['Invitation documents', 'Technical proposal', 'Commercial proposal', 'HSE documents', 'Legal documents', 'Form of tender'];
 };
 
-/** GM Commercial review is complete, or the MD recorded an explicit audited exception. */
-export const mdDecisionPermitted = (row: { commercialReview?: string; bidDecision?: string; status?: string; stage?: string; opportunityType?: string; tenderType?: string }, exceptionReason = '') => {
-  if (commercialReviewOf(row) === 'Reviewed') return { ok: true, exception: false as const };
-  if (asText(exceptionReason).trim()) return { ok: true, exception: true as const };
+/** The MD gives final approval only after GM Commercial has approved a BID on an ITT or RFQ. */
+export const mdDecisionPermitted = (row: {
+  commercialReview?: string;
+  bidDecision?: string;
+  gmBidDecision?: string;
+  commercialKind?: string;
+  status?: string;
+  stage?: string;
+  opportunityType?: string;
+  tenderType?: string;
+  contractType?: string;
+  source?: string;
+}, _exceptionReason = '') => {
+  if (awaitsManagingDirector(row)) return { ok: true, exception: false as const };
   return { ok: false, exception: false as const };
 };
 
@@ -285,26 +304,83 @@ export const bidChoiceOf = (row: { bidDecision?: string }): BidChoice | '' => {
   return '';
 };
 
-export type ApprovalBucket = 'pending' | 'review' | 'completed' | 'enquiry';
+export const gmBidChoiceOf = (row: { gmBidDecision?: string }): BidChoice | '' => {
+  const text = String(row.gmBidDecision || '').trim().toLowerCase();
+  if (text === 'bid' || text === 'go') return 'Bid';
+  if (/no\s*-?\s*bid/.test(text)) return 'No Bid';
+  return '';
+};
 
-/** Pending is waiting for the MD. Review is a confirmed bid. Completed is a no-bid or a finished bid. */
+/** ITT and RFQ marked BID by GM Commercial wait for the MD. EOI and NO BID stop with GM Commercial. */
+export const awaitsManagingDirector = (row: {
+  gmBidDecision?: string;
+  bidDecision?: string;
+  commercialKind?: string;
+  opportunityType?: string;
+  tenderType?: string;
+  contractType?: string;
+  stage?: string;
+  source?: string;
+}) => {
+  if (bidChoiceOf(row)) return false;
+  if (commercialKindOf(row) === 'EOI') return false;
+  return gmBidChoiceOf(row) === 'Bid';
+};
+
+export type CommercialCopyPerson = {
+  fullName?: string;
+  jobTitle?: string;
+  designation?: string;
+  department?: string;
+  officialEmail?: string;
+  email?: string;
+};
+
+/** People copied on every completed commercial outcome: Proposal, Sales, MD, GM Operations, CFO, and the two named recipients. */
+export const isCommercialOutcomeRecipient = (person: CommercialCopyPerson) => {
+  const title = `${person.jobTitle || ''} ${person.designation || ''}`.toLowerCase();
+  const department = `${person.department || ''}`.toLowerCase();
+  const name = `${person.fullName || ''}`.toLowerCase();
+  const email = `${person.officialEmail || ''} ${person.email || ''}`.toLowerCase();
+  if (email.includes('tap@dormanlongeng.com')) return true;
+  if (/oluwatamilayo/.test(name) && /austen/.test(name)) return true;
+  if (/\btimi\b/.test(name) && /austen/.test(name)) return true;
+  if (/\bproposal\b/.test(title) || /\bproposal\b/.test(department)) return true;
+  if (/\bsales\b/.test(title) || /\bsales\b/.test(department)) return true;
+  if (/managing director/.test(title) || /^(md|md\/ceo)$/.test(title.trim())) return true;
+  if (/gm operations|general manager[, ]+operations/.test(title)) return true;
+  if (/\bcfo\b|chief financial officer/.test(title)) return true;
+  return false;
+};
+
+export type ApprovalBucket = 'pending' | 'review' | 'completed' | 'enquiry' | 'gm';
+
+/** GM is waiting for assignment and the first approval. Pending is MD final approval. Review is a confirmed bid. */
 export const tenderApprovalBucket = (row: {
   bidDecision?: string;
+  gmBidDecision?: string;
+  commercialKind?: string;
+  commercialReview?: string;
   status?: string;
   stage?: string;
   preparationStatus?: string;
   opportunityType?: string;
   tenderType?: string;
+  contractType?: string;
+  source?: string;
 }): ApprovalBucket => {
-  if (!bidChoiceOf(row) && commercialReviewOf(row) !== 'Reviewed') return 'enquiry';
-  if (isEnquiryRecord(row) && commercialReviewOf(row) !== 'Reviewed') return 'enquiry';
+  if (isHistoricalRegister(row)) return 'enquiry';
   const choice = bidChoiceOf(row);
   const text = `${row.status || ''} ${row.stage || ''} ${row.preparationStatus || ''}`.toLowerCase();
   if (choice === 'No Bid') return 'completed';
   if (choice === 'Bid' && /submitted|awarded|closed/.test(text)) return 'completed';
   if (choice === 'Bid') return 'review';
-  if (/closed/.test(String(row.status || ''))) return 'completed';
-  return 'pending';
+  if (/closed|lost|cancelled|withdrawn|no-?bid/.test(String(row.status || ''))) return 'completed';
+  if (awaitsManagingDirector(row)) return 'pending';
+  const review = commercialReviewOf(row);
+  if (!row.status || (row.status === 'Draft' && review !== 'Returned for Correction')) return 'enquiry';
+  if (isEnquiryRecord(row) && review !== 'Reviewed' && review !== 'Returned for Correction' && review !== 'Awaiting Review') return 'enquiry';
+  return 'gm';
 };
 
 export const departmentalReviewAllowed = (row: { bidDecision?: string; ownerName?: string }) =>

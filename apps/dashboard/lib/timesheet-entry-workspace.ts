@@ -1,6 +1,7 @@
 import sql from 'mssql';
 import { getDleEnterpriseDbPool } from '@/lib/dle-enterprise-db';
-import { extractSupervisorEmployeeCode, supervisorCodeLookupVariants, supervisorCodesMatch } from '@/lib/timesheet-agege-blasting';
+import { extractSupervisorEmployeeCode, supervisorCodeLookupVariants } from '@/lib/timesheet-agege-blasting';
+import { mobilizationBelongsOnSheet } from '@/lib/timesheet-mobilization-sheet';
 import { confirmedRemovalEmployeeCodes, namesMatchSupervisor } from '@/lib/timesheet-crew-store';
 import { listActiveMobilizations } from '@/lib/timesheet-portal-mobilization-store';
 import { approvalBlocksRevision, openTimesheetApproval } from '@/lib/timesheet-approval-store';
@@ -859,23 +860,6 @@ const loadCoveringCrewAssignments = async (
   return rows.filter((row) => text(row.AssignmentType) !== 'Primary' || !awayCodes.has(text(row.EmployeeCode).toUpperCase()));
 };
 
-const sameSheetPerson = (left: string, right: string) => {
-  if (supervisorCodesMatch(left, right)) return true;
-  const a = text(left).toLowerCase();
-  const b = text(right).toLowerCase();
-  if (!a || !b || a === '—' || b === '—' || a === 'unassigned' || b === 'unassigned') return false;
-  if (a === b) return true;
-  const shorter = a.length < b.length ? a : b;
-  const longer = a.length < b.length ? b : a;
-  return shorter.length >= 8 && longer.includes(shorter);
-};
-
-const mobilizationBelongsOnSheet = (offshoreSupervisor: string, sheetSupervisor: string, sheetSupervisorCode: string, rosterLabels: string[]) => {
-  if (sameSheetPerson(offshoreSupervisor, sheetSupervisor)) return true;
-  if (sheetSupervisorCode && sameSheetPerson(offshoreSupervisor, sheetSupervisorCode)) return true;
-  return rosterLabels.some((label) => sameSheetPerson(offshoreSupervisor, label));
-};
-
 export const resolveTimesheetEntry = async (input: { periodId: string; workDate: string; supervisor: string; supervisorCode?: string; shift?: string; location?: string }) => {
   const connection = await pool();
   const periodId = text(input.periodId);
@@ -1103,8 +1087,7 @@ export const resolveTimesheetEntry = async (input: { periodId: string; workDate:
   const mobilizedCodes = new Set(offshoreCrew.map((row) => row.employeeCode.toUpperCase()));
   const siteMatches = (site: string) => Boolean(location) && text(site).toLowerCase() === location.toLowerCase();
   const locationIsOffshore = offshoreCrew.some((row) => siteMatches(row.site));
-  const rosterLabels = (timesheet ? timesheet.lines : crew).flatMap((row) => [text(row.employeeName), text(row.employeeCode)]).filter(Boolean);
-  const onThisSheet = (row: { supervisor: string }) => mobilizationBelongsOnSheet(row.supervisor, supervisor, supervisorCode, rosterLabels);
+  const onThisSheet = (row: { supervisor: string }) => mobilizationBelongsOnSheet(row.supervisor, supervisor, supervisorCode);
   const offshoreForSupervisor = offshoreCrew.filter((row) => siteMatches(row.site) && onThisSheet(row));
   if (supervisorCode && !locationIsOffshore) {
     const supervisorRequest = connection.request();

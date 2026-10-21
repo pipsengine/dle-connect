@@ -172,6 +172,18 @@ const PERMISSION_ALIASES: Record<string, string[]> = {
   'page.it-support.account-recovery.view': ['it.account-recovery.view'],
   'application-support.view': ['it.view'],
   'service-desk.view': ['it.view'],
+  'view_corporate_office': [
+    'corporate.view',
+    'corporate.*',
+    'corporate.front-desk.view',
+    'corporate.front-desk.*',
+    'page.corporate-office.view',
+    'page.corporate-office.front-desk.view',
+  ],
+  'corporate.view': ['view_corporate_office', 'corporate.front-desk.view', 'page.corporate-office.view'],
+  'corporate.front-desk.view': ['view_corporate_office', 'page.corporate-office.front-desk.view', 'corporate.view'],
+  'page.corporate-office.view': ['view_corporate_office', 'corporate.view', 'corporate.front-desk.view'],
+  'page.corporate-office.front-desk.view': ['view_corporate_office', 'corporate.front-desk.view'],
   'view_logistics_fleet': ['fleet.view', 'fleet.*', 'logistics.view', 'logistics.*', 'driver.view'],
   'fleet.view': ['view_logistics_fleet', 'logistics.view', 'driver.view'],
   'performance.view': ['page.hris.performance-management.view', 'hris.performance-management', 'page.hris.management.view'],
@@ -288,6 +300,12 @@ export const expandPublishedPermissions = (permissions: string[]) => {
     || permission.startsWith('page.hris.payroll.'),
   )) {
     out.add('payroll.view');
+  }
+  if (list.some((permission) => permission.startsWith('corporate.') || permission.startsWith('page.corporate-office'))) {
+    out.add('view_corporate_office');
+    out.add('corporate.view');
+    out.add('page.corporate-office.view');
+    out.add('page.corporate-office.front-desk.view');
   }
   if (list.some((permission) => {
     if (permission === 'finance.payments.self' || permission.startsWith('finance.payments.')) return false;

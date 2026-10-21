@@ -141,7 +141,13 @@ assert(employer?.direction === 'up', 'employer cost went up');
 assert(employer?.variance === 4238344, 'employer cost naira variance');
 assert(payrollMomMetric(mom, 'employees')?.variance === 1, 'headcount +1');
 assert(payrollMomMetric(mom, 'grossPay')?.detail?.buckets.some((bucket) => bucket.id === 'headcount'), 'gross pay detail includes headcount movement');
-assert(payrollMomMetric(mom, 'employees')?.detail?.contributors.some((item) => item.employeeCode === 'P003' && item.reason.includes('New in current period')), 'employee detail lists joiners');
+const aliceGross = payrollMomMetric(mom, 'grossPay')?.detail?.contributors.find((item) => item.employeeCode === 'P001');
+assert(aliceGross?.reason.includes('Basic salary increased by') && aliceGross.reason.includes('10,000.00'), 'retained gross names the basic salary movement');
+assert(aliceGross?.reason.includes('Allowances increased by'), 'retained gross names allowance movement when earning lines are absent');
+assert(!aliceGross?.reason.includes('Allowances changed'), 'gross reason is the pay element, not the category');
+const aliceDeductions = payrollMomMetric(mom, 'deductions')?.detail?.contributors.find((item) => item.employeeCode === 'P001');
+assert(aliceDeductions?.reason.includes('PAYE increased by') && aliceDeductions.reason.includes('3,000.00'), 'deduction reason names PAYE');
+assert(payrollMomMetric(mom, 'employees')?.detail?.contributors.some((item) => item.employeeCode === 'P003' && item.reason.includes('New in current period') && item.reason.includes('Basic salary')), 'employee detail lists joiners with their main pay element');
 assert(payrollMomMetric(mom, 'netPay')?.detail?.contributors.some((item) => item.staffPack === 'permanent'), 'permanent staff appear in net pay contributors');
 assert((payrollMomMetric(mom, 'netPay')?.detail?.contributorTotal || 0) >= 2, 'all employees with net movement are included');
 
@@ -314,6 +320,164 @@ assert((manyNet?.detail?.contributors.length || 0) === 15, 'all 15 employees wit
 assert(manyNet?.detail?.contributors.some((item) => item.employeeCode === 'P0500' && item.staffPack === 'permanent'), 'permanent staff with smaller variance still appear alongside lumpsum');
 assert(manyNet?.detail?.contributors.some((item) => item.staffPack === 'contract-lumpsum'), 'lumpsum staff appear in the same list');
 assert((manyNet?.detail?.contributorTotal || 0) === 15, 'contributorTotal matches full list');
+
+const namedPrevious = [
+  {
+    employeeId: 'P001',
+    employeeCode: 'P001',
+    fullName: 'Ada Retained',
+    payCurrency: 'NGN',
+    grossPay: 130000,
+    totalDeductions: 15000,
+    deductions: 15000,
+    netPay: 115000,
+    employerCost: 140000,
+    basePay: 80000,
+    allowances: 50000,
+    paye: 10000,
+    pensionEmployee: 5000,
+    pension: 5000,
+    pensionEmployer: 8000,
+    statutoryEmployer: 2000,
+    loanRecovery: 0,
+    otherDeductions: 0,
+    earningLines: [
+      { code: 'BASIC', name: 'BASIC SALARY', amount: 80000 },
+      { code: 'TRANSP', name: 'TRANSPORT ALLOWANCE', amount: 40000 },
+      { code: 'SITE_ALLOW', name: 'SITE ALLOWANCE', amount: 10000 },
+    ],
+    deductionLines: [
+      { code: 'PAYE', label: 'PAYE', amount: 10000 },
+      { code: 'PENSION_EE', label: 'Pension', amount: 5000 },
+    ],
+  },
+  {
+    employeeId: 'P002',
+    employeeCode: 'P002',
+    fullName: 'Ben Left',
+    payCurrency: 'NGN',
+    grossPay: 50000,
+    totalDeductions: 5000,
+    deductions: 5000,
+    netPay: 45000,
+    employerCost: 50000,
+    basePay: 50000,
+    allowances: 0,
+    paye: 5000,
+    pensionEmployee: 0,
+    pension: 0,
+    pensionEmployer: 0,
+    statutoryEmployer: 0,
+    loanRecovery: 0,
+    otherDeductions: 0,
+    earningLines: [{ code: 'LUMPSUMTAX', name: 'LUMPSUM ALLOWANCE', amount: 50000 }],
+    deductionLines: [{ code: 'PAYE', label: 'PAYE', amount: 5000 }],
+  },
+] as any[];
+
+const namedCurrent = [
+  {
+    employeeId: 'P001',
+    employeeCode: 'P001',
+    fullName: 'Ada Retained',
+    payCurrency: 'NGN',
+    grossPay: 97000,
+    totalDeductions: 23000,
+    deductions: 23000,
+    netPay: 74000,
+    employerCost: 108000,
+    basePay: 80000,
+    allowances: 17000,
+    paye: 18000,
+    pensionEmployee: 5000,
+    pension: 5000,
+    pensionEmployer: 9000,
+    statutoryEmployer: 2000,
+    loanRecovery: 0,
+    otherDeductions: 0,
+    earningLines: [
+      { code: 'BASIC', name: 'BASIC SALARY', amount: 80000 },
+      { code: 'MGT1COLA_TRANSP', name: 'TRANSPORT ALLOWANCE', amount: 5000 },
+      { code: 'SITE_ALLOW', name: 'SITE ALLOWANCE', amount: 12000 },
+    ],
+    deductionLines: [
+      { code: 'PAYE', label: 'PAYE', amount: 18000 },
+      { code: 'PENSION_EE', label: 'Pension', amount: 5000 },
+    ],
+  },
+  {
+    employeeId: 'P003',
+    employeeCode: 'P003',
+    fullName: 'Chioma Joined',
+    payCurrency: 'NGN',
+    grossPay: 60000,
+    totalDeductions: 6000,
+    deductions: 6000,
+    netPay: 54000,
+    employerCost: 60000,
+    basePay: 60000,
+    allowances: 0,
+    paye: 6000,
+    pensionEmployee: 0,
+    pension: 0,
+    pensionEmployer: 0,
+    statutoryEmployer: 0,
+    loanRecovery: 0,
+    otherDeductions: 0,
+    earningLines: [{ code: 'BASIC', name: 'BASIC SALARY', amount: 60000 }],
+    deductionLines: [{ code: 'PAYE', label: 'PAYE', amount: 6000 }],
+  },
+] as any[];
+
+const namedMom = buildPayrollMonthOverMonth({
+  currentPeriod: '2026-09',
+  currentPeriodLabel: 'September 2026',
+  current: {
+    period: '2026-09',
+    periodLabel: 'September 2026',
+    employees: 2,
+    grossPay: 157000,
+    deductions: 29000,
+    netPay: 128000,
+    employerCost: 168000,
+  },
+  previous: {
+    period: '2026-08',
+    periodLabel: 'August 2026',
+    employees: 2,
+    grossPay: 180000,
+    deductions: 20000,
+    netPay: 160000,
+    employerCost: 190000,
+  },
+  currentRecords: namedCurrent,
+  previousRecords: namedPrevious,
+});
+
+const namedGross = payrollMomMetric(namedMom, 'grossPay');
+const adaGross = namedGross?.detail?.contributors.find((item) => item.employeeCode === 'P001');
+assert(adaGross?.reason === 'Transport allowance decreased by ₦\u00A035,000.00', `main gross reason is the transport line, got ${adaGross?.reason}`);
+assert(namedGross?.detail?.buckets.find((bucket) => bucket.label === 'Transport allowance on retained staff')?.value === -35000, 'transport driver is the retained transport movement');
+assert(namedGross?.detail?.buckets.find((bucket) => bucket.label === 'Site allowance on retained staff')?.value === 2000, 'site allowance is its own driver');
+assert(!namedGross?.detail?.buckets.some((bucket) => /allowance changes on retained staff/i.test(bucket.label)), 'drivers are named lines, not the allowance category');
+const benGross = namedGross?.detail?.contributors.find((item) => item.employeeCode === 'P002');
+assert(benGross?.reason.includes('Present in previous period only') && benGross.reason.includes('Lumpsum allowance'), 'a leaver reason names the pay element that dropped out');
+const chiomaGross = namedGross?.detail?.contributors.find((item) => item.employeeCode === 'P003');
+assert(chiomaGross?.reason.includes('New in current period') && chiomaGross.reason.includes('Basic salary'), 'a joiner reason names the pay element that came in');
+
+const adaDeductions = payrollMomMetric(namedMom, 'deductions')?.detail?.contributors.find((item) => item.employeeCode === 'P001');
+assert(adaDeductions?.reason === 'PAYE increased by ₦\u00A08,000.00', `main deduction reason is PAYE, got ${adaDeductions?.reason}`);
+const adaNet = payrollMomMetric(namedMom, 'netPay')?.detail?.contributors.find((item) => item.employeeCode === 'P001');
+assert(adaNet?.reason.includes('Transport allowance decreased by') && adaNet.reason.includes('PAYE increased by'), `net pay follows through to the earning and deduction lines, got ${adaNet?.reason}`);
+const adaEmployer = payrollMomMetric(namedMom, 'employerCost')?.detail?.contributors.find((item) => item.employeeCode === 'P001');
+assert(adaEmployer?.reason.includes('Transport allowance decreased by'), `employer cost follows through to the earning line, got ${adaEmployer?.reason}`);
+assert(payrollMomMetric(namedMom, 'grossPay')?.detail?.summary.includes('Transport allowance on retained staff'), 'summary names the main driver');
+
+for (const key of moneyMetricKeys) {
+  const metric = payrollMomMetric(namedMom, key);
+  const driverTotal = Math.round((metric!.detail!.buckets.reduce((sum, bucket) => sum + bucket.value, 0)) * 100) / 100;
+  assert(driverTotal === metric!.variance, `${key} named-line drivers must reconcile to summary variance`);
+}
 
 const empty = buildPayrollMonthOverMonth({
   currentPeriod: '2026-08',

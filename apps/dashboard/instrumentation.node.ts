@@ -13,6 +13,8 @@ export async function registerNodeInstrumentation() {
   ensureCelebrationSchedulerStarted();
   const { ensureTenderDeadlineSchedulerStarted } = await import('@/lib/commercial/tender-deadline-scheduler');
   ensureTenderDeadlineSchedulerStarted();
+  const { ensureFrontDeskDeadlineSchedulerStarted } = await import('@/lib/corporate-office/front-desk-deadline-scheduler');
+  ensureFrontDeskDeadlineSchedulerStarted();
   void import('@/lib/payroll-approval-notification-service')
     .then(({ repairPayrollApprovalNotificationPrivacy }) => repairPayrollApprovalNotificationPrivacy())
     .then((result) => {

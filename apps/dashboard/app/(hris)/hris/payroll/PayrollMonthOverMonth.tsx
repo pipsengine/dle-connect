@@ -13,14 +13,14 @@ import { payrollMomMetric } from '@/lib/payroll-month-over-month';
 import type { BankScheduleStaffPack } from '@/lib/payroll-bank-schedule-packs';
 import { formatPayrollMoney } from '@/lib/payroll-currency';
 
-const money = (value: number, allowed: boolean) => {
+const money = (value: number, allowed: boolean, currency = 'NGN') => {
   if (!allowed) return 'Restricted';
-  return formatPayrollMoney(value, 'NGN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  return formatPayrollMoney(value, currency, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 };
 
-const signedMoney = (value: number, allowed: boolean) => {
+const signedMoney = (value: number, allowed: boolean, currency = 'NGN') => {
   if (!allowed) return 'Restricted';
-  const formatted = money(Math.abs(value), true);
+  const formatted = money(Math.abs(value), true, currency);
   if (value > 0) return `+${formatted}`;
   if (value < 0) return `-${formatted}`;
   return formatted;
@@ -46,14 +46,14 @@ const directionClass = (direction: PayrollMomMetric['direction']) =>
 const directionFromValue = (value: number): PayrollMomMetric['direction'] =>
   value > 0 ? 'up' : value < 0 ? 'down' : 'flat';
 
-const bucketValue = (bucket: PayrollMomDetailBucket, allowed: boolean) =>
-  bucket.kind === 'count' ? signedCount(bucket.value) : signedMoney(bucket.value, allowed);
+const bucketValue = (bucket: PayrollMomDetailBucket, allowed: boolean, currency: string) =>
+  bucket.kind === 'count' ? signedCount(bucket.value) : signedMoney(bucket.value, allowed, currency);
 
-const contributorValue = (item: PayrollMomContributor, metric: PayrollMomMetric, allowed: boolean) =>
-  metric.kind === 'count' ? signedCount(item.variance) : signedMoney(item.variance, allowed);
+const contributorValue = (item: PayrollMomContributor, metric: PayrollMomMetric, allowed: boolean, currency: string) =>
+  metric.kind === 'count' ? signedCount(item.variance) : signedMoney(item.variance, allowed, currency);
 
-const detailTotalValue = (value: number, metric: PayrollMomMetric, allowed: boolean) =>
-  metric.kind === 'count' ? count(value) : money(value, allowed);
+const detailTotalValue = (value: number, metric: PayrollMomMetric, allowed: boolean, currency: string) =>
+  metric.kind === 'count' ? count(value) : money(value, allowed, currency);
 
 const STAFF_PACK_FILTERS: Array<{ id: 'all' | BankScheduleStaffPack; label: string }> = [
   { id: 'all', label: 'All staff' },
@@ -68,12 +68,14 @@ function VarianceContributorsPanel({
   contributorTotal,
   unchangedCount,
   canViewMoney,
+  currency,
 }: {
   metric: PayrollMomMetric;
   contributors: PayrollMomContributor[];
   contributorTotal: number;
   unchangedCount: number;
   canViewMoney: boolean;
+  currency: string;
 }) {
   const [query, setQuery] = useState('');
   const [staffPack, setStaffPack] = useState<'all' | BankScheduleStaffPack>('all');
@@ -156,14 +158,14 @@ function VarianceContributorsPanel({
           <tbody>
             {filtered.length ? filtered.map((item) => (
               <tr key={`${item.employeeId}-${item.employeeCode}`} className="border-t border-slate-100">
-                <td className="px-3 py-2">
+                <td className="px-3 py-2 align-top">
                   <div className="font-bold text-slate-900">{item.fullName || item.employeeCode}</div>
                   <div className="text-xs font-semibold text-slate-500">{item.employeeCode}</div>
                 </td>
-                <td className="px-3 py-2 font-semibold text-slate-600">{item.staffPackLabel || '—'}</td>
-                <td className="px-3 py-2 font-semibold text-slate-600">{item.reason}</td>
-                <td className={`px-3 py-2 text-right font-black ${directionClass(directionFromValue(item.variance))}`}>
-                  {contributorValue(item, metric, canViewMoney)}
+                <td className="px-3 py-2 align-top font-semibold text-slate-600">{item.staffPackLabel || '—'}</td>
+                <td className="min-w-[16rem] px-3 py-2 align-top font-semibold leading-5 text-slate-600">{item.reason}</td>
+                <td className={`px-3 py-2 text-right align-top font-black ${directionClass(directionFromValue(item.variance))}`}>
+                  {contributorValue(item, metric, canViewMoney, currency)}
                 </td>
               </tr>
             )) : (
@@ -196,7 +198,7 @@ export function PayrollMomBadge({
   const Icon = metric.direction === 'down' ? TrendingDown : TrendingUp;
   const amount = metric.kind === 'count'
     ? signedCount(metric.variance)
-    : signedMoney(metric.variance, canViewMoney);
+    : signedMoney(metric.variance, canViewMoney, mom.currency || 'NGN');
   return (
     <p className={`mt-2 inline-flex items-center gap-1 text-[11px] font-black ${directionClass(metric.direction)}`}>
       <Icon className="h-3.5 w-3.5" aria-hidden />
@@ -221,6 +223,7 @@ export default function PayrollMonthOverMonthPanel({
   const activeMetric = activeMetricKey ? mom.metrics.find((metric) => metric.key === activeMetricKey) || null : null;
   const activeDetail = activeMetric?.detail || null;
   const canOpenDetail = (metric: PayrollMomMetric) => Boolean(metric.detail);
+  const currency = mom.currency || 'NGN';
 
   return (
     <>
@@ -252,11 +255,11 @@ export default function PayrollMonthOverMonthPanel({
               <tbody>
                 {mom.metrics.map((metric) => {
                   const Icon = metric.direction === 'down' ? TrendingDown : TrendingUp;
-                  const currentValue = metric.kind === 'count' ? count(metric.current) : money(metric.current, canViewMoney);
-                  const previousValue = metric.kind === 'count' ? count(metric.previous) : money(metric.previous, canViewMoney);
+                  const currentValue = metric.kind === 'count' ? count(metric.current) : money(metric.current, canViewMoney, currency);
+                  const previousValue = metric.kind === 'count' ? count(metric.previous) : money(metric.previous, canViewMoney, currency);
                   const varianceValue = metric.kind === 'count'
                     ? signedCount(metric.variance)
-                    : signedMoney(metric.variance, canViewMoney);
+                    : signedMoney(metric.variance, canViewMoney, currency);
                   const clickable = canOpenDetail(metric);
                   return (
                     <tr key={metric.key} className="border-t border-slate-100">
@@ -315,7 +318,7 @@ export default function PayrollMonthOverMonthPanel({
           onClick={() => setActiveMetricKey(null)}
         >
           <div
-            className="my-3 flex max-h-[calc(100vh-1.5rem)] w-full max-w-5xl flex-col overflow-hidden rounded-2xl bg-white shadow-2xl sm:my-0 sm:max-h-[85vh]"
+            className="my-3 flex max-h-[calc(100vh-1.5rem)] w-full max-w-6xl flex-col overflow-hidden rounded-2xl bg-white shadow-2xl sm:my-0 sm:max-h-[85vh]"
             onClick={(event) => event.stopPropagation()}
           >
             <div className="flex shrink-0 items-start justify-between gap-4 border-b border-slate-100 px-5 py-4">
@@ -343,15 +346,15 @@ export default function PayrollMonthOverMonthPanel({
                   <div className="mt-3 space-y-2 text-sm font-semibold text-slate-700">
                     <div className="flex items-center justify-between gap-3">
                       <span>{mom.previousPeriodLabel}</span>
-                      <span className="font-black text-slate-900">{detailTotalValue(activeMetric.previous, activeMetric, canViewMoney)}</span>
+                      <span className="font-black text-slate-900">{detailTotalValue(activeMetric.previous, activeMetric, canViewMoney, currency)}</span>
                     </div>
                     <div className="flex items-center justify-between gap-3">
                       <span>{mom.currentPeriodLabel}</span>
-                      <span className="font-black text-slate-900">{detailTotalValue(activeMetric.current, activeMetric, canViewMoney)}</span>
+                      <span className="font-black text-slate-900">{detailTotalValue(activeMetric.current, activeMetric, canViewMoney, currency)}</span>
                     </div>
                     <div className={`flex items-center justify-between gap-3 ${directionClass(activeMetric.direction)}`}>
                       <span>Variance</span>
-                      <span className="font-black">{activeMetric.kind === 'count' ? signedCount(activeMetric.variance) : signedMoney(activeMetric.variance, canViewMoney)}</span>
+                      <span className="font-black">{activeMetric.kind === 'count' ? signedCount(activeMetric.variance) : signedMoney(activeMetric.variance, canViewMoney, currency)}</span>
                     </div>
                     <div className="flex items-center justify-between gap-3">
                       <span>Change</span>
@@ -366,7 +369,7 @@ export default function PayrollMonthOverMonthPanel({
                         <div key={bucket.id} className="flex items-center justify-between gap-3 rounded-lg bg-white px-3 py-2 text-sm">
                           <span className="font-semibold text-slate-700">{bucket.label}</span>
                           <span className={`font-black ${directionClass(directionFromValue(bucket.value))}`}>
-                            {bucketValue(bucket, canViewMoney)}
+                            {bucketValue(bucket, canViewMoney, currency)}
                           </span>
                         </div>
                       )) : (
@@ -376,7 +379,7 @@ export default function PayrollMonthOverMonthPanel({
                         <div className="flex items-center justify-between gap-3 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm">
                           <span className="font-black text-slate-800">Drivers total</span>
                           <span className={`font-black ${directionClass(activeMetric.direction)}`}>
-                            {signedMoney(activeDetail.buckets.reduce((sum, bucket) => sum + bucket.value, 0), canViewMoney)}
+                            {signedMoney(activeDetail.buckets.reduce((sum, bucket) => sum + bucket.value, 0), canViewMoney, currency)}
                           </span>
                         </div>
                       ) : null}
@@ -390,6 +393,7 @@ export default function PayrollMonthOverMonthPanel({
                   contributorTotal={activeDetail.contributorTotal ?? activeDetail.contributors.length}
                   unchangedCount={activeDetail.unchangedCount || 0}
                   canViewMoney={canViewMoney}
+                  currency={currency}
                 />
               </div>
             </div>

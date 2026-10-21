@@ -3,12 +3,14 @@
 import Link from 'next/link';
 import { useEffect, useMemo, useState } from 'react';
 import { CheckCircle2, ClipboardCheck, Filter, History, Search, X, XCircle } from 'lucide-react';
-import { isManagingDirector } from '@/lib/access/commercial-access';
+import { isBusinessGmCommercial, isBusinessManagingDirector } from '@/lib/access/commercial-access';
 import { daysUntil, fileSize } from '@/lib/commercial/tender-present';
 import {
   DEPARTMENT_REVIEW_STAGES,
+  awaitsManagingDirector,
   bidChoiceOf,
-  commercialReviewOf,
+  commercialKindOf,
+  gmBidChoiceOf,
   departmentalReviewAllowed,
   externalDeadlineOf,
   internalDeadlineFromExternal,
@@ -49,6 +51,7 @@ export function ApprovalBoard() {
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(5);
   const [md, setMd] = useState(false);
+  const [gm, setGm] = useState(false);
   const [department, setDepartment] = useState('');
   const [roles, setRoles] = useState<string[]>([]);
   const [directory, setDirectory] = useState<DirectoryEmployee[]>([]);
@@ -71,17 +74,19 @@ export function ApprovalBoard() {
         const nextRoles = Array.isArray(data.roles) ? data.roles : [];
         setRoles(nextRoles);
         setDepartment(String(data.department || data.unit || ''));
-        setMd(isManagingDirector(nextRoles, Boolean(data.isGlobalAdmin)));
+        setMd(isBusinessManagingDirector(nextRoles));
+        setGm(isBusinessGmCommercial(nextRoles));
       })
-      .catch(() => setMd(false));
+      .catch(() => { setMd(false); setGm(false); });
   }, []);
 
-  const tenders = useMemo(() => record.rows.filter((row) => !isEnquiryRecord(row) || commercialReviewOf(row) === 'Reviewed' || Boolean(bidChoiceOf(row))), [record.rows]);
+  const tenders = useMemo(() => record.rows.filter((row) => tenderApprovalBucket(row) !== 'enquiry'), [record.rows]);
   const pendingMine = useMemo(() => tenders.filter((row) => {
     const bucket = tenderApprovalBucket(row);
+    if (gm && bucket === 'gm') return true;
     if (md && bucket === 'pending') return true;
     return bucket === 'review' && DEPARTMENT_REVIEW_STAGES.some((stage) => stageMatchesActor(stage, department, roles));
-  }), [department, md, roles, tenders]);
+  }), [department, gm, md, roles, tenders]);
   const openApprovals = useMemo(() => tenders.filter((row) => {
     const bucket = tenderApprovalBucket(row);
     return bucket === 'pending' || bucket === 'review';
@@ -105,6 +110,11 @@ export function ApprovalBoard() {
   const documents = record.detail?.opportunity?.id === record.selectedId ? record.detail.documents : [];
   const audit = record.detail?.opportunity?.id === record.selectedId ? record.detail.audit : [];
   const decided = opportunity ? bidChoiceOf(opportunity) : '';
+  const gmChoice = opportunity ? gmBidChoiceOf(opportunity) : '';
+  const kind = opportunity ? commercialKindOf(opportunity) : '';
+  const mdWaiting = opportunity ? awaitsManagingDirector(opportunity) : false;
+  const gmTurn = Boolean(opportunity && gm && !decided && !mdWaiting);
+  const mdTurn = Boolean(opportunity && md && mdWaiting);
   const external = opportunity ? externalDeadlineOf(opportunity) : '';
   const storedInternal = opportunity ? internalDeadlineOf(opportunity) : '';
   const related = useMemo(() => {
@@ -150,16 +160,28 @@ export function ApprovalBoard() {
     setBusy(true);
     record.setError('');
     try {
-      await tenderPost({
-        action: 'bid-decision',
-        id: opportunity.id,
-        decision,
-        comments: decision === 'Draft' ? `${choice === 'No Bid' ? 'NO BID' : 'BID'}: ${comments}`.trim() : comments,
-        officerName: officer,
-        employeeCode: officerCode,
-        internalDeadline: internal,
-      });
-      record.setNotice(decision === 'Draft' ? 'Draft saved.' : decision === 'Return' ? 'Returned for clarification.' : decision === 'No Bid' ? 'Opportunity declined and closed to bid preparation.' : 'Bid approved, officer assigned, and bid preparation opened.');
+      const gmTurn = gm && !bidChoiceOf(opportunity) && !awaitsManagingDirector(opportunity);
+      if (gmTurn && decision !== 'Return') {
+        await tenderPost({
+          action: 'gm-decision',
+          id: opportunity.id,
+          decision: choice,
+          comments,
+          officerName: officer,
+          employeeCode: officerCode,
+          internalDeadline: internal,
+        });
+      } else {
+        await tenderPost({
+          action: 'bid-decision',
+          id: opportunity.id,
+          decision: decision === 'Return' ? 'Return' : 'Approve',
+          comments,
+        });
+      }
+      const kind = commercialKindOf(opportunity);
+      const stopped = gmTurn && (choice === 'No Bid' || kind === 'EOI');
+      record.setNotice(decision === 'Return' ? 'Returned to GM Commercial.' : stopped ? (choice === 'No Bid' ? 'NO BID recorded. The assigned employee and commercial team have been notified.' : 'EOI approved by GM Commercial. The assigned employee and commercial team have been notified.') : gmTurn ? 'BID approved and sent to the MD for final approval.' : 'MD final approval recorded. The assigned employee and commercial team have been notified.');
       setConfirming('');
       if (decision !== 'Draft') {
         setDecisionOpen(false);
@@ -210,7 +232,7 @@ export function ApprovalBoard() {
           <span className="inline-flex h-11 w-11 items-center justify-center rounded-xl bg-[#2563eb] text-white"><ClipboardCheck className="h-5 w-5" /></span>
           <div>
             <h1 className="text-[22px] font-black tracking-tight text-slate-950">Approvals</h1>
-            <p className="text-[13px] text-slate-500">Review opportunities, make bid/no bid decisions, assign responsible officers and approve.</p>
+            <p className="text-[13px] text-slate-500">GM Commercial assigns the employee, records BID or NO BID, and approves first. ITT and RFQ bids then go to the MD. EOI and NO BID stay with GM Commercial.</p>
           </div>
         </div>
         <div className="flex flex-wrap gap-2">
@@ -231,7 +253,7 @@ export function ApprovalBoard() {
       <div className="grid items-start gap-4 xl:grid-cols-[380px_minmax(0,1fr)]">
         <section className="rounded-2xl border border-slate-200 bg-white shadow-sm">
           <div className="flex items-center justify-between gap-2 border-b border-slate-100 px-4 py-3">
-            <h2 className="text-[15px] font-black text-slate-950">{tab === 'completed' ? 'Completed Decisions' : tab === 'all' ? 'Open Approvals' : md ? 'Opportunities Awaiting MD Decision' : 'Awaiting Your Review'}</h2>
+            <h2 className="text-[15px] font-black text-slate-950">{tab === 'completed' ? 'Completed Decisions' : tab === 'all' ? 'Open Approvals' : gm && !md ? 'Awaiting GM Commercial' : md && !gm ? 'Awaiting MD Final Approval' : 'Pending My Action'}</h2>
             <span className="inline-flex h-6 min-w-6 items-center justify-center rounded-full bg-slate-100 px-2 text-[12px] font-bold text-slate-600">{filtered.length}</span>
           </div>
           <div className="flex gap-2 px-4 py-3">
@@ -271,8 +293,8 @@ export function ApprovalBoard() {
                   <div className="mt-2 text-[12px] text-slate-500">Client: {row.clientName || '—'} · Sector: {row.category || '—'}</div>
                   <div className="mt-2 flex items-center justify-between gap-2">
                     <span className={`rounded-md px-2 py-0.5 text-[11px] font-bold ${priorityTone[row.priority] || 'bg-slate-100 text-slate-600'}`}>{row.priority || '—'}</span>
-                    <span className={`rounded-md px-2 py-0.5 text-[10px] font-bold ${bucket === 'completed' ? 'bg-emerald-50 text-emerald-700' : bucket === 'review' ? 'bg-blue-50 text-blue-700' : 'bg-amber-50 text-amber-700'}`}>
-                      {bucket === 'completed' ? (bidChoiceOf(row) === 'No Bid' ? 'No Bid' : 'Completed') : bucket === 'review' ? 'Bid Review' : 'MD Decision Required'}
+                    <span className={`rounded-md px-2 py-0.5 text-[10px] font-bold ${bucket === 'completed' ? 'bg-emerald-50 text-emerald-700' : bucket === 'review' ? 'bg-blue-50 text-blue-700' : bucket === 'gm' ? 'bg-orange-50 text-orange-700' : 'bg-amber-50 text-amber-700'}`}>
+                      {bucket === 'completed' ? (bidChoiceOf(row) === 'No Bid' ? 'No Bid' : 'Completed') : bucket === 'review' ? 'Bid Review' : bucket === 'gm' ? 'GM Commercial' : 'MD Final Approval'}
                     </span>
                   </div>
                 </button>
@@ -300,16 +322,16 @@ export function ApprovalBoard() {
                   <div className="min-w-0">
                     <div className="flex flex-wrap items-center gap-2">
                       <h2 className="text-[18px] font-black text-slate-950">{opportunity.title}</h2>
-                      <span className="rounded-full bg-amber-50 px-2 py-0.5 text-[11px] font-bold text-amber-700">{decided === 'Bid' ? 'Bid approved' : decided === 'No Bid' ? 'No Bid' : 'Awaiting MD Bid / No Bid Decision'}</span>
+                      <span className="rounded-full bg-amber-50 px-2 py-0.5 text-[11px] font-bold text-amber-700">{decided === 'Bid' ? 'Bid approved' : decided === 'No Bid' ? 'No Bid' : mdWaiting ? 'Awaiting MD final approval' : 'Awaiting GM Commercial'}</span>
                     </div>
                     <p className="text-[12px] font-semibold text-slate-500">{opportunity.referenceNo}</p>
                   </div>
                   <Link href={`/commercial/tenders/workspace?id=${opportunity.id}`} target="_blank" className="text-[12px] font-bold text-[#2563eb]">Open in New Tab</Link>
                 </div>
-                <ol className="mt-4 grid gap-2 sm:grid-cols-4 xl:grid-cols-8">
-                  {['MD Bid / No Bid', 'Assign Responsible Officer', ...DEPARTMENT_REVIEW_STAGES].map((stage, index) => {
-                    const approved = index === 0 ? Boolean(decided) : index === 1 ? Boolean(opportunity.ownerName && decided === 'Bid') : approvals.some((item) => item.stage === stage && item.decision.toUpperCase() === 'APPROVE');
-                    const current = !approved && (index === 0 ? !decided : index === 1 ? decided === 'Bid' && !opportunity.ownerName : decided === 'Bid' && Boolean(opportunity.ownerName) && currentReview === stage);
+                <ol className="mt-4 grid gap-2 sm:grid-cols-4 xl:grid-cols-5">
+                  {['Assign employee', 'GM Bid / No Bid', kind === 'EOI' || gmChoice === 'No Bid' ? 'Stops with GM' : 'MD final approval', ...DEPARTMENT_REVIEW_STAGES].map((stage, index) => {
+                    const approved = index === 0 ? Boolean(opportunity.ownerName) : index === 1 ? Boolean(gmChoice || decided) : index === 2 ? Boolean(decided) || gmChoice === 'No Bid' || (kind === 'EOI' && Boolean(gmChoice)) : approvals.some((item) => item.stage === stage && item.decision.toUpperCase() === 'APPROVE');
+                    const current = !approved && (index === 0 ? gmTurn && !opportunity.ownerName : index === 1 ? gmTurn : index === 2 ? mdWaiting : decided === 'Bid' && Boolean(opportunity.ownerName) && currentReview === stage);
                     return (
                       <li key={stage} className="min-w-0">
                         <div className={`mx-auto flex h-7 w-7 items-center justify-center rounded-full text-[12px] font-bold ${approved ? 'bg-emerald-500 text-white' : current ? 'bg-[#2563eb] text-white' : 'bg-slate-100 text-slate-400'}`}>{index + 1}</div>
@@ -428,8 +450,8 @@ export function ApprovalBoard() {
                 <div className="mb-3 flex items-start gap-2">
                   <span className="inline-flex h-8 w-8 items-center justify-center rounded-lg bg-blue-50 text-[#2563eb]"><ClipboardCheck className="h-4 w-4" /></span>
                   <div className="min-w-0 flex-1">
-                    <h3 id="md-bid-title" className="text-[15px] font-black text-slate-950">MD Bid / No Bid Decision</h3>
-                    <p className="text-[12px] text-slate-500">Review all information and determine whether DLE will bid on this opportunity before assigning a responsible officer.</p>
+                    <h3 id="md-bid-title" className="text-[15px] font-black text-slate-950">{mdTurn ? 'MD Final Approval' : 'GM Commercial Approval'}</h3>
+                    <p className="text-[12px] text-slate-500">{mdTurn ? 'GM Commercial has assigned the employee and approved a BID. Give final approval or return it to GM Commercial.' : 'Assign the employee who will handle this opportunity, record BID or NO BID, then approve. EOI and NO BID stop here. An ITT or RFQ BID goes to the MD.'}</p>
                     <p className="mt-1 truncate text-[12px] font-semibold text-slate-700">{opportunity.referenceNo} · {opportunity.title}</p>
                   </div>
                   <button type="button" onClick={closeDecision} className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-slate-400 hover:bg-slate-100 hover:text-slate-700" aria-label="Close decision"><X className="h-4 w-4" /></button>
@@ -437,39 +459,42 @@ export function ApprovalBoard() {
                 <div className="grid gap-3 lg:grid-cols-[1fr_1fr_280px]">
                   <DecisionCard
                     selected={choice === 'Bid'}
-                    disabled={!md || Boolean(decided) || busy}
+                    disabled={!gmTurn || busy}
                     tone="emerald"
                     title="BID"
-                    points={['Approve to proceed with bid preparation.', 'Open Bid Preparation for this opportunity.', 'Assign responsible officer (next step).', 'Set internal submission deadline.', 'Notify assigned officer and team.']}
+                    points={['GM Commercial approves the bid first.', 'An ITT or RFQ then goes to the MD.', 'An EOI stays with GM Commercial.', 'Assign the employee who will handle it.', 'Notify the employee and commercial team when the outcome is final.']}
                     onSelect={() => setChoice('Bid')}
                   />
                   <DecisionCard
                     selected={choice === 'No Bid'}
-                    disabled={!md || Boolean(decided) || busy}
+                    disabled={!gmTurn || busy}
                     tone="rose"
                     title="NO BID"
-                    points={['Decline this opportunity.', 'Record reason for no bid.', 'Close opportunity to bid preparation.', 'Retain for reporting and analysis.', 'Notify relevant stakeholders.']}
+                    points={['GM Commercial records NO BID.', 'The opportunity stops here.', 'It does not go to the MD.', 'A reason is required.', 'The assigned employee and commercial team are notified.']}
                     onSelect={() => setChoice('No Bid')}
                   />
                   <label className="block text-[12px] font-semibold text-slate-500">
-                    MD Comments {choice === 'No Bid' ? <span className="text-rose-500">*</span> : null}
-                    <textarea maxLength={1000} value={comments} onChange={(event) => setComments(event.target.value)} disabled={!md || Boolean(decided) || busy} placeholder="Enter your decision comments, reasons or instructions..." className="mt-1 min-h-36 w-full rounded-xl border border-slate-200 px-3 py-2 text-[13px] font-normal text-slate-800 outline-none focus:border-blue-500" />
+                    Comments {choice === 'No Bid' || mdTurn ? <span className="text-rose-500">*</span> : null}
+                    <textarea maxLength={1000} value={comments} onChange={(event) => setComments(event.target.value)} disabled={(!gmTurn && !mdTurn) || busy} placeholder="Enter the decision comments, reasons or instructions..." className="mt-1 min-h-36 w-full rounded-xl border border-slate-200 px-3 py-2 text-[13px] font-normal text-slate-800 outline-none focus:border-blue-500" />
                     <span className="mt-1 block text-right text-[11px] font-normal text-slate-400">{comments.length}/1000</span>
                   </label>
                 </div>
-                {choice === 'Bid' && !decided ? (
+                {gmTurn ? (
                   <div className="mt-3 grid gap-3 rounded-xl border border-emerald-100 bg-emerald-50/40 p-3 md:grid-cols-2">
                     <div>
-                      <div className="mb-1 text-[12px] font-semibold text-slate-600">Responsible Officer</div>
-                      <OfficerSearch employees={directory} employeeId={officerCode} name={officer} disabled={!md || busy} onSelect={(employee) => { setOfficer(employee?.fullName || ''); setOfficerCode(employee?.employeeId || ''); }} />
+                      <div className="mb-1 text-[12px] font-semibold text-slate-600">Assigned employee</div>
+                      <OfficerSearch employees={directory} employeeId={officerCode} name={officer} disabled={busy} onSelect={(employee) => { setOfficer(employee?.fullName || ''); setOfficerCode(employee?.employeeId || ''); }} />
                     </div>
-                    <label className="block text-[12px] font-semibold text-slate-600">Internal submission deadline
-                      <input type="date" value={internal} onChange={(event) => setInternal(event.target.value)} disabled={!md || busy} className="mt-1 h-10 w-full rounded-lg border border-slate-200 bg-white px-3 text-[13px]" />
-                    </label>
+                    {choice !== 'No Bid' ? (
+                      <label className="block text-[12px] font-semibold text-slate-600">Internal submission deadline
+                        <input type="date" value={internal} onChange={(event) => setInternal(event.target.value)} disabled={busy} className="mt-1 h-10 w-full rounded-lg border border-slate-200 bg-white px-3 text-[13px]" />
+                      </label>
+                    ) : null}
                   </div>
                 ) : null}
-                {decided ? <p className="mt-3 text-[12px] font-semibold text-slate-600">{decided === 'Bid' ? `Bid approved. Responsible officer: ${opportunity.ownerName || '—'}.` : 'This opportunity was declined and is closed to bid preparation.'}</p> : null}
-                {!md ? <p className="mt-3 text-[12px] text-slate-500">Only the Managing Director can confirm a bid or no-bid decision.</p> : null}
+                {mdTurn ? <p className="mt-3 text-[12px] font-semibold text-slate-600">GM Commercial decision: BID. Assigned employee: {opportunity.ownerName || '—'}.</p> : null}
+                {decided ? <p className="mt-3 text-[12px] font-semibold text-slate-600">{decided === 'Bid' ? `Bid approved. Assigned employee: ${opportunity.ownerName || '—'}.` : 'NO BID was recorded by GM Commercial. This opportunity is closed to bid preparation.'}</p> : null}
+                {!gmTurn && !mdTurn && !decided ? <p className="mt-3 text-[12px] text-slate-500">GM Commercial assigns the employee and records the first decision. The MD gives final approval only for an ITT or RFQ BID.</p> : null}
                 {canReview && currentReview ? (
                   <div className="mt-3 flex flex-wrap items-center justify-between gap-2 rounded-xl border border-blue-100 bg-blue-50/50 px-3 py-2">
                     <span className="text-[12px] font-semibold text-slate-700">{currentReview} can start because the bid is approved and an officer is assigned.</span>
@@ -481,12 +506,12 @@ export function ApprovalBoard() {
                 ) : null}
                 <div className="mt-4 flex flex-wrap items-center justify-between gap-2">
                   <div className="flex gap-3 text-[12px] font-bold">
-                    <button type="button" disabled={!md || Boolean(decided) || busy} onClick={() => setConfirming('return')} className="text-slate-600 disabled:opacity-40">Return for Clarification</button>
+                    <button type="button" disabled={!mdTurn || busy || !comments.trim()} onClick={() => setConfirming('return')} className="text-slate-600 disabled:opacity-40">Return to GM Commercial</button>
                     <button type="button" onClick={() => setHistoryOpen((open) => !open)} className="inline-flex items-center gap-1 text-[#2563eb]"><History className="h-3.5 w-3.5" /> View History</button>
                   </div>
                   <div className="flex gap-2">
-                    <button type="button" disabled={!md || Boolean(decided) || busy} onClick={() => run('Draft')} className="h-10 rounded-xl border border-slate-200 px-4 text-[13px] font-bold text-slate-700 disabled:opacity-40">Save as Draft</button>
-                    <button type="button" disabled={!md || Boolean(decided) || busy || !choice} onClick={() => setConfirming('decision')} className="h-10 rounded-xl bg-[#2563eb] px-4 text-[13px] font-bold text-white disabled:opacity-40">{choice === 'Bid' ? 'Approve & Assign' : 'Confirm Decision & Proceed'}</button>
+                    {mdTurn ? <button type="button" disabled={busy || !comments.trim()} onClick={() => setConfirming('return')} className="h-10 rounded-xl border border-slate-200 px-4 text-[13px] font-bold text-slate-700 disabled:opacity-40">Return to GM</button> : null}
+                    <button type="button" disabled={(!gmTurn && !mdTurn) || busy || (gmTurn && (!choice || !officer)) || (gmTurn && choice === 'No Bid' && !comments.trim())} onClick={() => setConfirming('decision')} className="h-10 rounded-xl bg-[#2563eb] px-4 text-[13px] font-bold text-white disabled:opacity-40">{mdTurn ? 'Give final approval' : choice === 'No Bid' ? 'Record NO BID' : 'Approve'}</button>
                   </div>
                 </div>
                 {historyOpen ? (
@@ -500,10 +525,10 @@ export function ApprovalBoard() {
                 ) : null}
                 {confirming ? (
                   <div className="mt-3 rounded-xl border border-slate-200 bg-slate-50 p-3 text-[13px]">
-                    <p className="font-semibold text-slate-800">{confirming === 'return' ? 'Return this opportunity for clarification?' : choice === 'No Bid' ? 'Decline this opportunity and close it to bid preparation?' : 'Approve this bid, assign the officer, and open bid preparation?'}</p>
+                    <p className="font-semibold text-slate-800">{confirming === 'return' ? 'Return this opportunity to GM Commercial?' : mdTurn ? 'Give MD final approval and notify the assigned employee and commercial team?' : choice === 'No Bid' ? 'Record NO BID, stop it with GM Commercial, and send the notification?' : kind === 'EOI' ? 'Approve this EOI with GM Commercial and send the notification? It will not go to the MD.' : 'Approve this BID and send it to the MD for final approval?'}</p>
                     <div className="mt-2 flex gap-2">
                       <button type="button" disabled={busy} onClick={() => setConfirming('')} className="h-9 rounded-lg border border-slate-200 bg-white px-3 font-bold text-slate-700">Cancel</button>
-                      <button type="button" disabled={busy} onClick={() => run(confirming === 'return' ? 'Return' : choice === 'No Bid' ? 'No Bid' : 'Bid')} className="h-9 rounded-lg bg-[#2563eb] px-3 font-bold text-white">{busy ? 'Saving…' : 'Confirm'}</button>
+                      <button type="button" disabled={busy} onClick={() => run(confirming === 'return' ? 'Return' : 'Approve')} className="h-9 rounded-lg bg-[#2563eb] px-3 font-bold text-white">{busy ? 'Saving…' : 'Confirm'}</button>
                     </div>
                   </div>
                 ) : null}
@@ -546,7 +571,7 @@ function Comment({ item }: { item: TenderApproval }) {
 }
 
 function Assessment({ approvals, decided }: { approvals: TenderApproval[]; decided: string }) {
-  const decision = approvals.find((item) => item.stage === 'MD Bid / No Bid' && ['BID', 'NO BID'].includes(item.decision.toUpperCase()));
+  const decision = approvals.find((item) => (item.stage === 'GM Commercial Approval' || item.stage === 'MD Final Approval' || item.stage === 'MD Bid / No Bid') && ['BID', 'NO BID'].includes(item.decision.toUpperCase()));
   return (
     <article className="rounded-2xl border border-slate-200 bg-white p-4 text-[13px] text-slate-700">
       <p>{decided ? `The recorded decision is ${decided}.` : 'No bid decision has been confirmed.'}</p>

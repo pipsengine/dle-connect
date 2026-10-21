@@ -1,5 +1,6 @@
 import sql from 'mssql';
 import { getDleEnterpriseDbPool, type DleEmployeeDirectoryRow } from '@/lib/dle-enterprise-db';
+import { formatOrganizationJobTitleLabel } from '@/lib/job-title-label';
 import type { HealthStatus, JobGradeRecord, JobTitleRecord, StructureInsight } from '@/lib/organization-data';
 import { payrollDataSourceInfo, readPayrollEmployees } from '@/lib/payroll-employee-source';
 
@@ -405,6 +406,32 @@ SELECT [Id],[Code],[Title],[Family],[TitleLevel],[GradeCode],[GradeName],[Report
 FROM [hris].[OrganizationJobTitles]
 ORDER BY [EmployeeCount] DESC, [Title];`);
   return (result.recordset as DbJobTitleRow[]).map(rowToTitle);
+};
+
+export type OrganizationJobTitleOption = {
+  label: string;
+  code: string;
+  title: string;
+  grade: string;
+};
+
+export const listOrganizationJobTitleOptions = async (): Promise<OrganizationJobTitleOption[]> => {
+  const titles = await readJobTitles();
+  const seen = new Set<string>();
+  const options: OrganizationJobTitleOption[] = [];
+  for (const title of titles) {
+    const label = formatOrganizationJobTitleLabel(title.code, title.title);
+    const key = label.toLowerCase();
+    if (!label || seen.has(key)) continue;
+    seen.add(key);
+    options.push({
+      label,
+      code: title.code,
+      title: title.title,
+      grade: title.gradeName || title.gradeCode,
+    });
+  }
+  return options.sort((a, b) => a.label.localeCompare(b.label));
 };
 
 const avg = (values: number[]) => values.length ? round1(values.reduce((sum, value) => sum + value, 0) / values.length) : 0;

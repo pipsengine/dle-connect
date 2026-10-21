@@ -1,0 +1,8 @@
+SITE CPConfigurator pool=CPConfiguratorPool path=C:\inetpub\wwwroot\CPConfiguratorClient\ state=Started
+SITE Default Web Site pool=DefaultAppPool path=%SystemDrive%\inetpub\wwwroot state=Started
+SITE DLE-CONNECT pool=DLE-CONNECT path=F:\Dorman-Long\dle-connect\deployment\iis\site state=Started
+stopped pool DLE-CONNECT
+stopped site DLE-CONNECT
+SITE SITE_4 pool= path= state=
+SITE WebClient pool=WebClientPool path=C:\inetpub\wwwroot\WebClient\ state=Started
+killed w3wp 1284

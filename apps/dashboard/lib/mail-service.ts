@@ -145,6 +145,7 @@ export const resolveEmployeeMailbox = async (employee?: DleEmployeeDirectoryRow 
 
 export const sendTransactionalEmail = async (input: {
   to: string;
+  cc?: string;
   subject: string;
   text: string;
   html?: string;
@@ -207,6 +208,7 @@ export const sendTransactionalEmail = async (input: {
     try {
       const result = await sendGraphMail({
         to,
+        cc: input.cc,
         subject: input.subject,
         text: input.text,
         html: input.html,
@@ -238,6 +240,7 @@ export const sendTransactionalEmail = async (input: {
     const info = await transport.sendMail({
       from,
       to,
+      cc: input.cc && input.cc.toLowerCase() !== to.toLowerCase() ? input.cc : undefined,
       replyTo,
       subject: input.subject,
       text: input.text,

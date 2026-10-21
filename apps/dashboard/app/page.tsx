@@ -12,6 +12,7 @@ import {
   HelpCircle,
   LayoutDashboard,
   Scale,
+  Building2,
   ShieldCheck,
   Target,
   UserRound,
@@ -22,6 +23,8 @@ import DashboardLayout from '@/components/layout/dashboard-layout';
 import { canAccessFullFinanceIntelligence } from '@/lib/access/finance-access';
 import { canAccessFleetOperations } from '@/lib/access/fleet-access';
 import { canAccessItSupportPortal } from '@/lib/access/it-support-access';
+import { canAccessCorporateOfficePortal } from '@/lib/access/corporate-office-access';
+import { withCorrespondenceParticipantPermission } from '@/lib/corporate-office/front-desk-access';
 import { canAccessSecurityPortal } from '@/lib/access/security-access';
 import { effectivePermissionsForUser } from '@/lib/auth/access-control-store';
 import { hasAnyPermission } from '@/lib/auth/permission-match';
@@ -35,7 +38,10 @@ const getSessionPermissions = async () => {
   const token = (await cookies()).get(AUTH_COOKIE)?.value;
   const session = await verifySessionToken(token);
   if (!session) return { permissions: [] as string[], name: 'Signed-in user', session: null, isGlobalAdmin: false };
-  const permissions = await effectivePermissionsForUser(session.sub, session.roles).catch(() => session.permissions);
+  const permissions = await withCorrespondenceParticipantPermission(
+    await effectivePermissionsForUser(session.sub, session.roles).catch(() => session.permissions),
+    session.employeeCode,
+  );
   let greeting = personGreetingName({ fullName: session.fullName }) || session.username;
   try {
     const source = await readDirectoryEmployees();
@@ -201,6 +207,15 @@ const workspaceModules = [
     signal: 'Security portal for visitor management, reception, approvals, and site control',
     permissions: ['view_security', 'security.view', 'security.visitor.view', 'visitor.view'],
   },
+  {
+    id: 'corporate-office',
+    title: 'Corporate Office',
+    href: '/corporate-office',
+    icon: Building2,
+    status: 'Live',
+    signal: 'Corporate office portal for front-desk correspondence, routing, and handover',
+    permissions: ['view_corporate_office', 'corporate.view', 'corporate.front-desk.view', 'page.corporate-office.view'],
+  },
 ] as const;
 
 export default async function Home() {
@@ -220,6 +235,9 @@ export default async function Home() {
     }
     if (module.id === 'it-support') {
       return canAccessItSupportPortal(permissions, isGlobalAdmin);
+    }
+    if (module.id === 'corporate-office') {
+      return canAccessCorporateOfficePortal(permissions, isGlobalAdmin);
     }
 
     // Never treat empty permission lists as allow-all.

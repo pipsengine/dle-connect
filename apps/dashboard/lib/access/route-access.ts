@@ -10,7 +10,6 @@ import {
 import { canAccessRecruitment } from '@/lib/access/recruitment-access';
 import { canAccessTimesheetEntryAndApproval, isTimesheetEntryOrApprovalPath } from '@/lib/access/timesheet-access';
 import { canAccessTenderPortal } from '@/lib/access/commercial-access';
-
 type SessionLike = Pick<SessionPayload, 'department' | 'unit' | 'roles' | 'permissions' | 'isGlobalAdmin'> & {
   employeeCode?: string;
   username?: string;
@@ -34,6 +33,8 @@ const routePathFromRequestPath = (pathname: string) => {
   if (path === '/api/projects-engineering') return '/projects-engineering';
   if (path.startsWith('/api/commercial/')) return path.replace(/^\/api\/commercial/, '/commercial');
   if (path === '/api/commercial') return '/commercial';
+  if (path.startsWith('/api/corporate-office/')) return path.replace(/^\/api\/corporate-office/, '/corporate-office');
+  if (path === '/api/corporate-office') return '/corporate-office';
   return path;
 };
 
@@ -577,6 +578,10 @@ export const canAccessRoute = (session: SessionLike, pathname: string) => {
   }
   if (path.startsWith('/commercial') || path.startsWith('/api/commercial')) {
     return canAccessTenderPortal(session);
+  }
+  if (path.startsWith('/corporate-office') || path.startsWith('/api/corporate-office')) {
+    // The portal page and API decide. Selected correspondence participants are not in the role pack.
+    return Boolean(session);
   }
   if (path.startsWith('/procurement') || path.startsWith('/api/procurement')) {
     if (session.isGlobalAdmin || (session.roles || []).includes('Super Administrator')) return true;

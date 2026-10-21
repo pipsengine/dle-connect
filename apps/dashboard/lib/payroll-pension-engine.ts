@@ -98,8 +98,33 @@ export const resolveAdditionalEmployeePensionMonthly = (employee: DleEmployeeDir
   return fromPackage > 0 ? roundMoney(fromPackage) : 0;
 };
 
+/**
+ * Dual-currency staff keep Nigerian pension on the naira package.
+ * The dollar package is a second pay run and must not replace that basis.
+ */
+export const nairaPensionBasisEmployee = <T extends DleEmployeeDirectoryRow>(employee: T): T => {
+  const localLines = employee.sageLocalPayrollEarnings || [];
+  if (!employee.hasDualCurrencyPayroll || localLines.length === 0) return employee;
+  return {
+    ...employee,
+    periodSalary: employee.localPeriodSalary ?? employee.periodSalary,
+    sagePayrollEarnings: localLines,
+  };
+};
+
+/** A naira payroll row always wins over a dollar row for the same employee. */
+export const shouldUsePensionSnapshot = (
+  existing: { usdPayroll: boolean; rank: number } | undefined,
+  next: { usdPayroll: boolean; rank: number },
+) => {
+  if (!existing) return true;
+  if (!existing.usdPayroll && next.usdPayroll) return false;
+  if (existing.usdPayroll && !next.usdPayroll) return true;
+  return next.rank >= existing.rank;
+};
+
 export const pensionInputFromEmployee = (employee: DleEmployeeDirectoryRow, options?: PayrollEarningsOptions): PensionInput => {
-  const earnings = pensionablePayrollInputFromEmployee(employee, options);
+  const earnings = pensionablePayrollInputFromEmployee(nairaPensionBasisEmployee(employee), options);
   return {
     employee,
     monthlyBasePay: earnings.monthlyBasePay,

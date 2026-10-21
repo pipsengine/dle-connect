@@ -1,7 +1,7 @@
 'use client';
 import React, { useMemo, useState } from 'react';
 import { Badge, Button, Card, DetailModal, Field, Table, Tabs } from '../components/UI';
-import { buildBookingSummary } from '../lib/booking-summary';
+import { bookingDayKind, buildBookingSummary } from '../lib/booking-summary';
 import { exportTimesheet } from '../lib/export';
 import { bookingHasHours, formatDisplayDate, usePortalData } from '../portal-data';
 
@@ -40,6 +40,10 @@ export default function Reports() {
   const rows = useMemo(
     () => buildBookingSummary(bookings, holidayDates, snapshot.standardHours || 8),
     [bookings, holidayDates, snapshot.standardHours],
+  );
+  const weekdayBookings = useMemo(
+    () => bookings.filter((booking) => bookingDayKind(booking.workDate, holidayDates) === 'weekday'),
+    [bookings, holidayDates],
   );
   const sum = (pick) => rows.reduce((total, row) => total + pick(row), 0);
   const overtimeHours = (row) => row.weekdayOvt + row.saturdayOvt + row.sundayOvt + row.phOvt;
@@ -87,7 +91,7 @@ export default function Reports() {
     </div>
     <div className="kpis compact">
       <Card label="Employees" value={String(rows.length)} sub="Employees with hours" onClick={() => setDetail({ title: 'Employees with hours', headers: summaryHeaders, rows: rows.map(summaryCells) })} />
-      <Card label="Worked Days" value={String(new Set(bookings.map((booking) => booking.workDate)).size)} sub="Distinct work dates" onClick={() => setDetail({ title: 'Worked days', headers: ['Date', 'Employees', 'REG', 'OVT'], rows: workedDayRows(bookings) })} />
+      <Card label="Worked Days" value={String(new Set(weekdayBookings.map((booking) => String(booking.workDate || '').slice(0, 10))).size)} sub="Weekday dates" onClick={() => setDetail({ title: 'Worked days', headers: ['Date', 'Employees', 'REG', 'OVT'], rows: workedDayRows(weekdayBookings) })} />
       <Card label="Weekday Hours" value={String(sum((row) => row.weekdayHours))} sub="Regular" onClick={() => setDetail({ title: 'Weekday hours', headers: ['Code', 'Employee', 'Weekday Hrs', 'Weekday OVT', 'Status'], rows: rows.filter((row) => row.weekdayHours > 0).map((row) => [row.id, row.name, row.weekdayHours, row.weekdayOvt, row.status]) })} />
       <Card label="Saturday Hours" value={String(sum((row) => row.saturdayHours))} sub="Regular" onClick={() => setDetail({ title: 'Saturday hours', headers: ['Code', 'Employee', 'Sat Hrs', 'Sat OVT', 'Status'], rows: rows.filter((row) => row.saturdayHours > 0).map((row) => [row.id, row.name, row.saturdayHours, row.saturdayOvt, row.status]) })} />
       <Card label="Sunday Hours" value={String(sum((row) => row.sundayHours))} sub="Regular" onClick={() => setDetail({ title: 'Sunday hours', headers: ['Code', 'Employee', 'Sun Hrs', 'Sun OVT', 'Status'], rows: rows.filter((row) => row.sundayHours > 0).map((row) => [row.id, row.name, row.sundayHours, row.sundayOvt, row.status]) })} />

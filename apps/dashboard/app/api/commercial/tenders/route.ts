@@ -5,6 +5,7 @@ import { effectivePermissionsForUser } from '@/lib/auth/access-control-store';
 import { isSuperActor } from '@/lib/auth/role-delegation';
 import { canAccessTenderPortal, isBusinessGmCommercial, isBusinessManagingDirector, isGmCommercial, isManagingDirector } from '@/lib/access/commercial-access';
 import { createEnterpriseNotification } from '@/lib/enterprise-notifications-store';
+import { notifyCommercialOutcome, notifyManagingDirectorFinal } from '@/lib/commercial/tender-approval-notify';
 import {
   addApproval,
   addAward,
@@ -33,6 +34,7 @@ import {
   acknowledgeAssignment,
   convertEnquiryToTender,
   reviewCommercialOpportunity,
+  recordGmCommercialDecision,
   setClientOutcome,
   assertSubmissionEvidence,
   updateItemStatus,
@@ -222,18 +224,23 @@ export async function POST(request: NextRequest) {
           decision: String(body.decision || ''),
           comments: String(body.comments || ''),
         }, actor);
-        if (saved && String(body.decision || '').toLowerCase() === 'forward') {
-          await createEnterpriseNotification(session, {
-            title: `MD decision · ${saved.referenceNo}`,
-            body: `${saved.title} has completed GM Commercial review and is awaiting a BID or NO BID decision.`,
-            module: 'Commercial',
-            kind: 'Workflow',
-            severity: 'info',
-            href: `/commercial/tenders/approvals?id=${saved.id}`,
-            actor,
-            recipientRoles: ['Managing Director', 'MD'],
-            channels: ['In-App', 'Email'],
-          });
+        return ok(saved);
+      }
+      case 'gm-decision': {
+        if (!isBusinessGmCommercial(session.roles)) return err(403, 'Only GM Commercial can assign an employee and give the first approval.');
+        const result = await recordGmCommercialDecision(id, {
+          decision: String(body.decision || ''),
+          comments: String(body.comments || ''),
+          officerName: String(body.officerName || ''),
+          employeeCode: String(body.employeeCode || ''),
+          internalDeadline: String(body.internalDeadline || ''),
+        }, actor);
+        const saved = result.opportunity;
+        try {
+          if (saved && result.terminal) await notifyCommercialOutcome(session, saved, actor);
+          else if (saved) await notifyManagingDirectorFinal(session, saved, actor);
+        } catch (error) {
+          console.error('[commercial-approval] outcome notification failed', error);
         }
         return ok(saved);
       }
@@ -307,40 +314,17 @@ export async function POST(request: NextRequest) {
         return ok(await addLine(id, body.line || body, actor));
       case 'bid-decision': {
         if (!isBusinessManagingDirector(session.roles)) {
-          return err(403, 'Only the Managing Director can record a bid or no-bid decision.');
+          return err(403, 'Only the Managing Director can give final approval.');
         }
         const decision = String(body.decision || '');
         const saved = await decideBid(id, {
           decision,
           comments: String(body.comments || ''),
-          officerName: String(body.officerName || ''),
-          employeeCode: String(body.employeeCode || ''),
-          internalDeadline: String(body.internalDeadline || ''),
-          exceptionReason: String(body.exceptionReason || ''),
         }, actor);
-        if (saved && decision.toLowerCase() === 'bid' && saved.ownerEmployeeCode) {
-          await createEnterpriseNotification(session, {
-            title: `Bid approved · ${saved.referenceNo}`,
-            body: `${saved.title} is approved for bid preparation and assigned to ${saved.ownerName}. Please acknowledge it.`,
-            module: 'Commercial',
-            kind: 'Workflow',
-            severity: 'info',
-            href: `/commercial/tenders/bid-preparation?id=${saved.id}`,
-            actor,
-            recipientEmployeeCode: saved.ownerEmployeeCode,
-            channels: ['In-App', 'Email'],
-          });
-          await createEnterpriseNotification(session, {
-            title: `Bid approved · ${saved.referenceNo}`,
-            body: `${saved.title} was approved and assigned to ${saved.ownerName}.`,
-            module: 'Commercial',
-            kind: 'Workflow',
-            severity: 'info',
-            href: `/commercial/tenders/workspace?id=${saved.id}`,
-            actor,
-            recipientRoles: ['GM Commercial', 'General Manager Commercial'],
-            channels: ['In-App', 'Email'],
-          });
+        try {
+          if (saved && /^(approve|bid)$/i.test(decision)) await notifyCommercialOutcome(session, saved, actor);
+        } catch (error) {
+          console.error('[commercial-approval] MD outcome notification failed', error);
         }
         return ok(saved);
       }

@@ -31,6 +31,7 @@ import {
   externalDeadlineOf,
   internalDeadlineOf,
   isActiveResponse,
+  isHistoricalRegister,
   isPreparationRecord,
   registerStatusOf,
   type CommercialKind,
@@ -54,6 +55,7 @@ const STATUS_COLOR: Record<RegisterStatus, string> = {
   'In Progress': '#2563eb',
   Submitted: '#22c55e',
   Closed: '#0f172a',
+  Historical: '#64748b',
 };
 const TYPE_COLOR: Record<CommercialKind, string> = { ITT: '#2563eb', RFQ: '#7c3aed', EOI: '#16a34a' };
 const PREP_COLOR = { 'Not Started': '#94a3b8', 'In Progress': '#2563eb', Submitted: '#22c55e' };
@@ -77,6 +79,7 @@ const STATUS_TONE: Record<RegisterStatus, string> = {
   'Awaiting GM Review': 'bg-orange-50 text-orange-700',
   'Awaiting MD Decision': 'bg-rose-50 text-rose-600',
   Closed: 'bg-slate-100 text-slate-500',
+  Historical: 'bg-slate-100 text-slate-600',
 };
 
 const pct = (count: number, total: number) => (total ? Math.round((count / total) * 100) : 0);
@@ -96,7 +99,7 @@ const within = (value: string, from: string, to: string) => {
 };
 const overdue = (row: TenderOpportunity) => {
   const state = registerStatusOf(row);
-  if (state === 'Closed' || state === 'Submitted') return false;
+  if (state === 'Closed' || state === 'Submitted' || state === 'Historical') return false;
   const internal = daysUntil(internalDeadlineOf(row));
   const external = daysUntil(externalDeadlineOf(row));
   return (internal != null && internal < 0) || (external != null && external < 0);
@@ -215,15 +218,16 @@ export function TenderDashboard() {
   }, []);
 
   const scoped = useMemo(() => {
-    if (!viewer) return rows;
-    if (viewer.admin || isBusinessManagingDirector(viewer.roles) || isBusinessGmCommercial(viewer.roles)) return rows;
+    const pipeline = rows.filter((row) => !isHistoricalRegister(row));
+    if (!viewer) return pipeline;
+    if (viewer.admin || isBusinessManagingDirector(viewer.roles) || isBusinessGmCommercial(viewer.roles)) return pipeline;
     const broad = viewer.roles.some((role) => /engineer|finance|legal|hse|commercial|proposal|sales|cfo|operations/i.test(role));
-    if (broad) return rows;
+    if (broad) return pipeline;
     const mine = (value: string) => {
       const text = value.toLowerCase();
       return [viewer.name, viewer.code].filter(Boolean).some((part) => text.includes(part.toLowerCase()));
     };
-    return rows.filter((row) => mine(row.ownerName) || mine(row.ownerEmployeeCode) || mine(row.createdBy));
+    return pipeline.filter((row) => mine(row.ownerName) || mine(row.ownerEmployeeCode) || mine(row.createdBy));
   }, [rows, viewer]);
 
   const countStatus = (statusName: RegisterStatus) => scoped.filter((row) => registerStatusOf(row) === statusName).length;

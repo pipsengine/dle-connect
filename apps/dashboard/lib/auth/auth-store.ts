@@ -8,6 +8,7 @@ import { defaultRoleForEmployee, enterpriseRoles, permissionsForRoles, roleDefin
 import type { SessionPayload, SessionUser } from '@/lib/auth/session';
 import { passwordPolicyErrors } from '@/lib/auth/session';
 import { effectivePermissionsForRoles, effectivePermissionsForUser, effectivePermissionsForUsers } from '@/lib/auth/access-control-store';
+import { withCorrespondenceParticipantPermission } from '@/lib/corporate-office/front-desk-access';
 import { assertActorCanAssignRoles, canManageSuperAdministratorRole } from '@/lib/auth/role-delegation';
 import {
   assertProtectedGlobalSuperAdminMutable,
@@ -693,10 +694,10 @@ const publicUser = async (user: UserAccount): Promise<SessionUser> => {
     department: user.department,
     unit: user.unit,
     roles,
-    permissions: lockedGlobal ? ['*'] : Array.from(new Set([
+    permissions: lockedGlobal ? ['*'] : await withCorrespondenceParticipantPermission(Array.from(new Set([
       ...(await effectivePermissionsForUser(user.id, roles)),
       ...(user.permissions || []),
-    ])),
+    ])), user.employeeCode),
     status: user.status,
     firstLoginRequired: user.firstLoginRequired,
     passwordResetRequired: user.passwordResetRequired,

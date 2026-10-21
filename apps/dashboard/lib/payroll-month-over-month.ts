@@ -3,6 +3,8 @@ import {
   resolveBankScheduleStaffPack,
   type BankScheduleStaffPack,
 } from '@/lib/payroll-bank-schedule-packs';
+import { earningComponentFamily, type EarningComponentFamily } from '@/lib/payroll-earning-component';
+import { formatPayrollMoney } from '@/lib/payroll-currency';
 
 const staffPackLabel = (pack: BankScheduleStaffPack) => {
   switch (pack) {
@@ -90,6 +92,8 @@ export type PayrollMonthOverMonth = {
   previousPeriodLabel: string;
   currentPeriod: string;
   currentPeriodLabel: string;
+  /** Currency of the schedule being compared. DLE USD stays in dollars. */
+  currency: 'NGN' | 'USD';
   previous: PayrollMomTotals | null;
   current: PayrollMomTotals;
   metrics: PayrollMomMetric[];
@@ -149,6 +153,107 @@ const topSummary = (buckets: PayrollMomDetailBucket[], metric: PayrollMomMetric)
     : `${metric.label} changed mainly because of schedule adjustments.`;
 };
 
+const FAMILY_LABEL: Record<EarningComponentFamily, string> = {
+  basic: 'Basic salary',
+  housing: 'Housing',
+  medical: 'Medical',
+  other: 'Other allowance',
+  transport: 'Transport allowance',
+  furniture: 'Furniture allowance',
+  utilities: 'Utilities',
+  meal: 'Meal allowance',
+  leave: 'Leave allowance',
+  lumpsum: 'Lumpsum allowance',
+  njic: 'NJIC',
+};
+
+const DEDUCTION_LABEL: Record<string, string> = {
+  'ded:paye': 'PAYE',
+  'ded:pension': 'Employee pension',
+  'ded:nhf': 'NHF',
+  'ded:loan': 'Loan recovery',
+  'ded:union': 'Union dues',
+};
+
+const ACRONYM_WORD = /^(paye|nhf|nsitf|itf|tcm|nysc|njic|usd|ngn|ot|ovt)$/i;
+
+const displayPayLineName = (raw: string) => {
+  const text = compact(raw);
+  if (!text) return 'Other';
+  if (/^[A-Z0-9/&-]{2,12}$/.test(text) && !text.includes('_')) return text;
+  const words = text.split(/[\s_]+/).filter(Boolean).map((word) => (
+    ACRONYM_WORD.test(word) ? word.toUpperCase() : word.toLowerCase()
+  ));
+  const sentence = words.join(' ');
+  return sentence.charAt(0).toUpperCase() + sentence.slice(1);
+};
+
+const identifyEarning = (code: string, name: string) => {
+  const family = earningComponentFamily(code, name);
+  if (family) return { key: `family:${family}`, label: FAMILY_LABEL[family] };
+  const label = displayPayLineName(name || code);
+  return { key: `name:${label.toLowerCase()}`, label };
+};
+
+const identifyDeduction = (code: string, name: string) => {
+  const text = `${code} ${name}`;
+  if (/PAYE/i.test(text)) return { key: 'ded:paye', label: DEDUCTION_LABEL['ded:paye'] };
+  if (/NHF/i.test(text)) return { key: 'ded:nhf', label: DEDUCTION_LABEL['ded:nhf'] };
+  if (/PENSION/i.test(text)) return { key: 'ded:pension', label: DEDUCTION_LABEL['ded:pension'] };
+  if (/LOAN/i.test(text)) return { key: 'ded:loan', label: DEDUCTION_LABEL['ded:loan'] };
+  if (/UNION/i.test(text)) return { key: 'ded:union', label: DEDUCTION_LABEL['ded:union'] };
+  const label = displayPayLineName(name || code);
+  return { key: `ded:${label.toLowerCase()}`, label };
+};
+
+type MomPayLine = { key: string; label: string; amount: number };
+
+type MomComponent = {
+  key: string;
+  label: string;
+  /** Change in the pay element itself. Positive means the element went up. */
+  ownDelta: number;
+  /** Effect of that change on the metric being explained. */
+  contribution: number;
+};
+
+const parsePayLines = (value: unknown, kind: 'earning' | 'deduction'): MomPayLine[] => {
+  if (!Array.isArray(value)) return [];
+  const map = new Map<string, MomPayLine>();
+  for (const line of value) {
+    if (!line || typeof line !== 'object') continue;
+    const row = line as { code?: unknown; name?: unknown; label?: unknown; amount?: unknown };
+    const code = compact(row.code);
+    const name = compact(row.name || row.label);
+    const amount = roundMoney(Number(row.amount || 0));
+    if ((!code && !name) || Math.abs(amount) < 0.005) continue;
+    const identified = kind === 'earning' ? identifyEarning(code, name) : identifyDeduction(code, name);
+    const existing = map.get(identified.key);
+    if (existing) existing.amount = roundMoney(existing.amount + amount);
+    else map.set(identified.key, { key: identified.key, label: identified.label, amount });
+  }
+  return [...map.values()];
+};
+
+const mergePayLines = (left: MomPayLine[], right: MomPayLine[]) => {
+  const map = new Map<string, MomPayLine>();
+  for (const line of [...left, ...right]) {
+    const existing = map.get(line.key);
+    if (!existing) map.set(line.key, { ...line });
+    else existing.amount = roundMoney(existing.amount + line.amount);
+  }
+  return [...map.values()];
+};
+
+const moneyText = (amount: number, currency: string) => formatPayrollMoney(Math.abs(amount), currency || 'NGN');
+
+const movementPhrase = (label: string, delta: number, currency: string) => {
+  const amount = moneyText(delta, currency);
+  if (delta > 0) return `${label} increased by ${amount}`;
+  if (delta < 0) return `${label} decreased by ${amount}`;
+  return label;
+};
+
 type MomAggRecord = {
   key: string;
   employeeId: string;
@@ -168,6 +273,9 @@ type MomAggRecord = {
   otherDeductions: number;
   pensionEmployer: number;
   statutoryEmployer: number;
+  payCurrency: string;
+  earningLines: MomPayLine[];
+  deductionLines: MomPayLine[];
 };
 
 const metricAggValue = (record: MomAggRecord, key: PayrollMomMetricKey) => {
@@ -210,6 +318,9 @@ const toMomAgg = (record: PayrollCalculationRecord): MomAggRecord | null => {
     otherDeductions: Number(record.otherDeductions || 0),
     pensionEmployer: Number(record.pensionEmployer || 0),
     statutoryEmployer: Number(record.statutoryEmployer || 0),
+    payCurrency: compact(record.payCurrency).toUpperCase() === 'USD' ? 'USD' : 'NGN',
+    earningLines: parsePayLines(record.earningLines, 'earning'),
+    deductionLines: parsePayLines(record.deductionLines, 'deduction'),
   };
 };
 
@@ -242,9 +353,149 @@ const aggregateMomRecords = (records: PayrollCalculationRecord[]) => {
       otherDeductions: existing.otherDeductions + next.otherDeductions,
       pensionEmployer: existing.pensionEmployer + next.pensionEmployer,
       statutoryEmployer: existing.statutoryEmployer + next.statutoryEmployer,
+      payCurrency: existing.payCurrency || next.payCurrency,
+      earningLines: mergePayLines(existing.earningLines, next.earningLines),
+      deductionLines: mergePayLines(existing.deductionLines, next.deductionLines),
     });
   }
   return map;
+};
+
+const scalarEarnings = (record: MomAggRecord): MomPayLine[] => [
+  { key: 'family:basic', label: 'Basic salary', amount: roundMoney(record.basePay) },
+  { key: 'scalar:allowances', label: 'Allowances', amount: roundMoney(record.allowances) },
+];
+
+const scalarDeductions = (record: MomAggRecord): MomPayLine[] => [
+  { key: 'ded:paye', label: 'PAYE', amount: roundMoney(record.paye) },
+  { key: 'ded:pension', label: 'Employee pension', amount: roundMoney(record.pensionEmployee) },
+  { key: 'ded:loan', label: 'Loan recovery', amount: roundMoney(record.loanRecovery) },
+  { key: 'ded:other', label: 'Other deductions', amount: roundMoney(record.otherDeductions) },
+];
+
+const earningsForDiff = (current: MomAggRecord, previous: MomAggRecord) => {
+  if (current.earningLines.length && previous.earningLines.length) {
+    return { current: current.earningLines, previous: previous.earningLines };
+  }
+  return { current: scalarEarnings(current), previous: scalarEarnings(previous) };
+};
+
+const deductionsForDiff = (current: MomAggRecord, previous: MomAggRecord) => {
+  if (current.deductionLines.length && previous.deductionLines.length) {
+    return { current: current.deductionLines, previous: previous.deductionLines };
+  }
+  return { current: scalarDeductions(current), previous: scalarDeductions(previous) };
+};
+
+const diffPayLines = (current: MomPayLine[], previous: MomPayLine[]): MomComponent[] => {
+  const currentMap = new Map(current.map((line) => [line.key, line]));
+  const previousMap = new Map(previous.map((line) => [line.key, line]));
+  const components: MomComponent[] = [];
+  for (const key of new Set([...currentMap.keys(), ...previousMap.keys()])) {
+    const currentLine = currentMap.get(key);
+    const previousLine = previousMap.get(key);
+    const ownDelta = roundMoney((currentLine?.amount || 0) - (previousLine?.amount || 0));
+    if (Math.abs(ownDelta) < 0.005) continue;
+    components.push({
+      key,
+      label: currentLine?.label || previousLine?.label || 'Other',
+      ownDelta,
+      contribution: ownDelta,
+    });
+  }
+  return components;
+};
+
+const withGap = (components: MomComponent[], target: number, key: string, label: string) => {
+  const explained = roundMoney(components.reduce((sum, component) => sum + component.contribution, 0));
+  const gap = roundMoney(target - explained);
+  if (Math.abs(gap) < 0.005) return components;
+  return [...components, { key, label, ownDelta: gap, contribution: gap }];
+};
+
+const retainedComponents = (
+  key: PayrollMomMetricKey,
+  current: MomAggRecord,
+  previous: MomAggRecord,
+): MomComponent[] => {
+  const earningDiff = diffPayLines(
+    earningsForDiff(current, previous).current,
+    earningsForDiff(current, previous).previous,
+  );
+  const deductionDiff = diffPayLines(
+    deductionsForDiff(current, previous).current,
+    deductionsForDiff(current, previous).previous,
+  );
+  if (key === 'grossPay') {
+    return withGap(earningDiff, roundMoney(current.grossPay - previous.grossPay), 'gap:gross', 'Other gross adjustment');
+  }
+  if (key === 'deductions') {
+    return withGap(deductionDiff, roundMoney(current.deductions - previous.deductions), 'gap:deductions', 'Other deduction adjustment');
+  }
+  if (key === 'netPay') {
+    const deductionImpact = deductionDiff.map((component) => ({
+      ...component,
+      contribution: roundMoney(-component.ownDelta),
+    }));
+    return withGap(
+      [...earningDiff, ...deductionImpact],
+      roundMoney(current.netPay - previous.netPay),
+      'gap:net',
+      'Other net adjustment',
+    );
+  }
+  const extras: MomComponent[] = [];
+  const pensionDelta = roundMoney(current.pensionEmployer - previous.pensionEmployer);
+  const statutoryDelta = roundMoney(current.statutoryEmployer - previous.statutoryEmployer);
+  if (Math.abs(pensionDelta) >= 0.005) {
+    extras.push({ key: 'er:pension', label: 'Employer pension', ownDelta: pensionDelta, contribution: pensionDelta });
+  }
+  if (Math.abs(statutoryDelta) >= 0.005) {
+    extras.push({ key: 'er:statutory', label: 'NSITF/ITF', ownDelta: statutoryDelta, contribution: statutoryDelta });
+  }
+  return withGap(
+    [...earningDiff, ...extras],
+    roundMoney(current.employerCost - previous.employerCost),
+    'gap:employer',
+    'Other employer-cost adjustment',
+  );
+};
+
+const payLinesForRecord = (key: PayrollMomMetricKey, record: MomAggRecord): MomPayLine[] => {
+  const earnings = record.earningLines.length
+    ? record.earningLines
+    : scalarEarnings(record).filter((line) => Math.abs(line.amount) >= 0.005);
+  if (key === 'deductions') {
+    return record.deductionLines.length
+      ? record.deductionLines
+      : scalarDeductions(record).filter((line) => Math.abs(line.amount) >= 0.005);
+  }
+  if (key === 'employerCost') {
+    const extras: MomPayLine[] = [];
+    if (Math.abs(record.pensionEmployer) >= 0.005) {
+      extras.push({ key: 'er:pension', label: 'Employer pension', amount: roundMoney(record.pensionEmployer) });
+    }
+    if (Math.abs(record.statutoryEmployer) >= 0.005) {
+      extras.push({ key: 'er:statutory', label: 'NSITF/ITF', amount: roundMoney(record.statutoryEmployer) });
+    }
+    return [...earnings, ...extras];
+  }
+  return earnings;
+};
+
+const arrivalReason = (kind: 'new' | 'left', record: MomAggRecord, key: PayrollMomMetricKey = 'grossPay') => {
+  const prefix = kind === 'new' ? 'New in current period' : 'Present in previous period only';
+  const main = [...payLinesForRecord(key, record)].sort((a, b) => Math.abs(b.amount) - Math.abs(a.amount) || a.label.localeCompare(b.label))[0];
+  if (!main) return prefix;
+  return `${prefix} — ${main.label} ${moneyText(main.amount, record.payCurrency)}`;
+};
+
+const GENERIC_REASON: Record<PayrollMomMetricKey, string> = {
+  grossPay: 'Gross pay changed',
+  deductions: 'Deduction mix changed',
+  netPay: 'Net pay changed',
+  employerCost: 'Employer cost changed',
+  employees: 'Retained across both periods',
 };
 
 const contributorReason = (
@@ -252,41 +503,29 @@ const contributorReason = (
   current: MomAggRecord | undefined,
   previous: MomAggRecord | undefined,
 ) => {
-  if (current && !previous) return 'New in current period';
-  if (!current && previous) return 'Present in previous period only';
+  if (current && !previous) return arrivalReason('new', current, key);
+  if (!current && previous) return arrivalReason('left', previous, key);
   if (!current || !previous) return 'No comparable record';
   if (key === 'employees') return 'Retained across both periods';
-  if (key === 'grossPay') {
-    const baseDelta = roundMoney(current.basePay - previous.basePay);
-    const allowanceDelta = roundMoney(current.allowances - previous.allowances);
-    if (Math.abs(baseDelta) >= Math.abs(allowanceDelta) && Math.abs(baseDelta) >= 0.005) return 'Base salary changed';
-    if (Math.abs(allowanceDelta) >= 0.005) return 'Allowances changed';
-    return 'Gross pay changed';
+  const currency = current.payCurrency || previous.payCurrency || 'NGN';
+  const components = retainedComponents(key, current, previous)
+    .filter((component) => Math.abs(component.contribution) >= 0.005)
+    .sort((a, b) => Math.abs(b.contribution) - Math.abs(a.contribution) || a.label.localeCompare(b.label));
+  if (!components.length) return GENERIC_REASON[key];
+  const phrase = (component: MomComponent) => movementPhrase(component.label, component.ownDelta, currency);
+  const [primary, secondary] = components;
+  if (secondary && Math.abs(secondary.contribution) >= Math.abs(primary.contribution) * 0.2) {
+    return `${phrase(primary)}, and ${phrase(secondary)}`;
   }
-  if (key === 'deductions') {
-    const deductionDeltas: Array<[string, number]> = [
-      ['PAYE changed', roundMoney(current.paye - previous.paye)],
-      ['Employee pension changed', roundMoney(current.pensionEmployee - previous.pensionEmployee)],
-      ['Loan recovery changed', roundMoney(current.loanRecovery - previous.loanRecovery)],
-      ['Other deductions changed', roundMoney(current.otherDeductions - previous.otherDeductions)],
-    ];
-    deductionDeltas.sort((a, b) => Math.abs(b[1]) - Math.abs(a[1]));
-    return Math.abs(deductionDeltas[0][1]) >= 0.005 ? deductionDeltas[0][0] : 'Deduction mix changed';
-  }
-  if (key === 'netPay') {
-    const grossDelta = roundMoney(current.grossPay - previous.grossPay);
-    const deductionDelta = roundMoney(current.deductions - previous.deductions);
-    if (Math.abs(grossDelta) >= Math.abs(deductionDelta) && Math.abs(grossDelta) >= 0.005) return 'Gross pay changed';
-    if (Math.abs(deductionDelta) >= 0.005) return 'Deductions changed';
-    return 'Net pay changed';
-  }
-  const employerDeltas: Array<[string, number]> = [
-    ['Employer pension changed', roundMoney(current.pensionEmployer - previous.pensionEmployer)],
-    ['Employer statutory changed', roundMoney(current.statutoryEmployer - previous.statutoryEmployer)],
-    ['Gross-pay-linked cost changed', roundMoney(current.grossPay - previous.grossPay)],
-  ];
-  employerDeltas.sort((a, b) => Math.abs(b[1]) - Math.abs(a[1]));
-  return Math.abs(employerDeltas[0][1]) >= 0.005 ? employerDeltas[0][0] : 'Employer cost changed';
+  return phrase(primary);
+};
+
+const componentBucketId = (key: string) =>
+  `retained-${key.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')}`;
+
+const driverLabel = (metric: PayrollMomMetricKey, component: MomComponent) => {
+  if (metric === 'netPay' && component.key.startsWith('ded:')) return `${component.label} on retained net pay`;
+  return `${component.label} on retained staff`;
 };
 
 const reconcileBucketsToTarget = (
@@ -344,7 +583,7 @@ const buildPayrollMomMetricDetail = (
         variance: 1,
         current: 1,
         previous: 0,
-        reason: 'New in current period',
+        reason: arrivalReason('new', record, 'employees'),
         staffPack: record.staffPack,
         staffPackLabel: record.staffPackLabel,
       })),
@@ -355,7 +594,7 @@ const buildPayrollMomMetricDetail = (
         variance: -1,
         current: 0,
         previous: 1,
-        reason: 'Present in previous period only',
+        reason: arrivalReason('left', record, 'employees'),
         staffPack: record.staffPack,
         staffPackLabel: record.staffPackLabel,
       })),
@@ -375,55 +614,24 @@ const buildPayrollMomMetricDetail = (
     joined.reduce((sum, record) => sum + metricAggValue(record, metric.key), 0)
       - exited.reduce((sum, record) => sum + metricAggValue(record, metric.key), 0),
   );
-  const retainedDelta = roundMoney(retainedPairs.reduce(
-    (sum, [current, previous]) => sum + metricAggValue(current, metric.key) - metricAggValue(previous, metric.key),
-    0,
-  ));
 
-  const buckets: PayrollMomDetailBucket[] = [
-    { id: 'headcount', label: 'headcount movement', value: headcountMovement, kind: 'money' },
-  ];
-
-  if (metric.key === 'grossPay') {
-    const baseDelta = roundMoney(retainedPairs.reduce((sum, [current, previous]) => sum + current.basePay - previous.basePay, 0));
-    const allowanceDelta = roundMoney(retainedPairs.reduce((sum, [current, previous]) => sum + current.allowances - previous.allowances, 0));
-    buckets.push(
-      { id: 'base-pay', label: 'base salary changes on retained staff', value: baseDelta, kind: 'money' },
-      { id: 'allowances', label: 'allowance changes on retained staff', value: allowanceDelta, kind: 'money' },
-      { id: 'other-retained', label: 'other gross movement on retained staff', value: roundMoney(retainedDelta - baseDelta - allowanceDelta), kind: 'money' },
-    );
-  } else if (metric.key === 'deductions') {
-    const payeDelta = roundMoney(retainedPairs.reduce((sum, [current, previous]) => sum + current.paye - previous.paye, 0));
-    const pensionDelta = roundMoney(retainedPairs.reduce((sum, [current, previous]) => sum + current.pensionEmployee - previous.pensionEmployee, 0));
-    const loanOtherDelta = roundMoney(retainedPairs.reduce((sum, [current, previous]) => sum + current.loanRecovery + current.otherDeductions - previous.loanRecovery - previous.otherDeductions, 0));
-    buckets.push(
-      { id: 'paye', label: 'PAYE movement on retained staff', value: payeDelta, kind: 'money' },
-      { id: 'pension-ee', label: 'employee pension movement on retained staff', value: pensionDelta, kind: 'money' },
-      { id: 'loans-other', label: 'loan and other deduction movement on retained staff', value: loanOtherDelta, kind: 'money' },
-      { id: 'other-retained', label: 'other deduction movement on retained staff', value: roundMoney(retainedDelta - payeDelta - pensionDelta - loanOtherDelta), kind: 'money' },
-    );
-  } else if (metric.key === 'netPay') {
-    const positiveRetained = roundMoney(retainedPairs.reduce((sum, [current, previous]) => {
-      const delta = current.netPay - previous.netPay;
-      return delta > 0 ? sum + delta : sum;
-    }, 0));
-    const negativeRetained = roundMoney(retainedPairs.reduce((sum, [current, previous]) => {
-      const delta = current.netPay - previous.netPay;
-      return delta < 0 ? sum + delta : sum;
-    }, 0));
-    buckets.push(
-      { id: 'retained-up', label: 'net pay increases on retained staff', value: positiveRetained, kind: 'money' },
-      { id: 'retained-down', label: 'net pay decreases on retained staff', value: negativeRetained, kind: 'money' },
-    );
-  } else if (metric.key === 'employerCost') {
-    const pensionEmployerDelta = roundMoney(retainedPairs.reduce((sum, [current, previous]) => sum + current.pensionEmployer - previous.pensionEmployer, 0));
-    const statutoryEmployerDelta = roundMoney(retainedPairs.reduce((sum, [current, previous]) => sum + current.statutoryEmployer - previous.statutoryEmployer, 0));
-    buckets.push(
-      { id: 'pension-er', label: 'employer pension movement on retained staff', value: pensionEmployerDelta, kind: 'money' },
-      { id: 'statutory-er', label: 'employer statutory movement on retained staff', value: statutoryEmployerDelta, kind: 'money' },
-      { id: 'retained-total', label: 'other employer-cost movement on retained staff', value: roundMoney(retainedDelta - pensionEmployerDelta - statutoryEmployerDelta), kind: 'money' },
-    );
+  const bucketMap = new Map<string, PayrollMomDetailBucket>();
+  const addBucket = (id: string, label: string, value: number) => {
+    const existing = bucketMap.get(id);
+    if (!existing) {
+      bucketMap.set(id, { id, label, value: roundMoney(value), kind: 'money' });
+      return;
+    }
+    existing.value = roundMoney(existing.value + value);
+  };
+  addBucket('headcount', 'headcount movement', headcountMovement);
+  for (const [current, previous] of retainedPairs) {
+    for (const component of retainedComponents(metric.key, current, previous)) {
+      if (Math.abs(component.contribution) < 0.005) continue;
+      addBucket(componentBucketId(component.key), driverLabel(metric.key, component), component.contribution);
+    }
   }
+  const buckets = [...bucketMap.values()];
 
   const reconciled = reconcileBucketsToTarget(buckets, metric.variance);
 
@@ -472,6 +680,7 @@ export const buildPayrollMonthOverMonth = (input: {
   currentRecords?: PayrollCalculationRecord[];
   previousRecords?: PayrollCalculationRecord[];
   includeMoneyDetails?: boolean;
+  currency?: 'NGN' | 'USD';
 }): PayrollMonthOverMonth => {
   const previousPeriod = previousPayrollPeriod(input.currentPeriod);
   const previous = totalsHaveFigures(input.previous) ? input.previous : null;
@@ -505,6 +714,7 @@ export const buildPayrollMonthOverMonth = (input: {
     previousPeriodLabel: previous?.periodLabel || shortPayrollPeriodLabel(previousPeriod),
     currentPeriod: input.currentPeriod,
     currentPeriodLabel: input.currentPeriodLabel || input.current.periodLabel || shortPayrollPeriodLabel(input.currentPeriod),
+    currency: input.currency === 'USD' ? 'USD' : 'NGN',
     previous,
     current: input.current,
     metrics,

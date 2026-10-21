@@ -54,6 +54,7 @@ export type TenderOpportunity = {
   commercialReviewNote: string;
   commercialReviewedBy: string;
   commercialReviewedAt: string;
+  gmBidDecision: string;
   originalInternalDeadline: string;
   createdAt: string;
   updatedAt: string;

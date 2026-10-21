@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { displayEmployeeJobTitle, formatOrganizationJobTitleLabel } from './job-title-label.ts';
 import { JobTitleInputError, normalizeJobTitleWrite } from './job-titles-store.ts';
 
 const saved = normalizeJobTitleWrite({
@@ -40,5 +41,12 @@ assert.throws(() => normalizeJobTitleWrite({ code: 'JT-1', title: 'Planner', gra
 
 const review = normalizeJobTitleWrite({ code: 'JT-2', title: 'Helper', grade: 'OPS', standardizationStatus: 'Needs Review' });
 assert.equal(review.healthStatus, 'Critical');
+
+assert.equal(formatOrganizationJobTitleLabel('JCJT78', 'LEAD DESIGN ENGINEER'), 'JCJT78 - LEAD DESIGN ENGINEER');
+assert.equal(formatOrganizationJobTitleLabel('JCJT78', 'JCJT78 - LEAD DESIGN ENGINEER'), 'JCJT78 - LEAD DESIGN ENGINEER');
+assert.equal(formatOrganizationJobTitleLabel('JCJT78', 'JCJT78'), 'JCJT78');
+assert.equal(displayEmployeeJobTitle('LEAD DESIGN ENGINEER', 'JCJT78'), 'JCJT78 - LEAD DESIGN ENGINEER');
+assert.equal(displayEmployeeJobTitle('JCJT78 - LEAD DESIGN ENGINEER', 'JCJT78'), 'JCJT78 - LEAD DESIGN ENGINEER');
+assert.equal(displayEmployeeJobTitle('-', 'JCJT78'), 'JCJT78');
 
 console.log('job-titles-store tests passed');

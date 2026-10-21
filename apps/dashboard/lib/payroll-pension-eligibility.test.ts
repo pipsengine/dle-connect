@@ -3,7 +3,7 @@
  */
 import assert from 'node:assert/strict';
 import { isPCodePayrollEmployee, isPensionEligibleStaff } from './payroll-employee-classification';
-import { calculatePension, type PensionVersion } from './payroll-pension-engine';
+import { calculatePension, pensionInputFromEmployee, shouldUsePensionSnapshot, type PensionVersion } from './payroll-pension-engine';
 import { calculateStatutoryFunds, type StatutoryFundsVersion } from './payroll-statutory-funds-engine';
 import { buildSalarySetupExportReport } from './payroll-salary-setup-export';
 
@@ -121,5 +121,40 @@ const pensionIdx = report.columns.indexOf('Pension');
 assert.ok(pensionIdx >= 0);
 assert.equal(report.rows[0][pensionIdx], '');
 assert.equal(report.rows[1][pensionIdx], 25000);
+
+const mamora = pensionInputFromEmployee({
+  employeeId: 'P0458',
+  employeeCode: 'P0458',
+  fullName: 'Mrs ABIODUN OLUWAFUNMI MAMORA',
+  employmentType: 'Permanent',
+  status: 'Active',
+  hasDualCurrencyPayroll: true,
+  periodSalary: 4419.17,
+  localPeriodSalary: 6100527.02,
+  sagePayrollEarnings: [
+    { code: 'EXP_BASIC_TAX', name: 'EXP_ SMGT BASIC', amount: 883.83 },
+    { code: 'EXP_HOUSING_TAX', name: 'EXP_SMGT HOUSING', amount: 662.88 },
+    { code: 'EXP_TRANSP', name: 'EXP_SNMG TRANSPORT', amount: 441.92 },
+    { code: 'EXP_OTHALL', name: 'EXP_ SMGT OTHER ALLOWANCE', amount: 2430.54 },
+  ],
+  sageLocalPayrollEarnings: [
+    { code: 'BASIC', name: 'BASIC SALARY', amount: 1177707.92 },
+    { code: 'SNMHOUSINGTAX', name: 'SENIOR MANAGEMENT HOUSING_TAX', amount: 883280.94 },
+    { code: 'SNMTRANSPTAX', name: 'SENIOR MANAGER TRANSPORT', amount: 588853.96 },
+    { code: 'SNMOTHALLTAX', name: 'SENIOR MANAGEMENT OTHER ALLOWANCE_T', amount: 3238696.77 },
+    { code: 'PENSION_REFUND', name: 'PENSION REFUND', amount: 211987.43 },
+  ],
+} as any, { useHrisPackageLines: true });
+const mamoraBasis = Math.round((mamora.monthlyBasePay + mamora.monthlyAllowances) * 100) / 100;
+assert.equal(mamoraBasis, 2649842.82, 'Mamora pension basis is naira basic + housing + transport');
+const mamoraPension = calculatePension({ ...mamora, rsaPin: 'PEN0458', providerId: 'leadway' }, version);
+assert.equal(mamoraPension.employeeContribution, 211987.43);
+assert.equal(mamoraPension.employerContribution, 264984.28);
+
+const nairaRow = { usdPayroll: false, rank: 2 };
+const dollarRow = { usdPayroll: true, rank: 2 };
+assert.equal(shouldUsePensionSnapshot(nairaRow, dollarRow), false, 'dollar payroll must not replace naira pension');
+assert.equal(shouldUsePensionSnapshot(dollarRow, nairaRow), true, 'naira payroll replaces a dollar pension row');
+assert.equal(shouldUsePensionSnapshot(undefined, dollarRow), true);
 
 console.log('payroll-pension-eligibility.test.ts ok');

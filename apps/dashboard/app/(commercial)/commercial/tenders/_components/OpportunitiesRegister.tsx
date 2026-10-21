@@ -41,9 +41,10 @@ const TABS: Array<{ id: Tab; label: string }> = [
   { id: 'Submitted', label: 'Submitted' },
   { id: 'Overdue', label: 'Overdue' },
   { id: 'Closed', label: 'Closed' },
+  { id: 'Historical', label: 'Proposal Register' },
 ];
 
-const STATUSES: RegisterStatus[] = ['Not Started', 'In Progress', 'Submitted', 'Awaiting GM Review', 'Awaiting MD Decision', 'Closed'];
+const STATUSES: RegisterStatus[] = ['Not Started', 'In Progress', 'Submitted', 'Awaiting GM Review', 'Awaiting MD Decision', 'Closed', 'Historical'];
 const PRIORITIES = ['High', 'Medium', 'Low'];
 const KIND_LABEL: Record<CommercialKind, string> = { ITT: 'ITT', RFQ: 'RFQ', EOI: 'EOI' };
 
@@ -59,6 +60,7 @@ const statusTone: Record<RegisterStatus, string> = {
   'Awaiting GM Review': 'bg-orange-50 text-orange-700',
   'Awaiting MD Decision': 'bg-amber-50 text-amber-700',
   Closed: 'bg-slate-100 text-slate-500',
+  Historical: 'bg-slate-100 text-slate-600',
 };
 const priorityTone = (value: string) => value === 'High' ? 'bg-rose-50 text-rose-600' : value === 'Low' ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-700';
 
@@ -396,7 +398,7 @@ export function OpportunitiesRegister() {
                     <td className="px-3 py-3"><span className={`rounded-md px-2 py-0.5 text-[11px] font-bold ${kindTone[kind]}`}>{KIND_LABEL[kind]}</span></td>
                     <td className="px-3 py-3 text-slate-600">{sectorOf(row)}</td>
                     <td className="px-3 py-3 text-slate-600">{formatWhen(receivedOn(row))}</td>
-                    <td className="px-3 py-3"><span className={dateTone(internal)}>{internal ? formatWhen(internal) : '—'}</span></td>
+                    <td className="px-3 py-3"><span className={state === 'Historical' ? 'text-slate-600' : dateTone(internal)}>{internal ? formatWhen(internal) : '—'}</span></td>
                     <td className="px-3 py-3 text-slate-700">{external ? formatWhen(external) : '—'}</td>
                     <td className="px-3 py-3"><span className={`rounded-md px-2 py-0.5 text-[11px] font-bold ${priorityTone(row.priority)}`}>{row.priority || '—'}</span></td>
                     <td className="px-3 py-3 text-slate-700">{row.ownerName || '—'}</td>
@@ -484,10 +486,10 @@ export function OpportunitiesRegister() {
             )}
             {gm && !detail.bidDecision ? (
               <div className="mt-5 space-y-2 border-t border-slate-100 pt-4">
-                <textarea value={reviewNote} onChange={(event) => setReviewNote(event.target.value)} rows={3} placeholder="Review comments" className="w-full rounded-lg border border-slate-200 px-3 py-2 text-[12px]" />
-                <div className="flex gap-2">
+                <textarea value={reviewNote} onChange={(event) => setReviewNote(event.target.value)} rows={3} placeholder="Comment required to return this for correction" className="w-full rounded-lg border border-slate-200 px-3 py-2 text-[12px]" />
+                <div className="flex flex-wrap gap-2">
                   <button type="button" disabled={busy} onClick={() => void review(detail, 'return')} className="h-9 rounded-lg border border-orange-200 px-3 text-[12px] font-bold text-orange-700">Return for correction</button>
-                  <button type="button" disabled={busy} onClick={() => void review(detail, 'forward')} className="h-9 rounded-lg bg-[#2563eb] px-3 text-[12px] font-bold text-white">Forward to MD</button>
+                  <Link href={`/commercial/tenders/approvals?id=${detail.id}`} className="inline-flex h-9 items-center rounded-lg bg-[#2563eb] px-3 text-[12px] font-bold text-white">Open approval</Link>
                 </div>
               </div>
             ) : null}

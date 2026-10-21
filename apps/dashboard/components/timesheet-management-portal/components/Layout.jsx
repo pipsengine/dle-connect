@@ -1,13 +1,14 @@
 import React, { useEffect, useState } from 'react';
-import { Clock3, LayoutDashboard, CalendarRange, Users, ScanLine, Moon, Ship, CheckSquare2, Wrench, BarChart3, Settings2, ClipboardCheck, Menu, Bell, Search, Home, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Clock3, LayoutDashboard, CalendarRange, Users, ScanLine, Moon, Ship, CheckSquare2, Wrench, BarChart3, Settings2, ClipboardCheck, Menu, Bell, Search, Home, ChevronLeft, ChevronRight, Briefcase } from 'lucide-react';
 import { usePortalData } from '../portal-data';
 
-const nav = [['Dashboard', LayoutDashboard], ['Timesheet Entry', Clock3], ['Timesheet Review', ClipboardCheck], ['Timesheet Periods', CalendarRange], ['Crew & Assignments', Users], ['Attendance Reconciliation', ScanLine], ['OVT & Night Work', Moon], ['Offshore & Mobilization', Ship], ['Approvals', CheckSquare2], ['Corrections & Adjustments', Wrench], ['Reports', BarChart3], ['Configuration', Settings2]];
+const nav = [['Dashboard', LayoutDashboard], ['Timesheet Entry', Clock3], ['Timesheet Review', ClipboardCheck], ['Timesheet Periods', CalendarRange], ['Crew & Assignments', Users], ['Attendance Reconciliation', ScanLine], ['OVT & Night Work', Moon], ['Offshore & Mobilization', Ship], ['Approvals', CheckSquare2], ['Corrections & Adjustments', Wrench], ['Reports', BarChart3], ['Project Man-Hours & Labour Cost', Briefcase], ['Configuration', Settings2]];
 const SIDEBAR_KEY = 'dle-ts-sidebar';
 
 export default function Layout({ page, setPage, children }) {
   const { snapshot } = usePortalData();
   const canManagePeriods = Boolean(snapshot?.viewer?.canManagePeriods);
+  const canViewProjectLabour = Boolean(snapshot?.viewer?.canViewProjectLabour);
   const [collapsed, setCollapsed] = useState(false);
   useEffect(() => {
     setCollapsed(window.localStorage.getItem(SIDEBAR_KEY) === '1');
@@ -24,7 +25,7 @@ export default function Layout({ page, setPage, children }) {
       return next;
     });
   };
-  const items = nav.filter(([name]) => name !== 'Timesheet Periods' || canManagePeriods);
+  const items = nav.filter(([name]) => (name !== 'Timesheet Periods' || canManagePeriods) && (name !== 'Project Man-Hours & Labour Cost' || canViewProjectLabour));
   return (
     <div className={collapsed ? 'shell collapsed' : 'shell'}>
       <aside>

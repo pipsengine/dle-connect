@@ -1086,7 +1086,11 @@ const computePayrollForPeriod = async (requestedPeriod: string): Promise<Payroll
       : (Number.isFinite(ngnPayeOverride) ? roundMoney(ngnPayeOverride) : tax.monthlyPaye);
     const usdRun = variant.payCurrency === 'USD';
     const paidLines = amounts.paidEarningLines || amounts.earningLines || [];
-    const usdHousingPension = usdRun && paidLines.some((line) => /HOUS/i.test(`${line.code || ''} ${line.name || ''}`));
+    // Housing on a dollar-only package can carry pension. Dual-currency staff already
+    // have that pension on the naira run, so the dollar run stays PAYE only.
+    const usdHousingPension = usdRun
+      && !variant.hasDualCurrencyPayroll
+      && paidLines.some((line) => /HOUS/i.test(`${line.code || ''} ${line.name || ''}`));
     const skipFunds = usdRun || dailyRateEmployee || !isPensionEligibleStaff(employee);
     // MD (2) deducts PAYE only. Pension stays off, the same way a USD package with no housing has no pension.
     const mdEmployee = isDleUsdMdEmployee(employee);

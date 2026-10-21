@@ -24,6 +24,7 @@ import {
 } from '@/lib/access/finance-access';
 import { canAccessFleetOperations } from '@/lib/access/fleet-access';
 import { canAccessItSupportPortal } from '@/lib/access/it-support-access';
+import { canAccessCorporateOfficePortal } from '@/lib/access/corporate-office-access';
 import { canAccessSecurityPortal } from '@/lib/access/security-access';
 import { WORKFORCE_PORTAL_ENABLED } from '@/lib/workforce-portal-availability';
 
@@ -72,6 +73,7 @@ const requiredPermission = (route?: string) => {
   if (route.startsWith('/workforce-portal')) return '';
   if (route.startsWith('/logistics-fleet')) return 'view_logistics_fleet';
   if (route.startsWith('/security')) return 'view_security';
+  if (route.startsWith('/corporate-office')) return 'view_corporate_office';
   if (route.startsWith('/operations-center/timesheets')) return 'operations.timesheets.submit';
   if (route.startsWith('/operations-center/workforce-allocation')) return 'operations.allocation.view';
   if (route.startsWith('/operations-center/resource-planning')) return 'operations.resource-planning.view';
@@ -199,6 +201,9 @@ export function Sidebar({
           if (sub.route?.startsWith('/commercial')) {
             return canAccessTenderPortal(sessionLike);
           }
+          if (sub.route?.startsWith('/corporate-office')) {
+            return canAccessCorporateOfficePortal(permissions, sessionContext.isGlobalAdmin);
+          }
           if (sub.route?.startsWith('/hris/') && platformOnly && !sessionContext.isGlobalAdmin && !sessionContext.roles.includes('Super Administrator')) {
             return false;
           }
@@ -212,6 +217,8 @@ export function Sidebar({
               ? canAccessSecurityPortal(permissions, sessionContext.isGlobalAdmin)
               : item.id === 'it-support'
                 ? canAccessItSupportPortal(permissions, sessionContext.isGlobalAdmin)
+                : item.id === 'corporate-office'
+                  ? canAccessCorporateOfficePortal(permissions, sessionContext.isGlobalAdmin)
                 : item.id === 'sales-crm'
                   ? canAccessTenderPortal(sessionLike)
                   : (item.route === '/finance' || item.route?.startsWith('/finance')
@@ -327,7 +334,11 @@ export function Sidebar({
                       >
                         <div className="py-1 px-4 ml-5 mt-1 border-l border-slate-100 flex flex-col gap-1">
                           {item.subItems?.map((sub) => {
-                            const isSubActive = pathname === sub.route || pathname.startsWith(`${sub.route}/`);
+                            const activeSubRoute = [...(item.subItems || [])]
+                              .map((entry) => entry.route)
+                              .filter((route) => pathname === route || pathname.startsWith(`${route}/`))
+                              .sort((left, right) => right.length - left.length)[0];
+                            const isSubActive = sub.route === activeSubRoute;
                             return (
                               <Link
                                 key={sub.slug}

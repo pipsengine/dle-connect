@@ -4,8 +4,8 @@ import Link from 'next/link';
 import { useEffect, useMemo, useState } from 'react';
 import { CalendarRange, Download, FileBarChart2 } from 'lucide-react';
 import type { TenderApproval, TenderAuditEvent, TenderAward, TenderDashboard, TenderItem, TenderOpportunity, TenderSubmission } from '@/lib/commercial/tender-types';
-import { MONTHS, closedOut, daysUntil, downloadCsv, inMonth, monthDelta } from '@/lib/commercial/tender-present';
-import { awardedToDleOf, commercialKindOf, mdDecisionOf, registerStatusOf } from '@/lib/commercial/tender-workflow';
+import { MONTHS, closedOut, daysUntil, downloadCsv, inMonth, monthDelta, receivedOn } from '@/lib/commercial/tender-present';
+import { awardedToDleOf, commercialKindOf, isHistoricalRegister, mdDecisionOf, registerStatusOf } from '@/lib/commercial/tender-workflow';
 import { formatWhen, tenderGet } from './tender-api';
 import { Donut, Pill } from './tender-widgets';
 import { Crumbs, Empty, Panel, TabBar } from './record-frame';
@@ -77,8 +77,9 @@ export function ReportsBoard() {
     }).catch((reason) => setError(reason instanceof Error ? reason.message : 'Unable to read reports.'));
   }, []);
 
+  const trendOn = (row: TenderOpportunity) => isHistoricalRegister(row) ? (row.invitationDate || '') : (receivedOn(row) || row.createdAt);
   const scoped = useMemo(() => rows.filter((row) => {
-    const stamp = (row.createdAt || '').slice(0, 10);
+    const stamp = trendOn(row).slice(0, 10);
     if (fromDate && stamp && stamp < fromDate) return false;
     if (toDate && stamp && stamp > toDate) return false;
     return true;
@@ -106,11 +107,11 @@ export function ReportsBoard() {
     return Math.max(0, Math.round((end.getTime() - start.getTime()) / 86400000));
   }).filter((value): value is number => value != null);
   const cycle = cycles.length ? Math.round(cycles.reduce((sum, value) => sum + value, 0) / cycles.length) : 0;
-  const countDelta = (pick: (row: TenderOpportunity) => boolean) => monthDelta(scoped.filter((row) => inWindow(row.createdAt, thisStart, new Date()) && pick(row)).length, rows.filter((row) => inWindow(row.createdAt, prevStart, thisStart) && pick(row)).length);
+  const countDelta = (pick: (row: TenderOpportunity) => boolean) => monthDelta(scoped.filter((row) => inWindow(trendOn(row), thisStart, new Date()) && pick(row)).length, rows.filter((row) => inWindow(trendOn(row), prevStart, thisStart) && pick(row)).length);
 
   const activity = MONTHS.map((month, index) => ({
     month,
-    opportunities: scoped.filter((row) => inMonth(row.createdAt, year, index)).length,
+    opportunities: scoped.filter((row) => inMonth(trendOn(row), year, index)).length,
     bids: submissions.filter((item) => inMonth(item.submittedAt, year, index)).length,
     awards: awards.filter((item) => inMonth(item.awardDate || item.createdAt, year, index)).length,
   }));

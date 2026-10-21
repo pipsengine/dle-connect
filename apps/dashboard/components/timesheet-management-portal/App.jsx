@@ -15,6 +15,7 @@ import OffshoreMobilization from './pages/OffshoreMobilization';
 import Approvals from './pages/Approvals';
 import CorrectionsAdjustments from './pages/CorrectionsAdjustments';
 import Configuration from './pages/Configuration';
+import LabourCost from './pages/LabourCost';
 
 const pages = {
   Dashboard,
@@ -28,6 +29,7 @@ const pages = {
   Approvals,
   'Corrections & Adjustments': CorrectionsAdjustments,
   Reports,
+  'Project Man-Hours & Labour Cost': LabourCost,
   Configuration,
 };
 
@@ -43,6 +45,7 @@ const pageSlugs = {
   Approvals: 'approvals',
   'Corrections & Adjustments': 'corrections',
   Reports: 'reports',
+  'Project Man-Hours & Labour Cost': 'labour',
   Configuration: 'configuration',
 };
 
@@ -82,6 +85,7 @@ function PortalShell() {
   };
   useEffect(() => {
     if (snapshot?.viewer && page === 'Timesheet Periods' && !snapshot.viewer.canManagePeriods) setPage('Dashboard');
+    if (snapshot?.viewer && page === 'Project Man-Hours & Labour Cost' && !snapshot.viewer.canViewProjectLabour) setPage('Dashboard');
   }, [snapshot, page]);
   const Current = pages[page] || Dashboard;
   return (

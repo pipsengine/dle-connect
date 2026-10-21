@@ -1,3 +1,4 @@
+import { listOrganizationJobTitleOptions, type OrganizationJobTitleOption } from '@/lib/job-titles-store';
 import { listNigeriaBanks, nigeriaBankNames } from '@/lib/nigeria-banks-store';
 import { readPayrollEmployees } from '@/lib/payroll-employee-source';
 
@@ -8,6 +9,8 @@ export type EmployeeFormOptions = {
   locations: string[];
   workCenters: string[];
   jobTitles: string[];
+  designations?: string[];
+  jobTitleCatalog?: OrganizationJobTitleOption[];
   jobGrades: string[];
   costCenters: string[];
   projectSites: string[];
@@ -112,12 +115,23 @@ export const loadEmployeeFormOptions = async (includeEmployees = false): Promise
     : await nigeriaBankNames().catch(() => fallback.banks);
   const banks = bankNames.length ? bankNames : fallback.banks;
   const bankCatalog = bankCatalogFrom(nigeriaBanks);
+  const jobTitleCatalog = await listOrganizationJobTitleOptions().catch(() => [] as OrganizationJobTitleOption[]);
+  const catalogLabels = jobTitleCatalog.map((item) => item.label);
+  const catalogCodes = jobTitleCatalog.map((item) => item.code);
   try {
     const employeeSource = await readPayrollEmployees();
     const employees = employeeSource.employees;
     const catalogWorkCenters = await readWorkCenterNames();
     if (!employees.length) {
-      return { ...fallback, workCenters: catalogWorkCenters, banks, bankCatalog };
+      return {
+        ...fallback,
+        workCenters: catalogWorkCenters,
+        banks,
+        bankCatalog,
+        jobTitles: mergeUnique(catalogLabels, fallback.jobTitles),
+        designations: uniqueSorted(catalogCodes),
+        jobTitleCatalog,
+      };
     }
     const textOf = (employee: (typeof employees)[number], key: string) => {
       const value = (employee as Record<string, unknown>)[key];
@@ -132,7 +146,9 @@ export const loadEmployeeFormOptions = async (includeEmployees = false): Promise
       businessUnits: mergeUnique(uniqueSorted(employees.map((employee) => textOf(employee, 'businessUnit'))), fallback.businessUnits),
       locations: mergeUnique(uniqueSorted(employees.flatMap((employee) => [textOf(employee, 'location'), textOf(employee, 'workLocation'), textOf(employee, 'officeLocation')])), fallback.locations),
       workCenters: mergeUnique(uniqueSorted([...catalogWorkCenters, ...employees.map((employee) => textOf(employee, 'workCenter'))]), fallback.workCenters),
-      jobTitles: mergeUnique(uniqueSorted(employees.flatMap((employee) => [textOf(employee, 'jobTitle'), textOf(employee, 'designation')])), fallback.jobTitles),
+      jobTitles: mergeUnique(catalogLabels, mergeUnique(uniqueSorted(employees.map((employee) => textOf(employee, 'jobTitle'))), fallback.jobTitles)),
+      designations: mergeUnique(catalogCodes, uniqueSorted(employees.map((employee) => textOf(employee, 'designation')))),
+      jobTitleCatalog,
       jobGrades: mergeUnique(uniqueSorted(employees.map((employee) => textOf(employee, 'jobGrade'))), fallback.jobGrades),
       costCenters: mergeUnique(uniqueSorted(employees.map((employee) => textOf(employee, 'costCenter'))), fallback.costCenters),
       projectSites: mergeUnique(uniqueSorted(employees.map((employee) => textOf(employee, 'projectSite'))), fallback.projectSites),
@@ -154,6 +170,13 @@ export const loadEmployeeFormOptions = async (includeEmployees = false): Promise
         : undefined,
     };
   } catch {
-    return { ...fallback, banks, bankCatalog };
+    return {
+      ...fallback,
+      banks,
+      bankCatalog,
+      jobTitles: mergeUnique(catalogLabels, fallback.jobTitles),
+      designations: uniqueSorted(catalogCodes),
+      jobTitleCatalog,
+    };
   }
 };

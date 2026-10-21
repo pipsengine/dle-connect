@@ -37,6 +37,7 @@ const blankRow = (booking) => ({
 /**
  * One row per employee.
  * Calendar columns take day-shift regular and overtime.
+ * Days counts weekday dates only. Saturday, Sunday, and public-holiday dates stay in their hour columns.
  * Night is the number of dates with a night session. Night Hrs is the hours booked on the Night shift.
  * Balanced means every booked day and night shift has a full standard day of regular hours.
  */
@@ -68,7 +69,7 @@ export const buildBookingSummary = (bookings, holidayDates, standardHours = 8) =
     }
     if (booking.supervisor) current.supervisors.add(booking.supervisor);
     if (booking.status === 'Exception') current.markedException = true;
-    current.days.add(date);
+    if (kind === 'weekday') current.days.add(date);
     current.dates.set(date, slot);
     byEmployee.set(booking.employeeCode, current);
   }

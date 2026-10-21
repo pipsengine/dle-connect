@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { payrollDataSourceInfo, readPayrollEmployees } from '@/lib/payroll-employee-source';
-import { activePensionVersion, calculatePension, pensionInputFromEmployee, readPayrollPensionConfig, writePayrollPensionConfig, type PensionConfig } from '@/lib/payroll-pension-engine';
+import { activePensionVersion, calculatePension, pensionInputFromEmployee, readPayrollPensionConfig, shouldUsePensionSnapshot, writePayrollPensionConfig, type PensionConfig } from '@/lib/payroll-pension-engine';
 import { isPensionEligibleStaff } from '@/lib/payroll-employee-classification';
 import { payslipIdentityMap } from '@/lib/payroll-payslip-identity-store';
 import { normalizePayrollMatchKey } from '@/lib/sage-people-payroll-store';
@@ -172,7 +172,7 @@ const buildPayload = async (request: Request) => {
   ]);
   const version = activePensionVersion(config);
   if (!version) throw new Error('No active pension configuration is available.');
-  const payrollPension = new Map<string, ReturnType<typeof amountsFromPayrollRecord> & { record: any; rank: number }>();
+  const payrollPension = new Map<string, ReturnType<typeof amountsFromPayrollRecord> & { record: any; rank: number; usdPayroll: boolean }>();
   for (const run of snapshots.get(period) || []) {
     if (run.pack !== 'salaried') continue;
     const rank = run.company ? 2 : 1;
@@ -188,9 +188,8 @@ const buildPayload = async (request: Request) => {
       const payrollGroup = compact(record.payrollGroup).toUpperCase();
       const payCurrency = compact(record.payCurrency).toUpperCase();
       const usdPayroll = payCurrency === 'USD' || payCurrency === 'US$' || /DLE_USD|(^|[^A-Z])USD([^A-Z]|$)/.test(payrollGroup);
-      if (usdPayroll && ['P0364', 'P0442', 'P0457'].includes(code)) continue;
       const existing = payrollPension.get(code);
-      if (existing && existing.rank > rank) continue;
+      if (!shouldUsePensionSnapshot(existing, { usdPayroll, rank })) continue;
       payrollPension.set(code, {
         ...amountsFromPayrollRecord({
           employeeCode: record.employeeCode,
@@ -207,6 +206,7 @@ const buildPayload = async (request: Request) => {
         }),
         record,
         rank,
+        usdPayroll,
       });
     }
   }

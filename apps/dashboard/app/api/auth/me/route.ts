@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { effectivePermissionsForUser } from '@/lib/auth/access-control-store';
+import { withCorrespondenceParticipantPermission } from '@/lib/corporate-office/front-desk-access';
 import { resolveAccessPermissions } from '@/lib/auth/resolve-access-session';
 import { isSuperActor } from '@/lib/auth/role-delegation';
 import {
@@ -51,7 +52,7 @@ export async function GET(request: Request) {
     return response;
   }
 
-  const permissions = await resolvePermissionsWithBudget(session);
+  const permissions = await withCorrespondenceParticipantPermission(await resolvePermissionsWithBudget(session), session.employeeCode);
   const data = { ...session, permissions, lastActivityAt: Math.floor(Date.now() / 1000) };
   const response = NextResponse.json({ status: 'success', data });
   response.cookies.set(

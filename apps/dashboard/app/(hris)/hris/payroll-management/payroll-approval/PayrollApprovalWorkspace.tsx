@@ -399,7 +399,7 @@ function MomLine({
       return number(value);
     }
     if (!canViewMoney) return 'Restricted';
-    const formatted = formatPayrollMoney(Math.abs(value), 'NGN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    const formatted = formatPayrollMoney(Math.abs(value), mom.currency || 'NGN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
     if (value > 0) return `+${formatted}`;
     if (value < 0) return `-${formatted}`;
     return formatted;

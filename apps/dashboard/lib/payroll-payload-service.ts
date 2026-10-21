@@ -327,6 +327,7 @@ const loadPriorMonthComparison = async (
   period: string,
   pack: PayrollRunPack,
   company: PayrollCompany,
+  currencySlice: PayrollCurrencySlice = 'ngn',
 ): Promise<{ totals: PayrollMomTotals | null; records: PayrollCalculationRecord[] }> => {
   const priorPeriod = previousPayrollPeriod(period);
   if (!priorPeriod) return { totals: null, records: [] };
@@ -340,10 +341,19 @@ const loadPriorMonthComparison = async (
     if (shouldUseSnapshot(run, periodRecord, snapshot) && snapshot) {
       let calculation = await buildPayrollCalculationFromSnapshot(priorPeriod, snapshot);
       calculation = filterPayrollCalculationByPack(calculation, pack, company);
+      // DLE USD shares the DLE salaried run. Compare it with last month's dollar staff, not the naira pack.
+      if (currencySlice === 'usd') {
+        calculation = applyCurrencySliceToCalculation(calculation, 'usd');
+        const totals = totalsFromSummaryAndRecords(priorPeriod, calculation.summary, calculation.records, true, 'usd');
+        if (totalsHaveFigures(totals)) return { totals, records: calculation.records };
+        return { totals: null, records: [] };
+      }
       const totals = totalsFromCalculation(priorPeriod, calculation, true);
       if (totalsHaveFigures(totals)) return { totals, records: ngnPayrollKpiRecords(calculation.records) as PayrollCalculationRecord[] };
     }
   }
+
+  if (currencySlice === 'usd') return { totals: null, records: [] };
 
   if (run && (Number(run.grossPay || 0) || Number(run.netPay || 0) || Number(run.employerCost || 0) || Number(run.employeeCount || 0))) {
     return {
@@ -370,8 +380,9 @@ const buildMonthOverMonthForScope = async (
   current: PayrollMomTotals,
   currentRecords: PayrollCalculationRecord[],
   includeMoneyDetails: boolean,
+  currencySlice: PayrollCurrencySlice = 'ngn',
 ): Promise<PayrollMonthOverMonth> => {
-  const previous = await loadPriorMonthComparison(period, pack, company);
+  const previous = await loadPriorMonthComparison(period, pack, company, currencySlice);
   return buildPayrollMonthOverMonth({
     currentPeriod: period,
     currentPeriodLabel: periodLabel,
@@ -380,6 +391,7 @@ const buildMonthOverMonthForScope = async (
     currentRecords,
     previousRecords: previous.records,
     includeMoneyDetails,
+    currency: currencySlice === 'usd' ? 'USD' : 'NGN',
   });
 };
 
@@ -683,6 +695,7 @@ export const buildProcessingPayload = async (
       ? activePack.records
       : ngnPayrollKpiRecords(activePack.records as PayrollCalculationRecord[])) as PayrollCalculationRecord[],
     perms.canViewMoney,
+    scope.currencySlice,
   );
 
   const payrollFx = await resolvePayrollRunUsdNgnRate(period).catch(() => null);

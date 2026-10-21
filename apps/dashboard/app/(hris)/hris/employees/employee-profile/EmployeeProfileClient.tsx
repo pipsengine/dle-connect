@@ -18,6 +18,7 @@ import { splitDraftEarningLinesByScope, type FlexiblePayrollLineDraft } from '@/
 import { getNigeriaLgas, getNigeriaStates } from '@/lib/nigeria-locations';
 import { humanizeHttpErrorBody } from '@/lib/http-client-error';
 import { hrisEmployeeProfileHref, hrisEmployeeResourceUrl } from '@/lib/hris-employee-route';
+import { displayEmployeeJobTitle } from '@/lib/job-title-label';
 import { composePersonDisplayName } from '@/lib/person-display-name';
 import {
   resolveEmployeeProfileAccess,
@@ -629,6 +630,8 @@ type ProfileFormOptions = {
   locations: string[];
   workCenters?: string[];
   jobTitles: string[];
+  designations?: string[];
+  jobTitleCatalog?: Array<{ label: string; code: string; title: string; grade: string }>;
   jobGrades: string[];
   costCenters: string[];
   projectSites: string[];
@@ -667,8 +670,9 @@ const SearchableSelectField = ({
   const choices = useMemo(() => withCurrentOption(options, value), [options, value]);
   const filtered = useMemo(() => {
     const q = value.trim().toLowerCase();
-    if (!q) return choices.slice(0, 120);
-    return choices.filter((item) => item.toLowerCase().includes(q)).slice(0, 120);
+    const selected = q && choices.some((item) => item.toLowerCase() === q);
+    if (!q || selected) return choices.slice(0, 500);
+    return choices.filter((item) => item.toLowerCase().includes(q)).slice(0, 500);
   }, [choices, value]);
 
   return (
@@ -2370,7 +2374,13 @@ export default function EmployeeProfileClient({
                       {!jobEdit ? (
                         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
                           {JOB_DETAIL_DISPLAY_KEYS.map((k) => (
-                            <Field key={k} label={jobLabel(k)} value={v(profileData.jobDetails[k])} />
+                            <Field
+                              key={k}
+                              label={jobLabel(k)}
+                              value={k === 'jobTitle'
+                                ? displayEmployeeJobTitle(v(profileData.jobDetails.jobTitle), v(profileData.jobDetails.designation))
+                                : v(profileData.jobDetails[k])}
+                            />
                           ))}
                         </div>
                       ) : (
@@ -2384,14 +2394,21 @@ export default function EmployeeProfileClient({
                             <SearchableSelectField
                               label="Job Title"
                               value={editValue(jobDraft?.jobTitle)}
-                              onChange={(next) => setJobField('jobTitle', next)}
+                              onChange={(next) => {
+                                const match = (jobFormOptions?.jobTitleCatalog || []).find((item) => item.label.toLowerCase() === next.trim().toLowerCase());
+                                setJobDraft((prev) => ({
+                                  ...(prev || {}),
+                                  jobTitle: next || null,
+                                  ...(match ? { designation: match.code || null } : {}),
+                                }));
+                              }}
                               options={jobFormOptions?.jobTitles || []}
                             />
                             <SearchableSelectField
                               label="Designation"
                               value={editValue(jobDraft?.designation)}
                               onChange={(next) => setJobField('designation', next)}
-                              options={jobFormOptions?.jobTitles || []}
+                              options={jobFormOptions?.designations?.length ? jobFormOptions.designations : (jobFormOptions?.jobTitles || [])}
                             />
                             <SearchableSelectField
                               label="Job Grade"

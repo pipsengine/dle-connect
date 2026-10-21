@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 
 import type { DleEmployeeDirectoryRow } from '@/lib/dle-enterprise-db';
+import { listOrganizationJobTitleOptions, type OrganizationJobTitleOption } from '@/lib/job-titles-store';
 import { readPayrollEmployees } from '@/lib/payroll-employee-source';
 
 type Role =
@@ -38,7 +39,7 @@ const getRole = (request: Request): Role => {
 const uniqueSorted = (values: Array<string | undefined | null>) =>
   Array.from(new Set(values.map((value) => String(value || '').trim()).filter(Boolean))).sort((a, b) => a.localeCompare(b));
 
-const buildFormOptions = (rows: DleEmployeeDirectoryRow[], includeEmployees: boolean) => {
+const buildFormOptions = (rows: DleEmployeeDirectoryRow[], includeEmployees: boolean, catalog: OrganizationJobTitleOption[] = []) => {
   const projects = uniqueSorted(rows.map((row) => row.projectSite)).map((name) => ({
     name,
     code: '',
@@ -51,8 +52,8 @@ const buildFormOptions = (rows: DleEmployeeDirectoryRow[], includeEmployees: boo
     businessUnits: uniqueSorted(rows.map((row) => row.businessUnit)),
     divisions: uniqueSorted(rows.map((row) => row.division)),
     locations: uniqueSorted(rows.flatMap((row) => [row.location, row.workLocation, row.officeLocation])),
-    jobTitles: uniqueSorted(rows.map((row) => row.jobTitle)),
-    designations: uniqueSorted(rows.map((row) => row.designation)),
+    jobTitles: uniqueSorted([...catalog.map((item) => item.label), ...rows.map((row) => row.jobTitle)]),
+    designations: uniqueSorted([...catalog.map((item) => item.code), ...rows.map((row) => row.designation)]),
     jobGrades: uniqueSorted(rows.map((row) => row.jobGrade)),
     jobLevels: uniqueSorted(rows.map((row) => row.salaryGrade)),
     costCenters: uniqueSorted(rows.map((row) => row.costCenter)),
@@ -84,7 +85,8 @@ export async function GET(request: Request, ctx: { params: Promise<{ action: str
     const url = new URL(request.url);
     const includeEmployees = url.searchParams.get('includeEmployees') === '1';
     const rows = (await readPayrollEmployees()).employees;
-    return jsonOk(buildFormOptions(rows, includeEmployees));
+    const catalog = await listOrganizationJobTitleOptions().catch(() => [] as OrganizationJobTitleOption[]);
+    return jsonOk(buildFormOptions(rows, includeEmployees, catalog));
   }
 
   if (seg0 === 'summary') {

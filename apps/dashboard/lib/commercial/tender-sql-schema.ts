@@ -416,6 +416,8 @@ IF COL_LENGTH(N'commercial.TenderOpportunities', N'CommercialReviewedAt') IS NUL
   ALTER TABLE [commercial].[TenderOpportunities] ADD [CommercialReviewedAt] DATETIME2(0) NULL;
 IF COL_LENGTH(N'commercial.TenderOpportunities', N'OriginalInternalDeadline') IS NULL
   ALTER TABLE [commercial].[TenderOpportunities] ADD [OriginalInternalDeadline] DATE NULL;
+IF COL_LENGTH(N'commercial.TenderOpportunities', N'GmBidDecision') IS NULL
+  ALTER TABLE [commercial].[TenderOpportunities] ADD [GmBidDecision] NVARCHAR(20) NULL;
 
 IF COL_LENGTH(N'commercial.TenderOpportunities', N'CommercialKind') IS NOT NULL
   AND NOT EXISTS (
