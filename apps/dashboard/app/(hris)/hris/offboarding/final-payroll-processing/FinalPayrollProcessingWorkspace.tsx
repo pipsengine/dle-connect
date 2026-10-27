@@ -13,7 +13,6 @@ import {
   Download,
   ExternalLink,
   Filter,
-  MoreHorizontal,
   Plus,
   Search,
   Users,
@@ -25,10 +24,15 @@ import type {
   FinalPayrollSettlement,
 } from '@/lib/final-payroll-settlement-shared';
 import {
+  finalPayrollApprovalLabel,
+  finalPayrollSettlementEditable,
   formatFinalPayrollDate,
   formatFinalPayrollMoney,
   settlementTotals,
 } from '@/lib/final-payroll-settlement-shared';
+import FinalEntitlementSheetView from './FinalEntitlementSheetView';
+import { downloadFinalEntitlementSheet } from '@/lib/final-entitlement-sheet-export';
+import { entitlementSheetFromSettlement } from '@/lib/final-entitlement-sheet';
 import styles from '@/styles/final-payroll-processing.module.css';
 
 const KPI_ICONS = {
@@ -42,6 +46,7 @@ const KPI_ICONS = {
 
 const DETAIL_TABS = [
   'Summary',
+  'Entitlement Sheet',
   'Earnings',
   'Deductions & Recoveries',
   'Clearance',
@@ -71,6 +76,8 @@ const statusClass = (value: string) => {
     Completed: styles.statusCompleted,
     Paid: styles.statusPaid,
     'In Review': styles.statusInReview,
+    'Not submitted': styles.statusDraft,
+    Returned: styles.statusException,
     Pending: styles.statusPending,
     'Awaiting Clearance': styles.statusAwaitingClearance,
     Draft: styles.statusDraft,
@@ -93,12 +100,10 @@ const initials = (name: string) =>
 const clearanceLabel = (row: FinalPayrollSettlement) =>
   (row.clearance || []).every((item) => item.status === 'Completed') ? 'Cleared' : 'Pending';
 
-const approvalLabel = (row: FinalPayrollSettlement) => {
-  const active = (row.approvalStages || []).find((stage) => stage.status === 'In Review');
-  if (active) return 'In Review';
-  if (row.status === 'Approved' || row.status === 'Paid') return 'Approved';
-  return 'Pending';
-};
+const approvalLabel = (row: FinalPayrollSettlement) => finalPayrollApprovalLabel(row);
+
+const settlementEditorHref = (id: string) =>
+  `/hris/offboarding/final-payroll-processing/new-settlement?id=${encodeURIComponent(id)}`;
 
 export default function FinalPayrollProcessingWorkspace({
   initialPeriod,
@@ -237,7 +242,14 @@ export default function FinalPayrollProcessingWorkspace({
             {payload?.periodLabel || period || 'Period'}
           </button>
           <button type="button" onClick={exportCsv}>
-            <Download /> Export
+            <Download /> Export register
+          </button>
+          <button
+            type="button"
+            disabled={!selected}
+            onClick={() => selected && downloadFinalEntitlementSheet(entitlementSheetFromSettlement(selected))}
+          >
+            <Download /> Entitlement sheet
           </button>
           <Link className={`${styles.btn} ${styles.primary}`} href="/hris/offboarding/resignation-management">
             Resignation Register
@@ -366,7 +378,19 @@ export default function FinalPayrollProcessingWorkspace({
                     <td><span className={statusClass(clearanceLabel(row))}>{clearanceLabel(row)}</span></td>
                     <td><span className={statusClass(approvalLabel(row))}>{approvalLabel(row)}</span></td>
                     <td><span className={statusClass(row.status)}>{row.status}</span></td>
-                    <td><MoreHorizontal size={16} /></td>
+                    <td>
+                      {finalPayrollSettlementEditable(row.status) ? (
+                        <Link
+                          href={settlementEditorHref(row.id)}
+                          className={styles.rowEdit}
+                          onClick={(event) => event.stopPropagation()}
+                        >
+                          Edit
+                        </Link>
+                      ) : (
+                        '—'
+                      )}
+                    </td>
                   </tr>
                 );
               })}
@@ -390,9 +414,9 @@ export default function FinalPayrollProcessingWorkspace({
             ))}
             <Link
               className={styles.rightBtn}
-              href={`/hris/offboarding/final-payroll-processing/new-settlement?id=${encodeURIComponent(selected.id)}`}
+              href={settlementEditorHref(selected.id)}
             >
-              View Full Details
+              {finalPayrollSettlementEditable(selected.status) ? 'Edit settlement' : 'View Full Details'}
             </Link>
           </div>
 
@@ -457,7 +481,11 @@ export default function FinalPayrollProcessingWorkspace({
                 </div>
               </div>
 
-              {(detailTab === 'Summary' || detailTab === 'Calculation' || detailTab === 'Earnings' || detailTab === 'Deductions & Recoveries') ? (
+              {(detailTab === 'Summary' || detailTab === 'Entitlement Sheet') ? (
+                <FinalEntitlementSheetView settlement={selected} />
+              ) : null}
+
+              {(detailTab === 'Calculation' || detailTab === 'Earnings' || detailTab === 'Deductions & Recoveries') ? (
                 <>
                   <h3>Settlement Calculation Summary</h3>
                   <table className={styles.calc}>
@@ -525,7 +553,10 @@ export default function FinalPayrollProcessingWorkspace({
               ))}
 
               <h3>Approval Workflow</h3>
-              {(selected.approvalStages || []).map((stage, index) => (
+              {(selected.status === 'Draft'
+                ? (selected.approvalStages || []).map((stage) => ({ ...stage, status: 'Pending' as const }))
+                : selected.approvalStages || []
+              ).map((stage, index) => (
                 <div className={`${styles.flow} ${stage.status !== 'Pending' ? styles.flowActive : ''}`} key={stage.id}>
                   <i>{index + 1}</i>
                   {stage.label} — {stage.status}
@@ -553,9 +584,25 @@ export default function FinalPayrollProcessingWorkspace({
               {selected.payrollAppliedAt ? (
                 <small>Posted to Process Payroll for {payload?.periodLabel || selected.period}. Employee is Inactive and excluded from later runs.</small>
               ) : null}
+              {selected.status === 'Draft' ? (
+                <small>This settlement is still a draft. Edit the amounts, then submit it for approval.</small>
+              ) : null}
+              {selected.status === 'Exception' ? (
+                <small>This settlement was returned. Edit the amounts, then resubmit it for approval.</small>
+              ) : null}
               <div className={styles.footerActions}>
-                <button type="button" disabled={busy || ['Approved', 'Paid'].includes(selected.status)} onClick={() => void runAction('return')}>Return</button>
-                <button type="button" disabled={busy} onClick={() => void runAction('clarify')}>Request Clarification</button>
+                {finalPayrollSettlementEditable(selected.status) ? (
+                  <>
+                    <button type="button" disabled={busy} onClick={() => router.push(settlementEditorHref(selected.id))}>
+                      Edit
+                    </button>
+                    <button type="button" className={styles.primary} disabled={busy} onClick={() => void runAction('submit')}>
+                      {selected.status === 'Draft' ? 'Submit for Approval' : 'Resubmit'}
+                    </button>
+                  </>
+                ) : null}
+                <button type="button" disabled={busy || !finalPayrollSettlementEditable(selected.status)} onClick={() => void runAction('return')}>Return</button>
+                <button type="button" disabled={busy || !finalPayrollSettlementEditable(selected.status)} onClick={() => void runAction('clarify')}>Request Clarification</button>
                 <button
                   type="button"
                   className={styles.primary}

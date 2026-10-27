@@ -47,6 +47,18 @@ export type FinalPayrollComment = {
   createdAt: string;
 };
 
+/** Official DLE Final Entitlement Sheet year-to-date leave recovery inputs. */
+export type FinalEntitlementSnapshot = {
+  leaveYear: number;
+  daysWorkedInYear: number;
+  totalWorkingDays: number;
+  remainingWorkingDays: number;
+  annualLeaveAllowance: number;
+  leaveAllowancePaid: boolean;
+  leaveAllowanceCredit: number;
+  proratedLeaveRecovery: number;
+};
+
 export type FinalPayrollSettlement = {
   id: string;
   period: string;
@@ -91,6 +103,8 @@ export type FinalPayrollSettlement = {
   updatedAt: string;
   createdBy: string;
   updatedBy: string;
+  /** Snapshot used to print the official DLE Final Entitlement Sheet. */
+  entitlement?: FinalEntitlementSnapshot | null;
 };
 
 export type FinalPayrollKpi = {
@@ -169,6 +183,7 @@ export const FINAL_PAYROLL_GROSS_SALARY_ID = 'gross-salary';
 export const FINAL_PAYROLL_LEGACY_GROSS_LINE_IDS = ['salary-lwd', 'earned-allowances'] as const;
 export const FINAL_PAYROLL_EDITABLE_EARNING_IDS = ['leave-encashment', 'gratuity'] as const;
 export const FINAL_PAYROLL_EDITABLE_DEDUCTION_IDS = ['staff-loan', 'cash-advance', 'other-deductions'] as const;
+export const FINAL_PAYROLL_LOCKED_STATUSES = ['Approved', 'Paid'] as const;
 
 const asIdSet = (ids: readonly string[]) => new Set(ids);
 
@@ -177,6 +192,23 @@ export const isFinalPayrollEditableEarning = (lineId: string) =>
 
 export const isFinalPayrollEditableDeduction = (lineId: string) =>
   asIdSet(FINAL_PAYROLL_EDITABLE_DEDUCTION_IDS).has(lineId);
+
+/** Approved and paid settlements stay locked. Drafts and returned cases can be edited and resubmitted. */
+export const finalPayrollSettlementEditable = (status: string) =>
+  !asIdSet(FINAL_PAYROLL_LOCKED_STATUSES).has(status);
+
+export const finalPayrollApprovalLabel = (row: {
+  status: string;
+  approvalStages?: Array<{ status: string }>;
+}) => {
+  if (row.status === 'Draft') return 'Not submitted';
+  if (row.status === 'Exception') return 'Returned';
+  if (row.status === 'Approved' || row.status === 'Paid') return 'Approved';
+  if (row.status === 'Awaiting Approval' || row.status === 'In Review') return 'In Review';
+  const active = (row.approvalStages || []).find((stage) => stage.status === 'In Review');
+  if (active) return 'In Review';
+  return 'Pending';
+};
 
 /** Combine legacy basic + allowances rows into a single Gross Salary line. */
 export const mergeGrossSalaryEarnings = (lines: FinalPayrollLine[]): FinalPayrollLine[] => {

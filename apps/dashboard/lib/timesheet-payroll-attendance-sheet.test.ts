@@ -178,4 +178,20 @@ assert.equal(payrollAligned[0].weekDaysWorked, 17, 'attendance sheet weekdays fo
 assert.equal(payrollAligned[0].saturdayDaysWorked, 1);
 assert.equal(payrollAligned[0].totalDaysWorked, 18);
 
+const leaveInPayrollHours = buildPayrollAttendanceSheet({
+  rows: [row({ lineId: 'worked', timesheetDate: '2026-10-12', dayWorked: 1, employeeNo: 'C2236', employeeId: 'C2236', employeeName: 'KELVIN IWUAGWU' })],
+  payrollHoursByKey: new Map([['C2236', {
+    daysWorked: 21,
+    bookedHours: 168,
+    weekdayDays: 21,
+    paidLeaveDays: 3,
+    saturdayDays: 0,
+    sundayDays: 0,
+    employeeNo: 'C2236',
+  }]]),
+});
+assert.equal(leaveInPayrollHours[0].weekDaysWorked, 21, 'approved leave days stay inside the 21 weekday total');
+assert.equal(leaveInPayrollHours[0].paidLeaveDays, 3, 'the three leave days are shown');
+assert.equal(leaveInPayrollHours[0].totalDaysWorked, 21);
+
 console.log('payroll attendance sheet day-count tests passed');

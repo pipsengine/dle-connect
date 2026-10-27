@@ -2,6 +2,9 @@ import { NextResponse } from 'next/server';
 import { invalidateHrisEmployeeCaches } from '@/lib/hris-employee-cache';
 import { invalidatePayrollEmployeeCache } from '@/lib/payroll-employee-source';
 import { buildPayrollCalculationFromSnapshot, calculatePayrollForPeriod } from '@/lib/payroll-calculation-service';
+import { GM_OPERATIONS_FALLBACK_FX } from '@/lib/gm-operations-goal-seek';
+import { applyNayakGoalSeekToRecords } from '@/lib/nayak-goal-seek';
+import { resolvePayrollRunUsdNgnRate } from '@/lib/payroll-run-fx';
 import { writePayrollEmployeeOption } from '@/lib/payroll-employee-options-store';
 import { getActivePayrollPeriod, closePayrollPeriodRecord } from '@/lib/payroll-period-store';
 import { runPayrollCutoverBackup } from '@/lib/payroll-cutover-backup-service';
@@ -126,7 +129,12 @@ const loadReviewRecordsForPeriod = async (period: string) => {
   if (!period) return [];
   const snapshots = await readPayrollSnapshotsByPeriods([period]);
   const snapshot = snapshots.get(period);
-  if (snapshot?.records?.length) return snapshot.records;
+  if (snapshot?.records?.length) {
+    const payrollFx = await resolvePayrollRunUsdNgnRate(period).catch(() => null);
+    const quotedRate = Number(payrollFx?.rate);
+    const goalSeekFx = quotedRate > 0 ? quotedRate : GM_OPERATIONS_FALLBACK_FX;
+    return applyNayakGoalSeekToRecords(snapshot.records, period, goalSeekFx);
+  }
   return [];
 };
 

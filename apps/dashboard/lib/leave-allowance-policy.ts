@@ -68,10 +68,14 @@ export const approvedAnnualLeaveDaysForYear = (
 export const isLeaveAllowancePaymentCode = (code?: string | null) =>
   /^LEAVEALLOW$/i.test(String(code || '').trim());
 
+export const isOutsideCollectedLeaveAllowance = (event: { audit?: Array<{ action?: string; note?: string }> }) =>
+  (event.audit || []).some((entry) => /already collected outside/i.test(`${entry.action || ''} ${entry.note || ''}`));
+
 export const isCountableLeaveAllowanceEvent = (event: Pick<PayrollLeaveAllowanceEvent, 'code' | 'amount' | 'status'> & { audit?: Array<{ action?: string; note?: string }> }) =>
   isLeaveAllowancePaymentCode(event.code)
   && Number(event.amount || 0) > 0
   && ['Approved', 'Posted', 'Paid'].includes(event.status)
+  && !isOutsideCollectedLeaveAllowance(event)
   && !(event.audit || []).some((entry) => /reversed ineligible/i.test(`${entry.action || ''} ${entry.note || ''}`));
 
 export const isLeaveAllowanceEligibleForYear = (

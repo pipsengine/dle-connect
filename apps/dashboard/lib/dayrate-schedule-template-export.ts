@@ -9,9 +9,11 @@ import type { DleEmployeeDirectoryRow } from '@/lib/dle-enterprise-db';
 import { buildDayrateExportRoster, type DayrateExportRosterEntry } from '@/lib/dayrate-export-roster';
 import { canonicalContractEmployeeCode } from '@/lib/dayrate-schedule-xlsx';
 import type { PayrollCalculationRecord } from '@/lib/payroll-calculation-service';
+import { dayrateProfileTransportAmounts, sumTransportEarningLines } from '@/lib/payroll-earnings-engine';
 import { loadDayrateAttendanceByEmpCode } from '@/lib/payroll-official-excel-export';
 import type { PayrollCompany } from '@/lib/payroll-schedule-scope';
 import { NIGHT_INCONVENIENCE_ALLOWANCE_AMOUNT } from '@/lib/timesheet-entry-shared';
+import { buildTimesheetHoursMapForPayrollPeriod, lookupPayrollTimesheetHours, type PayrollTimesheetHoursEntry } from '@/lib/timesheet-entry-store';
 
 const roundMoney = (value: number) => Math.round((Number.isFinite(value) ? value : 0) * 100) / 100;
 const compact = (value: unknown) => String(value || '').trim();
@@ -232,6 +234,115 @@ const cellXmlFormula = (ref: string, formula: string, value?: number, style?: st
 };
 
 const MONEY_STYLE = '1';
+const DLE_LAST_COLUMN = 'AD';
+
+/** Named columns, so PH Amt cannot fall outside a Wkd Earning:Arrears range. */
+export const DLE_TOTAL_EARNINGS_FORMULA = [
+  'Wkd Earning',
+  'Wkd Ovt Amt',
+  'Sat Ovt Amt',
+  'Sun Ovt Amt',
+  'PH Amt',
+  'Night Amt',
+  'Meal Allowance',
+  'Transport',
+  'Site Allowance',
+  'TCM Meal',
+  'TCM TRANSPORT',
+  'Arrears',
+].map((name) => `Table4[[#This Row],[${name}]]`).join('+');
+
+const columnIndex = (letters: string) =>
+  [...letters].reduce((index, char) => index * 26 + char.charCodeAt(0) - 64, 0);
+
+const columnLetters = (index: number) => {
+  let n = index;
+  let letters = '';
+  while (n > 0) {
+    const rem = (n - 1) % 26;
+    letters = String.fromCharCode(65 + rem) + letters;
+    n = Math.floor((n - 1) / 26);
+  }
+  return letters;
+};
+
+/** Hours stay put through Total Sunday. Public Holiday is inserted at column 13, PH Amt at column 19. */
+const dleColumnAfterHolidayInsert = (index: number) => {
+  if (index >= 18) return index + 2;
+  if (index >= 13) return index + 1;
+  return index;
+};
+
+const headerCellXml = (rowXml: string) =>
+  [...rowXml.matchAll(/<c\b[^>]*?\br="([A-Z]+)1"[^>]*?(?:\/>|>[\s\S]*?<\/c>)/g)];
+
+/**
+ * The Sage DLE table has no public-holiday columns. Holiday pay was included in
+ * Total Earnings, so the row no longer added up. Insert the same two columns DLPC has.
+ */
+export const rebuildDleHeaderRow = (headerRowXml: string) => {
+  const moved = new Map<number, string>();
+  for (const cell of headerCellXml(headerRowXml)) {
+    const next = dleColumnAfterHolidayInsert(columnIndex(cell[1]));
+    moved.set(next, cell[0].replace(/\br="[A-Z]+1"/, `r="${columnLetters(next)}1"`));
+  }
+  const labels = [
+    'Contractor Code', 'First Name', 'Last Name', 'Job Title', 'Location', 'Daily Rate', 'AGE', 'Gender',
+    'Total Weekday', 'Weekday OVT', 'Total Saturday', 'Total Sunday', 'Public Holiday', 'Night Worked',
+    'Wkd Earning', 'Wkd Ovt Amt', 'Sat Ovt Amt', 'Sun Ovt Amt', 'PH Amt', 'Night Amt',
+    'Meal Allowance', 'Transport', 'Site Allowance', 'TCM Meal', 'TCM TRANSPORT', 'Arrears',
+    'Total Earnings', 'WHT', 'Gross Amount', 'Amount Payable',
+  ];
+  if (moved.size === 0) {
+    labels.forEach((label, index) => moved.set(index + 1, cellXml(`${columnLetters(index + 1)}1`, label)));
+  } else {
+    moved.set(13, cellXml('M1', 'Public Holiday'));
+    moved.set(19, cellXml('S1', 'PH Amt'));
+  }
+  const inner = Array.from({ length: 30 }, (_, index) => moved.get(index + 1) || cellXml(`${columnLetters(index + 1)}1`, labels[index]));
+  return `<row r="1" spans="1:30" x14ac:dyDescent="0.3">${inner.join('')}</row>`;
+};
+
+const withPublicHolidayTotal = (tableXml: string) => tableXml.replace(
+  /(<tableColumn\b[^>]*\bname="Total Earnings"[^>]*>\s*<calculatedColumnFormula>)[\s\S]*?(<\/calculatedColumnFormula>)/,
+  `$1${DLE_TOTAL_EARNINGS_FORMULA}$2`,
+);
+
+export const insertDlePublicHolidayTableColumns = (tableXml: string) => {
+  if (/name="Public Holiday"/.test(tableXml) && /name="PH Amt"/.test(tableXml)) {
+    return withPublicHolidayTotal(tableXml.replace(/tableColumns count="\d+"/, 'tableColumns count="30"'));
+  }
+  let next = tableXml.replace(
+    /(<tableColumn\b[^>]*\bname="Total Sunday"[^>]*\/>)/,
+    '$1<tableColumn id="40" xr3:uid="{C0FFEE00-0000-4000-8000-000000000040}" name="Public Holiday" totalsRowFunction="sum" dataDxfId="101"/>',
+  );
+  next = next.replace(
+    /(<tableColumn\b[^>]*\bname="Sun Ovt Amt"[^>]*>[\s\S]*?<\/tableColumn>)/,
+    '$1<tableColumn id="41" xr3:uid="{C0FFEE00-0000-4000-8000-000000000041}" name="PH Amt" totalsRowFunction="sum" dataDxfId="93" totalsRowDxfId="92"><calculatedColumnFormula>Table4[[#This Row],[Daily Rate]]/8*(2*Table4[[#This Row],[Public Holiday]])</calculatedColumnFormula></tableColumn>',
+  );
+  return withPublicHolidayTotal(next.replace(/tableColumns count="\d+"/, 'tableColumns count="30"'));
+};
+
+export const insertDlePublicHolidaySheetColumns = (sheetXml: string) => {
+  const match = sheetXml.match(/<cols>[\s\S]*?<\/cols>/);
+  if (!match) return sheetXml;
+  const widths: string[] = [];
+  for (const col of match[0].matchAll(/<col\b[^>]*\bmin="(\d+)"[^>]*\bmax="(\d+)"[^>]*\bwidth="([^"]+)"[^>]*\/>/g)) {
+    const min = Number(col[1]);
+    const max = Number(col[2]);
+    for (let index = min; index <= max; index += 1) widths[index] = col[3];
+  }
+  if (widths.length < 29) return sheetXml;
+  const next = [
+    ...widths.slice(1, 13),
+    widths[12],
+    ...widths.slice(13, 18),
+    widths[18],
+    ...widths.slice(18, 29),
+  ];
+  const cols = next.map((width, index) => `<col min="${index + 1}" max="${index + 1}" width="${width}" customWidth="1"/>`).join('');
+  return sheetXml.replace(match[0], `<cols>${cols}</cols>`);
+};
 
 const extractSheetRow = (sheetXml: string, rowNumber: number) => {
   const match = sheetXml.match(new RegExp(`<row r="${rowNumber}"[\\s\\S]*?</row>`, 'i'));
@@ -274,8 +385,8 @@ const sumDetailRows = (rows: DetailRow[]) => ({
   netPay: roundMoney(rows.reduce((s, r) => s + r.netPay, 0)),
 });
 
-const buildDleDataRow = (rowNum: number, row: DetailRow) =>
-  `<row r="${rowNum}" spans="1:28" x14ac:dyDescent="0.25">${
+export const buildDleDataRow = (rowNum: number, row: DetailRow) =>
+  `<row r="${rowNum}" spans="1:30" x14ac:dyDescent="0.25">${
     [
       cellXml(`A${rowNum}`, row.code),
       cellXml(`B${rowNum}`, row.firstName),
@@ -289,22 +400,24 @@ const buildDleDataRow = (rowNum: number, row: DetailRow) =>
       cellXml(`J${rowNum}`, row.weekdayOvtHrs || null),
       cellXml(`K${rowNum}`, row.satHrs || null),
       cellXml(`L${rowNum}`, row.sunHrs || null),
-      cellXml(`M${rowNum}`, row.nightDays || null),
-      cellXml(`N${rowNum}`, row.wkdEarning || null, row.wkdEarning ? MONEY_STYLE : undefined),
-      cellXml(`O${rowNum}`, row.wkdOvtAmt || null, row.wkdOvtAmt ? MONEY_STYLE : undefined),
-      cellXml(`P${rowNum}`, row.satAmt || null, row.satAmt ? MONEY_STYLE : undefined),
-      cellXml(`Q${rowNum}`, row.sunAmt || null, row.sunAmt ? MONEY_STYLE : undefined),
-      cellXml(`R${rowNum}`, row.nightAmt || null, row.nightAmt ? MONEY_STYLE : undefined),
-      cellXml(`S${rowNum}`, row.meal || null, row.meal ? MONEY_STYLE : undefined),
-      cellXml(`T${rowNum}`, row.transport || null, row.transport ? MONEY_STYLE : undefined),
-      cellXml(`U${rowNum}`, row.site || null, row.site ? MONEY_STYLE : undefined),
-      cellXml(`V${rowNum}`, row.tcmMeal || null, row.tcmMeal ? MONEY_STYLE : undefined),
-      cellXml(`W${rowNum}`, row.tcmTransport || null, row.tcmTransport ? MONEY_STYLE : undefined),
-      cellXml(`X${rowNum}`, row.arrears || null, row.arrears ? MONEY_STYLE : undefined),
-      cellXml(`Y${rowNum}`, row.totalEarnings || null, row.totalEarnings ? MONEY_STYLE : undefined),
-      cellXml(`Z${rowNum}`, row.wht || null, row.wht ? MONEY_STYLE : undefined),
-      cellXml(`AA${rowNum}`, row.totalEarnings || null, row.totalEarnings ? MONEY_STYLE : undefined),
-      cellXml(`AB${rowNum}`, row.netPay || null, row.netPay ? MONEY_STYLE : undefined),
+      cellXml(`M${rowNum}`, row.phHrs || null),
+      cellXml(`N${rowNum}`, row.nightDays || null),
+      cellXml(`O${rowNum}`, row.wkdEarning || null, row.wkdEarning ? MONEY_STYLE : undefined),
+      cellXml(`P${rowNum}`, row.wkdOvtAmt || null, row.wkdOvtAmt ? MONEY_STYLE : undefined),
+      cellXml(`Q${rowNum}`, row.satAmt || null, row.satAmt ? MONEY_STYLE : undefined),
+      cellXml(`R${rowNum}`, row.sunAmt || null, row.sunAmt ? MONEY_STYLE : undefined),
+      cellXml(`S${rowNum}`, row.phAmt || null, row.phAmt ? MONEY_STYLE : undefined),
+      cellXml(`T${rowNum}`, row.nightAmt || null, row.nightAmt ? MONEY_STYLE : undefined),
+      cellXml(`U${rowNum}`, row.meal || null, row.meal ? MONEY_STYLE : undefined),
+      cellXml(`V${rowNum}`, row.transport || null, row.transport ? MONEY_STYLE : undefined),
+      cellXml(`W${rowNum}`, row.site || null, row.site ? MONEY_STYLE : undefined),
+      cellXml(`X${rowNum}`, row.tcmMeal || null, row.tcmMeal ? MONEY_STYLE : undefined),
+      cellXml(`Y${rowNum}`, row.tcmTransport || null, row.tcmTransport ? MONEY_STYLE : undefined),
+      cellXml(`Z${rowNum}`, row.arrears || null, row.arrears ? MONEY_STYLE : undefined),
+      cellXmlFormula(`AA${rowNum}`, DLE_TOTAL_EARNINGS_FORMULA, row.totalEarnings, MONEY_STYLE),
+      cellXmlFormula(`AB${rowNum}`, '0.05*Table4[[#This Row],[Total Earnings]]', row.wht, MONEY_STYLE),
+      cellXmlFormula(`AC${rowNum}`, 'Table4[[#This Row],[Total Earnings]]', row.totalEarnings, MONEY_STYLE),
+      cellXmlFormula(`AD${rowNum}`, 'Table4[[#This Row],[Gross Amount]]-Table4[[#This Row],[WHT]]', row.netPay, MONEY_STYLE),
     ].join('')
   }</row>`;
 
@@ -312,28 +425,30 @@ const buildDleTotalsRow = (rowNum: number, totals: ReturnType<typeof sumDetailRo
   const table = 'Table4';
   const f = (col: string, formula: string, value: number, style?: string) =>
     cellXmlFormula(`${col}${rowNum}`, formula, value, style);
-  return `<row r="${rowNum}" spans="1:28" x14ac:dyDescent="0.25">${
+  return `<row r="${rowNum}" spans="1:30" x14ac:dyDescent="0.25">${
     f('A', `SUBTOTAL(103,${table}[Contractor Code])`, totals.count)
     + f('I', `SUBTOTAL(109,${table}[Total Weekday])`, totals.weekDays)
     + f('J', `SUBTOTAL(109,${table}[Weekday OVT])`, totals.weekdayOvtHrs)
     + f('K', `SUBTOTAL(109,${table}[Total Saturday])`, totals.satHrs)
     + f('L', `SUBTOTAL(109,${table}[Total Sunday])`, totals.sunHrs)
-    + f('M', `SUBTOTAL(109,${table}[Night Worked])`, totals.nightDays)
-    + f('N', `SUBTOTAL(109,${table}[Wkd Earning])`, totals.wkdEarning, MONEY_STYLE)
-    + f('O', `SUBTOTAL(109,${table}[Wkd Ovt Amt])`, totals.wkdOvtAmt, MONEY_STYLE)
-    + f('P', `SUBTOTAL(109,${table}[Sat Ovt Amt])`, totals.satAmt, MONEY_STYLE)
-    + f('Q', `SUBTOTAL(109,${table}[Sun Ovt Amt])`, totals.sunAmt, MONEY_STYLE)
-    + f('R', `SUBTOTAL(109,${table}[Night Amt])`, totals.nightAmt, MONEY_STYLE)
-    + f('S', `SUBTOTAL(109,${table}[Meal Allowance])`, totals.meal, MONEY_STYLE)
-    + f('T', `SUBTOTAL(109,${table}[Transport])`, totals.transport, MONEY_STYLE)
-    + f('U', `SUBTOTAL(109,${table}[Site Allowance])`, totals.site, MONEY_STYLE)
-    + f('V', `SUBTOTAL(109,${table}[TCM Meal])`, totals.tcmMeal, MONEY_STYLE)
-    + f('W', `SUBTOTAL(109,${table}[TCM TRANSPORT])`, totals.tcmTransport, MONEY_STYLE)
-    + `<c r="X${rowNum}" s="${MONEY_STYLE}"/>`
-    + f('Y', `SUBTOTAL(109,${table}[Total Earnings])`, totals.totalEarnings, MONEY_STYLE)
-    + f('Z', `SUBTOTAL(109,${table}[WHT])`, totals.wht, MONEY_STYLE)
-    + f('AA', `SUBTOTAL(109,${table}[Gross Amount])`, totals.totalEarnings, MONEY_STYLE)
-    + f('AB', `SUBTOTAL(109,${table}[Amount Payable])`, totals.netPay, MONEY_STYLE)
+    + f('M', `SUBTOTAL(109,${table}[Public Holiday])`, totals.phHrs)
+    + f('N', `SUBTOTAL(109,${table}[Night Worked])`, totals.nightDays)
+    + f('O', `SUBTOTAL(109,${table}[Wkd Earning])`, totals.wkdEarning, MONEY_STYLE)
+    + f('P', `SUBTOTAL(109,${table}[Wkd Ovt Amt])`, totals.wkdOvtAmt, MONEY_STYLE)
+    + f('Q', `SUBTOTAL(109,${table}[Sat Ovt Amt])`, totals.satAmt, MONEY_STYLE)
+    + f('R', `SUBTOTAL(109,${table}[Sun Ovt Amt])`, totals.sunAmt, MONEY_STYLE)
+    + f('S', `SUBTOTAL(109,${table}[PH Amt])`, totals.phAmt, MONEY_STYLE)
+    + f('T', `SUBTOTAL(109,${table}[Night Amt])`, totals.nightAmt, MONEY_STYLE)
+    + f('U', `SUBTOTAL(109,${table}[Meal Allowance])`, totals.meal, MONEY_STYLE)
+    + f('V', `SUBTOTAL(109,${table}[Transport])`, totals.transport, MONEY_STYLE)
+    + f('W', `SUBTOTAL(109,${table}[Site Allowance])`, totals.site, MONEY_STYLE)
+    + f('X', `SUBTOTAL(109,${table}[TCM Meal])`, totals.tcmMeal, MONEY_STYLE)
+    + f('Y', `SUBTOTAL(109,${table}[TCM TRANSPORT])`, totals.tcmTransport, MONEY_STYLE)
+    + `<c r="Z${rowNum}" s="${MONEY_STYLE}"/>`
+    + f('AA', `SUBTOTAL(109,${table}[Total Earnings])`, totals.totalEarnings, MONEY_STYLE)
+    + f('AB', `SUBTOTAL(109,${table}[WHT])`, totals.wht, MONEY_STYLE)
+    + f('AC', `SUBTOTAL(109,${table}[Gross Amount])`, totals.totalEarnings, MONEY_STYLE)
+    + f('AD', `SUBTOTAL(109,${table}[Amount Payable])`, totals.netPay, MONEY_STYLE)
   }</row>`;
 };
 
@@ -402,7 +517,7 @@ const buildDleBankDataRow = (rowNum: number, row: DetailRow) =>
     + cellXml(`E${rowNum}`, row.sortCode, '15')
     + cellXmlFormula(
       `F${rowNum}`,
-      '_xlfn.XLOOKUP(Table13[[#This Row],[Contractor Code]],DLE!A:A,DLE!AB:AB)',
+      '_xlfn.XLOOKUP(Table13[[#This Row],[Contractor Code]],DLE!A:A,DLE!AD:AD)',
       row.netPay,
       '16',
     )
@@ -442,8 +557,9 @@ const fillDetailTableSheet = (
   lastCol: string,
   buildDataRow: (rowNum: number, row: DetailRow) => string,
   buildTotalsRow: (rowNum: number, totals: ReturnType<typeof sumDetailRows>) => string,
+  headerRowOverride?: string,
 ) => {
-  const headerRow = extractSheetRow(templateSheetXml, 1);
+  const headerRow = headerRowOverride || extractSheetRow(templateSheetXml, 1);
   const dataStart = 2;
   const totals = sumDetailRows(rows);
   const dataInner = rows.map((row, index) => buildDataRow(dataStart + index, row)).join('');
@@ -632,11 +748,11 @@ const EARNING_COMPONENTS: Array<keyof DetailRow> = [
 
 /**
  * Every printed row must equal the sum of its own printed components, otherwise the
- * bank schedule pays an amount the sheet cannot explain.
+ * bank schedule pays an amount the sheet cannot explain. Public holiday pay is one
+ * of those columns on both DLE and DLPC.
  */
 const assertRowsFoot = (sheet: string, rows: DetailRow[]) => {
   const broken = rows
-    .filter((row) => row.scheduleDriven)
     .map((row) => {
       const components = roundMoney(EARNING_COMPONENTS.reduce((sum, key) => sum + Number(row[key] || 0), 0));
       return { code: row.code, components, total: row.totalEarnings, gap: roundMoney(row.totalEarnings - components) };
@@ -649,11 +765,46 @@ const assertRowsFoot = (sheet: string, rows: DetailRow[]) => {
   );
 };
 
+/** A payroll gross above the printed columns is shown in Arrears. An HR schedule row is already complete. */
+export const arrearsIncludingUnexplainedGross = (
+  hasSchedule: boolean,
+  arrears: number,
+  explainedTotal: number,
+  grossPay: number,
+) => {
+  const stated = roundMoney(arrears);
+  const explained = roundMoney(explainedTotal);
+  if (hasSchedule) return { arrears: stated, total: explained };
+  const payrollGross = roundMoney(grossPay);
+  const unexplained = roundMoney(payrollGross - explained);
+  if (payrollGross > 0 && unexplained > 0.02) {
+    return { arrears: roundMoney(stated + unexplained), total: payrollGross };
+  }
+  return { arrears: stated, total: explained };
+};
+
+/**
+ * An HR schedule row owns its own hours. Otherwise the payment schedule must show
+ * the timesheet hours that produced the pay, even when the older attendance sheet
+ * has no row for that contractor.
+ */
+export const paymentScheduleHours = (
+  hasSchedule: boolean,
+  scheduleHours: number | null | undefined,
+  attendanceHours: number | null | undefined,
+  bookedHours: number | null | undefined,
+) => {
+  if (hasSchedule) return Number(scheduleHours || 0);
+  return Math.max(Number(attendanceHours || 0), Number(bookedHours || 0));
+};
+
 const detailRowFromEntry = (
   entry: DayrateExportRosterEntry,
   dirMap: Map<string, DleEmployeeDirectoryRow>,
   attendance: Awaited<ReturnType<typeof loadDayrateAttendanceByEmpCode>>,
+  payrollHours: Map<string, PayrollTimesheetHoursEntry>,
   asOf: Date,
+  period?: string,
 ): DetailRow => {
   const schedule = entry.scheduleRow;
   const record = entry.record;
@@ -668,17 +819,27 @@ const detailRowFromEntry = (
     : splitName(record?.fullName || dir?.fullName || '', dir?.firstName, dir?.lastName);
   const att = attendance.get(upper(code))
     || (record ? attendance.get(upper(record.employeeCode)) || attendance.get(upper(record.fullName)) : undefined);
+  const booked = lookupPayrollTimesheetHours(
+    payrollHours,
+    code,
+    record?.employeeCode,
+    record?.employeeId,
+    record?.fullName,
+    schedule?.employeeCode,
+    schedule?.employeeName,
+  );
+  const hasSchedule = Boolean(schedule);
   const dailyRate = roundMoney(
     Number(schedule?.excelDailyRate || 0)
       || Number(record?.ratePerDay || 0)
       || (att && att.weekDaysWorked > 0 ? roundMoney(Number(att.weekDayTotal || 0) / att.weekDaysWorked) : 0),
   );
-  const weekDays = Number(schedule?.weekdayDays ?? att?.weekDaysWorked ?? record?.timesheetDaysWorked ?? 0);
-  const weekdayOvtHrs = Number(schedule?.weekdayOvtHours ?? att?.weekdayOvertimeHours ?? 0);
-  const satHrs = Number(schedule?.saturdayHours ?? att?.saturdayHours ?? 0);
-  const sunHrs = Number(schedule?.sundayHours ?? att?.sundayHours ?? 0);
-  const phHrs = Number(schedule?.publicHolidayHours ?? att?.publicHolidayHours ?? 0);
-  const nightDays = Number(schedule?.nightDays ?? att?.nightWorkedDays ?? 0);
+  const weekDays = Number(schedule?.weekdayDays ?? att?.weekDaysWorked ?? booked?.weekdayDays ?? record?.timesheetDaysWorked ?? 0);
+  const weekdayOvtHrs = paymentScheduleHours(hasSchedule, schedule?.weekdayOvtHours, att?.weekdayOvertimeHours, booked?.weekdayOvertimeHours);
+  const satHrs = paymentScheduleHours(hasSchedule, schedule?.saturdayHours, att?.saturdayHours, booked?.saturdayHours);
+  const sunHrs = paymentScheduleHours(hasSchedule, schedule?.sundayHours, att?.sundayHours, booked?.sundayHours);
+  const phHrs = paymentScheduleHours(hasSchedule, schedule?.publicHolidayHours, att?.publicHolidayHours, booked?.publicHolidayHours);
+  const nightDays = paymentScheduleHours(hasSchedule, schedule?.nightDays, att?.nightWorkedDays, booked?.nightDays);
   // With an HR schedule row the sheet must reproduce HR's own arithmetic: the printed
   // hours and the printed amounts have to describe each other, and the row has to foot.
   // Payroll earning lines are only consulted for employees the schedule does not cover.
@@ -730,26 +891,36 @@ const detailRowFromEntry = (
       lineAmount(record?.earningLines, /^MEAL$|MEAL ALLOW|PER_MEAL/i),
       MEAL_PER_WEEKDAY * weekDays,
     );
-  const transport = scheduleAmount(schedule?.transport)
-    ?? lineAmount(record?.earningLines, /TRANSPORT ALLOW|EXP_TRANS|^TRANSPORT$/i);
+  const statedTransport = scheduleAmount(schedule?.transport);
+  const statedTcmTransport = scheduleAmount(schedule?.tcmTransport);
+  const earnedTransport = sumTransportEarningLines(record?.earningLines);
+  const profileTransport = dayrateProfileTransportAmounts(dir, period);
+  // A blank schedule cell is not a decision to pay zero. Transport entered on the
+  // payroll profile, or already on the payroll earning lines, has to show.
+  const transport = statedTransport != null && statedTransport > 0
+    ? statedTransport
+    : (earnedTransport.transport || profileTransport.transport);
   const site = scheduleAmount(schedule?.siteAllowance)
     ?? firstAmount(lineAmount(record?.earningLines, /SITE ALLOW/i), att?.siteAllowanceTotal);
   const tcmMeal = scheduleAmount(schedule?.tcmMeal) ?? lineAmount(record?.earningLines, /TCMMEAL/i);
-  const tcmTransport = scheduleAmount(schedule?.tcmTransport) ?? lineAmount(record?.earningLines, /TCM.?TRANS/i);
-  const arrears = scheduleAmount(schedule?.arrears) ?? lineAmount(record?.earningLines, /ARREARS/i);
-  const componentTotal = roundMoney(
+  const tcmTransport = statedTcmTransport != null && statedTcmTransport > 0
+    ? statedTcmTransport
+    : (earnedTransport.tcmTransport || profileTransport.tcmTransport);
+  const statedArrears = scheduleAmount(schedule?.arrears) ?? lineAmount(record?.earningLines, /ARREARS/i);
+  const explained = roundMoney(
     wkdEarning + wkdOvtAmt + satAmt + sunAmt + phAmt + nightAmt
-    + meal + transport + site + tcmMeal + tcmTransport + arrears,
+    + meal + transport + site + tcmMeal + tcmTransport + statedArrears,
   );
-  const totalEarnings = schedule
-    ? componentTotal
-    : firstAmount(record?.grossPay, componentTotal);
-  const wht = schedule
-    ? roundMoney(totalEarnings * WHT_RATE)
-    : firstAmount(record?.paye, roundMoney(totalEarnings * WHT_RATE));
-  const netPay = schedule
-    ? roundMoney(totalEarnings - wht)
-    : firstAmount(record?.netPay, roundMoney(totalEarnings - wht));
+  // Payroll gross can carry a line this sheet has no column for (refund, other pay).
+  // Show that remainder in Arrears so Total Earnings still equals the printed columns.
+  const { arrears, total: totalEarnings } = arrearsIncludingUnexplainedGross(
+    Boolean(schedule),
+    statedArrears,
+    explained,
+    schedule ? 0 : Number(record?.grossPay || 0),
+  );
+  const wht = roundMoney(totalEarnings * WHT_RATE);
+  const netPay = roundMoney(totalEarnings - wht);
   return {
     code,
     firstName: names.firstName || att?.firstName || compact(schedule?.firstName) || '',
@@ -798,10 +969,11 @@ const buildDetailRows = async (
     [employee.employeeCode, employee.employeeId].map(upper).filter(Boolean).forEach((key) => dirMap.set(key, employee));
   }
   const attendance = period ? await loadDayrateAttendanceByEmpCode(period) : new Map();
+  const payrollHours = period ? await buildTimesheetHoursMapForPayrollPeriod(period).catch(() => new Map<string, PayrollTimesheetHoursEntry>()) : new Map<string, PayrollTimesheetHoursEntry>();
   const roster = buildDayrateExportRoster({ period, calculatedRecords: records, directoryEmployees, company });
   const asOf = periodAsOfDate(period);
-  const dle = roster.filter((entry) => entry.company === 'DLE').map((entry) => detailRowFromEntry(entry, dirMap, attendance, asOf));
-  const dlpc = roster.filter((entry) => entry.company === 'DLPC').map((entry) => detailRowFromEntry(entry, dirMap, attendance, asOf));
+  const dle = roster.filter((entry) => entry.company === 'DLE').map((entry) => detailRowFromEntry(entry, dirMap, attendance, payrollHours, asOf, period));
+  const dlpc = roster.filter((entry) => entry.company === 'DLPC').map((entry) => detailRowFromEntry(entry, dirMap, attendance, payrollHours, asOf, period));
   return { dle, dlpc };
 };
 
@@ -831,15 +1003,26 @@ export const buildDayratePaymentScheduleXlsx = async (input: {
   }
 
   const dleFilled = sheet2Template
-    ? fillDetailTableSheet(sheet2Template, dle, 'AB', buildDleDataRow, buildDleTotalsRow)
+    ? fillDetailTableSheet(
+      sheet2Template,
+      dle,
+      DLE_LAST_COLUMN,
+      buildDleDataRow,
+      buildDleTotalsRow,
+      rebuildDleHeaderRow(extractSheetRow(sheet2Template, 1)),
+    )
     : null;
   if (dleFilled) {
-    entries.set('xl/worksheets/sheet2.xml', Buffer.from(dleFilled.sheetXml, 'utf8'));
+    entries.set('xl/worksheets/sheet2.xml', Buffer.from(insertDlePublicHolidaySheetColumns(dleFilled.sheetXml), 'utf8'));
     const table2 = entries.get('xl/tables/table2.xml')?.toString('utf8');
     if (table2) {
       entries.set(
         'xl/tables/table2.xml',
-        Buffer.from(applyDayrateContractorHeadings(patchTableXml(table2, `A1:AB${dleFilled.totalRowNum}`, `A1:AB${Math.max(1, dleFilled.totalRowNum - 1)}`)), 'utf8'),
+        Buffer.from(applyDayrateContractorHeadings(patchTableXml(
+          insertDlePublicHolidayTableColumns(table2),
+          `A1:${DLE_LAST_COLUMN}${dleFilled.totalRowNum}`,
+          `A1:${DLE_LAST_COLUMN}${Math.max(1, dleFilled.totalRowNum - 1)}`,
+        )), 'utf8'),
       );
     }
   }

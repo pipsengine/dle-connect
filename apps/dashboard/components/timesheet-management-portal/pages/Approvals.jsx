@@ -1,9 +1,19 @@
 'use client';
 import React, { useEffect, useState } from 'react';
-import { Badge, Button, Field, Modal, SearchCombo, Tabs, personDetail, personLabel } from '../components/UI';
+import { useSearchParams } from 'next/navigation';
+import { Badge, Button, Field, Modal, SearchCombo, personDetail, personLabel } from '../components/UI';
 import { formatDisplayDate, usePortalData } from '../portal-data';
 
 const TABS = ['Supervisor', 'Cost Control', 'Project Manager', 'Consolidation', 'HR', 'Payroll Readiness'];
+
+const stageForRoles = (roles) => {
+  const text = String(roles || '').toLowerCase();
+  if (text.includes('cost control')) return 'Cost Control';
+  if (text.includes('project manager')) return 'Project Manager';
+  if (text.includes('payroll')) return 'Payroll Readiness';
+  if (/\bhr\b|human resource/.test(text)) return 'HR';
+  return 'Supervisor';
+};
 const weekday = (value) => {
   if (!value) return '';
   const date = new Date(`${value}T00:00:00`);
@@ -14,8 +24,11 @@ const toneFor = (status) => status === 'Approved' || status === 'Payroll Ready' 
 const lookup = (kind, query) => fetch(`/api/timesheet-management/entry?mode=search&kind=${kind}&q=${encodeURIComponent(query)}`, { cache: 'no-store' }).then((response) => response.json()).then((body) => body.data || []);
 
 export default function Approvals() {
+  const searchParams = useSearchParams();
+  const requestedStage = searchParams.get('stage') || '';
   const { snapshot } = usePortalData();
-  const [tab, setTab] = useState('Supervisor');
+  const [tab, setTab] = useState(TABS.includes(requestedStage) ? requestedStage : 'Supervisor');
+  const [tabLocked, setTabLocked] = useState(TABS.includes(requestedStage));
   const [draft, setDraft] = useState({ periodId: '', supervisor: '', location: '', status: '', q: '', workDate: '', project: '' });
   const [filters, setFilters] = useState(draft);
   const [page, setPage] = useState(1);
@@ -45,6 +58,12 @@ export default function Approvals() {
   };
 
   useEffect(() => { load(filters, page); }, [tab, page, pageSize]);
+  useEffect(() => {
+    if (tabLocked || !snapshot?.viewer) return;
+    const next = stageForRoles(snapshot.viewer.roles);
+    setTabLocked(true);
+    if (next !== tab) setTab(next);
+  }, [snapshot, tabLocked, tab]);
 
   const apply = (next) => { setFilters(next); setDraft(next); setPage(1); setSelected([]); load(next, 1); };
   const rows = queue.rows || [];
@@ -69,7 +88,7 @@ export default function Approvals() {
     <div className="pageTitle"><div><span className="eyebrow">TIMESHEET MANAGEMENT</span><h1>Approvals</h1><p>Approval items are created when a reviewed timesheet is submitted. The queue stays empty until that happens.</p></div></div>
     {error && <div className="success" style={{ background: '#fef2f2', color: '#991b1b' }}>{error}</div>}
     {notice && <div className="success">{notice} <button onClick={() => setNotice('')}>×</button></div>}
-    <Tabs items={TABS} active={tab} setActive={(next) => { setTab(next); setPage(1); setSelected([]); }} />
+    <div className="tabs">{TABS.map((name) => <button type="button" key={name} className={tab === name ? 'active' : ''} onClick={() => { setTabLocked(true); setTab(name); setPage(1); setSelected([]); }}>{name}{queue.stagePending?.[name] ? ` (${queue.stagePending[name]})` : ''}</button>)}</div>
     <section className="approvalStats">
       {[['pending', 'Pending Approval', 'Awaiting your action', 'blue'], ['approved', 'Approved', 'This stage', 'green'], ['returned', 'Returned', 'Needs correction', 'orange'], ['overdue', 'Overdue', `Past ${queue.slaDays || 3} day SLA`, 'red'], ['total', 'Total Records', 'This stage', 'slate']].map(([key, label, sub, tone]) => <button key={key} className={`approvalStat ${tone} ${filters.status === (key === 'pending' ? 'Pending' : key === 'total' ? '' : key[0].toUpperCase() + key.slice(1)) ? 'on' : ''}`} onClick={() => apply({ ...filters, status: key === 'total' ? '' : key === 'pending' ? 'Pending' : key[0].toUpperCase() + key.slice(1) })}><b>{kpis[key] || 0}</b><strong>{label}</strong><span>{sub}</span></button>)}
     </section>
@@ -108,13 +127,13 @@ function Detail({ item, onClose, onAct }) {
   const record = item.item;
   const sheet = item.sheet || {};
   const sections = record.kind === 'Mobilization' ? ['Summary', 'Employees', 'Approval History'] : ['Summary', 'Employees', 'Projects', 'Attendance', 'OVT', 'Night Work', 'Offshore', 'Exceptions', 'Approval History'];
-  return <div className="overlay" onClick={onClose}><aside className="approvalDrawer" onClick={(event) => event.stopPropagation()}>
+  return <div className="overlay drawerOverlay" onClick={onClose}><aside className="approvalDrawer" onClick={(event) => event.stopPropagation()}>
     <div className="modalHead"><div><span className="eyebrow">{record.stage}</span><h3>{record.reference}</h3><p>{record.kind === 'Mobilization' ? 'Mobilization acknowledgement does not create hours.' : `${sheet.dayKind || 'Unclassified'}${sheet.holidayName ? ` · ${sheet.holidayName}` : ''} · v${record.version}`}</p></div><button onClick={onClose}>×</button></div>
     <div className="tabs">{sections.map((name) => <button key={name} className={section === name ? 'active' : ''} onClick={() => setSection(name)}>{name}</button>)}</div>
     <div className="modalBody">
-      {section === 'Summary' && <div className="confirmSummary"><p>Period: {sheet.periodId || record.periodId || '—'}</p><p>Work date: {formatDisplayDate(record.workDate)}</p><p>Captured by: {sheet.capturedBy || '—'}</p><p>Supervisor: {record.supervisor || '—'}</p><p>Location: {record.location || '—'}</p><p>Work centre: {record.workCenter || sheet.workCenter || '—'}</p><p>Stage: {record.status === 'Pending' ? record.stage : record.status}</p><p>REG {record.regular}h · OVT {record.ovt}h · Night sessions {record.nights} · Employees {record.employees}</p>{item.projectProgress?.total > 0 && <p>{item.projectProgress.approved} of {item.projectProgress.total} projects approved</p>}</div>}
+      {section === 'Summary' && <div className="confirmSummary"><p>Period: {sheet.periodName || sheet.periodId || record.periodId || '—'}</p><p>Work date: {formatDisplayDate(record.workDate)}</p><p>Captured by: {sheet.capturedBy || '—'}</p><p>Supervisor: {record.supervisor || '—'}</p><p>Approver: {approverName(item, record)}</p>{record.stage === 'Project Manager' && record.projectCode ? <p>Project: {record.projectCode}{record.projectName ? ` — ${record.projectName}` : ''}</p> : null}{showApprovingAs(item, record) && <p>Approving as: {item.approvingAs}</p>}<p>Location: {record.location || '—'}</p><p>Work centre: {record.workCenter || sheet.workCenter || '—'}</p><p>Stage: {record.status === 'Pending' ? record.stage : record.status}</p><p>REG {record.regular}h · OVT {record.ovt}h · Night sessions {record.nights} · Employees {record.employees}</p>{item.projectProgress?.total > 0 && <p>{item.projectProgress.approved} of {item.projectProgress.total} projects approved</p>}</div>}
       {section === 'Employees' && <div className="tableWrap"><table><thead><tr><th>Employee</th><th>Attendance</th><th>REG</th><th>OVT</th><th>Night</th><th>Projects</th><th>Exception</th></tr></thead><tbody>{(item.employees || []).map((employee) => <tr key={employee.code}><td><b>{employee.name}</b><small className="block">{employee.code}</small></td><td>{employee.attendance || employee.status || '—'}</td><td>{employee.regular ?? '—'}</td><td>{employee.ovt ?? '—'}</td><td>{employee.night ? 'Yes' : employee.night === false ? 'No' : '—'}</td><td>{(employee.projects || []).join(', ') || employee.exception || '—'}</td><td>{employee.exception || '—'}</td></tr>)}</tbody></table></div>}
-      {section === 'Projects' && <div className="tableWrap"><table><thead><tr><th>Project</th><th>Employees</th><th>REG</th><th>OVT</th><th>Approval</th></tr></thead><tbody>{(item.projects || []).map((project) => <tr key={project.code}><td><b>{project.code}</b><small className="block">{project.name}</small></td><td>{project.employees}</td><td>{project.regular}</td><td>{project.ovt}</td><td>{project.approval || '—'}</td></tr>)}{!(item.projects || []).length && <tr><td colSpan={5}>No project hours on this item.</td></tr>}</tbody></table></div>}
+      {section === 'Projects' && <div className="tableWrap"><table><thead><tr><th>Project</th><th>Manager</th><th>Employees</th><th>REG</th><th>OVT</th><th>Approval</th></tr></thead><tbody>{(item.projects || []).map((project) => <tr key={project.code}><td><b>{project.code}</b><small className="block">{project.name}</small></td><td>{project.manager || '—'}</td><td>{project.employees}</td><td>{project.regular}</td><td>{project.ovt}</td><td>{project.approval || '—'}</td></tr>)}{!(item.projects || []).length && <tr><td colSpan={6}>No project hours on this item.</td></tr>}</tbody></table></div>}
       {section === 'Attendance' && <p>Attendance status is shown on each employee. This approval does not rewrite clocking or biometric evidence.</p>}
       {section === 'OVT' && <p>Overtime stays on the employee, date and project. Weekday, Saturday, Sunday and public-holiday overtime follow the frozen Nigeria calendar classification{sheet.dayKind ? ` (${sheet.dayKind}${sheet.holidayName ? `, ${sheet.holidayName}` : ''})` : ''}. A late clock-out is not approved overtime by itself.</p>}
       {section === 'Night Work' && <p>{record.nights} night session{record.nights === 1 ? '' : 's'}. The allowance is ₦{Number(item.settings?.nightAllowance || 1500).toLocaleString()} for an eligible session, not an hourly rate.</p>}
@@ -122,7 +141,7 @@ function Detail({ item, onClose, onAct }) {
       {section === 'Exceptions' && <p>{record.exceptions ? `${record.exceptions} exception${record.exceptions === 1 ? '' : 's'} block approval of the whole timesheet. Return it for correction.` : 'No blocking exceptions on this item.'}</p>}
       {section === 'Approval History' && <div className="tableWrap"><table><thead><tr><th>When</th><th>Action</th><th>By</th><th>Reason</th></tr></thead><tbody>{(item.history || []).map((row) => <tr key={row.id}><td>{row.at ? new Date(row.at).toLocaleString() : '—'}</td><td>{row.action}</td><td>{row.actor}{row.role ? ` · ${row.role}` : ''}</td><td>{row.reason || row.comment || '—'}</td></tr>)}{!(item.history || []).length && <tr><td colSpan={4}>No approval events yet.</td></tr>}</tbody></table></div>}
     </div>
-    {record.storedStatus === 'Pending' && <div className="modalFoot"><Button kind="secondary" onClick={() => onAct('return')}>Return for correction</Button><Button onClick={() => onAct('approve')}>Approve</Button></div>}
+    {record.storedStatus === 'Pending' && <div className="modalFoot"><span className="muted">{approvalFooter(item, record)}</span><Button kind="secondary" onClick={() => onAct('return')}>Return for correction</Button><Button onClick={() => onAct('approve')}>Approve</Button></div>}
   </aside></div>;
 }
 
@@ -138,9 +157,32 @@ function ActionDialog({ action, items, reasons, onClose, onConfirm }) {
   const exceptions = items.reduce((sum, item) => sum + Number(item.exceptions || 0), 0);
   return <Modal title={action === 'approve' ? `Approve ${items.length} item${items.length === 1 ? '' : 's'}?` : `Return ${items.length} item${items.length === 1 ? '' : 's'}`} onClose={onClose} footer={<><Button kind="secondary" onClick={onClose}>Cancel</Button><Button disabled={saving} onClick={async () => { setSaving(true); setError(''); try { await onConfirm(action, reason, comment); } catch (saveError) { setError(saveError.message); } finally { setSaving(false); } }}>{saving ? 'Saving…' : action === 'approve' ? 'Confirm approval' : 'Confirm return'}</Button></>}>
     {error && <div className="validationError">{error}</div>}
-    <div className="confirmSummary"><p>Employees: {employees}</p><p>REG hours: {regular}h</p><p>OVT: {ovt}h</p><p>Night sessions: {nights}</p><p>Exceptions: {exceptions}</p></div>
+    <div className="confirmSummary"><p>Employees: {employees}</p><p>REG hours: {regular}h</p><p>OVT: {ovt}h</p><p>Night sessions: {nights}</p><p>Exceptions: {exceptions}</p>{items.some((item) => item.projectManager || item.supervisor) && <p>Approver: {[...new Set(items.map((item) => item.projectManager || (item.stage === 'Supervisor' ? item.supervisor : '')).filter(Boolean))].join(', ') || '—'}</p>}</div>
     {action === 'approve' && <p>Approval moves the item to the next stage. It does not change hours, attendance or project lines.</p>}
     {action === 'return' && <div className="formGrid"><Field label="Return reason"><select value={reason} onChange={(event) => setReason(event.target.value)}>{reasons.map((item) => <option key={item}>{item}</option>)}</select></Field><Field label="Comment"><textarea value={comment} onChange={(event) => setComment(event.target.value)} /></Field></div>}
     {action === 'return' && <p>The timesheet goes back to Timesheet Review as Returned. The submitted version stays in history. Correction creates the next version.</p>}
   </Modal>;
 }
+
+const approverName = (detail, record) => {
+  if (record?.storedStatus && record.storedStatus !== 'Pending' && record.actedBy) return record.actedBy;
+  return detail?.assignedApprover || record?.projectManager || (record?.stage === 'Supervisor' ? record.supervisor : '') || '—';
+};
+
+const showApprovingAs = (detail, record) => {
+  if (detail?.canSeeAll || record?.storedStatus !== 'Pending') return false;
+  const current = String(detail?.approvingAs || '').trim();
+  const assigned = String(detail?.assignedApprover || record?.projectManager || '').trim();
+  if (!current || !assigned) return false;
+  return current.toLowerCase() !== assigned.toLowerCase() && !assigned.toLowerCase().includes(current.toLowerCase());
+};
+
+const approvalFooter = (detail, record) => {
+  const assigned = approverName(detail, record);
+  if (detail?.canSeeAll && !detail?.viewerOwns) {
+    return assigned && assigned !== '—'
+      ? `Assigned to ${assigned}. Global super administrator can approve all.`
+      : 'Global super administrator can approve all.';
+  }
+  return assigned && assigned !== '—' ? `Approver: ${assigned}` : 'Approve this item.';
+};

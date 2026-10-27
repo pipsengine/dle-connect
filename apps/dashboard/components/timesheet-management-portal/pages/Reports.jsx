@@ -6,11 +6,9 @@ import { exportTimesheet } from '../lib/export';
 import { bookingHasHours, formatDisplayDate, usePortalData } from '../portal-data';
 
 const nightDetail = (booking) => {
-  if (String(booking.shift || '').trim().toLowerCase() === 'night') {
-    const hours = Number(booking.regularHours || 0) + Number(booking.ovtHours || 0);
-    return hours || '';
-  }
-  return Number(booking.nightHours) > 0 ? 'Yes' : '';
+  const hours = Number(booking.regularHours || 0) + Number(booking.ovtHours || 0);
+  if (String(booking.shift || '').trim().toLowerCase() === 'night') return hours || '';
+  return Number(booking.nightHours) > 0 ? (hours || '') : '';
 };
 
 export default function Reports() {

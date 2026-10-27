@@ -1,4 +1,6 @@
 import {
+  finalPayrollApprovalLabel,
+  finalPayrollSettlementEditable,
   mergeGrossSalaryEarnings,
   parseFinalPayrollAmountInput,
   type FinalPayrollLine,
@@ -37,5 +39,15 @@ if (parseFinalPayrollAmountInput('') !== 0) throw new Error('parse empty');
 
 const alreadyMerged = mergeGrossSalaryEarnings([line('gross-salary', 100), line('leave-encashment', 20)]);
 if (alreadyMerged.length !== 2 || alreadyMerged[0].id !== 'gross-salary') throw new Error('already merged should pass through');
+
+if (!finalPayrollSettlementEditable('Draft')) throw new Error('draft should be editable');
+if (!finalPayrollSettlementEditable('Exception')) throw new Error('returned settlement should be editable');
+if (finalPayrollSettlementEditable('Approved')) throw new Error('approved should be locked');
+if (finalPayrollSettlementEditable('Paid')) throw new Error('paid should be locked');
+if (finalPayrollApprovalLabel({ status: 'Draft', approvalStages: [{ status: 'In Review' }] }) !== 'Not submitted') {
+  throw new Error('a draft must not look like it is already in review');
+}
+if (finalPayrollApprovalLabel({ status: 'Exception' }) !== 'Returned') throw new Error('exception label');
+if (finalPayrollApprovalLabel({ status: 'Approved' }) !== 'Approved') throw new Error('approved label');
 
 console.log('final-payroll-settlement-shared.test: OK');

@@ -559,6 +559,7 @@ export const sendTimesheetApprovalRequestEmail = async (input: {
   workCenterName?: string | null;
   actorName: string;
   workspaceLink: string;
+  intro?: string | null;
   baseUrl?: string | null;
 }) => {
   const to = compact(input.recipientEmail);

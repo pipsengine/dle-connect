@@ -11,6 +11,8 @@ assert.equal(explicitDepartmentSupervisorCode('QUALITY ASSURANCE CONTROL'), 'L27
 assert.equal(explicitDepartmentSupervisorCode('QUALITY CONTROL/ASSURANCE'), 'L2792');
 assert.equal(explicitDepartmentSupervisorCode('ADMINSTRATION'), 'P0467');
 assert.equal(explicitDepartmentSupervisorCode('ADMINISTRATION'), 'P0467');
+assert.equal(explicitDepartmentSupervisorCode('HUMAN RESOURCES'), 'P0468');
+assert.equal(explicitDepartmentSupervisorCode('Human Resource'), 'P0468');
 assert.equal(explicitDepartmentSupervisorCode('INFORMATION TECHNOLOGY'), 'P0146');
 assert.equal(explicitDepartmentSupervisorCode('SECURITY'), 'P0272');
 assert.equal(explicitDepartmentSupervisorCode('PROCUREMENT'), null);

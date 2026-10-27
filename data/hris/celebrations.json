@@ -1,0 +1,17 @@
+{
+  "schemaVersion": 1,
+  "wishes": [
+    {
+      "wishId": "wish-1793017897659-5nrram",
+      "celebrationDate": "2026-10-26",
+      "honoreeCode": "NYSC0041",
+      "honoreeKind": "birthday",
+      "honoreeName": "Miss Clementina Nnadi",
+      "authorCode": "IT0128",
+      "authorName": "Mr. EZEKIEL DAVID",
+      "message": "Happy Birthday Ma",
+      "createdAt": "2026-10-26T12:31:37.659Z"
+    }
+  ],
+  "sendLedger": []
+}

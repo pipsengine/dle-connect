@@ -38,6 +38,9 @@ const tokensOf = (value: unknown) => compact(value).split(' ').filter(Boolean);
 
 const withoutTitles = (tokens: string[]) => tokens.filter((token) => !isPersonTitleToken(token));
 
+/** Staff codes must not become a surname (NYSC0041, IT0131, P0468). */
+const isEmployeeCodeToken = (token: string) => /^(?:P|L|C|F|IT|NYSC|IYSC|N|I)\d{3,}$/i.test(token.replace(/[^A-Za-z0-9]/g, ''));
+
 const uniqueTokens = (tokens: string[]) => {
   const seen = new Set<string>();
   const out: string[] = [];
@@ -114,23 +117,26 @@ export const sanitizePersonDisplayName = (value: unknown) => {
   if (!tokens.length) return '';
   const titleToken = tokens.find((token) => isPersonTitleToken(token));
   const title = formatPersonTitle(titleToken);
-  const given = uniqueTokens(dropLeadingSurnameEcho(withoutTitles(tokens)));
+  const given = uniqueTokens(dropLeadingSurnameEcho(withoutTitles(tokens).filter((token) => !isEmployeeCodeToken(token))));
   return [title, ...given].filter(Boolean).join(' ');
 };
 
 export const resolvePersonNameParts = (parts: PersonNameParts) => {
+  const structuredFirst = withoutTitles(tokensOf(parts.firstName)).filter((token) => !isEmployeeCodeToken(token));
+  const structuredLast = withoutTitles(tokensOf(parts.lastName)).filter((token) => !isEmployeeCodeToken(token));
+  // A clean first and surname already identify the person. A stored full name can append the staff code or a garbled token.
+  const structuredIsClean = structuredFirst.length === 1 && structuredLast.length === 1;
   const blob = [
     parts.title,
     parts.firstName,
     parts.middleName,
     parts.lastName,
-    parts.fullName,
-    parts.fallback,
+    ...(structuredIsClean ? [] : [parts.fullName, parts.fallback]),
   ].map(compact).filter(Boolean).join(' ');
   const sanitized = sanitizePersonDisplayName(blob);
   const title = formatPersonTitle(parts.title)
     || formatPersonTitle(tokensOf(sanitized)[0]);
-  const given = uniqueTokens(withoutTitles(tokensOf(sanitized)));
+  const given = uniqueTokens(withoutTitles(tokensOf(sanitized)).filter((token) => !isEmployeeCodeToken(token)));
   if (!given.length) {
     return { title, firstName: '', middleName: '', lastName: '' };
   }

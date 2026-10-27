@@ -14,7 +14,13 @@ import {
   weekdayOvertimeHoursFromLine,
   weekendHoursFromTimesheetLine,
   premiumHoursFromTimesheetLine,
+  incomingBookingMayReplace,
 } from './timesheet-entry-shared';
+
+assert.equal(incomingBookingMayReplace({ incomingSupervisor: 'Akinsanya', existingSupervisor: 'Karonwi', incomingHours: 0, existingHours: 8 }), false);
+assert.equal(incomingBookingMayReplace({ incomingSupervisor: 'Akinsanya', existingSupervisor: 'Karonwi', incomingHours: 8, existingHours: 0 }), true);
+assert.equal(incomingBookingMayReplace({ incomingSupervisor: 'Karonwi', existingSupervisor: 'Karonwi', incomingHours: 0, existingHours: 8 }), true);
+assert.equal(incomingBookingMayReplace({ incomingSupervisor: 'Akinsanya', existingSupervisor: 'Karonwi', incomingHours: 8, existingHours: 8 }), false);
 
 const independence = '2026-10-01';
 const christmas = '2026-12-25';
@@ -22,6 +28,9 @@ const boxingOnSat = '2027-12-25';
 const holidays = [independence, christmas, boxingOnSat, '2026-05-01'];
 
 assert.equal(timesheetDayRulesForDate(independence, holidays).kind, 'PublicHoliday');
+assert.equal(timesheetDayRulesForDate(independence, holidays, 'C2832').kind, 'Weekday', 'C2832 treats Independence Day as a worked day');
+assert.equal(timesheetDayRulesForDate('2026-10-03', holidays, 'C2832').kind, 'Weekday');
+assert.equal(timesheetDayRulesForDate('2026-10-04', holidays, 'C2832').kind, 'Weekday');
 assert.equal(timesheetDayRulesForDate(independence, []).kind, 'Weekday');
 assert.equal(timesheetDayRulesForDate(christmas, holidays).kind, 'PublicHoliday');
 assert.equal(timesheetDayRulesForDate('2026-10-03', holidays).kind, 'Saturday');

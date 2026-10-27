@@ -8,7 +8,19 @@ import sql from 'mssql';
 import { readEmployeeExitStatusFromDb, type EmployeeExitStatusRecord } from '@/lib/employee-exit-status-store';
 import { getDleEnterpriseDbPool, markEmployeeInactiveInDb } from '@/lib/dle-enterprise-db';
 import type { DleEmployeeDirectoryRow } from '@/lib/dle-enterprise-db';
-import { calculatePayrollEarnings } from '@/lib/payroll-earnings-engine';
+import { calculateAnnualLeaveAllowanceAmount, calculatePayrollEarnings, calculatePermanentUnionDues } from '@/lib/payroll-earnings-engine';
+import {
+  employeeMatchKeys,
+  isCountableLeaveAllowanceEvent,
+} from '@/lib/leave-allowance-policy';
+import { normalizePayrollMatchKey } from '@/lib/sage-people-payroll-store';
+import { readPayrollLeaveAllowanceEvents } from '@/lib/payroll-leave-allowance-store';
+import { nigeriaFallbackHolidaysForYear, resolveNigeriaPublicHolidays } from '@/lib/nigeria-public-holidays';
+import {
+  buildEntitlementSnapshot,
+  DLE_ANNUAL_WORKING_DAYS,
+  salaryEarnedLabel,
+} from '@/lib/final-entitlement-sheet';
 import { invalidatePayrollEmployeeCache, readPayrollEmployees } from '@/lib/payroll-employee-source';
 import { ensurePayrollSqlSchema } from '@/lib/payroll-sql-schema';
 import { readHrisDataFile, writeHrisDataFile } from '@/lib/hris-data-paths';
@@ -36,6 +48,7 @@ import { setPayrollRunExclusion } from '@/lib/payroll-run-exclusion-service';
 import { invalidateHrisEmployeeCaches } from '@/lib/hris-employee-cache';
 import {
   type ApprovalStageStatus,
+  type FinalEntitlementSnapshot,
   type FinalPayrollApprovalStage,
   type FinalPayrollClearanceItem,
   type FinalPayrollKpi,
@@ -44,6 +57,7 @@ import {
   type FinalPayrollSettlement,
   type FinalPayrollStatus,
   currentFinalPayrollPeriod,
+  finalPayrollSettlementEditable,
   formatFinalPayrollDate,
   formatFinalPayrollMoney,
   mergeGrossSalaryEarnings,
@@ -57,6 +71,7 @@ import {
 export type {
   ClearanceItemStatus,
   ApprovalStageStatus,
+  FinalEntitlementSnapshot,
   FinalPayrollLine,
   FinalPayrollClearanceItem,
   FinalPayrollApprovalStage,
@@ -108,6 +123,7 @@ const defaultApprovalStages = (status: FinalPayrollStatus): FinalPayrollApproval
   };
   switch (status) {
     case 'Draft':
+      break;
     case 'Awaiting Clearance':
     case 'Ready for Calculation':
     case 'In Review':
@@ -378,6 +394,63 @@ type TerminalBenefitContext = {
   noticeRecoveryDays?: number;
 };
 
+const resolveEntitlementHolidays = async (leaveYear: number) => {
+  try {
+    const resolved = await resolveNigeriaPublicHolidays({ years: [leaveYear - 1, leaveYear, leaveYear + 1] });
+    if (resolved.holidays?.length) {
+      return resolved.holidays.map((item) => ({ date: item.date, label: item.label }));
+    }
+  } catch {
+    // Fall through to the statutory fallback list.
+  }
+  return nigeriaFallbackHolidaysForYear(leaveYear).map((item) => ({ date: item.date, label: item.label }));
+};
+
+const resolveLeaveAllowanceForYear = async (
+  employee: DleEmployeeDirectoryRow | null,
+  leaveYear: number,
+) => {
+  if (!employee) return { annual: 0, paid: false };
+  const keys = employeeMatchKeys(employee.employeeId, employee.employeeCode || employee.sourceEmployeeId);
+  const events = await readPayrollLeaveAllowanceEvents().catch(() => []);
+  const paid = events.find((event) => {
+    if (event.leaveYear !== leaveYear || event.leaveType !== 'Annual Leave') return false;
+    if (!isCountableLeaveAllowanceEvent(event)) return false;
+    const eventKeys = [event.employeeId, event.employeeCode].map(normalizePayrollMatchKey).filter(Boolean);
+    return eventKeys.some((key) => keys.includes(key));
+  });
+  const fromPackage = calculatePayrollEarnings(employee).annualBenefitLines.find((line) =>
+    /leave/i.test(`${line.code} ${line.name}`),
+  );
+  const annual = roundMoney(
+    Number(paid?.amount || 0)
+    || Number(fromPackage?.amount || 0)
+    || calculateAnnualLeaveAllowanceAmount(employee),
+  );
+  return { annual, paid: Boolean(paid) && annual > 0 };
+};
+
+const resolveEntitlementSnapshot = async (input: {
+  employee: DleEmployeeDirectoryRow | null;
+  lastWorkingDay?: string | null;
+  dateOfJoining?: string | null;
+}): Promise<FinalEntitlementSnapshot> => {
+  const leaveYear = Number(String(input.lastWorkingDay || '').slice(0, 4)) || new Date().getUTCFullYear();
+  const [holidays, leave] = await Promise.all([
+    resolveEntitlementHolidays(leaveYear),
+    resolveLeaveAllowanceForYear(input.employee, leaveYear),
+  ]);
+  return buildEntitlementSnapshot({
+    lastWorkingDay: input.lastWorkingDay,
+    dateOfJoining: input.dateOfJoining,
+    leaveYear,
+    annualLeaveAllowance: leave.annual,
+    leaveAllowancePaid: leave.paid,
+    totalWorkingDays: DLE_ANNUAL_WORKING_DAYS,
+    holidays,
+  });
+};
+
 const resolveTerminalBenefitContext = async (input: {
   employeeCode: string;
   employeeId?: string | null;
@@ -432,6 +505,9 @@ export const buildDefaultEarnings = (input: {
   exitType?: string;
   leaveBalanceDays?: number;
   noticePayDays?: number;
+  leaveYear?: number;
+  leaveAllowanceCredit?: number;
+  leaveAllowancePaid?: boolean;
 }): FinalPayrollLine[] => {
   const days = workingDaysUntil(input.period, input.lastWorkingDay);
   const monthDays = daysInMonth(input.period);
@@ -451,7 +527,6 @@ export const buildDefaultEarnings = (input: {
   const completedYears = Math.floor(years);
   const dailyBasic = roundMoney(basic / 30);
   const leaveDays = Math.max(0, Number(input.leaveBalanceDays || 0));
-  const leaveEncashment = leaveDays > 0 ? roundMoney(dailyBasic * leaveDays) : 0;
   const gratuityEligible = completedYears >= GRATUITY_MIN_YEARS && basic > 0;
   const gratuity = gratuityEligible ? roundMoney(basic * completedYears) : 0;
   const exitType = compact(input.exitType).toLowerCase();
@@ -462,16 +537,33 @@ export const buildDefaultEarnings = (input: {
   const severance = severanceEligible ? roundMoney(basic * completedYears) : 0;
 
   const periodRange = `${period.split(' ')[0]} 1 – ${lwd}`;
+  const salaryLabel = salaryEarnedLabel(input.lastWorkingDay);
   const grossRemarks = [periodRange, packageNote]
     .map((value) => String(value || '').trim())
     .filter((value) => value && value !== '-')
     .join(' · ');
+  const leaveYear = input.leaveYear || Number(String(input.lastWorkingDay || '').slice(0, 4)) || new Date().getUTCFullYear();
+  const leaveCredit = Math.max(0, roundMoney(input.leaveAllowanceCredit || 0));
 
   return [
     {
+      id: 'leave-allowance',
+      label: `${leaveYear} Leave Allowance`,
+      description: 'Earned annual leave allowance for the exit year',
+      policyBasis: 'Days worked / 248 working days',
+      periodDays: leaveCredit > 0 ? `${leaveYear}` : '0',
+      amount: leaveCredit,
+      remarks: input.leaveAllowancePaid
+        ? `Already paid for ${leaveYear} — unearned days recovered under deductions`
+        : leaveCredit > 0
+          ? `Earned portion of ${leaveYear} leave allowance`
+          : `No ${leaveYear} leave allowance on file`,
+      included: true,
+    },
+    {
       id: 'gross-salary',
-      label: 'Gross Salary',
-      description: 'Pro-rated basic salary plus package allowances',
+      label: 'Salary Earned',
+      description: salaryLabel,
       policyBasis: 'Actual days worked / pro-rated package',
       periodDays: `${days} days`,
       amount: roundMoney(salary + earnedAllowances),
@@ -501,13 +593,13 @@ export const buildDefaultEarnings = (input: {
     {
       id: 'leave-encashment',
       label: 'Leave Encashment',
-      description: 'Unused annual leave (terminal benefit)',
-      policyBasis: 'HR / Payroll exit policy',
+      description: 'Unused annual leave (only if separately approved)',
+      policyBasis: 'Not encashable unless HR / Payroll approve',
       periodDays: leaveDays > 0 ? `${leaveDays} days` : '0 days',
-      amount: leaveEncashment,
+      amount: 0,
       remarks: leaveDays > 0
-        ? `Daily basic × ${leaveDays} unused days`
-        : 'No eligible leave balance on file — adjust if approved',
+        ? `${leaveDays} unused day(s) on file — official sheet uses leave-allowance recovery instead. Enter an amount only if encashment is approved.`
+        : 'Official DLE sheet does not encash unused leave unless separately approved',
       included: true,
     },
     {
@@ -570,6 +662,9 @@ export const buildDefaultEarnings = (input: {
     },
   ];
 };
+
+const hireDateFromEmployee = (employee?: DleEmployeeDirectoryRow | null) =>
+  compact(employee?.dateJoined) || compact(employee?.contractStartDate) || null;
 
 type ResolvedSettlementPay = {
   basicSalary: number;
@@ -662,7 +757,7 @@ const resolveSettlementPay = async (
       ? `Allowances: ${lineNames.join(' · ')}${moreCount ? ` · +${moreCount} more` : ''}`
       : `Monthly allowances ${formatFinalPayrollMoney(allowances, currency)}`,
     payCurrency: employee.payCurrency || null,
-    contractStartDate: employee.contractStartDate || null,
+    contractStartDate: hireDateFromEmployee(employee),
     jobGrade: employee.jobGrade || null,
     salaryGrade: employee.salaryGrade || null,
     employee,
@@ -672,12 +767,18 @@ const resolveSettlementPay = async (
 export const buildDefaultDeductions = (input?: {
   basicSalary?: number;
   noticeRecoveryDays?: number;
+  proratedLeaveRecovery?: number;
+  leaveYear?: number;
+  remainingWorkingDays?: number;
 }): FinalPayrollLine[] => {
   const basic = Math.max(0, Number(input?.basicSalary || 0));
   const recoveryDays = Math.max(0, Number(input?.noticeRecoveryDays || 0));
   const noticeRecovery = recoveryDays > 0 && basic > 0
     ? roundMoney((basic / 30) * recoveryDays)
     : 0;
+  const leaveYear = Number(input?.leaveYear || 0);
+  const leaveRecovery = Math.max(0, roundMoney(input?.proratedLeaveRecovery || 0));
+  const remainingDays = Math.max(0, Number(input?.remainingWorkingDays || 0));
   return [
     {
       id: 'staff-loan',
@@ -697,6 +798,20 @@ export const buildDefaultDeductions = (input?: {
       periodDays: '-',
       amount: 0,
       remarks: '-',
+      included: true,
+    },
+    {
+      id: 'prorated-leave',
+      label: leaveYear
+        ? `Prorated Leave (less remaining days in ${leaveYear})`
+        : 'Prorated Leave',
+      description: 'Unearned leave allowance recovered from final pay',
+      policyBasis: 'Days remaining / 248 working days',
+      periodDays: remainingDays > 0 ? `${remainingDays} days` : '-',
+      amount: leaveRecovery,
+      remarks: leaveRecovery > 0
+        ? `Unearned ${leaveYear || ''} leave allowance for ${remainingDays} remaining working days`
+        : 'Leave allowance not yet paid, or no unearned days',
       included: true,
     },
     {
@@ -755,6 +870,16 @@ export const buildDefaultStatutory = (): FinalPayrollLine[] => [
     remarks: 'Where applicable',
     included: true,
   },
+  {
+    id: 'union-dues',
+    label: 'Union Dues',
+    description: 'Employee union contribution',
+    policyBasis: 'Statutory',
+    periodDays: '-',
+    amount: 0,
+    remarks: 'Where applicable',
+    included: true,
+  },
 ];
 
 /** Compute PAYE / pension / NHF from live payroll engines, prorated to days in settlement period. */
@@ -786,7 +911,7 @@ export const buildComputedStatutory = async (input: {
     // The schedule taxes the prorated month as that month's pay. Scaling a full-month
     // PAYE by days/30 overstates tax once the bands and the fixed rent relief apply.
     const proratedLines = (earnings.paidEarningLines || earnings.earningLines || [])
-      .filter((line) => Number(line.amount || 0) > 0 && !/gratuity|severance/i.test(`${line.code} ${line.name}`))
+      .filter((line) => Number(line.amount || 0) > 0 && !/gratuity|severance|leave allow/i.test(`${line.code} ${line.name}`))
       .map((line) => ({
         ...line,
         amount: factor >= 0.999 ? roundMoney(line.amount) : roundMoney(Number(line.amount) * factor),
@@ -837,6 +962,7 @@ export const buildComputedStatutory = async (input: {
       : roundMoney(tax.monthlyPaye);
     const monthlyPension = roundMoney(pension.employeeContribution + pension.voluntaryContribution);
     const monthlyNhf = roundMoney(funds?.fundResults?.find((item) => item.id === 'nhf')?.monthlyAmount || 0);
+    const monthlyUnion = roundMoney(calculatePermanentUnionDues(input.employee, options).amount);
     const prorationNote = factor < 0.999
       ? `Prorated ${days}/${monthDays} days on monthly statutory`
       : 'From payroll tax / pension engines';
@@ -871,6 +997,16 @@ export const buildComputedStatutory = async (input: {
         amount: roundMoney(monthlyNhf * factor),
         remarks: monthlyNhf > 0 ? prorationNote : 'Not applicable for this employee',
         included: monthlyNhf > 0,
+      },
+      {
+        id: 'union-dues',
+        label: 'Union Dues',
+        description: 'Employee union contribution',
+        policyBasis: 'Statutory',
+        periodDays: `${days} days`,
+        amount: roundMoney(monthlyUnion * factor),
+        remarks: monthlyUnion > 0 ? prorationNote : 'Not applicable for this employee',
+        included: monthlyUnion > 0,
       },
     ];
   } catch {
@@ -1146,7 +1282,13 @@ export const recalculateSettlement = async (settlement: FinalPayrollSettlement):
     resignationDate: settlement.resignationDate,
     noticePeriod: settlement.noticePeriod,
   });
+  const entitlement = await resolveEntitlementSnapshot({
+    employee: pay.employee,
+    lastWorkingDay: settlement.lastWorkingDay,
+    dateOfJoining: pay.contractStartDate || settlement.dateOfJoining,
+  });
   const autoLineIds = new Set([
+    'leave-allowance',
     'gross-salary',
     'salary-lwd',
     'earned-allowances',
@@ -1168,6 +1310,9 @@ export const recalculateSettlement = async (settlement: FinalPayrollSettlement):
     exitType: terminal.exitType || settlement.exitType,
     leaveBalanceDays: terminal.leaveBalanceDays,
     noticePayDays: terminal.noticePayDays,
+    leaveYear: entitlement.leaveYear,
+    leaveAllowanceCredit: entitlement.leaveAllowanceCredit,
+    leaveAllowancePaid: entitlement.leaveAllowancePaid,
   }).map((line) => {
     const existing = settlement.earnings.find((item) => item.id === line.id);
     if (!existing) return line;
@@ -1184,16 +1329,20 @@ export const recalculateSettlement = async (settlement: FinalPayrollSettlement):
   const nextDeductions = buildDefaultDeductions({
     basicSalary,
     noticeRecoveryDays: terminal.noticeRecoveryDays,
+    proratedLeaveRecovery: entitlement.proratedLeaveRecovery,
+    leaveYear: entitlement.leaveYear,
+    remainingWorkingDays: entitlement.remainingWorkingDays,
   }).map((line) => {
     const existing = settlement.deductions.find((item) => item.id === line.id);
     if (!existing) return line;
-    if (line.id === 'notice-recovery') {
+    if (line.id === 'notice-recovery' || line.id === 'prorated-leave') {
       return { ...line, included: existing.included };
     }
     return existing;
   });
   return {
     ...settlement,
+    entitlement,
     basicSalary,
     allowanceMonthly,
     grossSalary,
@@ -1272,6 +1421,7 @@ const settlementFromExit = (
       exitType: row.exitCategory === 'Active Monitoring' ? 'Resignation' : row.exitCategory,
     }),
     deductions: buildDefaultDeductions({ basicSalary: basic }),
+    entitlement: null,
     statutory: buildDefaultStatutory(),
     comments: [],
     createdAt: nowIso(),
@@ -1488,16 +1638,23 @@ export const createFinalPayrollSettlement = async (input: {
   const lastWorkingDay = input.lastWorkingDay ?? settlement.lastWorkingDay;
   const resignationDate = input.resignationDate ?? settlement.resignationDate;
   const exitType = input.exitType || settlement.exitType;
-  const terminal = await resolveTerminalBenefitContext({
-    employeeCode: code,
-    employeeId: settlement.employeeId || directory?.employeeId,
-    dateOfJoining: pay.contractStartDate || settlement.dateOfJoining,
-    serviceYears: Number(directory?.yearsOfService || exitRow?.serviceYears || 0),
-    exitType,
-    lastWorkingDay,
-    resignationDate,
-    noticePeriod: input.noticePeriod || settlement.noticePeriod,
-  });
+  const [terminal, entitlement] = await Promise.all([
+    resolveTerminalBenefitContext({
+      employeeCode: code,
+      employeeId: settlement.employeeId || directory?.employeeId,
+      dateOfJoining: pay.contractStartDate || settlement.dateOfJoining,
+      serviceYears: Number(directory?.yearsOfService || exitRow?.serviceYears || 0),
+      exitType,
+      lastWorkingDay,
+      resignationDate,
+      noticePeriod: input.noticePeriod || settlement.noticePeriod,
+    }),
+    resolveEntitlementSnapshot({
+      employee: directory,
+      lastWorkingDay,
+      dateOfJoining: pay.contractStartDate || settlement.dateOfJoining,
+    }),
+  ]);
 
   settlement = {
     ...settlement,
@@ -1519,6 +1676,7 @@ export const createFinalPayrollSettlement = async (input: {
       pay.contractStartDate || settlement.dateOfJoining,
       lastWorkingDay,
     ),
+    entitlement,
     earnings: buildDefaultEarnings({
       period,
       currency: settlement.currency,
@@ -1532,10 +1690,16 @@ export const createFinalPayrollSettlement = async (input: {
       exitType: terminal.exitType || exitType,
       leaveBalanceDays: terminal.leaveBalanceDays,
       noticePayDays: terminal.noticePayDays,
+      leaveYear: entitlement.leaveYear,
+      leaveAllowanceCredit: entitlement.leaveAllowanceCredit,
+      leaveAllowancePaid: entitlement.leaveAllowancePaid,
     }),
     deductions: buildDefaultDeductions({
       basicSalary: pay.basicSalary || settlement.basicSalary,
       noticeRecoveryDays: terminal.noticeRecoveryDays,
+      proratedLeaveRecovery: entitlement.proratedLeaveRecovery,
+      leaveYear: entitlement.leaveYear,
+      remainingWorkingDays: entitlement.remainingWorkingDays,
     }),
     statutory: await buildComputedStatutory({
       employee: directory,
@@ -1602,8 +1766,27 @@ export const updateFinalPayrollSettlement = async (input: {
   const all = await readAllSettlements();
   const index = all.findIndex((row) => row.id === input.id);
   if (index < 0) throw new Error('Settlement not found.');
-  let row = { ...all[index], ...(input.patch || {}) };
+  const existing = all[index];
+  const action = input.action || 'save';
+  if (['save', 'recalculate', 'submit'].includes(action) && !finalPayrollSettlementEditable(existing.status)) {
+    throw new Error('This settlement is already approved and cannot be edited or resubmitted.');
+  }
+  if (['return', 'clarify'].includes(action) && !finalPayrollSettlementEditable(existing.status)) {
+    throw new Error('An approved settlement cannot be returned or edited.');
+  }
+  const safePatch: Partial<FinalPayrollSettlement> = { ...(input.patch || {}) };
+  delete safePatch.status;
+  delete safePatch.approvalStages;
+  delete safePatch.id;
+  delete safePatch.approvedAt;
+  delete safePatch.approvedBy;
+  delete safePatch.payrollAppliedAt;
+  delete safePatch.deactivatedAt;
+  let row = { ...existing, ...safePatch };
   row.earnings = mergeGrossSalaryEarnings(row.earnings || []);
+  if (action === 'save' && row.status === 'Draft') {
+    row.approvalStages = defaultApprovalStages('Draft');
+  }
 
   if (input.action === 'recalculate') row = await recalculateSettlement(row);
   if (input.action === 'submit') {
@@ -1698,7 +1881,7 @@ export const searchEmployeesForFinalPayroll = async (query: string, limit = 12) 
       jobTitle: row.jobTitle,
       currency: /USD|US\$/i.test(String(row.payCurrency || '')) ? 'USD' as const : 'NGN' as const,
       basicSalary: Number(row.basicSalary || 0),
-      dateOfJoining: row.contractStartDate || null,
+      dateOfJoining: hireDateFromEmployee(row),
       status: row.status,
     }));
 };

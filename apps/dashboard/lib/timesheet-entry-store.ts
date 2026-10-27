@@ -43,6 +43,7 @@ import {
   weekendHoursFromTimesheetLine,
   premiumHoursFromTimesheetLine,
   timesheetDayRulesForDate,
+  employeeTreatsCalendarDaysAsWorkedDays,
   isNightTimesheetBooking,
   type TimesheetLine,
 } from '@/lib/timesheet-entry-shared';
@@ -2499,6 +2500,7 @@ export type PayrollTimesheetHoursEntry = {
   publicHolidayHours?: number;
   nightDays?: number;
   nightHours?: number;
+  paidLeaveDays?: number;
   employeeNo?: string;
   employeeName?: string;
 };
@@ -2604,7 +2606,7 @@ export const aggregateEmployeeAttendanceForHeaders = (
     if (options?.payrollReadyOnly && !payrollReadyHeaderStatuses.has(status)) continue;
 
     const dateKey = header.timesheetDate || '';
-    const dayKind = timesheetDayRulesForDate(dateKey, holidayDates).kind;
+    const dayKind = timesheetDayRulesForDate(dateKey, holidayDates, line.employeeNo).kind;
     const paidDay = isPayrollPayableWorkDay(line, dateKey);
     const employeeKey = canonicalTimesheetEmployeeKey(line);
     const employeeDateKey = `${employeeKey}::${dateKey}`;
@@ -2650,8 +2652,8 @@ export const aggregateEmployeeAttendanceForHeaders = (
       }
     } else if (!alreadyCountedDay) {
       current.daysWorked += paidDay ? 1 : 0;
-      if (paidDay && utcDay >= 1 && utcDay <= 5) current.weekdayDays += 1;
-      if (paidDay && utcDay === 6) current.saturdayDays += 1;
+      if (paidDay && (employeeTreatsCalendarDaysAsWorkedDays(line.employeeNo) || (utcDay >= 1 && utcDay <= 5))) current.weekdayDays += 1;
+      if (paidDay && utcDay === 6 && !employeeTreatsCalendarDaysAsWorkedDays(line.employeeNo)) current.saturdayDays += 1;
     }
     const weekend = weekendHoursFromTimesheetLine(line, dateKey, holidayDates);
     if (!alreadyCountedDay && utcDay === 0 && weekend.sundayHours > 0) {

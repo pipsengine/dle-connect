@@ -15,6 +15,10 @@ export const PAYROLL_NAMED_MD_CEO_CODES = [
   'P0413', // Mr CHRIS IJELI — Managing Director
 ] as const;
 
+export const PAYROLL_NAMED_HR_MANAGER_CODES = [
+  'P0468', // Mr. BANKOLE OMOLOLU — Head, HR & Administration
+] as const;
+
 const candidateCodes = (employeeCode?: string | null, username?: string | null) =>
   [employeeCode, username]
     .map((value) => String(value || '').trim().toUpperCase())
@@ -38,3 +42,6 @@ export const isPayrollNamedCfo = (employeeCode?: string | null, username?: strin
 
 export const isPayrollNamedMdCeo = (employeeCode?: string | null, username?: string | null) =>
   matchesNamedCodes(PAYROLL_NAMED_MD_CEO_CODES, employeeCode, username);
+
+export const isPayrollNamedHrManager = (employeeCode?: string | null, username?: string | null) =>
+  matchesNamedCodes(PAYROLL_NAMED_HR_MANAGER_CODES, employeeCode, username);

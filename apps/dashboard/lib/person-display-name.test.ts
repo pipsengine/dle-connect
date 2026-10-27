@@ -165,4 +165,26 @@ assert.equal(
   'Mr. CHRISTIAN ONUWABHAGBE OGBAISI',
 );
 
+assert.equal(
+  composePersonDisplayName({
+    title: 'Mr',
+    firstName: 'ISRAEL',
+    lastName: 'BELLO',
+    fallback: 'Mr. ISRAEL BELLO IT0131',
+  }),
+  'Mr. ISRAEL BELLO',
+);
+
+assert.equal(
+  composePersonDisplayName({
+    title: 'Miss',
+    firstName: 'CLEMENTINA',
+    lastName: 'NNADI',
+    fallback: 'Miss NNADI CLEMENTINA CLEMENTN NYSC0041',
+  }),
+  'Miss CLEMENTINA NNADI',
+);
+
+assert.equal(sanitizePersonDisplayName('Mr. ISRAEL BELLO IT0131'), 'Mr. ISRAEL BELLO');
+
 console.log('person display name tests passed');

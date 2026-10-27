@@ -8,7 +8,7 @@ if ($admin) {
   & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $inner
   exit $LASTEXITCODE
 }
-$process = Start-Process -FilePath "powershell.exe" -Verb RunAs -Wait -PassThru -WindowStyle Hidden -ArgumentList @(
+$process = Start-Process -FilePath "powershell.exe" -Verb RunAs -Wait -PassThru -WindowStyle Normal -ArgumentList @(
   "-NoProfile",
   "-ExecutionPolicy",
   "Bypass",

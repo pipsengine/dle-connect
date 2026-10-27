@@ -2,6 +2,179 @@
   "schemaVersion": 1,
   "notifications": [
     {
+      "id": "ntf-1792765089378-xwzu9m",
+      "recipientUserId": "P0468",
+      "recipientUsername": "P0468",
+      "recipientEmployeeCode": "P0468",
+      "recipientRoles": [],
+      "kind": "Approval",
+      "module": "Payroll Management",
+      "title": "Payroll approval required — October 2026 · DLE · Salaries",
+      "body": "HR Manager review is required for October 2026 · DLE · Salaries. Gross ₦116,160,915.59, Net ₦93,598,005.05, 139 employees.",
+      "severity": "warning",
+      "status": "Unread",
+      "href": "https://dleconnect.dormanlongeng.com:1432/hris/payroll/payroll-approval/authorize?token=eyJydW5JZCI6InBheXJvbGwtMjAyNi0xMC1zYWxhcmllZC1ETEUiLCJwZXJpb2QiOiIyMDI2LTEwIiwic3RhZ2VJZCI6ImhyLW1hbmFnZXIiLCJkZWNpc2lvbiI6ImFwcHJvdmUiLCJyZWNpcGllbnRFbWFpbCI6Im9tb2xvbHViYW5rb2xlQGRvcm1hbmxvbmdlbmcuY29tIiwicmVjaXBpZW50VXNlcm5hbWUiOiJwMDQ2OCIsImV4cCI6MTc5MzM2OTg4OTM3NX0.Y3_9CDnxdqDdbX-FqlonavNjFXPxK0NuNrySNZl1wI8",
+      "createdAt": "2026-10-23T14:18:09.378Z",
+      "actor": "Payroll Workflow",
+      "channels": [
+        "In-App",
+        "Email"
+      ],
+      "metadata": {
+        "runId": "payroll-2026-10-salaried-DLE",
+        "period": "2026-10",
+        "pack": "salaried",
+        "stageId": "hr-manager",
+        "audience": "named-recipient"
+      }
+    },
+    {
+      "id": "ntf-1792764323932-u06k83",
+      "recipientUserId": "P0464",
+      "recipientUsername": "P0464",
+      "recipientEmployeeCode": "P0464",
+      "recipientRoles": [],
+      "kind": "Approval",
+      "module": "Timesheet Approval",
+      "title": "Timesheet awaiting Project Manager",
+      "body": "You have 13 project timesheet lines (13 timesheets) waiting for project manager approval. Periods: October 2026 Period (13).",
+      "severity": "warning",
+      "status": "Unread",
+      "href": "/timesheet-management?page=approvals&stage=Project%20Manager",
+      "createdAt": "2026-10-23T14:05:23.932Z",
+      "actor": "Timesheet Workflow",
+      "channels": [
+        "In-App",
+        "Email"
+      ]
+    },
+    {
+      "id": "ntf-1792764322933-mwo0un",
+      "recipientUserId": "P0436",
+      "recipientUsername": "P0436",
+      "recipientEmployeeCode": "P0436",
+      "recipientRoles": [],
+      "kind": "Approval",
+      "module": "Timesheet Approval",
+      "title": "Timesheet awaiting Project Manager",
+      "body": "You have 3 project timesheet lines (3 timesheets) waiting for project manager approval. Periods: October 2026 Period (3).",
+      "severity": "warning",
+      "status": "Unread",
+      "href": "/timesheet-management?page=approvals&stage=Project%20Manager",
+      "createdAt": "2026-10-23T14:05:22.933Z",
+      "actor": "Timesheet Workflow",
+      "channels": [
+        "In-App",
+        "Email"
+      ]
+    },
+    {
+      "id": "ntf-1792764321785-0b7tlo",
+      "recipientUserId": "L1615",
+      "recipientUsername": "L1615",
+      "recipientEmployeeCode": "L1615",
+      "recipientRoles": [],
+      "kind": "Approval",
+      "module": "Timesheet Approval",
+      "title": "Timesheet awaiting Project Manager",
+      "body": "You have 40 project timesheet lines (40 timesheets) waiting for project manager approval. Periods: October 2026 Period (40).",
+      "severity": "warning",
+      "status": "Unread",
+      "href": "/timesheet-management?page=approvals&stage=Project%20Manager",
+      "createdAt": "2026-10-23T14:05:21.785Z",
+      "actor": "Timesheet Workflow",
+      "channels": [
+        "In-App",
+        "Email"
+      ]
+    },
+    {
+      "id": "ntf-1792764320387-onthuy",
+      "recipientUserId": "P0455",
+      "recipientUsername": "P0455",
+      "recipientEmployeeCode": "P0455",
+      "recipientRoles": [],
+      "kind": "Approval",
+      "module": "Timesheet Approval",
+      "title": "Timesheet awaiting Project Manager",
+      "body": "You have 214 project timesheet lines (214 timesheets) waiting for project manager approval. Periods: November 2026 Period (9), October 2026 Period (205).",
+      "severity": "warning",
+      "status": "Unread",
+      "href": "/timesheet-management?page=approvals&stage=Project%20Manager",
+      "createdAt": "2026-10-23T14:05:20.387Z",
+      "actor": "Timesheet Workflow",
+      "channels": [
+        "In-App",
+        "Email"
+      ]
+    },
+    {
+      "id": "ntf-1792764318951-o5bg6t",
+      "recipientUserId": "P0449",
+      "recipientUsername": "P0449",
+      "recipientEmployeeCode": "P0449",
+      "recipientRoles": [],
+      "kind": "Approval",
+      "module": "Timesheet Approval",
+      "title": "Timesheet awaiting Project Manager",
+      "body": "You have 302 project timesheet lines (161 timesheets) waiting for project manager approval. Periods: November 2026 Period (9), October 2026 Period (293).",
+      "severity": "warning",
+      "status": "Unread",
+      "href": "/timesheet-management?page=approvals&stage=Project%20Manager",
+      "createdAt": "2026-10-23T14:05:18.951Z",
+      "actor": "Timesheet Workflow",
+      "channels": [
+        "In-App",
+        "Email"
+      ]
+    },
+    {
+      "id": "ntf-1792764317563-k5nwvy",
+      "recipientUserId": "P0442",
+      "recipientUsername": "P0442",
+      "recipientEmployeeCode": "P0442",
+      "recipientRoles": [],
+      "kind": "Approval",
+      "module": "Timesheet Approval",
+      "title": "Timesheet awaiting Project Manager",
+      "body": "You have 169 project timesheet lines (145 timesheets) waiting for project manager approval. Periods: November 2026 Period (7), October 2026 Period (162).",
+      "severity": "warning",
+      "status": "Unread",
+      "href": "/timesheet-management?page=approvals&stage=Project%20Manager",
+      "createdAt": "2026-10-23T14:05:17.563Z",
+      "actor": "Timesheet Workflow",
+      "channels": [
+        "In-App",
+        "Email"
+      ]
+    },
+    {
+      "id": "ntf-1792588892210-jrjypq",
+      "recipientUserId": "P0433",
+      "recipientUsername": "P0433",
+      "recipientEmployeeCode": "P0433",
+      "recipientRoles": [],
+      "kind": "Approval",
+      "module": "Timesheet Approval",
+      "title": "October timesheets awaiting Cost Control",
+      "body": "404 October 2026 timesheets from 17 supervisors are waiting for Cost Control approval. November is not included.",
+      "severity": "warning",
+      "status": "Unread",
+      "href": "/timesheet-management?page=approvals&stage=Cost%20Control",
+      "createdAt": "2026-10-21T13:21:32.211Z",
+      "actor": "Timesheet Workflow",
+      "channels": [
+        "In-App",
+        "Email"
+      ],
+      "metadata": {
+        "headerId": "October 2026",
+        "periodId": "October 2026 Period",
+        "projectCode": "",
+        "recipientCode": "P0433"
+      }
+    },
+    {
       "id": "ntf-1792412210171-jsapzn",
       "recipientUserId": "P0392",
       "recipientUsername": "P0392",

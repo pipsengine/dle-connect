@@ -12,6 +12,7 @@ import {
 
 export type PayrollEmploymentContext = {
   employmentType?: string;
+  employeeCode?: string;
   contractStartDate?: string;
   contractEndDate?: string;
 };
@@ -135,6 +136,50 @@ export const normalizePayrollDraftBeforeSave = (
   } else if (periodSalary > 0) {
     if (!Number(next.basicSalary)) next.basicSalary = String(periodSalary);
     if (!Number(next.annualSalary)) next.annualSalary = String(roundMoney(periodSalary * 12));
+  }
+
+  const employeeCode = String(employment.employeeCode || '').trim().toUpperCase();
+  const isStipend = /^(P?IT|IT|I|P?NYSC|NYSC|N)\d+/.test(employeeCode)
+    || /\b(INDUSTRIAL TRAINING|INDUSTRIAL TRAINEE|INTERN|NYSC|NATIONAL YOUTH SERVICE)\b/i.test(employmentType);
+  if (isStipend) {
+    const isIt = /^(P?IT|IT|I)\d+/.test(employeeCode)
+      || (/\b(INDUSTRIAL|INTERN)\b/i.test(employmentType) && !/\bNYSC\b/i.test(employmentType));
+    const allowance = isIt
+      ? { code: 'ITALLOW', name: 'IT ALLOWANCE' }
+      : { code: 'NYSCALLOW', name: 'NYSC ALLOWANCE' };
+    if (!periodSalary && Number(next.basicSalary || 0) > 0) {
+      periodSalary = Number(next.basicSalary);
+      next.periodSalary = String(periodSalary);
+    }
+    next.basicSalary = '0';
+    if (periodSalary > 0) next.annualSalary = String(roundMoney(periodSalary * 12));
+    let sawAllowance = false;
+    next.earningLines = (next.earningLines || []).map((line) => {
+      const code = String(line.code || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+      const name = String(line.name || '').toUpperCase();
+      const isBasic = code === 'BASIC' || name === 'BASIC SALARY' || name === 'BASIC';
+      const isStipendLine = /^(STIPEND(NT)?|NYSCALLOW(ANCE)?|ITALLOW(ANCE)?)$/.test(code)
+        || /IT ALLOW|NYSC ALLOW|STIPEND/.test(name);
+      if (!isBasic && !isStipendLine) return line;
+      sawAllowance = true;
+      return { ...line, code: allowance.code, name: allowance.name, taxable: false };
+    });
+    if (!sawAllowance && periodSalary > 0) {
+      next.earningLines = [...(next.earningLines || []), {
+        id: newDraftPayrollLineId(),
+        code: allowance.code,
+        name: allowance.name,
+        amount: String(periodSalary),
+        taxable: false,
+        frequency: 'monthly' as const,
+      }];
+    }
+    const grade = String(next.salaryGrade || '').trim();
+    if (!grade || /^(NYSC|IT|INTERN|INDUSTRIAL)/i.test(grade)) {
+      next.salaryGrade = 'IT_NYSC_REM - IT_NYSC';
+    }
+    const paymentRun = String(next.paymentRun || '').trim();
+    if (!paymentRun || /^MAIN$/i.test(paymentRun)) next.paymentRun = 'Main Payment Run';
   }
 
   return next;

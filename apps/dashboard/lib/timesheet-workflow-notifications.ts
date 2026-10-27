@@ -16,6 +16,8 @@ type NotifyInput = {
   projectCode?: string | null;
   stageLabel?: string;
   actorName?: string;
+  href?: string;
+  intro?: string | null;
 };
 
 const approvalHref = '/hris/time-and-logs/timesheet-approval';
@@ -119,7 +121,7 @@ export const notifyTimesheetWorkflow = async (input: NotifyInput) => {
     nameHint: input.recipientNameHint,
     roles,
   });
-  const workspaceLink = toAbsoluteWorkflowHref(approvalHref);
+  const workspaceLink = toAbsoluteWorkflowHref(input.href || approvalHref);
   const periodLabel = input.header?.periodId?.replace(/^per-/, '') || 'current period';
 
   if (!recipients.length) {
@@ -132,7 +134,7 @@ export const notifyTimesheetWorkflow = async (input: NotifyInput) => {
         severity: input.severity || 'info',
         recipientEmployeeCode: input.recipientEmployeeCode,
         recipientRoles: roles,
-        href: approvalHref,
+        href: input.href || approvalHref,
         channels: ['In-App', 'Email'],
         metadata: {
           headerId: input.header?.id || '',
@@ -156,7 +158,7 @@ export const notifyTimesheetWorkflow = async (input: NotifyInput) => {
         severity: input.severity || 'info',
         recipientEmployeeCode: recipient.employeeCode,
         recipientRoles: [],
-        href: approvalHref,
+        href: input.href || approvalHref,
         channels: ['In-App', 'Email'],
         metadata: {
           headerId: input.header?.id || '',
@@ -181,6 +183,7 @@ export const notifyTimesheetWorkflow = async (input: NotifyInput) => {
         workCenterName: input.header?.workCenterName,
         actorName: input.actorName || 'Timesheet Workflow',
         workspaceLink,
+        intro: input.intro,
       });
     } catch (error) {
       console.warn('[Timesheet notify] Email failed:', error instanceof Error ? error.message : error);
@@ -265,7 +268,7 @@ export const notifyTimesheetStageChange = async (input: {
       title: 'Timesheet ready for cost control review',
       body: `Project manager approvals progressed on timesheet ${input.header.id}${projectPart}. Cost Control can review period ${periodLabel}.`,
       severity: 'warning',
-      recipientRoles: ['Cost Control', 'Finance'],
+      recipientRoles: ['Cost Control Officer', 'Cost Control'],
       header: input.header,
       projectCode: input.projectCode,
       stageLabel: 'Cost Control',

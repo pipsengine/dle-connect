@@ -364,6 +364,17 @@ export const hrisPayeFromEmployee = (input: {
   const paidLines = (input.earnings.paidEarningLines || input.earnings.earningLines || []) as PayrollEarningLine[];
   const earningLines = mapPayrollLines(paidLines);
   const category = payeCategoryFromProfile(input.earnings.profileId);
+  if (category === 'stipend') {
+    return {
+      paye: 0,
+      payeExact: 0,
+      monthlyTaxable: 0,
+      fixedTaxable: 0,
+      variableTaxable: 0,
+      fixedPaye: 0,
+      variablePaye: 0,
+    };
+  }
   const salaryGrade = input.employee.salaryGrade || input.employee.jobGrade;
   const payeRules = resolvePayeRules(input.employee);
   const payCurrency = String(input.employee.payCurrency || '').trim().toUpperCase();

@@ -14,6 +14,8 @@ import {
   settlementsToCsv,
   updateFinalPayrollSettlement,
 } from '@/lib/final-payroll-settlement-store';
+import { entitlementSheetFromSettlement, entitlementSheetFileName } from '@/lib/final-entitlement-sheet';
+import { buildFinalEntitlementSheetHtml } from '@/lib/final-entitlement-sheet-export';
 
 export const dynamic = 'force-dynamic';
 
@@ -82,6 +84,20 @@ export async function GET(request: Request) {
         headers: {
           'Content-Type': 'text/csv; charset=utf-8',
           'Content-Disposition': `attachment; filename="final-payroll-${period}.csv"`,
+        },
+      });
+    }
+    if (format === 'entitlement' || format === 'entitlement-xls') {
+      const row = payload.selected || (selectedId ? await getFinalPayrollSettlement(selectedId) : null);
+      if (!row) {
+        return NextResponse.json({ ok: false, error: 'Settlement not found for entitlement sheet export.' }, { status: 404 });
+      }
+      const sheet = entitlementSheetFromSettlement(row);
+      return new NextResponse(buildFinalEntitlementSheetHtml(sheet), {
+        status: 200,
+        headers: {
+          'Content-Type': 'application/vnd.ms-excel;charset=utf-8',
+          'Content-Disposition': `attachment; filename="${entitlementSheetFileName(sheet)}"`,
         },
       });
     }

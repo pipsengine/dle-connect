@@ -172,7 +172,7 @@ export const buildPayrollAttendanceSheet = (input: {
       continue;
     }
 
-    const dayRules = timesheetDayRulesForDate(date, holidays);
+    const dayRules = timesheetDayRulesForDate(date, holidays, current.empCode);
     const night = isNightTimesheetBooking(row.shiftLabel, row.headerId, row.clockIn);
     const paidLeave = isPaidLeaveRow(row);
     // Prefer line-level usedHours / attendance when present. Do not re-deduct the unpaid break from booked hours.
@@ -248,7 +248,7 @@ export const buildPayrollAttendanceSheet = (input: {
         ...codeAliases(bucket.empCode),
       );
       const weekDaysWorked = payrollHours?.weekdayDays != null ? Number(payrollHours.weekdayDays) : bucket.weekDayDates.size;
-      const paidLeaveDays = bucket.paidLeaveDates.size;
+      const paidLeaveDays = Math.max(bucket.paidLeaveDates.size, Number(payrollHours?.paidLeaveDays || 0));
       const saturdayDaysWorked = payrollHours?.saturdayDays != null ? Number(payrollHours.saturdayDays) : bucket.saturdayDates.size;
       const sundayDaysWorked = payrollHours?.sundayDays != null ? Number(payrollHours.sundayDays) : bucket.sundayDates.size;
       const nightWorkedDays = Math.max(Number(payrollHours?.nightDays || 0), bucket.nightDates.size);

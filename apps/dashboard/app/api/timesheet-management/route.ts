@@ -41,6 +41,7 @@ const snapshotFor = async (request: Request) => {
   return {
     ...(await readTimesheetManagementSnapshot()),
     viewer: {
+      roles: request.headers.get('x-auth-roles') || '',
       canManagePeriods: canManageTimesheetPeriods(request),
       canDecideCrewRemoval: canDecideCrewRemoval(actor),
       crewRemovalApprover: approver.label,

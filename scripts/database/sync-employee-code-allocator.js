@@ -3,6 +3,7 @@ const path = require('node:path');
 const sql = require('mssql');
 
 for (const file of [
+  path.join(process.cwd(), 'deployment', 'iis', 'site', 'apps', 'dashboard', '.env'),
   path.join(process.cwd(), 'apps', 'dashboard', '.env.local'),
   path.join(process.cwd(), 'apps', 'dashboard', '.env'),
 ]) {
@@ -52,13 +53,23 @@ BEGIN
   BEGIN TRANSACTION;
 
   DECLARE @latestExisting int = 0;
-  SELECT @latestExisting = ISNULL(MAX(TRY_CONVERT(int, SUBSTRING(UPPER(LTRIM(RTRIM(employee_code))), 2, 20))), 0)
-  FROM [hris].[Employees] WITH (UPDLOCK, HOLDLOCK)
-  WHERE UPPER(LTRIM(RTRIM(employee_code))) LIKE @typeCode + '[0-9]%'
-    AND TRY_CONVERT(int, SUBSTRING(UPPER(LTRIM(RTRIM(employee_code))), 2, 20)) IS NOT NULL;
+  SELECT @latestExisting = ISNULL(MAX(seq_no), 0)
+  FROM (
+    SELECT TRY_CONVERT(int, SUBSTRING(UPPER(LTRIM(RTRIM(employee_code))), 2, 20)) AS seq_no
+    FROM [hris].[Employees] WITH (UPDLOCK, HOLDLOCK)
+    WHERE UPPER(LTRIM(RTRIM(employee_code))) LIKE @typeCode + '[0-9]%'
+      AND TRY_CONVERT(int, SUBSTRING(UPPER(LTRIM(RTRIM(employee_code))), 2, 20)) IS NOT NULL
+    UNION ALL
+    SELECT TRY_CONVERT(int, SUBSTRING(UPPER(LTRIM(RTRIM(employee_code))), 2, 20))
+    FROM [hris].[EmployeeDrafts] WITH (UPDLOCK, HOLDLOCK)
+    WHERE employee_code IS NOT NULL
+      AND draft_status NOT IN ('cancelled', 'created')
+      AND UPPER(LTRIM(RTRIM(employee_code))) LIKE @typeCode + '[0-9]%'
+      AND TRY_CONVERT(int, SUBSTRING(UPPER(LTRIM(RTRIM(employee_code))), 2, 20)) IS NOT NULL
+  ) codes;
 
   UPDATE [hris].[EmployeeCodeCounters] WITH (UPDLOCK, HOLDLOCK)
-  SET last_sequence = CASE WHEN last_sequence < @latestExisting THEN @latestExisting + 1 ELSE last_sequence + 1 END,
+  SET last_sequence = @latestExisting,
       modified_at = SYSUTCDATETIME(),
       modified_by = SUSER_SNAME()
   WHERE employee_type_code = @typeCode;
@@ -66,13 +77,10 @@ BEGIN
   IF @@ROWCOUNT = 0
   BEGIN
     INSERT [hris].[EmployeeCodeCounters](employee_type_code, employee_type_name, last_sequence)
-    VALUES (@typeCode, @EmployeeTypeName, @latestExisting + 1);
+    VALUES (@typeCode, @EmployeeTypeName, @latestExisting);
   END;
 
-  DECLARE @seq int;
-  SELECT @seq = last_sequence
-  FROM [hris].[EmployeeCodeCounters]
-  WHERE employee_type_code = @typeCode;
+  DECLARE @seq int = @latestExisting + 1;
 
   SELECT @EmployeeCode = @typeCode + RIGHT(REPLICATE('0', 8) + CONVERT(varchar(20), @seq),
     CASE WHEN LEN(CONVERT(varchar(20), @seq)) > 4 THEN LEN(CONVERT(varchar(20), @seq)) ELSE 4 END);
@@ -81,30 +89,55 @@ BEGIN
 END;
 `);
 
-  // Sync counters to current max employee codes so preview/allocate stay aligned.
+  // Align counters to live occupancy. A drifted last_sequence must snap back down.
   await pool.request().query(`
 MERGE [hris].[EmployeeCodeCounters] AS target
 USING (
-  SELECT 'C' AS employee_type_code, 'Daily Rate' AS employee_type_name,
-    ISNULL(MAX(TRY_CONVERT(int, SUBSTRING(UPPER(LTRIM(RTRIM(employee_code))), 2, 20))), 0) AS last_sequence
-  FROM [hris].[Employees]
-  WHERE UPPER(LTRIM(RTRIM(employee_code))) LIKE 'C[0-9]%'
-  UNION ALL
-  SELECT 'L', 'Lumpsum',
-    ISNULL(MAX(TRY_CONVERT(int, SUBSTRING(UPPER(LTRIM(RTRIM(employee_code))), 2, 20))), 0)
-  FROM [hris].[Employees]
-  WHERE UPPER(LTRIM(RTRIM(employee_code))) LIKE 'L[0-9]%'
-  UNION ALL
-  SELECT 'P', 'Permanent',
-    ISNULL(MAX(TRY_CONVERT(int, SUBSTRING(UPPER(LTRIM(RTRIM(employee_code))), 2, 20))), 0)
-  FROM [hris].[Employees]
-  WHERE UPPER(LTRIM(RTRIM(employee_code))) LIKE 'P[0-9]%'
-    AND UPPER(LTRIM(RTRIM(employee_code))) NOT LIKE 'PNYSC%'
-    AND UPPER(LTRIM(RTRIM(employee_code))) NOT LIKE 'PIT%'
+  SELECT type_code AS employee_type_code, type_name AS employee_type_name,
+    ISNULL(MAX(seq_no), 0) AS last_sequence
+  FROM (
+    SELECT 'C' AS type_code, 'Daily Rate' AS type_name,
+      TRY_CONVERT(int, SUBSTRING(UPPER(LTRIM(RTRIM(employee_code))), 2, 20)) AS seq_no
+    FROM [hris].[Employees]
+    WHERE UPPER(LTRIM(RTRIM(employee_code))) LIKE 'C[0-9]%'
+    UNION ALL
+    SELECT 'C', 'Daily Rate',
+      TRY_CONVERT(int, SUBSTRING(UPPER(LTRIM(RTRIM(employee_code))), 2, 20))
+    FROM [hris].[EmployeeDrafts]
+    WHERE employee_code IS NOT NULL AND draft_status NOT IN ('cancelled', 'created')
+      AND UPPER(LTRIM(RTRIM(employee_code))) LIKE 'C[0-9]%'
+    UNION ALL
+    SELECT 'L', 'Lumpsum',
+      TRY_CONVERT(int, SUBSTRING(UPPER(LTRIM(RTRIM(employee_code))), 2, 20))
+    FROM [hris].[Employees]
+    WHERE UPPER(LTRIM(RTRIM(employee_code))) LIKE 'L[0-9]%'
+    UNION ALL
+    SELECT 'L', 'Lumpsum',
+      TRY_CONVERT(int, SUBSTRING(UPPER(LTRIM(RTRIM(employee_code))), 2, 20))
+    FROM [hris].[EmployeeDrafts]
+    WHERE employee_code IS NOT NULL AND draft_status NOT IN ('cancelled', 'created')
+      AND UPPER(LTRIM(RTRIM(employee_code))) LIKE 'L[0-9]%'
+    UNION ALL
+    SELECT 'P', 'Permanent',
+      TRY_CONVERT(int, SUBSTRING(UPPER(LTRIM(RTRIM(employee_code))), 2, 20))
+    FROM [hris].[Employees]
+    WHERE UPPER(LTRIM(RTRIM(employee_code))) LIKE 'P[0-9]%'
+      AND UPPER(LTRIM(RTRIM(employee_code))) NOT LIKE 'PN%'
+      AND UPPER(LTRIM(RTRIM(employee_code))) NOT LIKE 'PI%'
+    UNION ALL
+    SELECT 'P', 'Permanent',
+      TRY_CONVERT(int, SUBSTRING(UPPER(LTRIM(RTRIM(employee_code))), 2, 20))
+    FROM [hris].[EmployeeDrafts]
+    WHERE employee_code IS NOT NULL AND draft_status NOT IN ('cancelled', 'created')
+      AND UPPER(LTRIM(RTRIM(employee_code))) LIKE 'P[0-9]%'
+      AND UPPER(LTRIM(RTRIM(employee_code))) NOT LIKE 'PN%'
+      AND UPPER(LTRIM(RTRIM(employee_code))) NOT LIKE 'PI%'
+  ) codes
+  GROUP BY type_code, type_name
 ) AS source
 ON target.employee_type_code = source.employee_type_code
 WHEN MATCHED THEN UPDATE SET
-  last_sequence = CASE WHEN target.last_sequence < source.last_sequence THEN source.last_sequence ELSE target.last_sequence END,
+  last_sequence = source.last_sequence,
   modified_at = SYSUTCDATETIME(),
   modified_by = SUSER_SNAME()
 WHEN NOT MATCHED THEN INSERT (employee_type_code, employee_type_name, last_sequence)

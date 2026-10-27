@@ -4,6 +4,8 @@
 import assert from 'node:assert/strict';
 import {
   aggregatePortalBookingsForPayroll,
+  approvedLeaveBookingDays,
+  mergeUnbookedApprovedLeave,
   payrollPeriodDateBounds,
   portalCCodePayrollFeedApplies,
   replaceContractHoursWithPortalFeed,
@@ -55,5 +57,31 @@ assert.equal(merged.get('C1001')?.weekdayDays, 1);
 assert.equal(merged.get('ADA')?.employeeNo, 'C1001');
 assert.equal(merged.has('Old Register'), false);
 assert.equal(merged.get('P0277')?.daysWorked, 15);
+
+const kelvinLeave = approvedLeaveBookingDays(
+  [{ employeeCode: 'C2236', employeeName: 'Kelvin Iwuagwu', startDate: '2026-10-13', endDate: '2026-10-15' }],
+  { start: '2026-09-16', end: '2026-10-15' },
+  ['2026-10-01'],
+);
+assert.deepEqual(kelvinLeave.map((day) => day.workDate), ['2026-10-13', '2026-10-14', '2026-10-15']);
+const kelvinRows = mergeUnbookedApprovedLeave([
+  { employeeCode: 'C2236', employeeName: 'Kelvin Iwuagwu', workDate: '2026-10-12', regularHours: 8, ovtHours: 0, nightHours: 0, locationName: 'IDI ORO' },
+], kelvinLeave);
+const kelvin = aggregatePortalBookingsForPayroll(kelvinRows, ['2026-10-01']).get('C2236');
+assert.equal(kelvin?.weekdayDays, 4, '12 Oct worked plus 13-15 Oct leave');
+assert.equal(kelvin?.paidLeaveDays, 3, 'the three leave days are shown');
+assert.equal(kelvin?.daysWorked, 4);
+
+const vincent = aggregatePortalBookingsForPayroll([
+  { employeeCode: 'C2832', employeeName: 'Ebiale Vincent', workDate: '2026-09-30', regularHours: 8, ovtHours: 0, nightHours: 0, locationName: 'AGEGE' },
+  { employeeCode: 'C2832', employeeName: 'Ebiale Vincent', workDate: '2026-10-01', regularHours: 8, ovtHours: 0, nightHours: 0, locationName: 'AGEGE' },
+  { employeeCode: 'C2832', employeeName: 'Ebiale Vincent', workDate: '2026-10-03', regularHours: 8, ovtHours: 2, nightHours: 0, locationName: 'AGEGE' },
+  { employeeCode: 'C2832', employeeName: 'Ebiale Vincent', workDate: '2026-10-04', regularHours: 8, ovtHours: 0, nightHours: 0, locationName: 'AGEGE' },
+], ['2026-10-01']).get('C2832');
+assert.equal(vincent?.weekdayDays, 4, 'C2832 Saturday, Sunday, and PH are ordinary days');
+assert.equal(vincent?.daysWorked, 4);
+assert.equal(vincent?.saturdayHours, 0);
+assert.equal(vincent?.publicHolidayHours, 0);
+assert.equal(vincent?.weekdayOvertimeHours, 0, 'C2832 has no overtime');
 
 console.log('timesheet-portal-payroll-feed.test.ts ok');

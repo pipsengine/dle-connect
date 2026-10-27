@@ -1629,7 +1629,7 @@ export const sendToHrReview = async (
     body: `${cycle.cycleCode} (${cycle.pairLabel} ${cycle.year}) was sent for HR review by ${actor}.`,
     href: manageHref(cycle.id),
     roles: ['HR Manager'],
-    recipientEmployeeCode: 'P0432',
+    recipientEmployeeCode: 'P0468',
     severity: 'warning',
   });
   return cycle;

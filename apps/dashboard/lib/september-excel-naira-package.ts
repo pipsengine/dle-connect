@@ -100,7 +100,10 @@ export const septemberExcelNairaPackageFor = (
 ) => {
   const key = periodKey(period);
   if (key && key < '2026-09') return null;
-  return SEPTEMBER_EXCEL_NAIRA_PACKAGES.find((pack) => packageMatchesEmployee(pack, employee)) || null;
+  const pack = SEPTEMBER_EXCEL_NAIRA_PACKAGES.find((item) => packageMatchesEmployee(item, employee)) || null;
+  // Odulate moves to Goal Seek from October 2026; keep September Excel only for 2026-09.
+  if (pack?.employeeCode === 'P0442' && key && key >= '2026-10') return null;
+  return pack;
 };
 
 export const applySeptemberExcelNairaPackage = <T extends DleEmployeeDirectoryRow>(employee: T, period?: string | null): T => {

@@ -54,6 +54,8 @@ const DEPARTMENT_SUPERVISOR_CODES: Record<string, string> = {
   'qa / qc': 'L2792',
   administration: 'P0467',
   adminstration: 'P0467',
+  'human resources': 'P0468',
+  'human resource': 'P0468',
   'information technology': 'P0146',
   'it & enterprise systems': 'P0146',
   'it and enterprise systems': 'P0146',

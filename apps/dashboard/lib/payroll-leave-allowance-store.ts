@@ -10,6 +10,7 @@ import {
   isCountableLeaveAllowanceEvent,
   isLeaveAllowanceEligibleForYear,
   isLeaveAllowancePaymentCode,
+  isOutsideCollectedLeaveAllowance,
   leaveAllowancePaymentPeriodForYear,
   primaryAnnualLeaveApplicationForAllowance,
   LEAVE_ALLOWANCE_MINIMUM_ANNUAL_DAYS,
@@ -287,7 +288,7 @@ export const hasLeaveAllowanceInYear = async (employee: DleEmployeeDirectoryRow,
   return (await readPayrollLeaveAllowanceEvents()).some((event) => {
     if (event.leaveYear !== leaveYear || event.leaveType !== 'Annual Leave') return false;
     if (excludeRequestId && event.requestId === excludeRequestId) return false;
-    if (!isCountableLeaveAllowanceEvent(event)) return false;
+    if (!isCountableLeaveAllowanceEvent(event) && !isOutsideCollectedLeaveAllowance(event)) return false;
     const eventKeys = [event.employeeId, event.employeeCode].map(normalizePayrollMatchKey).filter(Boolean);
     return eventKeys.some((key) => employeeKeys.includes(key));
   });
@@ -394,6 +395,7 @@ export const reconcilePayrollLeaveAllowanceEvents = async (
     const linkedApplication = primaryAnnualLeaveApplicationForAllowance(applications, keys, event.leaveYear);
 
     if (eligible) {
+      if (isOutsideCollectedLeaveAllowance(event)) return event;
       const next = {
         ...event,
         days: approvedDays,

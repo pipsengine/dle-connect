@@ -13,6 +13,7 @@ import {
   OFFSHORE_ALLOWANCE_HOURS,
   STANDARD_TIMESHEET_HOURS,
   canonicalProjectCode,
+  employeeTreatsCalendarDaysAsWorkedDays,
   isIdleTimeProjectCode,
   isOffshoreTimesheetContext,
   timesheetDayRulesForDate,
@@ -36,6 +37,7 @@ type PortalPayrollHours = {
   publicHolidayHours?: number;
   nightDays?: number;
   nightHours?: number;
+  paidLeaveDays?: number;
   employeeNo?: string;
   employeeName?: string;
 };
@@ -70,6 +72,81 @@ export type PortalBookingDay = {
   ovtHours: number;
   nightHours: number;
   locationName: string;
+  paidLeave?: boolean;
+};
+
+export type ApprovedLeaveSpan = {
+  employeeCode: string;
+  employeeName?: string;
+  startDate: string;
+  endDate: string;
+};
+
+/** Weekday leave inside the payroll window. Weekends and public holidays are not payable leave days. */
+export const approvedLeaveBookingDays = (
+  spans: ApprovedLeaveSpan[],
+  bounds: { start: string; end: string },
+  holidayDates: string[] = [],
+) => {
+  const days: Array<{ employeeCode: string; employeeName: string; workDate: string }> = [];
+  for (const span of spans) {
+    const code = compact(span.employeeCode).toUpperCase();
+    if (!isContractCode(code)) continue;
+    const start = dateOnly(span.startDate);
+    const end = dateOnly(span.endDate);
+    const from = start > bounds.start ? start : bounds.start;
+    const to = end < bounds.end ? end : bounds.end;
+    if (!from || !to || to < from) continue;
+    for (let cursor = new Date(`${from}T00:00:00.000Z`); cursor <= new Date(`${to}T00:00:00.000Z`); cursor = new Date(cursor.getTime() + 86400000)) {
+      const workDate = cursor.toISOString().slice(0, 10);
+      if (timesheetDayRulesForDate(workDate, holidayDates).kind !== 'Weekday') continue;
+      days.push({ employeeCode: code, employeeName: compact(span.employeeName), workDate });
+    }
+  }
+  return days;
+};
+
+/**
+ * Approved leave that was never saved as booking hours still counts.
+ * A date that already has hours is marked as leave and is not added again.
+ */
+export const mergeUnbookedApprovedLeave = (
+  rows: PortalBookingDay[],
+  leaveDays: Array<{ employeeCode: string; employeeName?: string; workDate: string }>,
+) => {
+  const next = rows.map((row) => ({ ...row }));
+  const indexByDay = new Map<string, number>();
+  next.forEach((row, index) => {
+    const code = compact(row.employeeCode).toUpperCase();
+    const workDate = dateOnly(row.workDate);
+    if (!code || !workDate) return;
+    const payable = num(row.regularHours) + num(row.ovtHours) > 0 || num(row.nightHours) > 0;
+    if (!payable || indexByDay.has(`${code}::${workDate}`)) return;
+    indexByDay.set(`${code}::${workDate}`, index);
+  });
+  for (const leave of leaveDays) {
+    const code = compact(leave.employeeCode).toUpperCase();
+    const workDate = dateOnly(leave.workDate);
+    if (!isContractCode(code) || !workDate) continue;
+    const key = `${code}::${workDate}`;
+    const existing = indexByDay.get(key);
+    if (existing != null) {
+      next[existing] = { ...next[existing], paidLeave: true };
+      continue;
+    }
+    indexByDay.set(key, next.length);
+    next.push({
+      employeeCode: code,
+      employeeName: compact(leave.employeeName),
+      workDate,
+      regularHours: STANDARD_TIMESHEET_HOURS,
+      ovtHours: 0,
+      nightHours: 0,
+      locationName: '',
+      paidLeave: true,
+    });
+  }
+  return next;
 };
 
 export type PortalProjectHourRow = {
@@ -126,6 +203,7 @@ export const aggregatePortalBookingsForPayroll = (
       publicHolidayHours: 0,
       nightDays: 0,
       nightHours: 0,
+      paidLeaveDays: 0,
       bookedHours: 0,
       weekdayOvertimeHours: 0,
       employeeNo: code,
@@ -135,7 +213,7 @@ export const aggregatePortalBookingsForPayroll = (
     const dayKey = `${code}::${workDate}`;
     const first = !seenDay.has(dayKey);
     if (first) seenDay.add(dayKey);
-    const kind = timesheetDayRulesForDate(workDate, holidayDates).kind;
+    const kind = timesheetDayRulesForDate(workDate, holidayDates, code).kind;
     const payable = booked > 0;
     if (first && payable && kind === 'PublicHoliday') {
       current.publicHolidayHours = round1((current.publicHolidayHours || 0) + booked);
@@ -149,8 +227,9 @@ export const aggregatePortalBookingsForPayroll = (
     } else if (first && payable && kind === 'Weekday') {
       current.weekdayDays = (current.weekdayDays || 0) + 1;
       current.daysWorked += 1;
+      if (row.paidLeave) current.paidLeaveDays = (current.paidLeaveDays || 0) + 1;
     }
-    if (kind === 'Weekday' && payable) {
+    if (kind === 'Weekday' && payable && !employeeTreatsCalendarDaysAsWorkedDays(code)) {
       let overtime = round1(Math.max(0, regular + ovt - STANDARD_TIMESHEET_HOURS));
       if (overtime <= 0.001 && first && regular > 0 && isOffshoreTimesheetContext(row.locationName, '')) overtime = OFFSHORE_ALLOWANCE_HOURS;
       current.weekdayOvertimeHours = round1((current.weekdayOvertimeHours || 0) + overtime);
@@ -178,7 +257,7 @@ export const loadPortalBookingsForPayrollPeriod = async (period: string) => {
     .input('Start', sql.Date, bounds.start)
     .input('End', sql.Date, bounds.end)
     .query(`
-      SELECT [EmployeeCode], [EmployeeName], [WorkDate], [RegularHours], [OvtHours], [NightHours], [LocationName]
+      SELECT [EmployeeCode], [EmployeeName], [WorkDate], [RegularHours], [OvtHours], [NightHours], [LocationName], [AttendanceStatus]
       FROM [tsmgmt].[Bookings]
       WHERE [EmployeeCode] LIKE N'C[0-9]%'
         AND [WorkDate] >= @Start AND [WorkDate] <= @End
@@ -192,8 +271,46 @@ export const loadPortalBookingsForPayrollPeriod = async (period: string) => {
     ovtHours: num(row.OvtHours),
     nightHours: num(row.NightHours),
     locationName: compact(row.LocationName),
+    paidLeave: /approved leave/i.test(compact(row.AttendanceStatus)),
   }));
-  return aggregatePortalBookingsForPayroll(rows, holidayDates);
+  let leaveDays: Array<{ employeeCode: string; employeeName: string; workDate: string }> = [];
+  try {
+    const leave = await pool.request()
+      .input('Start', sql.Date, bounds.start)
+      .input('End', sql.Date, bounds.end)
+      .query(`
+        SELECT
+          COALESCE(NULLIF(LTRIM(RTRIM(v.employee_code)), N''), leave.[EmployeeId]) AS EmployeeCode,
+          COALESCE(NULLIF(LTRIM(RTRIM(leave.[FullName])), N''), v.full_name, N'') AS EmployeeName,
+          CONVERT(varchar(10), leave.[StartDate], 23) AS StartDate,
+          CONVERT(varchar(10), leave.[EndDate], 23) AS EndDate
+        FROM [hris].[LeaveApplications] leave
+        LEFT JOIN [hris].[EmployeeMasterView] v
+          ON v.employee_code = leave.[EmployeeId]
+          OR CONVERT(nvarchar(80), v.employee_id) = leave.[EmployeeId]
+        WHERE leave.[EndDate] >= @Start
+          AND leave.[StartDate] <= @End
+          AND (
+            leave.[StatusName] LIKE N'%Approved%'
+            OR leave.[StatusName] IN (N'Completed', N'Paid')
+          )
+          AND leave.[LeaveType] NOT LIKE N'%Unpaid%'
+          AND leave.[LeaveType] NOT LIKE N'%Casual%'
+      `);
+    leaveDays = approvedLeaveBookingDays(
+      (leave.recordset || []).map((row) => ({
+        employeeCode: compact(row.EmployeeCode),
+        employeeName: compact(row.EmployeeName),
+        startDate: dateOnly(row.StartDate),
+        endDate: dateOnly(row.EndDate),
+      })),
+      bounds,
+      holidayDates,
+    );
+  } catch (error) {
+    console.warn('[Timesheet] Approved leave days were not added to payroll hours:', error instanceof Error ? error.message : error);
+  }
+  return aggregatePortalBookingsForPayroll(mergeUnbookedApprovedLeave(rows, leaveDays), holidayDates);
 };
 
 export const replaceContractHoursWithPortalFeed = (

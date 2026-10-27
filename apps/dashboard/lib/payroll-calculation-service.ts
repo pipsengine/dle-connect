@@ -27,6 +27,14 @@ import { normalizeBankSortCode, withNormalizedBankCodes } from '@/lib/payroll-ba
 import { isDleUsdMdEmployee, isDleUsdPayrollEmployee } from '@/lib/payroll-bank-schedule-packs';
 import { applyLockedPayrollPackage, applyLockedPayrollPackageToRecords } from '@/lib/locked-payroll-package';
 import { applySeptemberExcelNairaPackage, septemberExcelNairaPackageFor } from '@/lib/september-excel-naira-package';
+import {
+  applyGmOperationsGoalSeek,
+  applyGmOperationsGoalSeekToRecords,
+  GM_OPERATIONS_FALLBACK_FX,
+  gmOperationsGoalSeekApplies,
+} from '@/lib/gm-operations-goal-seek';
+import { applyNayakGoalSeek, applyNayakGoalSeekToRecords } from '@/lib/nayak-goal-seek';
+import { resolvePayrollRunUsdNgnRate } from '@/lib/payroll-run-fx';
 import { resolvePayCurrency } from '@/lib/payroll-currency';
 import { payrollPeriodLabel } from '@/lib/payroll-period-store';
 import { findPayrollScheduleScope, resolvePayrollCompany, type PayrollCompany } from '@/lib/payroll-schedule-scope';
@@ -792,15 +800,21 @@ export const buildPayrollCalculationFromSnapshot = async (period: string, snapsh
   const shell = await buildPayrollCalculationShell(period, { fromSnapshot: true, employeeCount: snapshot.records.length });
   const toleranceMode = shell.toleranceMode;
   await ensureSalaryScheduleOverrideLoaded(normalizePayrollPeriod(period) || period);
-  const records = applySalaryScheduleEmployerCost(
-    applySalaryScheduleCompanionPay(
-      reapplyPayrollValidationPolicy(
-        enrichCalculationRecordsWithReadiness(snapshot.records),
-        toleranceMode,
+  const payrollFx = await resolvePayrollRunUsdNgnRate(period).catch(() => null);
+  const goalSeekFx = Number(payrollFx?.rate) > 0 ? Number(payrollFx?.rate) : GM_OPERATIONS_FALLBACK_FX;
+  const records = applyNayakGoalSeekToRecords(
+    applySalaryScheduleEmployerCost(
+      applySalaryScheduleCompanionPay(
+        reapplyPayrollValidationPolicy(
+          enrichCalculationRecordsWithReadiness(snapshot.records),
+          toleranceMode,
+        ),
+        period,
       ),
       period,
     ),
     period,
+    goalSeekFx,
   );
   const summary = snapshotSummaryFromRecords(snapshot, records);
   const readiness = summarizePayrollReadiness(records);
@@ -965,10 +979,21 @@ const computePayrollForPeriod = async (requestedPeriod: string): Promise<Payroll
     return { ...base, ignoreHrisPackageLines: true as const };
   };
 
+  const payrollFx = await resolvePayrollRunUsdNgnRate(requestedPeriod).catch(() => null);
+  const goalSeekFx = Number(payrollFx?.rate) > 0 ? Number(payrollFx?.rate) : GM_OPERATIONS_FALLBACK_FX;
+
   const payrollEmployees = employeeSource.employees
     .filter((employee) => !isEmployeeExcludedFromPayrollRun(employee as PayrollRunExclusionEmployee))
     .filter((employee) => !employeeStartsAfterPayrollPeriod(employee, requestedPeriod))
-    .map((employee) => applySeptemberExcelNairaPackage(applyLockedPayrollPackage(employee, requestedPeriod), requestedPeriod));
+    .map((employee) => applyNayakGoalSeek(
+      applyGmOperationsGoalSeek(
+        applySeptemberExcelNairaPackage(applyLockedPayrollPackage(employee, requestedPeriod), requestedPeriod),
+        requestedPeriod,
+        goalSeekFx,
+      ),
+      requestedPeriod,
+      goalSeekFx,
+    ));
 
   type PayrollRunVariant = {
     runKey: string;
@@ -1081,9 +1106,12 @@ const computePayrollForPeriod = async (requestedPeriod: string): Promise<Payroll
         calculationEmployee.payeCalculation?.ngnMonthlyPayeOverride
           ?? employee.payeCalculation?.ngnMonthlyPayeOverride,
       );
-    const paye = variant.payCurrency === 'USD'
-      ? (Number.isFinite(usdPayeOverride) ? roundMoney(usdPayeOverride) : roundMoney(tax.monthlyPaye))
-      : (Number.isFinite(ngnPayeOverride) ? roundMoney(ngnPayeOverride) : tax.monthlyPaye);
+    const stipendEmployee = amounts.profileId === 'stipend-non-taxable';
+    const paye = stipendEmployee
+      ? 0
+      : variant.payCurrency === 'USD'
+        ? (Number.isFinite(usdPayeOverride) ? roundMoney(usdPayeOverride) : roundMoney(tax.monthlyPaye))
+        : (Number.isFinite(ngnPayeOverride) ? roundMoney(ngnPayeOverride) : tax.monthlyPaye);
     const usdRun = variant.payCurrency === 'USD';
     const paidLines = amounts.paidEarningLines || amounts.earningLines || [];
     // Housing on a dollar-only package can carry pension. Dual-currency staff already
@@ -1095,7 +1123,9 @@ const computePayrollForPeriod = async (requestedPeriod: string): Promise<Payroll
     // MD (2) deducts PAYE only. Pension stays off, the same way a USD package with no housing has no pension.
     const mdEmployee = isDleUsdMdEmployee(employee);
     const skipPension = dailyRateEmployee || !isPensionEligibleStaff(employee) || (usdRun && !usdHousingPension) || mdEmployee;
-    const statutoryPension = skipPension ? 0 : roundMoney(pension.employeeContribution);
+    // Goal Seek cash net is gross − PAYE (pension refund is tax-only in the HR sample).
+    const goalSeekEmployee = gmOperationsGoalSeekApplies(employee, requestedPeriod);
+    const statutoryPension = skipPension || goalSeekEmployee ? 0 : roundMoney(pension.employeeContribution);
     // Employee pension on the salary is the 8% only. Voluntary PENSION_EE2 is not deducted.
     const additionalPension = 0;
     const employeePension = roundMoney(statutoryPension + additionalPension);
@@ -1110,10 +1140,10 @@ const computePayrollForPeriod = async (requestedPeriod: string): Promise<Payroll
     const excelNaira = usdRun ? null : septemberExcelNairaPackageFor(employee, requestedPeriod);
     const excelOtherDeduction = roundMoney(excelNaira?.otherDeduction || 0);
     const otherDeductions = roundMoney(unionDues + otherStatutory + excelOtherDeduction);
-    const pensionExact = skipPension
+    const pensionExact = skipPension || goalSeekEmployee
       ? 0
       : Number(pension.unroundedEmployeeContribution || 0) + additionalPension;
-    const payeExact = dailyRateEmployee || Number.isFinite(usdPayeOverride) || Number.isFinite(ngnPayeOverride)
+    const payeExact = stipendEmployee || dailyRateEmployee || Number.isFinite(usdPayeOverride) || Number.isFinite(ngnPayeOverride)
       ? paye
       : Number(tax.monthlyPayeExact ?? paye);
     const exactDeductions = payeExact + pensionExact + statutoryEmployeeDeductions + loanRecovery + nhf + otherDeductions;
@@ -1121,13 +1151,13 @@ const computePayrollForPeriod = async (requestedPeriod: string): Promise<Payroll
     // Net is the 2-decimal result of gross minus the unrounded statutory amounts.
     // Rounding each deduction first, then subtracting, leaves a 1 kobo gap against the salary schedule.
     const netPay = roundMoney(Math.max(0, amounts.grossPay - exactDeductions));
+    // Goal Seek suppresses employee pension cash only; employer pension still posts when eligible.
     const employerPension = skipPension ? 0 : pension.employerContribution;
     const employerStatutory = skipFunds ? 0 : funds.employerCosts;
     const employerCost = dailyRateEmployee
       ? roundMoney(amounts.grossPay)
       : roundMoney(amounts.grossPay + employerPension + employerStatutory);
     const deductionRatio = amounts.grossPay > 0 ? roundMoney((totalDeductions / amounts.grossPay) * 100) : 0;
-    const stipendEmployee = amounts.profileId === 'stipend-non-taxable';
     const rates = dailyRateValues(employee, dailyRateEmployee);
     const timesheet = resolveTimesheetHoursForEmployee(employee, timesheetHours);
     const sheetRate = scheduleRow && Number(scheduleRow.excelDailyRate || 0) > 0 ? Number(scheduleRow.excelDailyRate) : 0;
@@ -1291,12 +1321,18 @@ const computePayrollForPeriod = async (requestedPeriod: string): Promise<Payroll
     });
   });
 
-  const records = applySalaryScheduleEmployerCost(
-    applyLockedPayrollPackageToRecords(
-      await applyApprovedFinalSettlementsToRecords(
-        applyDayrateScheduleOverrideToRecords(
-          applySalaryScheduleFallbackForMissingGross(
-            applySalaryScheduleOverrideToRecords(builtRecords, requestedPeriod),
+  const records = applyNayakGoalSeekToRecords(
+    applyGmOperationsGoalSeekToRecords(
+      applySalaryScheduleEmployerCost(
+        applyLockedPayrollPackageToRecords(
+          await applyApprovedFinalSettlementsToRecords(
+            applyDayrateScheduleOverrideToRecords(
+              applySalaryScheduleFallbackForMissingGross(
+                applySalaryScheduleOverrideToRecords(builtRecords, requestedPeriod),
+                requestedPeriod,
+              ),
+              requestedPeriod,
+            ),
             requestedPeriod,
           ),
           requestedPeriod,
@@ -1304,8 +1340,10 @@ const computePayrollForPeriod = async (requestedPeriod: string): Promise<Payroll
         requestedPeriod,
       ),
       requestedPeriod,
+      goalSeekFx,
     ),
     requestedPeriod,
+    goalSeekFx,
   );
 
   const summaryRecords = summaryPayrollRecords(records);

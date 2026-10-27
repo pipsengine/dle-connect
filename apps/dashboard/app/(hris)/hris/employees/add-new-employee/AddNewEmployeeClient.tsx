@@ -849,17 +849,27 @@ export default function AddNewEmployeeClient({ initialNow, initialDraftId, initi
         });
         setDraftId(res.meta.draftId);
         setDraftStatus(res.meta.status);
-        if (res.draft?.employment?.employmentType && res.draft?.employment?.employeeId) {
-          setCodePreview({
-            status: 'ready',
-            data: {
-              employeeCode: res.draft.employment.employeeId,
-              prefix: res.draft.employment.employeeId.replace(/[0-9].*$/, '') || '',
-              employeeType: res.draft.employment.employmentType,
-            },
-          });
-        } else if (res.draft?.employment?.employmentType) {
-          void requestNextEmployeeCode(res.draft.employment.employmentType);
+        if (res.draft?.employment?.employmentType) {
+          const reserved = String(res.draft.employment.employeeId || '').trim().toUpperCase();
+          if (!reserved) {
+            void requestNextEmployeeCode(res.draft.employment.employmentType);
+          } else {
+            try {
+              const preview = await apiCall<EmployeeCodePreviewResponse>(
+                `/api/hris/employees/employee-code/next?employeeType=${encodeURIComponent(res.draft.employment.employmentType)}`,
+                { method: 'GET', role },
+              );
+              if (cancelled) return;
+              if (String(preview.employeeCode || '').trim().toUpperCase() === reserved) {
+                setCodePreview({ status: 'ready', data: preview });
+              } else {
+                void requestNextEmployeeCode(res.draft.employment.employmentType);
+              }
+            } catch {
+              if (cancelled) return;
+              void requestNextEmployeeCode(res.draft.employment.employmentType);
+            }
+          }
         }
         setToast({ title: 'Draft loaded', detail: `Draft ${res.meta.draftId} loaded at ${nowStamp}`, tone: 'ok' });
       } catch (e) {

@@ -7,6 +7,20 @@ export const STANDARD_TIMESHEET_HOURS = 8;
 export const DAILY_BREAK_HOURS = 1;
 export const GROSS_TIMESHEET_HOURS = STANDARD_TIMESHEET_HOURS + DAILY_BREAK_HOURS;
 
+const namesMatch = (left?: string | null, right?: string | null) =>
+  String(left || '').trim().toLowerCase() === String(right || '').trim().toLowerCase();
+
+/** One booking row exists per employee/date/shift. An empty save must not wipe another supervisor's hours. */
+export const incomingBookingMayReplace = (input: {
+  incomingSupervisor?: string | null;
+  existingSupervisor?: string | null;
+  incomingHours?: number | null;
+  existingHours?: number | null;
+}) => {
+  if (namesMatch(input.incomingSupervisor, input.existingSupervisor)) return true;
+  return Number(input.existingHours || 0) <= 0 && Number(input.incomingHours || 0) > 0;
+};
+
 /** Day-rate / C-code staff. Biometric hours must not cap their timesheet until all devices are live. */
 export const isDayRateTimesheetEmployeeCode = (code?: string | null) =>
   /^C\d+/i.test(String(code || '').trim());
@@ -512,13 +526,22 @@ export type TimesheetDayContext = {
   locationName?: string;
 };
 
-export const timesheetDayRulesForDate = (date: string, holidayDates: string[] = []): TimesheetDayRules => {
+/** These C-codes treat Saturday, Sunday, and public holidays as ordinary worked DAYS. No overtime. */
+export const CALENDAR_WORKED_DAY_EMPLOYEE_CODES = new Set(['C2832']);
+
+export const employeeTreatsCalendarDaysAsWorkedDays = (employeeCode?: string | null) =>
+  CALENDAR_WORKED_DAY_EMPLOYEE_CODES.has(String(employeeCode || '').trim().toUpperCase());
+
+export const timesheetDayRulesForDate = (date: string, holidayDates: string[] = [], employeeCode?: string | null): TimesheetDayRules => {
   const holidays = new Set(holidayDates);
   const standardDay = {
     standardProductiveHours: STANDARD_TIMESHEET_HOURS,
     grossHours: GROSS_TIMESHEET_HOURS,
     isReducedDay: false,
   };
+  if (employeeTreatsCalendarDaysAsWorkedDays(employeeCode)) {
+    return { kind: 'Weekday', ...standardDay };
+  }
   if (holidays.has(date)) {
     return { kind: 'PublicHoliday', ...standardDay };
   }
@@ -1286,11 +1309,13 @@ const bookedLineHours = (line: { usedHours?: number | null; totalHours?: number 
 
 /** Weekday OT hours that payroll WEEKDAYOVT should pay from a timesheet line. */
 export const weekdayOvertimeHoursFromLine = (
-  line: { usedHours?: number | null; offshoreAllowanceHours?: number | null },
+  line: { usedHours?: number | null; offshoreAllowanceHours?: number | null; employeeNo?: string | null; employeeCode?: string | null },
   timesheetDate: string,
   holidayDates: string[] = [],
 ) => {
-  if (timesheetDayRulesForDate(timesheetDate, holidayDates).kind !== 'Weekday') return 0;
+  const employeeCode = line.employeeCode || line.employeeNo;
+  if (employeeTreatsCalendarDaysAsWorkedDays(employeeCode)) return 0;
+  if (timesheetDayRulesForDate(timesheetDate, holidayDates, employeeCode).kind !== 'Weekday') return 0;
   const used = Number(line.usedHours || 0);
   const fromUsed = round1(Math.max(0, used - STANDARD_TIMESHEET_HOURS));
   if (fromUsed > 0.001) return fromUsed;
@@ -1299,14 +1324,16 @@ export const weekdayOvertimeHoursFromLine = (
 
 /** Saturday / Sunday / public-holiday hours. PH beats weekend (PUBHOL 2×, not SATEARN). */
 export const premiumHoursFromTimesheetLine = (
-  line: { usedHours?: number | null; totalHours?: number | null; attendanceDuration?: number | null },
+  line: { usedHours?: number | null; totalHours?: number | null; attendanceDuration?: number | null; employeeNo?: string | null; employeeCode?: string | null },
   timesheetDate: string,
   holidayDates: string[] = [],
 ): { saturdayHours: number; sundayHours: number; publicHolidayHours: number } => {
   const hours = bookedLineHours(line);
   const empty = { saturdayHours: 0, sundayHours: 0, publicHolidayHours: 0 };
   if (hours <= 0) return empty;
-  const kind = timesheetDayRulesForDate(timesheetDate, holidayDates).kind;
+  const employeeCode = line.employeeCode || line.employeeNo;
+  if (employeeTreatsCalendarDaysAsWorkedDays(employeeCode)) return empty;
+  const kind = timesheetDayRulesForDate(timesheetDate, holidayDates, employeeCode).kind;
   if (kind === 'PublicHoliday') return { saturdayHours: 0, sundayHours: 0, publicHolidayHours: hours };
   if (kind === 'Saturday') return { saturdayHours: hours, sundayHours: 0, publicHolidayHours: 0 };
   if (kind === 'Sunday') return { saturdayHours: 0, sundayHours: hours, publicHolidayHours: 0 };

@@ -5,6 +5,7 @@ import { AUTH_COOKIE, verifySessionToken } from '@/lib/auth/session';
 import {
   isPayrollActingFinanceManager,
   isPayrollNamedCfo,
+  isPayrollNamedHrManager,
   isPayrollNamedMdCeo,
 } from '@/lib/payroll-acting-approvers';
 import { payrollApprovalPermissions } from '@/lib/payroll-approval-workflow';
@@ -36,8 +37,10 @@ const cookieValue = (request: Request, name: string) => {
 
 export const roleFromSession = (session: Awaited<ReturnType<typeof verifySessionToken>>, fallback?: string): PayrollSessionRole => {
   const text = `${session?.roles?.join(' ') || ''} ${session?.permissions?.join(' ') || ''} ${fallback || ''}`;
-  if (session?.isGlobalAdmin || /super administrator|global super|super admin|\*/i.test(text)) return 'Super Admin';
+  const unrestricted = session?.isGlobalAdmin || (session?.permissions || []).some((item) => String(item || '').trim() === '*');
+  if (unrestricted || /super administrator|global super|super admin/i.test(text)) return 'Super Admin';
   if (/system administrator/i.test(text)) return 'System Administrator';
+  if (isPayrollNamedHrManager(session?.employeeCode, session?.username)) return 'HR Manager';
   if (/payroll supervisor/i.test(text)) return 'Payroll Supervisor';
   if (/payroll officer|payroll administrator/i.test(text)) return 'Payroll Officer';
   // Named stage owners (job-title incumbents) before generic role title matches.

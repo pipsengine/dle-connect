@@ -571,13 +571,23 @@ BEGIN
   BEGIN TRANSACTION;
 
   DECLARE @latestExisting int = 0;
-  SELECT @latestExisting = ISNULL(MAX(TRY_CONVERT(int, SUBSTRING(UPPER(LTRIM(RTRIM(employee_code))), 2, 20))), 0)
-  FROM [hris].[Employees] WITH (UPDLOCK, HOLDLOCK)
-  WHERE UPPER(LTRIM(RTRIM(employee_code))) LIKE @typeCode + '[0-9]%'
-    AND TRY_CONVERT(int, SUBSTRING(UPPER(LTRIM(RTRIM(employee_code))), 2, 20)) IS NOT NULL;
+  SELECT @latestExisting = ISNULL(MAX(seq_no), 0)
+  FROM (
+    SELECT TRY_CONVERT(int, SUBSTRING(UPPER(LTRIM(RTRIM(employee_code))), 2, 20)) AS seq_no
+    FROM [hris].[Employees] WITH (UPDLOCK, HOLDLOCK)
+    WHERE UPPER(LTRIM(RTRIM(employee_code))) LIKE @typeCode + '[0-9]%'
+      AND TRY_CONVERT(int, SUBSTRING(UPPER(LTRIM(RTRIM(employee_code))), 2, 20)) IS NOT NULL
+    UNION ALL
+    SELECT TRY_CONVERT(int, SUBSTRING(UPPER(LTRIM(RTRIM(employee_code))), 2, 20))
+    FROM [hris].[EmployeeDrafts] WITH (UPDLOCK, HOLDLOCK)
+    WHERE employee_code IS NOT NULL
+      AND draft_status NOT IN ('cancelled', 'created')
+      AND UPPER(LTRIM(RTRIM(employee_code))) LIKE @typeCode + '[0-9]%'
+      AND TRY_CONVERT(int, SUBSTRING(UPPER(LTRIM(RTRIM(employee_code))), 2, 20)) IS NOT NULL
+  ) codes;
 
   UPDATE [hris].[EmployeeCodeCounters] WITH (UPDLOCK, HOLDLOCK)
-  SET last_sequence = CASE WHEN last_sequence < @latestExisting THEN @latestExisting + 1 ELSE last_sequence + 1 END,
+  SET last_sequence = @latestExisting,
       modified_at = SYSUTCDATETIME(),
       modified_by = SUSER_SNAME()
   WHERE employee_type_code = @typeCode;
@@ -585,13 +595,10 @@ BEGIN
   IF @@ROWCOUNT = 0
   BEGIN
     INSERT [hris].[EmployeeCodeCounters](employee_type_code, employee_type_name, last_sequence)
-    VALUES (@typeCode, @EmployeeTypeName, @latestExisting + 1);
+    VALUES (@typeCode, @EmployeeTypeName, @latestExisting);
   END;
 
-  DECLARE @seq int;
-  SELECT @seq = last_sequence
-  FROM [hris].[EmployeeCodeCounters]
-  WHERE employee_type_code = @typeCode;
+  DECLARE @seq int = @latestExisting + 1;
 
   -- Keep at least 4 digits, but never truncate sequences past 9999.
   SELECT @EmployeeCode = @typeCode + RIGHT(REPLICATE('0', 8) + CONVERT(varchar(20), @seq),

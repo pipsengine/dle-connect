@@ -1,7 +1,7 @@
 'use client';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { AnchoredMenu, Badge, Button, DetailModal, Field, Modal, Table } from '../components/UI';
-import { timesheetCrewMatchesWorkCenter, timesheetLocationsMatch } from '@/lib/timesheet-agege-blasting';
+import { timesheetCrewMatchesLocation, timesheetCrewMatchesWorkCenter } from '@/lib/timesheet-agege-blasting';
 import { formatDisplayDate, usePortalData } from '../portal-data';
 
 const emptyLine = (employee) => ({
@@ -146,7 +146,9 @@ export default function Entry({ setPage }) {
         allocations: onLeave ? [{ projectCode: 'DL1949', projectName: 'IDLE TIME', kind: 'Project', regularHours: expected, ovtHours: 0, comment: 'Approved paid leave' }] : [],
       });
     })
-    : lines.filter((line) => (!location || timesheetLocationsMatch(line.location, location)) && timesheetCrewMatchesWorkCenter(line.workCenter, workCenter))
+    : location
+      ? lines.filter((line) => timesheetCrewMatchesLocation(line.location, location, supervisor?.location) && timesheetCrewMatchesWorkCenter(line.workCenter, workCenter))
+      : []
   ).filter((line) => /^(C|P)\d/i.test(line.employeeCode || ''));
   const employeeNeedle = employeeQuery.trim().toLowerCase();
   const shown = employeeNeedle
@@ -404,7 +406,7 @@ export default function Entry({ setPage }) {
           })}<td>{nightRegular}</td><td>{nightOvt}</td><td>{`${line.nightStart || context?.settings?.nightStart || '18:00'}–${line.nightEnd || ''}`}</td><td>{nightRegular + nightOvt}</td><td>{expected}</td><td className={nightUnallocated ? 'red' : ''}>{nightUnallocated}</td><td><Badge tone={nightStatus === 'Balanced' ? 'green' : 'amber'}>{nightStatus}</Badge></td></tr>}
           </React.Fragment>;
         })}
-        {!loading && !shown.length && <tr><td colSpan={8 + columns.length}>{employeeNeedle ? 'No employee matches that search.' : supervisor ? 'No eligible crew for this supervisor on the selected date.' : 'Search for a supervisor to load the crew.'}</td></tr>}
+        {!loading && !shown.length && <tr><td colSpan={8 + columns.length}>{employeeNeedle ? 'No employee matches that search.' : !location ? 'Select a location to display the crew.' : supervisor ? 'No eligible crew for this supervisor at the selected location.' : 'Search for a supervisor to load the crew.'}</td></tr>}
       </tbody></table></div></div>
     </>}
     {modal === 'project' && <SearchModal title="Add project" kind="project" onClose={() => setModal(null)} onPick={addColumn} />}

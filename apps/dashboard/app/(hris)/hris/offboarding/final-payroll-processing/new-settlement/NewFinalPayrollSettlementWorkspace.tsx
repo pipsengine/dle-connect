@@ -14,12 +14,12 @@ import {
   Search,
   Send,
 } from 'lucide-react';
+import FinalEntitlementSheetView from '../FinalEntitlementSheetView';
 import type { FinalPayrollSettlement } from '@/lib/final-payroll-settlement-shared';
 import {
+  finalPayrollSettlementEditable,
   formatFinalPayrollDate,
   formatFinalPayrollMoney,
-  isFinalPayrollEditableDeduction,
-  isFinalPayrollEditableEarning,
   mergeGrossSalaryEarnings,
   parseFinalPayrollAmountInput,
   sumIncludedLines,
@@ -269,9 +269,20 @@ export default function NewFinalPayrollSettlementWorkspace({
     return () => clearTimeout(handle);
   }, [query]);
 
+  const settlementLocked = Boolean(
+    persisted && settlement && !finalPayrollSettlementEditable(settlement.status),
+  );
+  const submitLabel = settlement?.status && settlement.status !== 'Draft'
+    ? 'Resubmit for Approval'
+    : 'Submit for Approval';
+
   const persistSettlement = async (action: 'save' | 'submit') => {
     if (!settlement) {
       setError('Select an employee first.');
+      return;
+    }
+    if (settlementLocked) {
+      setError('This settlement is already approved and cannot be edited or resubmitted.');
       return;
     }
     setBusy(true);
@@ -280,6 +291,7 @@ export default function NewFinalPayrollSettlementWorkspace({
     try {
       const editedEarnings = mergeGrossSalaryEarnings(settlement.earnings || []);
       const editedDeductions = settlement.deductions || [];
+      const editedStatutory = settlement.statutory || [];
       let current = settlement;
       if (!persisted || isPreviewId(settlement.id)) {
         const createRes = await fetch('/api/hris/offboarding/final-payroll', {
@@ -317,6 +329,7 @@ export default function NewFinalPayrollSettlementWorkspace({
             remarks,
             earnings: editedEarnings,
             deductions: editedDeductions,
+            statutory: editedStatutory,
           },
         }),
       });
@@ -332,7 +345,7 @@ export default function NewFinalPayrollSettlementWorkspace({
         router.push(`/hris/offboarding/final-payroll-processing?period=${encodeURIComponent(data.settlement.period)}`);
         return;
       }
-      setMessage('Draft saved.');
+      setMessage(current.status === 'Draft' || data.settlement?.status === 'Draft' ? 'Draft saved.' : 'Changes saved.');
     } catch (err: any) {
       setError(err?.message || 'Unable to save settlement.');
     } finally {
@@ -343,6 +356,10 @@ export default function NewFinalPayrollSettlementWorkspace({
   const recalculate = async () => {
     if (!settlement) {
       setError('Select an employee first.');
+      return;
+    }
+    if (settlementLocked) {
+      setError('This settlement is already approved and cannot be recalculated.');
       return;
     }
     setBusy(true);
@@ -397,7 +414,7 @@ export default function NewFinalPayrollSettlementWorkspace({
     }
   };
 
-  const updateLineAmount = (kind: 'earnings' | 'deductions', lineId: string, raw: string) => {
+  const updateLineAmount = (kind: 'earnings' | 'deductions' | 'statutory', lineId: string, raw: string) => {
     const amount = parseFinalPayrollAmountInput(raw);
     setSettlement((current) => {
       if (!current) return current;
@@ -434,21 +451,27 @@ export default function NewFinalPayrollSettlementWorkspace({
           <div>
             <h1>New Final Payroll Settlement</h1>
             <p>
-              {fromResignation || initialResignationId
-                ? 'Settlement opened from a resignation case — review calculation, then submit to the HR Manager.'
-                : 'Calculate and submit to the HR Manager. Approval posts this as that month’s payroll and deactivates the employee afterwards.'}
+              {settlementLocked
+                ? 'This settlement is approved. The amounts are locked and cannot be edited or resubmitted.'
+                : settlement?.status === 'Draft'
+                  ? 'This settlement is still a draft. Change the amounts, save, then submit it to the HR Manager.'
+                  : settlement?.status === 'Exception'
+                    ? 'This settlement was returned. Change the amounts, then resubmit it to the HR Manager.'
+                    : fromResignation || initialResignationId
+                      ? 'Settlement opened from a resignation case — review calculation, then submit to the HR Manager.'
+                      : 'Calculate and submit to the HR Manager. Approval posts this as that month’s payroll and deactivates the employee afterwards.'}
             </p>
           </div>
         </div>
         <div className={styles.actions}>
-          <button type="button" disabled={busy || !settlement} onClick={() => void persistSettlement('save')}>
-            <Save /> Save as Draft
+          <button type="button" disabled={busy || !settlement || settlementLocked} onClick={() => void persistSettlement('save')}>
+            <Save /> {settlement?.status && settlement.status !== 'Draft' ? 'Save changes' : 'Save as Draft'}
           </button>
           <button type="button" disabled={busy || !settlement} onClick={() => setStep(6)}>
             <Eye /> Preview
           </button>
-          <button type="button" className={styles.primary} disabled={busy || !settlement} onClick={() => void persistSettlement('submit')}>
-            <Send /> Submit for Approval
+          <button type="button" className={styles.primary} disabled={busy || !settlement || settlementLocked} onClick={() => void persistSettlement('submit')}>
+            <Send /> {submitLabel}
           </button>
         </div>
       </div>
@@ -685,13 +708,13 @@ export default function NewFinalPayrollSettlementWorkspace({
                 </h2>
                 <p>
                   {earningsTab === 'Earnings & Terminal Benefits'
-                    ? 'Includes prorated salary plus terminal benefits (gratuity, leave encashment, notice/severance where due).'
+                    ? 'Includes prorated salary earned to the last working day, leave allowance (if not already paid), and gratuity where due.'
                     : earningsTab === 'Deductions & Recoveries'
-                      ? 'Includes notice period recovery and other exit recoveries.'
-                      : 'Amounts are calculated from the employee salary package.'}
+                      ? 'Includes unearned leave-allowance recovery, loans, and notice period recovery.'
+                      : 'PAYE, pension, union dues, and NHF calculated from the employee salary package.'}
                 </p>
               </div>
-              <button type="button" disabled={busy || !settlement} onClick={() => void recalculate()}>
+              <button type="button" disabled={busy || !settlement || settlementLocked} onClick={() => void recalculate()}>
                 <RefreshCw /> Recalculate
               </button>
             </div>
@@ -706,11 +729,16 @@ export default function NewFinalPayrollSettlementWorkspace({
                 </thead>
                 <tbody>
                   {activeLines.map((line, index) => {
-                    const editable = earningsTab === 'Earnings & Terminal Benefits'
-                      ? isFinalPayrollEditableEarning(line.id)
-                      : earningsTab === 'Deductions & Recoveries'
-                        ? isFinalPayrollEditableDeduction(line.id)
-                        : false;
+                    const lineKind = earningsTab === 'Deductions & Recoveries'
+                      ? 'deductions'
+                      : earningsTab === 'Statutory Deductions'
+                        ? 'statutory'
+                        : 'earnings';
+                    const editable = !settlementLocked && (
+                      earningsTab === 'Earnings & Terminal Benefits'
+                      || earningsTab === 'Deductions & Recoveries'
+                      || earningsTab === 'Statutory Deductions'
+                    );
                     return (
                     <tr key={line.id}>
                       <td>{index + 1}</td>
@@ -728,11 +756,7 @@ export default function NewFinalPayrollSettlementWorkspace({
                               step={settlement.currency === 'USD' ? '0.01' : '1'}
                               value={Number(line.amount || 0)}
                               disabled={busy}
-                              onChange={(event) => updateLineAmount(
-                                earningsTab === 'Deductions & Recoveries' ? 'deductions' : 'earnings',
-                                line.id,
-                                event.target.value,
-                              )}
+                              onChange={(event) => updateLineAmount(lineKind, line.id, event.target.value)}
                             />
                           </label>
                         ) : (
@@ -761,6 +785,8 @@ export default function NewFinalPayrollSettlementWorkspace({
         )}
       </section>
 
+      {settlement ? <FinalEntitlementSheetView settlement={settlement} /> : null}
+
       <div className={styles.footerActions}>
         <button type="button" disabled={step === 0} onClick={() => setStep((value) => Math.max(0, value - 1))}>
           Back
@@ -768,12 +794,13 @@ export default function NewFinalPayrollSettlementWorkspace({
         <button
           type="button"
           className={styles.primary}
+          disabled={settlementLocked && step >= STEPS.length - 1}
           onClick={() => {
             if (step >= STEPS.length - 1) void persistSettlement('submit');
             else setStep((value) => Math.min(STEPS.length - 1, value + 1));
           }}
         >
-          {step >= STEPS.length - 1 ? 'Submit for Approval' : 'Next Step'}
+          {step >= STEPS.length - 1 ? submitLabel : 'Next Step'}
         </button>
       </div>
     </div>

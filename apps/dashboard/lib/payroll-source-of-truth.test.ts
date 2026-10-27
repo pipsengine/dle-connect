@@ -321,6 +321,29 @@ assert.equal(permanentVariablePay.paidEarningLines.find((line) => line.code === 
 const permanentVariableNext = calculatePayrollEarnings(permanentVariable, { useHrisPackageLines: true, period: '2026-10' });
 assert.equal(permanentVariableNext.paidEarningLines.some((line) => line.code === 'OVERTIME'), false, 'permanent overtime earning line must not roll into the next period');
 
+const firstMonth = employee({
+  employeeCode: 'P0468',
+  employeeId: 'P0468',
+  employmentType: 'Permanent',
+  salaryGrade: 'MGT7',
+  dateJoined: '2026-10-19',
+  periodSalary: 2357715.59,
+  basicSalary: 589428.90,
+  sagePayrollEarnings: [
+    { code: 'BASIC', name: 'BASIC SALARY', amount: 589428.90, runFrequency: 'monthly', sourceAmount: 589428.90, includeInMonthlyPayroll: true },
+    { code: 'HOUSING', name: 'HOUSING', amount: 471543.12, runFrequency: 'monthly', sourceAmount: 471543.12, includeInMonthlyPayroll: true },
+    { code: 'OTHERALL', name: 'OTHER ALLOWANCE', amount: 683737.52, runFrequency: 'monthly', sourceAmount: 683737.52, includeInMonthlyPayroll: true },
+    { code: 'TRANSPORT', name: 'TRANSPORT ALLOWANCE', amount: 353657.34, runFrequency: 'monthly', sourceAmount: 353657.34, includeInMonthlyPayroll: true },
+    { code: 'FURNITURE', name: 'FURNITURE', amount: 94308.62, runFrequency: 'monthly', sourceAmount: 94308.62, includeInMonthlyPayroll: true },
+    { code: 'UTILITY', name: 'UTILITIES', amount: 91243.59, runFrequency: 'monthly', sourceAmount: 91243.59, includeInMonthlyPayroll: true },
+  ],
+});
+const octoberJoin = calculatePayrollEarnings(firstMonth, { useHrisPackageLines: true, period: '2026-10' });
+assert.equal(octoberJoin.grossPay, 957772.53, '19 October start pays 13 of 31 days');
+assert.equal(octoberJoin.paidEarningLines.find((line) => line.code === 'BASIC')?.amount, 247179.86);
+const novemberFull = calculatePayrollEarnings(firstMonth, { useHrisPackageLines: true, period: '2026-11' });
+assert.equal(novemberFull.grossPay, 2283919.09, 'November after an October start is the full package');
+
 const hours = new Map<string, { daysWorked: number; bookedHours: number }>([
   ['C0100', { daysWorked: 10, bookedHours: 80 }],
 ]);
@@ -384,6 +407,44 @@ const nyscSageCode = employee({
 const nyscSagePay = calculatePayrollEarnings(nyscSageCode, { useHrisPackageLines: true, period: '2026-09' });
 assert.equal(nyscSagePay.grossPay, 150000, 'Sage NYSC_ALLOWANCE must not stack on STIPEND_NT');
 assert.equal(nyscSagePay.paidEarningLines.length, 1);
+
+const israelBasic = employee({
+  employeeCode: 'IT0131',
+  employeeId: 'IT0131',
+  employmentType: 'Industrial Trainee',
+  dateJoined: '2026-10-02',
+  periodSalary: 100000,
+  basicSalary: 100000,
+  sagePayrollEarnings: [
+    { code: 'BASIC', name: 'Basic Salary', amount: 100000, taxableAmount: 100000, runFrequency: 'monthly', sourceAmount: 100000, includeInMonthlyPayroll: true },
+  ],
+});
+const israelOctober = calculatePayrollEarnings(israelBasic, { useHrisPackageLines: true, period: '2026-10' });
+assert.equal(israelOctober.paidEarningLines.length, 1, 'IT basic salary must not stack on the stipend');
+assert.equal(israelOctober.paidEarningLines[0]?.name, 'IT ALLOWANCE');
+assert.equal(israelOctober.paidEarningLines[0]?.taxable, false);
+assert.equal(israelOctober.grossPay, 100000, 'IT stipend is not cut or taxed in the joining month');
+assert.equal(israelOctober.taxablePay, 0);
+const israelNovember = calculatePayrollEarnings(israelBasic, { useHrisPackageLines: true, period: '2026-11' });
+assert.equal(israelNovember.grossPay, 100000, 'November after an October IT start is the full stipend');
+assert.equal(israelNovember.paidEarningLines[0]?.name, 'IT ALLOWANCE');
+
+const clementinaBasic = employee({
+  employeeCode: 'NYSC0041',
+  employeeId: 'NYSC0041',
+  employmentType: 'NYSC',
+  dateJoined: '2026-10-13',
+  periodSalary: 150000,
+  basicSalary: 150000,
+  sagePayrollEarnings: [
+    { code: 'BASIC', name: 'Basic Salary', amount: 150000, taxableAmount: 0, runFrequency: 'monthly', sourceAmount: 150000, includeInMonthlyPayroll: true },
+  ],
+});
+const clementinaOctober = calculatePayrollEarnings(clementinaBasic, { useHrisPackageLines: true, period: '2026-10' });
+assert.equal(clementinaOctober.paidEarningLines.length, 1, 'NYSC basic salary must not stack on the stipend');
+assert.equal(clementinaOctober.paidEarningLines[0]?.name, 'NYSC ALLOWANCE');
+assert.equal(clementinaOctober.grossPay, 150000, 'NYSC stipend is not cut or taxed in the joining month');
+assert.equal(clementinaOctober.taxablePay, 0);
 assert.equal(nyscSagePay.paidEarningLines[0]?.code, 'STIPEND_NT');
 assert.equal(nyscSagePay.paidEarningLines[0]?.amount, 150000);
 assert.equal(nyscSagePay.paidEarningLines[0]?.taxable, false);
@@ -463,6 +524,40 @@ assert.equal(
   'stored August leave allowance must not pay again from the standing package',
 );
 assert.equal(permanentLeavePay.grossPay, 300000);
+
+const periodLeavePackage = employee({
+  employeeCode: 'P0279',
+  employeeId: 'P0279',
+  employmentType: 'Permanent',
+  salaryGrade: 'SNR',
+  periodSalary: 500000,
+  sagePayrollEarnings: [
+    { code: 'SNR_BASIC', name: 'BASIC SALARY', amount: 200000, runFrequency: 'monthly', sourceAmount: 200000, includeInMonthlyPayroll: true },
+    { code: 'SNR_HOUSE', name: 'HOUSING', amount: 100000, runFrequency: 'monthly', sourceAmount: 100000, includeInMonthlyPayroll: true },
+    { code: 'LEAVEALLOWANCE', name: 'Leave Allowance', amount: 182680.63, runFrequency: 'one-off', sourceAmount: 182680.63, includeInMonthlyPayroll: false, payrollPeriod: '2026-10' },
+  ],
+});
+const octoberLeavePay = calculatePayrollEarnings(periodLeavePackage, {
+  useHrisPackageLines: true,
+  includePeriodAdjustments: true,
+  period: '2026-10',
+});
+assert.equal(
+  octoberLeavePay.paidEarningLines.find((line) => /LEAVEALLOW/i.test(line.code))?.amount,
+  182680.63,
+  'leave allowance stamped on the payroll profile must pay in that period',
+);
+const otherPeriodLeavePay = calculatePayrollEarnings(periodLeavePackage, {
+  useHrisPackageLines: true,
+  includePeriodAdjustments: true,
+  period: '2026-09',
+});
+assert.equal(
+  otherPeriodLeavePay.paidEarningLines.some((line) => /LEAVEALLOW/i.test(line.code)),
+  false,
+  'October leave allowance must not pay in September',
+);
+assert.equal(otherPeriodLeavePay.grossPay, 300000);
 
 const lumpsumTcmMeal = employee({
   employeeCode: 'L1687',
@@ -661,7 +756,81 @@ assert.equal(sheetMealAndTcm.paidEarningLines.find((line) => line.code === 'MEAL
 assert.equal(sheetMealAndTcm.paidEarningLines.find((line) => line.code === 'TCMMEAL')?.amount, 50000, 'sheet TCM meal stays beside meal allowance');
 assert.equal(sheetMealAndTcm.grossPay, 284000, 'sheet meal and TCM meal both count in gross');
 
+const profileTransport = (code: string, amount: number, configured: boolean) => employee({
+  employeeCode: code,
+  employeeId: code,
+  employmentType: 'Daily Rate',
+  ratePerDay: 14050,
+  hoursPerDay: 8,
+  sagePayrollEarnings: [{
+    code: 'TRANSPORT',
+    name: 'Transport',
+    amount,
+    ...(configured ? { sourceAmount: amount, runFrequency: 'monthly' as const, includeInMonthlyPayroll: true } : {}),
+  }],
+});
+const scheduleFor = (code: string, transport: number, period: string) => {
+  primeDayrateScheduleOverrideCache(period, {
+    period,
+    fileName: 'dayrate.xlsx',
+    title: 'Dayrate',
+    appliedAt: `${period}-01`,
+    appliedBy: 'test',
+    rows: [{
+      ...excelRow,
+      employeeCode: code,
+      excelDailyRate: 14050,
+      weekdayDays: 21,
+      transport,
+      excelGross: 295050,
+      excelNet: 280297.5,
+    }],
+    skipped: [],
+    sheets: [],
+  });
+};
+
+scheduleFor('C2383', 0, '2026-10');
+const oyewoleWithout = mergeTimesheetDayRateEarnings(employee({
+  employeeCode: 'C2383',
+  employeeId: 'C2383',
+  employmentType: 'Daily Rate',
+  ratePerDay: 14050,
+  hoursPerDay: 8,
+}), { ratePerDay: 14050, daysWorked: 21, period: '2026-10' });
+const oyewole = mergeTimesheetDayRateEarnings(profileTransport('C2383', 40000, true), {
+  ratePerDay: 14050,
+  daysWorked: 21,
+  period: '2026-10',
+});
+assert.equal(oyewole.paidEarningLines.find((line) => line.code === 'TRANSPORT')?.amount, 40000, 'C2383 payroll profile transport pays in October');
+assert.equal(oyewole.grossPay, oyewoleWithout.grossPay + 40000);
+const oyewoleSnapshot = mergeTimesheetDayRateEarnings(profileTransport('C2383', 40000, false), {
+  ratePerDay: 14050,
+  daysWorked: 21,
+  period: '2026-10',
+});
+assert.equal(oyewoleSnapshot.grossPay, oyewoleWithout.grossPay, 'an unstamped transport snapshot must not pay');
+
+scheduleFor('C2088', 56000, '2026-09');
+const rabiu = mergeTimesheetDayRateEarnings(profileTransport('C2088', 40000, true), {
+  ratePerDay: 13150,
+  daysWorked: 21,
+  period: '2026-09',
+});
+assert.equal(rabiu.paidEarningLines.find((line) => line.code === 'TRANSPORT')?.amount, 56000, 'a stated schedule transport amount stays the transport pay');
+assert.equal(rabiu.paidEarningLines.filter((line) => line.code === 'TRANSPORT').length, 1);
+
+scheduleFor('C2088', 0, '2026-09');
+const rabiuBlankSheet = mergeTimesheetDayRateEarnings(profileTransport('C2088', 40000, true), {
+  ratePerDay: 13150,
+  daysWorked: 21,
+  period: '2026-09',
+});
+assert.equal(rabiuBlankSheet.paidEarningLines.find((line) => line.code === 'TRANSPORT')?.amount, 40000, 'blank schedule transport keeps the payroll profile amount');
+
 clearPrimedDayrateScheduleOverrideCache('2026-08');
 clearPrimedDayrateScheduleOverrideCache('2026-09');
+clearPrimedDayrateScheduleOverrideCache('2026-10');
 
 console.log('payroll-source-of-truth tests passed');

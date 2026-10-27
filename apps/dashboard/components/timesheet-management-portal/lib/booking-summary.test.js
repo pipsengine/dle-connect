@@ -40,6 +40,19 @@ const bookings = [
     status: 'Submitted',
   },
   { ...day('C0293', '2026-09-19', 8), attendanceStatus: 'Approved Leave' },
+  day('C2492', '2026-09-27', 6, 5, 1),
+  day('C3001', '2026-10-02', 8, 0, 1),
+  {
+    employeeCode: 'C3001',
+    employeeName: 'C3001',
+    workDate: '2026-10-02',
+    shift: 'Night',
+    regularHours: 6,
+    ovtHours: 1,
+    nightHours: 1,
+    attendanceStatus: '',
+    status: 'Submitted',
+  },
 ];
 
 const chukwudumebi = row('C1607');
@@ -57,7 +70,7 @@ assert.equal(julius.phHours, 6);
 assert.equal(julius.phOvt, 2);
 assert.equal(julius.days.size, 1, 'Saturday, Sunday, and the public holiday are not worked days');
 assert.equal(julius.night, 3, 'night sessions are dates, not a sum of the flag');
-assert.equal(julius.nightHours, 0, 'the night flag is not hours');
+assert.equal(julius.nightHours, 35, 'a night session uses the hours booked that night');
 assert.equal(julius.status, 'Exception');
 
 const fullDays = row('C2221');
@@ -74,5 +87,31 @@ assert.equal(nightHoliday.nightHours, 6);
 assert.equal(nightHoliday.status, 'Exception');
 
 assert.equal(row('C0293'), undefined, 'approved leave on Saturday is not a booked day');
+
+const timothy = row('C2492');
+assert.equal(timothy.sundayHours, 6);
+assert.equal(timothy.sundayOvt, 5);
+assert.equal(timothy.night, 1);
+assert.equal(timothy.nightHours, 11, 'Sunday night hours are the 6 regular plus 5 overtime booked that night');
+
+const both = row('C3001');
+assert.equal(both.weekdayHours, 8);
+assert.equal(both.night, 1);
+assert.equal(both.nightHours, 7, 'Night-shift hours are kept when that shift has its own booking');
+
+const vincent = buildBookingSummary([
+  day('C2832', '2026-09-30', 8),
+  day('C2832', '2026-10-01', 8),
+  day('C2832', '2026-10-03', 8),
+  day('C2832', '2026-10-04', 8, 2),
+  day('C2832', '2026-10-11', 8),
+], holidays, 8)[0];
+assert.equal(vincent.days.size, 5, 'C2832 counts Saturday, Sunday, and PH as worked days');
+assert.equal(vincent.weekdayHours, 40);
+assert.equal(vincent.weekdayOvt, 0, 'C2832 has no overtime');
+assert.equal(vincent.saturdayHours, 0);
+assert.equal(vincent.sundayHours, 0);
+assert.equal(vincent.phHours, 0);
+assert.equal(vincent.status, 'Balanced');
 
 console.log('booking-summary.test.js: ok');

@@ -295,7 +295,17 @@ export const resolvePaymentStageApprover = async (input: {
           }) || null;
         })
         .filter(Boolean) as DleEmployeeDirectoryRow[];
-      matched = hrManagers.sort((a, b) => employeeCodeOf(a).localeCompare(employeeCodeOf(b)))[0] || null;
+      let hodCode = '';
+      try {
+        const { explicitDepartmentSupervisorCode } = await import('@/lib/department-reporting-manager-sync');
+        hodCode = compact(explicitDepartmentSupervisorCode('HUMAN RESOURCES')).toUpperCase();
+      } catch {
+        hodCode = '';
+      }
+      const hod = hodCode
+        ? hrManagers.find((employee) => employeeCodeOf(employee).toUpperCase() === hodCode) || null
+        : null;
+      matched = hod || hrManagers.sort((a, b) => employeeCodeOf(a).localeCompare(employeeCodeOf(b)))[0] || null;
     } catch {
       matched = null;
     }

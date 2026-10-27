@@ -1,7 +1,7 @@
 import { existsSync, readFileSync, statSync } from 'node:fs';
 import { payeTaxableFromPayrollEarnings } from '@/lib/payroll-sage-pay-rules';
 import type { DleEmployeeDirectoryRow } from '@/lib/dle-enterprise-db';
-import { contractEmployeeCode, isDailyRatePayrollEmployee, isContractStyleEarningLine, isDayRateTimesheetMealLine, isPeriodVariableDayRateEarningLine, isPermanentPayrollEmployee } from '@/lib/payroll-employee-classification';
+import { contractEmployeeCode, isDailyRatePayrollEmployee, isContractStyleEarningLine, isDayRateTimesheetMealLine, isPeriodVariableDayRateEarningLine, isPermanentPayrollEmployee, joinMonthSalaryFactor, payrollPeriodEndIso } from '@/lib/payroll-employee-classification';
 import { isLeaveAllowancePaymentCode } from '@/lib/leave-allowance-policy';
 import { leaveAllowanceEventsForEmployeePeriod } from '@/lib/payroll-leave-allowance-store';
 import { isSagePayslipEarningSyncSource } from '@/lib/payroll-employee-classification';
@@ -23,7 +23,7 @@ import {
   hrisDataFileMtime,
   resolvePreferredHrisDataFile,
 } from '@/lib/hris-data-paths';
-import { hasFullHrisPackageSetup, hasLegacyStructuralPackageLines, packageLinePaysInPeriod, payrollLineMonthlyAmount, type StoredPayrollPackageLine } from '@/lib/payroll-package-lines';
+import { hasFullHrisPackageSetup, hasLegacyStructuralPackageLines, isPeriodOnlyPackageEarningLine, packageLinePaysInPeriod, payrollLineMonthlyAmount, type StoredPayrollPackageLine } from '@/lib/payroll-package-lines';
 import { isHrisConfiguredPayrollLine } from '@/lib/sage-payroll-line-parser';
 
 export type PayrollEarningProfileId =
@@ -555,6 +555,8 @@ export const buildDailyRateSupplementalEarnings = (
   // the HRIS salary package must not add to it. Codes such as SATURDAY_OVT or
   // NNDMEAL do not canonicalise onto the schedule's SATEARN / MEAL, so leaving
   // them in paid the same weekend, holiday and allowance amounts twice.
+  // Transport saved on the payroll profile is the exception: it is added back
+  // when the schedule itself does not state a transport amount.
   // This stays on for a stored day-rate upload from 2026-09. Salary Excel overlay
   // remains off; only a primed day-rate schedule replaces the package.
   const scheduleIsAuthority = Boolean(options?.excelDayrateOverride)
@@ -647,6 +649,35 @@ const rebuildEarningsFromPaidLines = (
     bhtPay: basicPay,
     earningLines: normalizedLines,
     paidEarningLines: normalizedLines,
+  };
+};
+
+/**
+ * Standing monthly lines are cut to days from the join date through month end.
+ * One-off lines and day-rate timesheet pay stay as entered. Later months are full.
+ */
+export const applyJoinMonthProration = (
+  employee: Pick<DleEmployeeDirectoryRow, 'dateJoined' | 'contractStartDate'>,
+  period: string | undefined,
+  earnings: PayrollEarningsResult,
+): PayrollEarningsResult => {
+  if (earnings.profileId === 'contract-day-rate' || earnings.profileId === 'stipend-non-taxable') return earnings;
+  const factor = joinMonthSalaryFactor(employee, period);
+  if (factor >= 0.999) return earnings;
+  const periodEnd = period ? payrollPeriodEndIso(period) : null;
+  const lastDay = periodEnd ? Number(periodEnd.slice(8, 10)) : 0;
+  const daysPaid = lastDay > 0 ? Math.round(factor * lastDay) : 0;
+  const scale = (line: PayrollEarningLine) => {
+    if (line.runFrequency === 'leave-period' || line.includeInMonthlyPayroll === false) return line;
+    if (isPeriodOnlyPackageEarningLine({ code: line.code, name: line.name })) return line;
+    return { ...line, amount: roundMoney(line.amount * factor) };
+  };
+  const label = daysPaid && lastDay
+    ? `${earnings.profileName} (First month ${daysPaid}/${lastDay} days)`
+    : `${earnings.profileName} (First month)`;
+  return {
+    ...rebuildEarningsFromPaidLines(earnings, earnings.paidEarningLines.map(scale), label),
+    periodPackageGross: earnings.periodPackageGross,
   };
 };
 
@@ -750,7 +781,7 @@ export const mergeTimesheetDayRateEarnings = (
   const merged = supplemental.paidEarningLines.some((line) => roundMoney(line.amount) !== 0)
     ? mergeDailySupplementalEarnings(base, supplemental)
     : base;
-  if (!excel) return merged;
+  if (!excel) return appendDayrateProfileTransport(employee, input.period, null, merged);
   // Sheet meal and TCM meal are separate columns. The package merger treats MEAL and
   // TCMMEAL as one code, which would drop the meal allowance whenever TCM meal is set.
   const scheduleAllowances = scheduleAllowanceLines(excel);
@@ -765,12 +796,12 @@ export const mergeTimesheetDayRateEarnings = (
         merged.profileName,
       )
     : merged;
-  return {
+  return appendDayrateProfileTransport(employee, input.period, excel, {
     ...withScheduleAllowances,
     profileName: merged.profileName.includes('Dayrate Schedule')
       ? merged.profileName
       : `${merged.profileName} (HR Dayrate Schedule Override)`,
-  };
+  });
 };
 
 export const contractPayeTaxablePay = (earnings: Pick<PayrollEarningsResult, 'profileId' | 'grossPay' | 'taxablePay' | 'paidEarningLines' | 'earningLines'>) => {
@@ -856,7 +887,9 @@ const configuredPackageEarningLines = (
       if (TIMESHEET_DRIVEN_EARNING_CODES.has(code)) continue;
       if (isPeriodVariableDayRateEarningLine(line) && !isHrisConfiguredPayrollLine(line)) continue;
     }
-    if (isStoredLeaveAllowancePackageLine(line)) continue;
+    // Standing or unstamped leave allowance must not pay every month.
+    // A line stamped to this run (added on the payroll profile for this period) does pay.
+    if (isStoredLeaveAllowancePackageLine(line) && !packageLinePaysInPeriod(line, options?.period)) continue;
     if (!packageLinePaysInPeriod(line, options?.period)) continue;
     const stored = line as StoredPayrollPackageLine;
     const frequency = stored.runFrequency || 'monthly';
@@ -885,6 +918,78 @@ const configuredPackageEarningLines = (
     });
   }
   return collapseCanonicalEarningLines(lines);
+};
+
+/** Plain transport goes on the Transport column. TCM transport stays on its own column. */
+export const payrollTransportKind = (code?: string | null, name?: string | null): 'transport' | 'tcm' | null => {
+  const compactCode = compact(code).toUpperCase().replace(/[^A-Z0-9]/g, '');
+  const label = compact(name).toUpperCase();
+  if (/TRANSFER/.test(compactCode) || /TRANSFER/.test(label)) return null;
+  const tcm = /^TCM/.test(compactCode) || /\bTCM\b/.test(label);
+  const transport = /TRANSPORT/.test(compactCode)
+    || /TRANS$/.test(compactCode)
+    || /TRANSP$/.test(compactCode)
+    || /\bTRANSPORT\b/.test(label);
+  if (!transport) return null;
+  return tcm ? 'tcm' : 'transport';
+};
+
+export const sumTransportEarningLines = (
+  lines: Array<{ code?: string | null; name?: string | null; amount?: number | null }> | null | undefined,
+) => {
+  let transport = 0;
+  let tcmTransport = 0;
+  for (const line of lines || []) {
+    const kind = payrollTransportKind(line.code, line.name);
+    if (kind === 'tcm') tcmTransport += num(line.amount);
+    else if (kind === 'transport') transport += num(line.amount);
+  }
+  return { transport: roundMoney(transport), tcmTransport: roundMoney(tcmTransport) };
+};
+
+/** Transport saved on the payroll profile. Legacy payslip snapshots are not included. */
+export const dayrateProfileTransportLines = (
+  employee: DleEmployeeDirectoryRow | null | undefined,
+  period?: string | null,
+): PayrollEarningLine[] => {
+  if (!employee) return [];
+  const configured = (employee.sagePayrollEarnings || []).filter((line) => isHrisConfiguredPayrollLine(line));
+  if (!configured.length) return [];
+  return configuredPackageEarningLines(
+    { ...employee, sagePayrollEarnings: configured },
+    { includeOneOff: true, period: period || undefined },
+  ).filter((line) => payrollTransportKind(line.code, line.name));
+};
+
+export const dayrateProfileTransportAmounts = (
+  employee: DleEmployeeDirectoryRow | null | undefined,
+  period?: string | null,
+) => sumTransportEarningLines(dayrateProfileTransportLines(employee, period));
+
+/**
+ * A stored day-rate schedule replaces timesheet package lines, but transport entered
+ * on the payroll profile still pays when that schedule does not already state it.
+ * From October the timesheet owns the hours, so a blank schedule cell must not hide it.
+ */
+const appendDayrateProfileTransport = (
+  employee: DleEmployeeDirectoryRow,
+  period: string | undefined,
+  schedule: DayrateScheduleRow | null,
+  earnings: PayrollEarningsResult,
+): PayrollEarningsResult => {
+  const blocked = new Set<'transport' | 'tcm'>();
+  if (schedule && num(schedule.transport) > 0) blocked.add('transport');
+  if (schedule && num(schedule.tcmTransport) > 0) blocked.add('tcm');
+  for (const line of earnings.paidEarningLines) {
+    const kind = payrollTransportKind(line.code, line.name);
+    if (kind && num(line.amount) > 0) blocked.add(kind);
+  }
+  const additions = dayrateProfileTransportLines(employee, period).filter((line) => {
+    const kind = payrollTransportKind(line.code, line.name);
+    return kind !== null && !blocked.has(kind);
+  });
+  if (!additions.length) return earnings;
+  return rebuildEarningsFromPaidLines(earnings, [...earnings.paidEarningLines, ...additions], earnings.profileName);
 };
 
 const mergeConfiguredPackageSupplements = (
@@ -1082,6 +1187,41 @@ const shouldReplaceCanonicalLine = (
   return Number(incoming.amount || 0) > Number(existing.amount || 0);
 };
 
+/** IT and NYSC stay on their own CONT. STAFF columns. A combined stipend label matches the NYSC column. */
+const stipendAllowanceName = (name?: string, code?: string) => {
+  const blob = `${code || ''} ${name || ''}`.toUpperCase();
+  if (/IT\s*ALLOW|ITALLOW/.test(blob) && !/NYSC/.test(blob)) return 'IT ALLOWANCE';
+  if (/NYSC/.test(blob)) return 'NYSC ALLOWANCE';
+  return 'NYSC / IT STIPEND';
+};
+
+const stipendAllowanceLabelForEmployee = (employee: DleEmployeeDirectoryRow) => {
+  const code = compact(employee.employeeCode || employee.employeeId).toUpperCase();
+  const type = compact(employee.employmentType).toUpperCase();
+  const isIt = /^(P?IT|IT|I)\d+/.test(code) || (/\b(INDUSTRIAL|INTERN)\b/.test(type) && !/\bNYSC\b/.test(type));
+  return isIt ? 'IT ALLOWANCE' : 'NYSC ALLOWANCE';
+};
+
+const isStoredBasicSalaryLine = (line: { code?: string | null; name?: string | null }) => {
+  const code = compact(line.code).toUpperCase().replace(/[^A-Z0-9]/g, '');
+  const name = compact(line.name).toUpperCase();
+  return code === 'BASIC' || name === 'BASIC SALARY' || name === 'BASIC';
+};
+
+/** A stipend saved as Basic Salary is the allowance, not a second taxable line. */
+const withStipendBasicAsAllowance = (employee: DleEmployeeDirectoryRow): DleEmployeeDirectoryRow => {
+  const label = stipendAllowanceLabelForEmployee(employee);
+  const code = label === 'IT ALLOWANCE' ? 'ITALLOW' : 'NYSCALLOW';
+  return {
+    ...employee,
+    sagePayrollEarnings: (employee.sagePayrollEarnings || []).map((line) => (
+      isStoredBasicSalaryLine(line)
+        ? { ...line, code, name: label, taxableAmount: 0 }
+        : line
+    )),
+  };
+};
+
 const collapseCanonicalEarningLines = (lines: PayrollEarningLine[]) => {
   const byCanonical = new Map<string, PayrollEarningLine>();
   for (const line of lines) {
@@ -1091,7 +1231,7 @@ const collapseCanonicalEarningLines = (lines: PayrollEarningLine[]) => {
       byCanonical.set(
         key,
         key === 'STIPENDNT'
-          ? { ...line, code: 'STIPEND_NT', name: line.name || 'NYSC / IT STIPEND', taxable: false }
+          ? { ...line, code: 'STIPEND_NT', name: stipendAllowanceName(line.name, line.code), taxable: false }
           : key === 'LUMPSUMTAX'
             ? { ...line, code: 'LUMPSUMTAX', name: line.name || 'LUMPSUM ALLOWANCE' }
             : key === 'TCMTRANS'
@@ -1292,7 +1432,7 @@ const fallbackAllowanceRate = (employee: DleEmployeeDirectoryRow) => {
   return 0.22;
 };
 
-export const calculatePayrollEarnings = (employee: DleEmployeeDirectoryRow, options?: PayrollEarningsOptions): PayrollEarningsResult => {
+const calculateUnproratedPayrollEarnings = (employee: DleEmployeeDirectoryRow, options?: PayrollEarningsOptions): PayrollEarningsResult => {
   const profileId = resolvePayrollEarningProfile(employee);
   const gross = monthlyGrossFromEmployee(employee);
   const profile = profileId === 'fallback' || profileId === 'contract-day-rate' || profileId === 'stipend-non-taxable' ? null : PAYROLL_EARNING_PROFILES[profileId];
@@ -1344,11 +1484,13 @@ export const calculatePayrollEarnings = (employee: DleEmployeeDirectoryRow, opti
     };
   }
   if (profileId === 'stipend-non-taxable') {
+    const stipendLabel = stipendAllowanceLabelForEmployee(employee);
+    const stipendEmployee = withStipendBasicAsAllowance(employee);
     const coreLines = [
-      { code: 'STIPEND_NT', name: 'NYSC / IT STIPEND', taxable: false, percentOfGross: gross > 0 ? 1 : 0, amount: gross },
+      { code: 'STIPEND_NT', name: stipendLabel, taxable: false, percentOfGross: gross > 0 ? 1 : 0, amount: gross },
     ].filter((line) => line.amount > 0);
     const monthlyLines = collapseCanonicalEarningLines(
-      mergeConfiguredPackageSupplements(employee, coreLines, { includeOneOff: true, period: options?.period }),
+      mergeConfiguredPackageSupplements(stipendEmployee, coreLines, { includeOneOff: true, period: options?.period }),
     );
     const grossPay = roundMoney(monthlyLines.reduce((sum, line) => sum + line.amount, 0));
     const taxablePay = roundMoney(monthlyLines.filter((line) => line.taxable !== false).reduce((sum, line) => sum + line.amount, 0));
@@ -1558,6 +1700,9 @@ export const calculatePayrollEarnings = (employee: DleEmployeeDirectoryRow, opti
     paidEarningLines: monthlyLines,
   };
 };
+
+export const calculatePayrollEarnings = (employee: DleEmployeeDirectoryRow, options?: PayrollEarningsOptions): PayrollEarningsResult =>
+  applyJoinMonthProration(employee, options?.period, calculateUnproratedPayrollEarnings(employee, options));
 
 export const calculateContractDayRateEarnings = (input: {
   ratePerDay: number;

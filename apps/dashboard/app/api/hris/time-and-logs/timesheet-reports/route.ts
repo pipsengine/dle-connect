@@ -12,7 +12,7 @@ import {
   readTimesheetData,
   readTimesheetPayrollUpdates,
   readTimesheetPeriod,
-  synthesizeTimesheetHoursForPeriod,
+  buildTimesheetHoursMapForPayrollPeriod,
   type TimesheetHeader,
   type TimesheetLine,
   type TimesheetStatus,
@@ -489,7 +489,7 @@ export async function GET(request: Request) {
     const payrollHoursByKey = new Map<string, import('@/lib/timesheet-entry-store').PayrollTimesheetHoursEntry>();
     const periodIds = [...new Set(filteredRows.map((row) => row.periodId).filter(Boolean))];
     for (const periodId of periodIds) {
-      const hours = await synthesizeTimesheetHoursForPeriod(periodId).catch(() => new Map());
+      const hours = await buildTimesheetHoursMapForPayrollPeriod(periodId).catch(() => new Map());
       for (const [key, value] of hours) {
         if (!payrollHoursByKey.has(key)) payrollHoursByKey.set(key, value);
       }

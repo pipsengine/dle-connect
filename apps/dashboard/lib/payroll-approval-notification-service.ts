@@ -1,7 +1,8 @@
-import { readUsers } from '@/lib/auth/auth-store';
+import { readUsers, syncPortalMailboxForEmployee } from '@/lib/auth/auth-store';
 import type { SessionPayload } from '@/lib/auth/session';
 import { createEnterpriseNotification } from '@/lib/enterprise-notifications-store';
 import {
+  resolveEmployeeMailbox,
   sendPayrollApprovalRequestEmail,
   sendPayrollFullyApprovedEmail,
   sendPayrollRejectedEmail,
@@ -25,6 +26,7 @@ import {
 import {
   PAYROLL_ACTING_FINANCE_MANAGER_CODES,
   PAYROLL_NAMED_CFO_CODES,
+  PAYROLL_NAMED_HR_MANAGER_CODES,
   PAYROLL_NAMED_MD_CEO_CODES,
 } from '@/lib/payroll-acting-approvers';
 import { isProtectedGlobalSuperAdminIdentity } from '@/lib/auth/protected-global-admin';
@@ -52,6 +54,7 @@ const STAGE_JOB_TITLE_PATTERNS: Partial<Record<Exclude<PayrollApprovalStageId, '
 const PLATFORM_ADMIN_ROLE = /super administrator|system administrator|application administrator/i;
 
 const STAGE_NAMED_CODES: Partial<Record<Exclude<PayrollApprovalStageId, 'payroll-officer'>, readonly string[]>> = {
+  'hr-manager': PAYROLL_NAMED_HR_MANAGER_CODES,
   'finance-manager': PAYROLL_ACTING_FINANCE_MANAGER_CODES,
   cfo: PAYROLL_NAMED_CFO_CODES,
   'md-ceo': PAYROLL_NAMED_MD_CEO_CODES,
@@ -94,10 +97,11 @@ const systemSessionFor = (recipient: ApproverRecipient): SessionPayload => ({
 });
 
 export const userMatchesPayrollApproverStage = (
-  user: { id?: string; username?: string; employeeCode?: string; employeeId?: string; roles?: string[]; jobTitle?: string; isGlobalAdmin?: boolean },
+  user: { id?: string; username?: string; employeeCode?: string; employeeId?: string; roles?: string[]; jobTitle?: string; status?: string; isGlobalAdmin?: boolean },
   stageId: PayrollApprovalStageId,
 ) => {
   if (stageId === 'payroll-officer') return false;
+  if (compact(user.status) && compact(user.status) !== 'Active') return false;
   const code = compact(user.employeeCode || user.employeeId || user.username).toUpperCase();
   const namedCodes = STAGE_NAMED_CODES[stageId] || [];
   if (code && namedCodes.some((item) => item === code)) return true;
@@ -118,15 +122,30 @@ export const resolvePayrollApproverRecipients = async (stageId: PayrollApprovalS
   if (stageId === 'payroll-officer') return [];
   const users = await readUsers();
   const matches = users.filter((user) => userMatchesPayrollApproverStage(user, stageId));
-  const withEmail = matches
-    .map((user) => ({
+  const withEmail = [];
+  for (const user of matches) {
+    let email = compact(user.email);
+    if (!email) {
+      const employeeCode = compact(user.employeeCode || user.username);
+      email = await resolveEmployeeMailbox({
+        employeeCode,
+        employeeId: user.employeeId || employeeCode,
+        fullName: user.fullName,
+        officialEmail: user.email,
+      } as never);
+      if (email && employeeCode) {
+        await syncPortalMailboxForEmployee(employeeCode, email).catch(() => undefined);
+      }
+    }
+    if (!email) continue;
+    withEmail.push({
       id: user.id,
       username: user.username,
       fullName: user.fullName,
-      email: compact(user.email),
+      email,
       roles: user.roles,
-    }))
-    .filter((user) => user.email);
+    });
+  }
 
   // Deduplicate by email.
   const seen = new Set<string>();

@@ -159,6 +159,48 @@ export const clearWeekendLeaveHours = async (connection: sql.ConnectionPool, per
   `);
 };
 
+/** A weekday booking saved before leave was approved still has zero hours. Write the standard idle day so reports count it. */
+export const applyApprovedLeaveHours = async (connection: sql.ConnectionPool) => {
+  await connection.request().query(`
+    DECLARE @Hours DECIMAL(9, 2) = 8;
+    IF OBJECT_ID(N'[tsmgmt].[ShiftSettings]', N'U') IS NOT NULL
+      SELECT TOP 1 @Hours = CAST(ISNULL([ExpectedHours], 8) AS DECIMAL(9, 2)) FROM [tsmgmt].[ShiftSettings];
+    IF @Hours IS NULL OR @Hours <= 0 SET @Hours = 8;
+
+    UPDATE b
+    SET
+      b.[RegularHours] = @Hours,
+      b.[OvtHours] = 0,
+      b.[AttendanceStatus] = N'Approved Leave',
+      b.[ProjectHoursJson] = N'{"DL1949":' + CONVERT(nvarchar(20), CAST(@Hours AS float)) + N'}',
+      b.[UpdatedAt] = SYSUTCDATETIME(),
+      b.[UpdatedBy] = N'Approved leave'
+    FROM [tsmgmt].[Bookings] b
+    WHERE b.[EmployeeCode] LIKE N'C[0-9]%'
+      AND ISNULL(b.[ShiftLabel], N'Day') = N'Day'
+      AND ISNULL(b.[RegularHours], 0) = 0
+      AND ISNULL(b.[OvtHours], 0) = 0
+      AND ISNULL(b.[NightHours], 0) = 0
+      AND NOT ${nonWorkingBookingDate}
+      AND EXISTS (
+        SELECT 1
+        FROM [hris].[LeaveApplications] leave
+        LEFT JOIN [hris].[EmployeeMasterView] v
+          ON v.[employee_code] = leave.[EmployeeId]
+          OR CONVERT(nvarchar(80), v.[employee_id]) = leave.[EmployeeId]
+        WHERE COALESCE(NULLIF(LTRIM(RTRIM(v.[employee_code])), N''), leave.[EmployeeId]) = b.[EmployeeCode]
+          AND leave.[StartDate] <= b.[WorkDate]
+          AND leave.[EndDate] >= b.[WorkDate]
+          AND (
+            leave.[StatusName] LIKE N'%Approved%'
+            OR leave.[StatusName] IN (N'Completed', N'Paid')
+          )
+          AND leave.[LeaveType] NOT LIKE N'%Unpaid%'
+          AND leave.[LeaveType] NOT LIKE N'%Casual%'
+      );
+  `);
+};
+
 export type ShiftSettings = {
   dayStart: string;
   dayEnd: string;
@@ -983,9 +1025,12 @@ export const resolveTimesheetEntry = async (input: { periodId: string; workDate:
           AND (${managerMatch})
         ORDER BY full_name
       `);
-      const assignedRows = (assigned.recordset || []).length
-        ? (assigned.recordset || [])
-        : [...(reports.recordset || [])];
+      const assignedByCode = new Map<string, Record<string, unknown>>();
+      for (const row of [...(reports.recordset || []), ...(assigned.recordset || [])]) {
+        const code = text(row.employee_code).toUpperCase();
+        if (code) assignedByCode.set(code, row);
+      }
+      const assignedRows = [...assignedByCode.values()];
       for (const row of assignedRows) {
         const code = text(row.employee_code);
         const jobTitle = text(row.job_title);
@@ -1436,7 +1481,10 @@ const syncNightBand = async (
         MERGE [tsmgmt].[Bookings] AS target
         USING (SELECT @PeriodId AS PeriodId, @WorkDate AS WorkDate, @EmployeeCode AS EmployeeCode, N'Night' AS ShiftLabel) AS source
         ON target.[PeriodId]=source.PeriodId AND target.[WorkDate]=source.WorkDate AND target.[EmployeeCode]=source.EmployeeCode AND target.[ShiftLabel]=source.ShiftLabel
-        WHEN MATCHED THEN UPDATE SET [SupervisorName]=@Supervisor,[LocationName]=@Location,[WorkCenterName]=@WorkCenter,[EmployeeName]=@EmployeeName,[ProjectHoursJson]=@ProjectHours,[RegularHours]=@RegularHours,[OvtHours]=@OvtHours,[NightHours]=1,[AttendanceStatus]=@AttendanceStatus,[Status]=N'Draft',[UpdatedAt]=SYSUTCDATETIME(),[UpdatedBy]=@Actor
+        WHEN MATCHED AND (
+          target.[SupervisorName]=@Supervisor
+          OR (ISNULL(target.[RegularHours],0)+ISNULL(target.[OvtHours],0)+ISNULL(target.[NightHours],0) <= 0 AND @RegularHours + @OvtHours > 0)
+        ) THEN UPDATE SET [SupervisorName]=@Supervisor,[LocationName]=@Location,[WorkCenterName]=@WorkCenter,[EmployeeName]=@EmployeeName,[ProjectHoursJson]=@ProjectHours,[RegularHours]=@RegularHours,[OvtHours]=@OvtHours,[NightHours]=1,[AttendanceStatus]=@AttendanceStatus,[Status]=N'Draft',[UpdatedAt]=SYSUTCDATETIME(),[UpdatedBy]=@Actor
         WHEN NOT MATCHED THEN INSERT ([Id],[PeriodId],[WorkDate],[SupervisorName],[LocationName],[WorkCenterName],[ShiftLabel],[EmployeeCode],[EmployeeName],[ProjectHoursJson],[RegularHours],[OvtHours],[NightHours],[AttendanceStatus],[Status],[CreatedBy],[UpdatedBy])
         VALUES (@Id,@PeriodId,@WorkDate,@Supervisor,@Location,@WorkCenter,N'Night',@EmployeeCode,@EmployeeName,@ProjectHours,@RegularHours,@OvtHours,1,@AttendanceStatus,N'Draft',@Actor,@Actor);
       `);
@@ -1605,6 +1653,8 @@ export const saveTimesheetEntry = async (input: {
             VALUES (@Id,@LineId,@ProjectCode,@ProjectName,@Kind,@RegularHours,@OvtHours,@Activity,@ChargeCode,@OvtReason,@Comment)
           `);
       }
+      const nightHours = nightOn ? 1 : 0;
+      if (regular + ovt + nightHours <= 0 && operationalStatus !== 'Approved Leave') continue;
       await new sql.Request(transaction)
         .input('Id', sql.NVarChar(40), newId('bk'))
         .input('PeriodId', sql.NVarChar(40), input.periodId)
@@ -1618,14 +1668,17 @@ export const saveTimesheetEntry = async (input: {
         .input('ProjectHours', sql.NVarChar(sql.MAX), JSON.stringify(projectHours))
         .input('RegularHours', sql.Decimal(9, 2), regular)
         .input('OvtHours', sql.Decimal(9, 2), ovt)
-        .input('NightHours', sql.Decimal(9, 2), nightOn ? 1 : 0)
-        .input('AttendanceStatus', sql.NVarChar(40), text(line.attendanceStatus))
+        .input('NightHours', sql.Decimal(9, 2), nightHours)
+        .input('AttendanceStatus', sql.NVarChar(40), operationalStatus === 'Approved Leave' ? 'Approved Leave' : text(line.attendanceStatus))
         .input('Actor', sql.NVarChar(120), actor)
         .query(`
           MERGE [tsmgmt].[Bookings] AS target
           USING (SELECT @PeriodId AS PeriodId, @WorkDate AS WorkDate, @EmployeeCode AS EmployeeCode, @Shift AS ShiftLabel) AS source
           ON target.[PeriodId]=source.PeriodId AND target.[WorkDate]=source.WorkDate AND target.[EmployeeCode]=source.EmployeeCode AND target.[ShiftLabel]=source.ShiftLabel
-          WHEN MATCHED THEN UPDATE SET [SupervisorName]=@Supervisor,[LocationName]=@Location,[WorkCenterName]=@WorkCenter,[EmployeeName]=@EmployeeName,[ProjectHoursJson]=@ProjectHours,[RegularHours]=@RegularHours,[OvtHours]=@OvtHours,[NightHours]=@NightHours,[AttendanceStatus]=@AttendanceStatus,[Status]=N'Draft',[UpdatedAt]=SYSUTCDATETIME(),[UpdatedBy]=@Actor
+          WHEN MATCHED AND (
+            target.[SupervisorName]=@Supervisor
+            OR (ISNULL(target.[RegularHours],0)+ISNULL(target.[OvtHours],0)+ISNULL(target.[NightHours],0) <= 0 AND @RegularHours + @OvtHours + @NightHours > 0)
+          ) THEN UPDATE SET [SupervisorName]=@Supervisor,[LocationName]=@Location,[WorkCenterName]=@WorkCenter,[EmployeeName]=@EmployeeName,[ProjectHoursJson]=@ProjectHours,[RegularHours]=@RegularHours,[OvtHours]=@OvtHours,[NightHours]=@NightHours,[AttendanceStatus]=@AttendanceStatus,[Status]=N'Draft',[UpdatedAt]=SYSUTCDATETIME(),[UpdatedBy]=@Actor
           WHEN NOT MATCHED THEN INSERT ([Id],[PeriodId],[WorkDate],[SupervisorName],[LocationName],[WorkCenterName],[ShiftLabel],[EmployeeCode],[EmployeeName],[ProjectHoursJson],[RegularHours],[OvtHours],[NightHours],[AttendanceStatus],[Status],[CreatedBy],[UpdatedBy])
           VALUES (@Id,@PeriodId,@WorkDate,@Supervisor,@Location,@WorkCenter,@Shift,@EmployeeCode,@EmployeeName,@ProjectHours,@RegularHours,@OvtHours,@NightHours,@AttendanceStatus,N'Draft',@Actor,@Actor);
         `);

@@ -3,6 +3,14 @@ import { getDleEnterpriseDbPool } from '@/lib/dle-enterprise-db';
 import { createEnterpriseNotification } from '@/lib/enterprise-notifications-store';
 import type { SessionPayload } from '@/lib/auth/session';
 import { extractSupervisorEmployeeCode, supervisorCodeLookupVariants, supervisorCodesMatch } from '@/lib/timesheet-agege-blasting';
+import {
+  assignedProjectApproverName,
+  formatProjectManagerLabel,
+  isEligibleTimesheetProjectManager,
+  pickLocationProjectManager,
+  resolveAssignedProjectManager,
+  type LocationProjectManagerRow,
+} from '@/lib/timesheet-approval-project-manager';
 
 export const APPROVAL_STAGES = ['Supervisor', 'Cost Control', 'Project Manager', 'Consolidation', 'HR', 'Payroll Readiness'] as const;
 export const APPROVAL_SLA_DAYS = 3;
@@ -124,6 +132,103 @@ CREATE TABLE [tsmgmt].[ApprovalEvents] (
     ensured = true;
   }
   return connection;
+};
+
+const STAGE_RECIPIENT_ROLES: Record<string, string[]> = {
+  Supervisor: ['Supervisor', 'Foreman', 'Site Lead'],
+  'Cost Control': ['Cost Control Officer', 'Cost Control'],
+  'Project Manager': ['Project Manager'],
+  Consolidation: ['HR', 'HR Manager'],
+  HR: ['HR', 'HR Manager', 'Human Resources'],
+  'Payroll Readiness': ['Payroll'],
+};
+
+const notifyApprovalStage = async (input: {
+  stage: string;
+  reference: string;
+  periodId: string;
+  workDate: string;
+  supervisor: string;
+  workCenter: string;
+  actor: string;
+  intro?: string;
+  recipientLabel?: string;
+}) => {
+  const roles = STAGE_RECIPIENT_ROLES[input.stage];
+  if (!roles?.length) return;
+  const recipientLabel = text(input.recipientLabel);
+  const recipientCode = extractSupervisorEmployeeCode(recipientLabel);
+  const recipientName = recipientLabel.includes(' - ')
+    ? recipientLabel.split(' - ').slice(1).join(' - ').trim()
+    : recipientLabel;
+  try {
+    const { notifyTimesheetWorkflow } = await import('@/lib/timesheet-workflow-notifications');
+    await notifyTimesheetWorkflow({
+      title: `Timesheet awaiting ${input.stage}`,
+      body: input.intro || `${input.reference} for ${input.periodId || 'the current period'} is waiting for ${input.stage} approval.`,
+      severity: 'warning',
+      recipientRoles: roles,
+      recipientEmployeeCode: recipientCode || undefined,
+      recipientNameHint: recipientName || (input.stage === 'Supervisor' ? input.supervisor : undefined),
+      stageLabel: input.stage,
+      actorName: input.actor,
+      href: `/timesheet-management?page=approvals&stage=${encodeURIComponent(input.stage)}`,
+      intro: input.intro,
+      header: {
+        id: input.reference,
+        periodId: input.periodId,
+        timesheetDate: input.workDate,
+        supervisorName: input.supervisor,
+        workCenterName: input.workCenter,
+      } as never,
+    });
+  } catch {
+    /* email delivery must not block the approval */
+  }
+};
+
+type StageNotice = {
+  stage: string;
+  reference: string;
+  periodId: string;
+  workDate: string;
+  supervisor: string;
+  workCenter: string;
+  recipientLabel?: string;
+};
+
+const periodLabel = async (connection: sql.ConnectionPool, periodId: string) => {
+  const id = text(periodId);
+  if (!id) return '';
+  const result = await connection.request().input('Id', sql.NVarChar(40), id).query(`SELECT [Name] FROM [tsmgmt].[Periods] WHERE [Id]=@Id`);
+  return text(result.recordset?.[0]?.Name) || id;
+};
+
+const sendStageNotices = async (connection: sql.ConnectionPool, notices: StageNotice[], actor: string) => {
+  const groups = new Map<string, StageNotice[]>();
+  for (const notice of notices) {
+    const key = `${notice.stage}|${notice.periodId}|${text(notice.recipientLabel)}`;
+    const rows = groups.get(key) || [];
+    rows.push(notice);
+    groups.set(key, rows);
+  }
+  for (const rows of groups.values()) {
+    const first = rows[0];
+    const label = await periodLabel(connection, first.periodId);
+    const supervisors = [...new Set(rows.map((row) => row.supervisor).filter(Boolean))];
+    const many = rows.length > 1;
+    await notifyApprovalStage({
+      stage: first.stage,
+      reference: many ? `${rows.length} timesheets` : first.reference,
+      periodId: label,
+      workDate: many ? '' : first.workDate,
+      supervisor: supervisors.length === 1 ? supervisors[0] : supervisors.length ? `${supervisors.length} supervisors` : '',
+      workCenter: many ? `${rows.length} timesheets` : first.workCenter,
+      actor,
+      recipientLabel: first.recipientLabel,
+      intro: many ? `${rows.length} timesheets are waiting for ${first.stage} approval.` : undefined,
+    });
+  }
 };
 
 const notify = async (title: string, body: string, recipient?: string) => {
@@ -330,6 +435,187 @@ const mapItem = (row: Record<string, unknown>) => {
 
 export type ApprovalViewer = { actor: string; employeeCode: string; role: string; canSeeAll: boolean };
 
+const assignedApproverFor = (item: ReturnType<typeof mapItem>) => {
+  if (item.stage === 'Supervisor') return assignedProjectApproverName(item.supervisor);
+  if (item.stage === 'Project Manager') return assignedProjectApproverName(item.projectManager);
+  return '';
+};
+
+type ManagerIdentity = { label: string; employeeCode: string; jobTitle: string; fullName: string };
+
+const loadManagerIdentities = async (connection: sql.ConnectionPool, labels: string[]) => {
+  const unique = [...new Set(labels.map((label) => text(label)).filter(Boolean))];
+  const identities = new Map<string, ManagerIdentity>();
+  if (!unique.length) return identities;
+  const request = connection.request();
+  unique.forEach((label, index) => {
+    request.input(`Label${index}`, sql.NVarChar(220), label);
+    request.input(`Code${index}`, sql.NVarChar(50), extractSupervisorEmployeeCode(label) || label);
+    request.input(`NameKey${index}`, sql.NVarChar(180), approvalPersonNameKey(label));
+  });
+  const found = await request.query(`
+    SELECT employee_code, full_name, ISNULL(job_title, N'') AS job_title
+    FROM [hris].[EmployeeMasterView]
+    WHERE ${unique.map((_, index) => `
+      employee_code = @Code${index}
+      OR full_name = @Label${index}
+      OR @NameKey${index} <> N'' AND ${approvalNameSql('full_name')} = @NameKey${index}
+    `).join(' OR ')}
+  `).catch(() => ({ recordset: [] as Record<string, unknown>[] }));
+  const byCode = new Map<string, ManagerIdentity>();
+  const byName = new Map<string, ManagerIdentity>();
+  for (const row of found.recordset || []) {
+    const identity = {
+      label: formatProjectManagerLabel(text(row.employee_code), text(row.full_name)),
+      employeeCode: text(row.employee_code).toUpperCase(),
+      jobTitle: text(row.job_title),
+      fullName: text(row.full_name),
+    };
+    if (identity.employeeCode) byCode.set(identity.employeeCode, identity);
+    const nameKey = approvalPersonNameKey(identity.fullName);
+    if (nameKey) byName.set(nameKey, identity);
+  }
+  for (const label of unique) {
+    const code = extractSupervisorEmployeeCode(label).toUpperCase();
+    const identity = (code && byCode.get(code)) || byName.get(approvalPersonNameKey(label));
+    if (identity) identities.set(label, identity);
+  }
+  return identities;
+};
+
+const loadLocationProjectManagers = async (connection: sql.ConnectionPool) => {
+  const found = await connection.request().query(`
+    SELECT ISNULL([Site], N'') AS Site, ISNULL([ProjectManager], N'') AS ProjectManager
+    FROM [hris].[TimesheetProjects]
+    WHERE [Status] = N'Active' AND ISNULL([ProjectManager], N'') <> N''
+  `).catch(() => ({ recordset: [] as Record<string, unknown>[] }));
+  const identities = await loadManagerIdentities(connection, (found.recordset || []).map((row) => text(row.ProjectManager)));
+  return (found.recordset || []).map((row) => {
+    const identity = identities.get(text(row.ProjectManager));
+    return {
+      site: text(row.Site),
+      manager: identity?.label || text(row.ProjectManager),
+      employeeCode: identity?.employeeCode || extractSupervisorEmployeeCode(text(row.ProjectManager)),
+      jobTitle: identity?.jobTitle || '',
+    } satisfies LocationProjectManagerRow;
+  });
+};
+
+const lookupCatalogProjectManagers = async (connection: sql.ConnectionPool, codes: string[]) => {
+  const unique = [...new Set(codes.map((code) => text(code).toUpperCase()).filter(Boolean))];
+  const managers = new Map<string, string>();
+  if (!unique.length) return managers;
+  const bind = (request: sql.Request) => {
+    unique.forEach((code, index) => request.input(`Code${index}`, sql.NVarChar(80), code));
+    return request;
+  };
+  const inList = unique.map((_, index) => `@Code${index}`).join(', ');
+  const [timesheet, projects] = await Promise.all([
+    bind(connection.request()).query(`SELECT [Code], ISNULL([ProjectManager], N'') AS ProjectManager FROM [hris].[TimesheetProjects] WHERE [Code] IN (${inList})`).catch(() => ({ recordset: [] as Record<string, unknown>[] })),
+    bind(connection.request()).query(`SELECT [ProjectCode], ISNULL([ProjectManagerName], N'') AS ProjectManagerName, ISNULL([ProjectManagerEmployeeCode], N'') AS ProjectManagerEmployeeCode FROM [pm].[Projects] WHERE [IsDeleted] = 0 AND [ProjectCode] IN (${inList})`).catch(() => ({ recordset: [] as Record<string, unknown>[] })),
+  ]);
+  for (const row of timesheet.recordset || []) managers.set(text(row.Code).toUpperCase(), text(row.ProjectManager));
+  for (const row of projects.recordset || []) {
+    const code = text(row.ProjectCode).toUpperCase();
+    if (managers.get(code)) continue;
+    managers.set(code, formatProjectManagerLabel(text(row.ProjectManagerEmployeeCode), text(row.ProjectManagerName)) || text(row.ProjectManagerName));
+  }
+  return managers;
+};
+
+const resolveProjectManagersFor = async (connection: sql.ConnectionPool, items: Array<{ projectCode: string; location?: string; stored?: string }>) => {
+  const resolved = new Map<string, string>();
+  if (!items.length) return resolved;
+  const catalog = await lookupCatalogProjectManagers(connection, items.map((item) => item.projectCode));
+  const labels = [
+    ...items.map((item) => text(item.stored)),
+    ...catalog.values(),
+  ].filter(Boolean);
+  const identities = await loadManagerIdentities(connection, labels);
+  const locationRows = await loadLocationProjectManagers(connection);
+  for (const item of items) {
+    const code = text(item.projectCode).toUpperCase();
+    const key = `${code}::${text(item.location).toUpperCase()}`;
+    if (resolved.has(key)) continue;
+    const catalogManager = catalog.get(code) || '';
+    const catalogIdentity = identities.get(catalogManager);
+    const storedIdentity = identities.get(text(item.stored));
+    resolved.set(key, resolveAssignedProjectManager({
+      projectCode: code,
+      catalogManager: catalogIdentity?.label || catalogManager,
+      catalogEligible: isEligibleTimesheetProjectManager({
+        label: catalogIdentity?.label || catalogManager,
+        employeeCode: catalogIdentity?.employeeCode,
+        jobTitle: catalogIdentity?.jobTitle,
+      }),
+      locationManager: pickLocationProjectManager(text(item.location), locationRows),
+      storedManager: storedIdentity?.label || text(item.stored),
+      storedEligible: isEligibleTimesheetProjectManager({
+        label: storedIdentity?.label || text(item.stored),
+        employeeCode: storedIdentity?.employeeCode,
+        jobTitle: storedIdentity?.jobTitle,
+      }),
+    }));
+  }
+  return resolved;
+};
+
+const resolvedManagerFor = (resolved: Map<string, string>, projectCode: string, location: string, fallback = '') =>
+  resolved.get(`${text(projectCode).toUpperCase()}::${text(location).toUpperCase()}`) || fallback;
+
+const refreshPendingProjectManagers = async (connection: sql.ConnectionPool) => {
+  const pending = await connection.request().query(`
+    SELECT [Id], ISNULL([ProjectCode], N'') AS ProjectCode, ISNULL([LocationName], N'') AS LocationName, ISNULL([ProjectManager], N'') AS ProjectManager, ISNULL([Summary], N'') AS Summary
+    FROM [tsmgmt].[ApprovalItems]
+    WHERE [Stage] = N'Project Manager' AND [Status] = N'Pending' AND ISNULL([ProjectCode], N'') <> N''
+  `).catch(() => ({ recordset: [] as Record<string, unknown>[] }));
+  const rows = pending.recordset || [];
+  if (!rows.length) return;
+  const resolved = await resolveProjectManagersFor(connection, rows.map((row) => ({
+    projectCode: text(row.ProjectCode),
+    location: text(row.LocationName),
+    stored: text(row.ProjectManager),
+  })));
+  const seen = new Set<string>();
+  for (const row of rows) {
+    const code = text(row.ProjectCode);
+    const location = text(row.LocationName);
+    const next = resolvedManagerFor(resolved, code, location);
+    const current = text(row.ProjectManager);
+    const key = `${code}::${location}::${current}::${next}`;
+    if (!next || next === current || seen.has(key)) continue;
+    seen.add(key);
+    await connection.request()
+      .input('Code', sql.NVarChar(80), code)
+      .input('Location', sql.NVarChar(180), location)
+      .input('Current', sql.NVarChar(180), current)
+      .input('Manager', sql.NVarChar(180), next)
+      .query(`
+        UPDATE [tsmgmt].[ApprovalItems]
+        SET [ProjectManager]=@Manager,
+            [Summary]=CASE
+              WHEN ISNULL([Summary], N'') IN (N'', @Current) OR [Summary] LIKE N'%not set%' THEN @Manager
+              ELSE [Summary]
+            END
+        WHERE [Stage]=N'Project Manager' AND [Status]=N'Pending'
+          AND [ProjectCode]=@Code
+          AND ISNULL([LocationName], N'')=@Location
+          AND ISNULL([ProjectManager], N'')=@Current
+      `);
+  }
+};
+
+const resolveApprovingAs = async (connection: sql.ConnectionPool, viewer?: ApprovalViewer) => {
+  const actor = text(viewer?.actor);
+  if (actor && !/^(hris user|timesheet user)$/i.test(actor)) return actor;
+  const code = text(viewer?.employeeCode);
+  if (!code) return actor;
+  const found = await connection.request().input('Code', sql.NVarChar(50), code).query(`
+    SELECT TOP 1 full_name FROM [hris].[EmployeeMasterView] WHERE employee_code = @Code
+  `);
+  return text(found.recordset?.[0]?.full_name) || actor;
+};
+
 const bindApprovalViewer = (request: sql.Request, viewer: ApprovalViewer) => {
   request.input('ApprovalNameKey', sql.NVarChar(180), approvalPersonNameKey(viewer.actor));
   approvalViewerCodes(viewer).forEach((code, index) => request.input(`ApprovalCode${index}`, sql.NVarChar(50), code));
@@ -353,6 +639,7 @@ export const listApprovalQueue = async (filters: { stage: string; periodId?: str
       AND NOT EXISTS (SELECT 1 FROM [tsmgmt].[ApprovalItems] a WHERE a.[TimesheetId] = t.[Id] AND a.[VersionNo] = t.[VersionNo] AND a.[Stage] = N'Supervisor')
   `).catch(() => ({ recordset: [] as Record<string, unknown>[] }));
   for (const row of missing.recordset || []) await openTimesheetApproval(text(row.Id), 'Timesheet Workflow');
+  if ((filters.stage || 'Supervisor') === 'Project Manager') await refreshPendingProjectManagers(connection);
   const stage = APPROVAL_STAGES.includes(filters.stage as typeof APPROVAL_STAGES[number]) ? filters.stage : 'Supervisor';
   const pageSize = [10, 25, 50, 100].includes(Number(filters.pageSize)) ? Number(filters.pageSize) : 10;
   const page = Math.max(1, Number(filters.page || 1));
@@ -422,11 +709,28 @@ export const listApprovalQueue = async (filters: { stage: string; periodId?: str
   if (status && status !== 'All Statuses' && status !== 'Overdue') totalRequest.input('Status', sql.NVarChar(30), status);
   const total = await totalRequest.query(`SELECT COUNT(1) AS Total FROM [tsmgmt].[ApprovalItems] ${filtered}`);
   const kpi = counts.recordset?.[0] || {};
+  const stageCountsRequest = connection.request().input('PeriodId', sql.NVarChar(40), text(filters.periodId));
+  const supervisorScope = stageClause(viewer, 'Supervisor').sql;
+  const managerScope = stageClause(viewer, 'Project Manager').sql;
+  if (!viewer.canSeeAll) bindApprovalViewer(stageCountsRequest, viewer);
+  const stageCounts = await stageCountsRequest.query(`
+      SELECT [Stage], COUNT(1) AS Pending
+      FROM [tsmgmt].[ApprovalItems]
+      WHERE [Status]=N'Pending' AND (@PeriodId = N'' OR [PeriodId]=@PeriodId)
+        ${viewer.canSeeAll ? '' : `AND (
+          [Stage] NOT IN (N'Supervisor', N'Project Manager')
+          OR ([Stage]=N'Supervisor' ${supervisorScope})
+          OR ([Stage]=N'Project Manager' ${managerScope})
+        )`}
+      GROUP BY [Stage]
+    `);
+  const stagePending = Object.fromEntries((stageCounts.recordset || []).map((row) => [text(row.Stage), Number(row.Pending || 0)]));
   return {
     stage,
     page,
     pageSize,
     total: Number(total.recordset?.[0]?.Total || 0),
+    stagePending,
     kpis: { pending: Number(kpi.Pending || 0), approved: Number(kpi.Approved || 0), returned: Number(kpi.Returned || 0), overdue: Number(kpi.Overdue || 0), total: Number(kpi.Total || 0) },
     rows: (rows.recordset || []).map(mapItem),
     returnReasons: RETURN_REASONS,
@@ -451,7 +755,7 @@ const setTimesheetStatus = async (connection: sql.ConnectionPool, timesheetId: s
     .query(`UPDATE [tsmgmt].[Timesheets] SET [Status]=@Status, [ReturnReason]=CASE WHEN @Reason = N'' THEN [ReturnReason] ELSE @Reason END, [UpdatedAt]=SYSUTCDATETIME(), [UpdatedBy]=@Actor WHERE [Id]=@Id AND [Status] <> N'Payroll Ready'`);
 };
 
-const projectSplits = async (connection: sql.ConnectionPool, timesheetId: string) => {
+const projectSplits = async (connection: sql.ConnectionPool, timesheetId: string, location = '') => {
   const result = await connection.request().input('Id', sql.NVarChar(40), timesheetId).query(`
     SELECT a.[ProjectCode], MAX(ISNULL(a.[ProjectName], a.[ProjectCode])) AS ProjectName,
       ISNULL(SUM(a.[RegularHours]), 0) AS RegularHours, ISNULL(SUM(a.[OvtHours]), 0) AS OvtHours,
@@ -462,20 +766,17 @@ const projectSplits = async (connection: sql.ConnectionPool, timesheetId: string
     GROUP BY a.[ProjectCode]
   `);
   const projects = result.recordset || [];
-  const managers = new Map<string, string>();
-  if (projects.length) {
-    const request = connection.request();
-    projects.forEach((row, index) => request.input(`Code${index}`, sql.NVarChar(80), text(row.ProjectCode)));
-    const found = await request.query(`SELECT [Code], ISNULL([ProjectManager], N'') AS ProjectManager, [Name] FROM [hris].[TimesheetProjects] WHERE [Code] IN (${projects.map((_, index) => `@Code${index}`).join(', ')})`).catch(() => ({ recordset: [] as Record<string, unknown>[] }));
-    for (const row of found.recordset || []) managers.set(text(row.Code).toUpperCase(), text(row.ProjectManager));
-  }
+  const resolved = await resolveProjectManagersFor(connection, projects.map((row) => ({
+    projectCode: text(row.ProjectCode),
+    location,
+  })));
   return projects.map((row) => ({
     code: text(row.ProjectCode),
     name: text(row.ProjectName),
     regular: Number(row.RegularHours || 0),
     ovt: Number(row.OvtHours || 0),
     employees: Number(row.Employees || 0),
-    manager: managers.get(text(row.ProjectCode).toUpperCase()) || '',
+    manager: resolvedManagerFor(resolved, text(row.ProjectCode), location),
   }));
 };
 
@@ -503,18 +804,30 @@ const advanceAfter = async (connection: sql.ConnectionPool, item: ReturnType<typ
     exceptions: item.exceptions,
   };
   if (item.stage === 'Cost Control') {
-    const splits = await projectSplits(connection, item.timesheetId);
+    const splits = await projectSplits(connection, item.timesheetId, text(sheet.LocationName) || item.location);
     if (!splits.length) {
       await insertItem(connection, { ...base, stage: 'Consolidation', summary: 'No project hours to split' });
       await setTimesheetStatus(connection, item.timesheetId, 'Consolidation', actor);
       return;
     }
+    const managerNotices: StageNotice[] = [];
     for (const project of splits) {
       await insertItem(connection, { ...base, stage: 'Project Manager', projectCode: project.code, projectName: project.name, projectManager: project.manager, regular: project.regular, ovt: project.ovt, employees: project.employees, summary: project.manager || 'Project manager not set' });
+      if (text(project.manager)) {
+        managerNotices.push({
+          stage: 'Project Manager',
+          reference: base.reference,
+          periodId: base.periodId,
+          workDate: base.workDate,
+          supervisor: base.supervisor,
+          workCenter: project.code || base.workCenter,
+          recipientLabel: project.manager,
+        });
+      }
     }
     await setTimesheetStatus(connection, item.timesheetId, 'Project Manager', actor);
     await notify('Project approval required', `${item.reference} was split across ${splits.length} project${splits.length === 1 ? '' : 's'}.`);
-    return;
+    return managerNotices;
   }
   if (item.stage === 'Project Manager') {
     const open = await connection.request().input('Id', sql.NVarChar(40), item.timesheetId).input('Version', sql.Int, item.version).query(`SELECT [Status] FROM [tsmgmt].[ApprovalItems] WHERE [TimesheetId]=@Id AND [VersionNo]=@Version AND [Stage]=N'Project Manager'`);
@@ -535,6 +848,14 @@ const advanceAfter = async (connection: sql.ConnectionPool, item: ReturnType<typ
   await setTimesheetStatus(connection, item.timesheetId, next === 'Payroll Readiness' ? 'Payroll Readiness' : next, actor);
   await event(connection, { timesheetId: item.timesheetId, version: item.version, stage: next, action: `Moved to ${next}`, actor, role, newStatus: 'Pending' });
   await notify(`Timesheet awaiting ${next}`, `${item.reference} moved to ${next}.`);
+  return {
+    stage: next,
+    reference: item.reference,
+    periodId: base.periodId,
+    workDate: base.workDate,
+    supervisor: base.supervisor,
+    workCenter: base.workCenter,
+  };
 };
 
 const assertApprovalAccess = (viewer: ApprovalViewer, item: ReturnType<typeof mapItem>) => {
@@ -556,6 +877,7 @@ export const actOnApprovals = async (input: { ids: string[]; action: 'approve' |
   const actor = text(input.actor) || 'Timesheet User';
   const viewer: ApprovalViewer = { actor, employeeCode: text(input.employeeCode), role: text(input.role), canSeeAll: Boolean(input.canSeeAll) };
   for (const item of items) assertApprovalAccess(viewer, item);
+  const notices: StageNotice[] = [];
   for (const item of items) {
     const nextStatus = input.action === 'approve' ? (item.stage === 'Payroll Readiness' ? 'Payroll Ready' : 'Approved') : 'Returned';
     const updated = await connection.request()
@@ -574,23 +896,41 @@ export const actOnApprovals = async (input: { ids: string[]; action: 'approve' |
       await setTimesheetStatus(connection, item.timesheetId, 'Returned', actor, text(input.reason));
       await notify('Timesheet returned', `${item.reference} was returned: ${text(input.reason)}. Correct it in Timesheet Review and resubmit version ${item.version + 1}.`);
     } else if (input.action === 'approve') {
-      await advanceAfter(connection, item, actor, text(input.role));
+      const notice = await advanceAfter(connection, item, actor, text(input.role));
+      if (Array.isArray(notice)) notices.push(...notice);
+      else if (notice) notices.push(notice);
     }
   }
+  if (notices.length) await sendStageNotices(connection, notices, actor);
   return { updated: items.length, stage, action: input.action };
 };
 
 export const readApprovalDetail = async (id: string, viewer?: ApprovalViewer) => {
   const connection = await pool();
-  const items = await loadItems(connection, [id]);
-  const item = items[0];
+  let items = await loadItems(connection, [id]);
+  let item = items[0];
   if (!item) throw new Error('Approval item was not found.');
+  if (item.stage === 'Project Manager' && item.storedStatus === 'Pending') {
+    await refreshPendingProjectManagers(connection);
+    items = await loadItems(connection, [id]);
+    item = items[0] || item;
+  }
   if (viewer) assertApprovalAccess(viewer, item);
   const events = await connection.request().input('Id', sql.NVarChar(40), item.timesheetId).query(`SELECT * FROM [tsmgmt].[ApprovalEvents] WHERE [TimesheetId]=@Id ORDER BY [CreatedAt]`);
   const history = (events.recordset || []).map((row) => ({ id: text(row.Id), action: text(row.Action), stage: text(row.Stage), actor: text(row.Actor), role: text(row.ActorRole), at: row.CreatedAt ? new Date(String(row.CreatedAt)).toISOString() : '', reason: text(row.Reason), comment: text(row.Comment), previousStatus: text(row.PreviousStatus), newStatus: text(row.NewStatus) }));
   if (item.kind === 'Mobilization') {
     const people = await connection.request().input('Id', sql.NVarChar(40), item.timesheetId).query(`SELECT [EmployeeCode],[EmployeeName],[Status],[ExceptionStatus],[EffectiveFrom],[ExpectedReturn],[ActualReturn] FROM [tsmgmt].[MobilizationEmployees] WHERE [MobilizationId]=@Id ORDER BY [EmployeeName]`);
-    return { item, history, employees: (people.recordset || []).map((row) => ({ code: text(row.EmployeeCode), name: text(row.EmployeeName), status: text(row.Status), exception: text(row.ExceptionStatus), from: dateOnly(row.EffectiveFrom), expected: dateOnly(row.ExpectedReturn), actual: dateOnly(row.ActualReturn) })), projects: [], settings: { nightAllowance: 1500 } };
+    return {
+      item,
+      history,
+      employees: (people.recordset || []).map((row) => ({ code: text(row.EmployeeCode), name: text(row.EmployeeName), status: text(row.Status), exception: text(row.ExceptionStatus), from: dateOnly(row.EffectiveFrom), expected: dateOnly(row.ExpectedReturn), actual: dateOnly(row.ActualReturn) })),
+      projects: [],
+      assignedApprover: assignedApproverFor(item),
+      approvingAs: await resolveApprovingAs(connection, viewer),
+      canSeeAll: Boolean(viewer?.canSeeAll),
+      viewerOwns: viewer ? approvalViewerOwns(viewer, item.stage === 'Supervisor' ? item.supervisor : item.projectManager) : false,
+      settings: { nightAllowance: 1500 },
+    };
   }
   const header = await connection.request().input('Id', sql.NVarChar(40), item.timesheetId).query(`SELECT * FROM [tsmgmt].[Timesheets] WHERE [Id]=@Id`);
   const sheet = header.recordset?.[0] || {};
@@ -620,13 +960,33 @@ export const readApprovalDetail = async (id: string, viewer?: ApprovalViewer) =>
       projects.set(project.code, project);
     }
   }
-  const siblings = await connection.request().input('Id', sql.NVarChar(40), item.timesheetId).input('Version', sql.Int, item.version).query(`SELECT [ProjectCode], [Status] FROM [tsmgmt].[ApprovalItems] WHERE [TimesheetId]=@Id AND [VersionNo]=@Version AND [Stage]=N'Project Manager'`);
+  const siblings = await connection.request().input('Id', sql.NVarChar(40), item.timesheetId).input('Version', sql.Int, item.version).query(`SELECT [ProjectCode], [Status], [ProjectManager] FROM [tsmgmt].[ApprovalItems] WHERE [TimesheetId]=@Id AND [VersionNo]=@Version AND [Stage]=N'Project Manager'`);
+  const siblingRows = siblings.recordset || [];
+  const location = text(sheet.LocationName) || item.location;
+  const resolved = await resolveProjectManagersFor(connection, [...projects.values()].map((project) => ({
+    projectCode: project.code,
+    location,
+    stored: text(siblingRows.find((row) => text(row.ProjectCode) === project.code)?.ProjectManager),
+  })));
+  if (item.stage === 'Project Manager' && item.projectCode) {
+    const liveManager = resolvedManagerFor(resolved, item.projectCode, location, item.projectManager);
+    if (liveManager && liveManager !== item.projectManager) item = { ...item, projectManager: liveManager };
+  }
+  const approvingAs = await resolveApprovingAs(connection, viewer);
+  const assignedApprover = assignedApproverFor(item);
   return {
     item,
-    sheet: { reference: text(sheet.ReferenceCode), periodId: text(sheet.PeriodId), workDate: dateOnly(sheet.WorkDate), supervisor: text(sheet.SupervisorName), location: text(sheet.LocationName), workCenter: text(sheet.WorkCenterName), shift: text(sheet.ShiftLabel), status: text(sheet.Status), version: Number(sheet.VersionNo || 1), dayKind: text(sheet.DayKind), holidayName: text(sheet.HolidayName), capturedBy: text(sheet.CreatedBy), submittedAt: sheet.UpdatedAt ? new Date(String(sheet.UpdatedAt)).toISOString() : '' },
+    sheet: { reference: text(sheet.ReferenceCode), periodId: text(sheet.PeriodId), periodName: await periodLabel(connection, text(sheet.PeriodId)), workDate: dateOnly(sheet.WorkDate), supervisor: text(sheet.SupervisorName), location: text(sheet.LocationName), workCenter: text(sheet.WorkCenterName), shift: text(sheet.ShiftLabel), status: text(sheet.Status), version: Number(sheet.VersionNo || 1), dayKind: text(sheet.DayKind), holidayName: text(sheet.HolidayName), capturedBy: text(sheet.CreatedBy), submittedAt: sheet.UpdatedAt ? new Date(String(sheet.UpdatedAt)).toISOString() : '' },
     employees: [...employees.values()],
-    projects: [...projects.values()].map((project) => ({ ...project, employees: project.employees.size, approval: text((siblings.recordset || []).find((row) => text(row.ProjectCode) === project.code)?.Status) })),
-    projectProgress: { approved: (siblings.recordset || []).filter((row) => text(row.Status) === 'Approved').length, total: (siblings.recordset || []).length },
+    projects: [...projects.values()].map((project) => {
+      const sibling = siblingRows.find((row) => text(row.ProjectCode) === project.code);
+      return { ...project, employees: project.employees.size, approval: text(sibling?.Status), manager: resolvedManagerFor(resolved, project.code, location, text(sibling?.ProjectManager)) };
+    }),
+    projectProgress: { approved: siblingRows.filter((row) => text(row.Status) === 'Approved').length, total: siblingRows.length },
+    assignedApprover,
+    approvingAs,
+    canSeeAll: Boolean(viewer?.canSeeAll),
+    viewerOwns: viewer ? approvalViewerOwns(viewer, item.stage === 'Supervisor' ? item.supervisor : assignedApprover || item.projectManager) : false,
     history,
     settings: { nightAllowance: 1500 },
   };

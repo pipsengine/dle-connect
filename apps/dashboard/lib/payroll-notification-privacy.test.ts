@@ -10,6 +10,7 @@ import {
   type EnterpriseNotification,
 } from './enterprise-notifications-store.ts';
 import { userMatchesPayrollApproverStage } from './payroll-approval-notification-service.ts';
+import { roleFromSession } from './payroll-session.ts';
 
 const session = (input: Partial<SessionPayload> & Pick<SessionPayload, 'username' | 'roles'>): SessionPayload => ({
   sub: input.sub || input.username,
@@ -74,5 +75,36 @@ assert.equal(userMatchesPayrollApproverStage({
   employeeCode: 'P0146',
   roles: ['Super Administrator', 'HR Manager', 'HR Director'],
 }, 'hr-manager'), false);
+
+assert.equal(userMatchesPayrollApproverStage({
+  username: 'P0432',
+  employeeCode: 'P0432',
+  status: 'Inactive',
+  roles: ['Employee'],
+  jobTitle: 'HR MANAGER',
+}, 'hr-manager'), false);
+
+assert.equal(userMatchesPayrollApproverStage({
+  username: 'P0468',
+  employeeCode: 'P0468',
+  status: 'Active',
+  roles: ['HR Manager'],
+  jobTitle: 'JTMHR - HEAD, HR & ADMINISTRATION',
+}, 'hr-manager'), true);
+
+assert.equal(roleFromSession({
+  username: 'P0468',
+  employeeCode: 'P0468',
+  roles: ['HR Officer', 'HR Administrator', 'HR Manager'],
+  permissions: ['hris.*', 'employees.*', 'leave.*', 'workflow.*', 'offboarding.*', 'payroll.workflow.hr-review.approve'],
+  isGlobalAdmin: false,
+} as never), 'HR Manager');
+
+assert.equal(roleFromSession({
+  username: 'Admin',
+  roles: ['Super Administrator'],
+  permissions: ['*'],
+  isGlobalAdmin: true,
+} as never), 'Super Admin');
 
 console.log('payroll-notification-privacy.test.ts ok');

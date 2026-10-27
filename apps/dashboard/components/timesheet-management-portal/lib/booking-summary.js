@@ -15,6 +15,9 @@ export const bookingDayKind = (workDate, holidayDates) => {
 
 const nightShift = (booking) => String(booking?.shift || '').trim().toLowerCase() === 'night';
 
+/** C2832 and similar: Sat, Sun, and PH count as ordinary DAYS. No overtime. */
+const calendarDayEmployee = (code) => String(code || '').trim().toUpperCase() === 'C2832';
+
 const blankRow = (booking) => ({
   id: booking.employeeCode,
   name: booking.employeeName,
@@ -38,7 +41,8 @@ const blankRow = (booking) => ({
  * One row per employee.
  * Calendar columns take day-shift regular and overtime.
  * Days counts weekday dates only. Saturday, Sunday, and public-holiday dates stay in their hour columns.
- * Night is the number of dates with a night session. Night Hrs is the hours booked on the Night shift.
+ * Night is the number of dates with a night session.
+ * Night Hrs uses the Night-shift booking. A session saved on the day sheet uses the hours booked that night.
  * Balanced means every booked day and night shift has a full standard day of regular hours.
  */
 export const buildBookingSummary = (bookings, holidayDates, standardHours = 8) => {
@@ -46,14 +50,14 @@ export const buildBookingSummary = (bookings, holidayDates, standardHours = 8) =
   const expected = Number(standardHours) > 0 ? Number(standardHours) : 8;
   const byEmployee = new Map();
   for (const booking of bookings || []) {
-    const kind = bookingDayKind(booking.workDate, holidays);
+    const kind = calendarDayEmployee(booking.employeeCode) ? 'weekday' : bookingDayKind(booking.workDate, holidays);
     const leaveOnNonWorkingDay = /approved leave/i.test(String(booking.attendanceStatus || '')) && kind !== 'weekday';
     if (leaveOnNonWorkingDay) continue;
     const date = String(booking.workDate || '').slice(0, 10);
     const current = byEmployee.get(booking.employeeCode) || blankRow(booking);
     const slot = current.dates.get(date) || { dayRegular: 0, dayOvt: 0, nightRegular: 0, nightOvt: 0, night: false };
     const regular = Number(booking.regularHours || 0);
-    const ovt = Number(booking.ovtHours || 0);
+    const ovt = calendarDayEmployee(booking.employeeCode) ? 0 : Number(booking.ovtHours || 0);
     if (nightShift(booking)) {
       slot.nightRegular += regular;
       slot.nightOvt += ovt;
@@ -79,9 +83,11 @@ export const buildBookingSummary = (bookings, holidayDates, standardHours = 8) =
     let short = row.markedException;
     for (const slot of row.dates.values()) {
       if (slot.night) night += 1;
-      nightHours += slot.nightRegular + slot.nightOvt;
+      const bookedNight = slot.nightRegular + slot.nightOvt;
+      const sessionHours = slot.dayRegular + slot.dayOvt;
+      nightHours += bookedNight > 0 ? bookedNight : (slot.night ? sessionHours : 0);
       if (slot.dayRegular + slot.dayOvt > 0 && Math.abs(slot.dayRegular - expected) > 0.001) short = true;
-      if (slot.nightRegular + slot.nightOvt > 0 && Math.abs(slot.nightRegular - expected) > 0.001) short = true;
+      if (bookedNight > 0 && Math.abs(slot.nightRegular - expected) > 0.001) short = true;
     }
     return {
       id: row.id,

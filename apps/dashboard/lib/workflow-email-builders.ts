@@ -404,13 +404,14 @@ export const buildTimesheetApprovalRequestEmail = (input: {
   workCenterName?: string | null;
   actorName: string;
   workspaceLink: string;
+  intro?: string | null;
   baseUrl?: string | null;
 }) => withBrand({
   recipientName: input.recipientName,
   subject: `Timesheet approval required — ${input.stage}`,
   module: 'Timesheet Approval',
   headline: `${input.stage} review required`,
-  intro: `${input.actorName} moved a timesheet into your approval stage. Open the workspace to start the review.`,
+  intro: input.intro || `${input.actorName} moved a timesheet into your approval stage. Open the workspace to start the review.`,
   tone: 'warning',
   details: [
     { label: 'Period', value: input.periodLabel },

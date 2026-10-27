@@ -11,6 +11,7 @@ import { withNormalizedBankCodes } from '@/lib/payroll-bank-constants';
 import { resolveNigeriaPersonalLocation } from '@/lib/nigeria-locations';
 import { composePersonDisplayName, resolvePersonNameParts } from '@/lib/person-display-name';
 import { withPreservedThisPeriodPackageLines } from '@/lib/payroll-package-lines';
+import { formatNextEmployeeCode, occupiedSequenceForNextCode } from '@/lib/employee-code-allocator';
 
 const DEFAULT_IT_NYSC_STIPEND_GRADE = 'IT_NYSC_REM - IT_NYSC';
 
@@ -584,15 +585,17 @@ const isLocalNationality = (value: unknown) => {
   return ['nigeria', 'nigerian', 'ng'].includes(normalized);
 };
 
-const composedEmployeeFullName = (row: Record<string, unknown>, fallback: string) => (
-  composePersonDisplayName({
+const composedEmployeeFullName = (row: Record<string, unknown>, fallback: string) => {
+  const hasStructuredName = Boolean(str(row.first_name) && str(row.last_name));
+  return composePersonDisplayName({
     title: row.title,
     firstName: row.first_name,
     middleName: row.middle_name,
     lastName: row.last_name,
-    fallback: str(row.full_name) || fallback,
-  }) || fallback
-);
+    // A stored full name often repeats the staff code. Structured names already identify the person.
+    fallback: hasStructuredName ? undefined : (str(row.full_name) || fallback),
+  }) || fallback;
+};
 
 const employeeTypeCode = (employeeType: string) => {
   const normalized = employeeType.trim().toLowerCase();
@@ -2258,12 +2261,6 @@ export const previewNextEmployeeCodeFromDb = async (
   if (!p) return null;
   const excludeDraftId = str(options?.excludeDraftId);
 
-  const formatNext = (prefix: string, latest: number) => {
-    const next = Math.max(0, latest) + 1;
-    const width = Math.max(4, String(next).length);
-    return `${prefix}${String(next).padStart(width, '0')}`;
-  };
-
   if (code === 'N' || code === 'I') {
     const employeeCodePrefix = employeeCodePrefixForTypeCode(code);
     const rs = await p
@@ -2316,9 +2313,8 @@ export const previewNextEmployeeCodeFromDb = async (
       `);
     const row = rs.recordset[0];
     const latestEmployee = Number(row?.latest_employee || 0);
-    const latestCounter = Number(row?.latest_counter || 0);
-    const latest = Math.max(latestEmployee, latestCounter);
-    return formatNext(employeeCodePrefix, latest);
+    const latest = occupiedSequenceForNextCode(latestEmployee, Number(row?.latest_counter || 0));
+    return formatNextEmployeeCode(employeeCodePrefix, latest);
   }
 
   const rs = await p
@@ -2354,9 +2350,8 @@ export const previewNextEmployeeCodeFromDb = async (
     `);
   const row = rs.recordset[0];
   const latestEmployee = Number(row?.latest_employee || 0);
-  const latestCounter = Number(row?.latest_counter || 0);
-  const latest = Math.max(latestEmployee, latestCounter);
-  return formatNext(code, latest);
+  const latest = occupiedSequenceForNextCode(latestEmployee, Number(row?.latest_counter || 0));
+  return formatNextEmployeeCode(code, latest);
 };
 
 export const nextEmployeeCodeFromDb = async (
@@ -2376,36 +2371,39 @@ export const nextEmployeeCodeFromDb = async (
     }
     return Number(preview.slice(1)) || 0;
   })();
+  const occupied = Math.max(0, seq - 1);
 
   const p = await pool();
   if (!p) return preview;
   const tx = new sql.Transaction(p);
   await tx.begin();
   try {
+    // Snap a drifted counter back to live occupancy. Do not raise here —
+    // failed/abandoned creates used to leave last_sequence ahead and skip codes.
     if (typeCode === 'N' || typeCode === 'I') {
       const prefix = employeeCodePrefixForTypeCode(typeCode);
       await new sql.Request(tx)
         .input('type_code', sql.Char(1), typeCode)
         .input('type_name', sql.NVarChar(40), employeeTypeNameForTypeCode(typeCode))
         .input('employee_code_prefix', sql.NVarChar(10), prefix)
-        .input('last_sequence', sql.Int, seq)
+        .input('occupied_sequence', sql.Int, occupied)
         .query(`
           MERGE [hris].[EmployeeCodeCounters] AS target
-          USING (SELECT @type_code AS employee_type_code, @type_name AS employee_type_name, @employee_code_prefix AS employee_code_prefix, @last_sequence AS last_sequence) AS source
+          USING (SELECT @type_code AS employee_type_code, @type_name AS employee_type_name, @employee_code_prefix AS employee_code_prefix, @occupied_sequence AS last_sequence) AS source
           ON target.employee_type_code = source.employee_type_code
-          WHEN MATCHED AND ISNULL(target.last_sequence, 0) < source.last_sequence THEN UPDATE SET last_sequence = source.last_sequence, employee_code_prefix = source.employee_code_prefix
+          WHEN MATCHED AND ISNULL(target.last_sequence, 0) > source.last_sequence THEN UPDATE SET last_sequence = source.last_sequence, employee_code_prefix = source.employee_code_prefix, modified_at = SYSUTCDATETIME(), modified_by = SUSER_SNAME()
           WHEN NOT MATCHED THEN INSERT (employee_type_code, employee_type_name, employee_code_prefix, last_sequence) VALUES (source.employee_type_code, source.employee_type_name, source.employee_code_prefix, source.last_sequence);
         `);
     } else {
       await new sql.Request(tx)
         .input('type_code', sql.Char(1), typeCode)
         .input('type_name', sql.NVarChar(40), employeeTypeNameForTypeCode(typeCode))
-        .input('last_sequence', sql.Int, seq)
+        .input('occupied_sequence', sql.Int, occupied)
         .query(`
           MERGE [hris].[EmployeeCodeCounters] AS target
-          USING (SELECT @type_code AS employee_type_code, @type_name AS employee_type_name, @last_sequence AS last_sequence) AS source
+          USING (SELECT @type_code AS employee_type_code, @type_name AS employee_type_name, @occupied_sequence AS last_sequence) AS source
           ON target.employee_type_code = source.employee_type_code
-          WHEN MATCHED AND ISNULL(target.last_sequence, 0) < source.last_sequence THEN UPDATE SET last_sequence = source.last_sequence
+          WHEN MATCHED AND ISNULL(target.last_sequence, 0) > source.last_sequence THEN UPDATE SET last_sequence = source.last_sequence, modified_at = SYSUTCDATETIME(), modified_by = SUSER_SNAME()
           WHEN NOT MATCHED THEN INSERT (employee_type_code, employee_type_name, last_sequence) VALUES (source.employee_type_code, source.employee_type_name, source.last_sequence);
         `);
     }

@@ -632,6 +632,13 @@
   resize: vertical;
 }
 
+.rowEdit {
+  color: var(--fp-blue);
+  font-weight: 700;
+  text-decoration: none;
+  white-space: nowrap;
+}
+
 .footerActions {
   display: flex;
   gap: 5px;
@@ -857,6 +864,129 @@
 .error {
   color: #b42318;
   margin: 8px 0;
+}
+
+.entitlementWrap {
+  margin-top: 16px;
+}
+
+.entitlementToolbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-end;
+  gap: 12px;
+  margin-bottom: 10px;
+  flex-wrap: wrap;
+}
+
+.entitlementToolbar h3 {
+  margin: 0 0 3px;
+  font-size: 16px;
+}
+
+.entitlementToolbar p {
+  margin: 0;
+  color: var(--fp-muted);
+}
+
+.entitlementActions {
+  display: flex;
+  gap: 8px;
+}
+
+.entitlementSheet {
+  background: #fff;
+  border: 1px solid #d5dde6;
+  overflow: auto;
+}
+
+.entitlementHead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 12px 16px 4px;
+}
+
+.entitlementBrand img {
+  height: 42px;
+  width: auto;
+  display: block;
+}
+
+.entitlementHead strong {
+  font-size: 18px;
+  letter-spacing: 0.6px;
+  text-align: right;
+}
+
+.entitlementSheet table {
+  width: 100%;
+  border-collapse: collapse;
+  min-width: 760px;
+}
+
+.entitlementSheet th,
+.entitlementSheet td {
+  border: 1px solid #c5cdd6;
+  padding: 7px 9px;
+  font-size: 12px;
+  vertical-align: middle;
+}
+
+.entitlementSheet th {
+  background: #f8d3b0;
+  text-align: left;
+  font-weight: 800;
+  width: 22%;
+}
+
+.entitlementSection td {
+  background: #4b5563 !important;
+  color: #fff;
+  font-weight: 800;
+}
+
+.entitlementAlt td {
+  background: #fff7ed;
+}
+
+.entitlementHighlight td {
+  background: #f8d3b0;
+}
+
+.entitlementTotal td {
+  background: #4b5563;
+  color: #fff;
+  font-weight: 800;
+}
+
+.entitlementNet td {
+  background: #4b5563;
+  color: #fff;
+  font-weight: 800;
+}
+
+.entitlementNum {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+@media print {
+  .entitlementToolbar,
+  .crumb,
+  .titleRow,
+  .steps,
+  .actions,
+  .footerActions,
+  .kpis,
+  .pills {
+    display: none !important;
+  }
+  .entitlementSheet {
+    border: 0;
+  }
 }
 
 @media (max-width: 1100px) {

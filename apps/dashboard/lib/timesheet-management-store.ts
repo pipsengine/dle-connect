@@ -1,7 +1,7 @@
 import sql from 'mssql';
 import { dleEnterpriseLastPoolError, getDleEnterpriseDbPool } from '@/lib/dle-enterprise-db';
 import { readTimesheetCrewState, type TimesheetCrewAssignment, type TimesheetCrewEvent, type TimesheetCrewRemoval } from '@/lib/timesheet-crew-store';
-import { clearWeekendLeaveHours } from '@/lib/timesheet-entry-workspace';
+import { applyApprovedLeaveHours, clearWeekendLeaveHours } from '@/lib/timesheet-entry-workspace';
 
 export type TimesheetManagementEmployee = {
   code: string;
@@ -332,6 +332,7 @@ const readDirectory = async (connection: sql.ConnectionPool): Promise<TimesheetM
 export const readTimesheetManagementSnapshot = async (): Promise<TimesheetManagementSnapshot> => {
   const connection = await pool();
   await clearWeekendLeaveHours(connection).catch(() => undefined);
+  await applyApprovedLeaveHours(connection).catch(() => undefined);
   const [directory, periods, bookings, records, holidays, settings, crew] = await Promise.all([
     readDirectory(connection),
     connection.request().query(`SELECT * FROM [tsmgmt].[Periods] ORDER BY [StartDate] DESC, [Name]`),
@@ -500,7 +501,10 @@ export const saveTimesheetManagementBookings = async (input: {
           MERGE [tsmgmt].[Bookings] AS target
           USING (SELECT @PeriodId AS PeriodId, @WorkDate AS WorkDate, @EmployeeCode AS EmployeeCode, @ShiftLabel AS ShiftLabel) AS source
           ON target.[PeriodId] = source.PeriodId AND target.[WorkDate] = source.WorkDate AND target.[EmployeeCode] = source.EmployeeCode AND target.[ShiftLabel] = source.ShiftLabel
-          WHEN MATCHED THEN UPDATE SET
+          WHEN MATCHED AND (
+            target.[SupervisorName] = @SupervisorName
+            OR (ISNULL(target.[RegularHours],0)+ISNULL(target.[OvtHours],0)+ISNULL(target.[NightHours],0) <= 0 AND @RegularHours + @OvtHours + @NightHours > 0)
+          ) THEN UPDATE SET
             [SupervisorName] = @SupervisorName,
             [LocationName] = @LocationName,
             [WorkCenterName] = @WorkCenterName,

@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { AUTH_COOKIE, verifySessionToken } from '@/lib/auth/session';
+import { shouldKeepReservedEmployeeCode } from '@/lib/employee-code-allocator';
 import {
   createEmployeeFromDraftInDb,
   findDuplicateEmployeesInDb,
@@ -8,6 +9,7 @@ import {
   humanizeEmployeeCreateDbError,
   isEmployeeCodeAlreadyIssuedInDb,
   nextEmployeeCodeFromDb,
+  previewNextEmployeeCodeFromDb,
   officialEmailAlreadyUsedMessage,
   saveEmployeeDraftToDb,
 } from '@/lib/dle-enterprise-db';
@@ -276,21 +278,22 @@ const finalizeEmployeeId = async (draft: EmployeeDraftPayload, draftId?: string 
   const prefix = employeeTypePrefix(employeeType);
   if (!prefix) throw new Error('Employee Type must be Permanent, Lumpsum, Daily Rate, NYSC, IT, Intern, or Industrial Trainee');
 
-  // If the draft already carries a valid employeeId (matching the expected prefix, not empty, and globally
-  // unique across Employees + other non-cancelled Drafts), RESPECT IT. Exclude this draft so its own
-  // reserved preview code is not treated as a collision.
+  // Keep a draft reservation only when it is the next occupied slot. A stale
+  // preview such as P0472 must not skip unused P0468-P0471.
   const existingCode = normalizeEmployeeId(draft.employment?.employeeId);
   if (existingCode && existingCode.startsWith(prefix)) {
     const unique = await isUniqueEmployeeId(existingCode, draftId);
-    if (unique) return existingCode;
+    if (unique) {
+      const nextOccupied = await previewNextEmployeeCodeFromDb(employeeType, { excludeDraftId: draftId }).catch(() => null);
+      if (!nextOccupied || shouldKeepReservedEmployeeCode(existingCode, nextOccupied)) return existingCode;
+    }
   }
 
-  const dbEmployeeCode = await nextEmployeeCodeFromDb(employeeType, { excludeDraftId: draftId });
-  if (dbEmployeeCode) {
-    const normalized = normalizeEmployeeCodeForPrefix(dbEmployeeCode, prefix);
-    if (normalized.startsWith(prefix)) {
-      const unique = await isUniqueEmployeeId(normalized, draftId);
-      if (unique) return normalized;
+  for (let attempt = 0; attempt < 20; attempt++) {
+    const dbEmployeeCode = await nextEmployeeCodeFromDb(employeeType, { excludeDraftId: draftId });
+    if (dbEmployeeCode) {
+      const normalized = normalizeEmployeeCodeForPrefix(dbEmployeeCode, prefix);
+      if (normalized.startsWith(prefix) && await isUniqueEmployeeId(normalized, draftId)) return normalized;
     }
   }
   for (let i = 0; i < 1000; i++) {
@@ -335,6 +338,7 @@ const normalizePayrollPayloadBeforeCreate = (payload: EmployeeDraftPayload) => {
   if (!payload.payroll.payCurrency) payload.payroll.payCurrency = 'NGN';
   const employment: PayrollEmploymentContext = {
     employmentType: payload.employment?.employmentType,
+    employeeCode: payload.employment?.employeeId,
     contractStartDate: payload.employment?.contractStartDate,
     contractEndDate: payload.employment?.contractEndDate,
   };

@@ -256,6 +256,15 @@ export const payrollActiveEmployees = (employees: DleEmployeeDirectoryRow[]) =>
     return true;
   });
 
+/** First calendar day of a payroll period (`2026-09` or `per-2026-09`). */
+export const payrollPeriodStartIso = (period: string) => {
+  const match = /^(\d{4})-(\d{2})$/.exec(compact(period).replace(/^per-/, '').slice(0, 7));
+  if (!match) return null;
+  const month = Number(match[2]);
+  if (!Number(match[1]) || month < 1 || month > 12) return null;
+  return `${match[1]}-${match[2]}-01`;
+};
+
 /** Last calendar day of a payroll period (`2026-09` or `per-2026-09`). */
 export const payrollPeriodEndIso = (period: string) => {
   const match = /^(\d{4})-(\d{2})$/.exec(compact(period).replace(/^per-/, '').slice(0, 7));
@@ -265,6 +274,28 @@ export const payrollPeriodEndIso = (period: string) => {
   if (!year || month < 1 || month > 12) return null;
   const lastDay = new Date(Date.UTC(year, month, 0)).getUTCDate();
   return `${match[1]}-${match[2]}-${String(lastDay).padStart(2, '0')}`;
+};
+
+/**
+ * First-month salaried pay is calendar days from the join date through month end.
+ * Later months are a full 1. Same day-count rule as an exit-month settlement.
+ */
+export const joinMonthSalaryFactor = (
+  employee: { dateJoined?: string | null; contractStartDate?: string | null },
+  period?: string | null,
+) => {
+  if (!period) return 1;
+  const periodStart = payrollPeriodStartIso(period);
+  const periodEnd = payrollPeriodEndIso(period);
+  if (!periodStart || !periodEnd) return 1;
+  const start = compact(employee.dateJoined || employee.contractStartDate).slice(0, 10);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(start)) return 1;
+  if (start <= periodStart) return 1;
+  if (start > periodEnd) return 0;
+  const joinDay = Number(start.slice(8, 10));
+  const lastDay = Number(periodEnd.slice(8, 10));
+  if (!joinDay || !lastDay) return 1;
+  return (lastDay - joinDay + 1) / lastDay;
 };
 
 /**
