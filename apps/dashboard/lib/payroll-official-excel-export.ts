@@ -25,7 +25,6 @@ import { getPayrollPublicHolidayDates } from '@/lib/nigeria-public-holidays';
 import { NIGHT_INCONVENIENCE_ALLOWANCE_AMOUNT } from '@/lib/timesheet-entry-shared';
 import { resolvePayrollCompany, type PayrollCompany } from '@/lib/payroll-schedule-scope';
 import { ngnSalaryScheduleCostSummary } from '@/lib/salary-schedule-overlay';
-import { earningComponentFamily } from '@/lib/payroll-earning-component';
 import { isPensionEligibleStaff } from '@/lib/payroll-employee-classification';
 
 const roundMoney = (value: number) => Math.round((Number.isFinite(value) ? value : 0) * 100) / 100;
@@ -525,49 +524,86 @@ export const buildOfficialBankScheduleWorksheets = (
 
 /** —— Salaried / stipend salary schedule (PERM.STAFF / CONT. STAFF / USD REPORT layout) —— */
 type DeductionColumnDef = { label: string; pattern: RegExp; fallback?: (r: Enriched) => number };
+type SalariedEarningSheet = 'perm' | 'cont' | 'usd';
+type OfficialEarningLine = {
+  code?: string | null;
+  name?: string | null;
+  label?: string | null;
+  amount?: number | null;
+};
 
-const EARNING_PATTERN_BY_LABEL: Record<string, RegExp> = {
-  'ARREARS (Earning)': /^ARREARS$/i,
-  'BASIC SALARY (Earning)': /(?<!EXP_.{0,30})(BASIC(?!1_LUMPSUM)|SNM_BASIC|MD BASIC)/i,
-  'FURNITURE (Earning)': /FURN/i,
-  'FURNITURE ALLOWANCE (Earning)': /FURNITURE ALLOW/i,
-  'HOUSING (Earning)': /HOUSE/i,
-  'IT ALLOWANCE (Earning)': /IT ALLOW/i,
-  'JNR MEDICAL (Earning)': /JNR.?MEDICAL/i,
-  'JNR OTHER ALLOWANCE (Earning)': /JNR.?OTHER/i,
-  'Jnr Staff_Meal Allowance (Earning)': /JNR.?STAFF.?MEAL|PER_MEAL_JNR/i,
-  'JNR UTILITY (Earning)': /JNR.?UTIL/i,
-  'JUNIOR UNION (Earning)': /JUNIOR UNION|JNR_UNION(?!_DUES)/i,
-  'Leave Allowance (Earning)': /LEAVE ALLOW/i,
-  'LUMPSUM ALLOWANCE (Earning)': /LUMPSUM ALLOW/i,
-  'LUMSUM AMOUNT (Earning)': /LUMSUM AMOUNT|BASIC1_LUMPSUM|LUMPSUMTAX|LUMSUM/i,
-  'MD BASIC (Earning)': /MD BASIC/i,
-  'MEAL (Earning)': /TCMMEAL|(?:^|\s)MEAL(?! ALLOW)(?:\s|$)/i,
-  'Meal Allowance (Earning)': /MEAL ALLOW|PER_MEAL(?!_JNR)/i,
-  'MEAL ALLOWANCE (Earning)': /MEAL ALLOW|PER_MEAL(?!_JNR)/i,
-  'MEDICAL (Earning)': /MEDICAL/i,
-  'NIGHT ALLOWANCE (Earning)': /NIGHT ALLOW|JCWEEKDAY_NT|NIGHT/i,
-  'NYSC ALLOWANCE (Earning)': /NYSC/i,
-  'OTHER ALLOWANCE (Earning)': /OTHER ALLOW|SNMOTHER|EXP_OTHALL|OTHALL/i,
-  'OVERTIME (Earning)': /OVERTIME|WEEKDAYOVT|SATEARN|SUNDAYEARN|PUBHOL/i,
-  'PENSION REFUND (Earning)': /PENSION.?REFUND/i,
-  'REFUND (Earning)': /^REFUND$/i,
-  'SENIOR MANAGEMENT HOUSING_TAX (Earning)': /SENIOR MANAGEMENT HOUSING|SNMHOUSINGTAX/i,
-  'SENIOR MANAGEMENT OTHER ALLOWANCE_T (Earning)': /SENIOR MANAGEMENT OTHER|SNMOTHERALL/i,
-  'SENIOR MANAGER TRANSPORT (Earning)': /SENIOR MANAGER TRANSPORT|SNMTRANSP|SNM_TRANS/i,
-  'SITE ALLOWANCE (Earning)': /SITE ALLOW/i,
-  'SNR UNION (Earning)': /SNR UNION(?! DUES)/i,
-  'STOCK COUNT (Earning)': /STOCK COUNT/i,
-  'TCM TRANSPORT (Earning)': /TCM.?TRN|TCMTRANS|TCM_TRNSPT/i,
-  'TRANSPORT ALLOWANCE (Earning)': /TRANSPORT ALLOW|(?<!EXP_.{0,20})(?<!SNM)(?<!TCM)(?<!WEEKLY)^TRANS/i,
-  'UTILITIES (Earning)': /UTILIT/i,
-  'UTILITY (Earning)': /^(UTILITY)$/i,
-  'Weekly Transport ': /WEEKLY TRANSPORT|TRANSPORT_WK/i,
-  'Weekly Transport': /WEEKLY TRANSPORT|TRANSPORT_WK/i,
-  'EXP_ SMGT BASIC (Earning)': /EXP_?\s*SMGT BASIC|EXP_BASIC/i,
-  'EXP_ SMGT OTHER ALLOWANCE (Earning)': /EXP_?\s*SMGT OTHER|EXP_OTHALL/i,
-  'EXP_SMGT HOUSING (Earning)': /EXP_SMGT HOUSING|EXP_HOUSING/i,
-  'EXP_SNMG TRANSPORT (Earning)': /EXP_SNMG TRANSPORT|EXP_TRANSP/i,
+const earningLineCode = (line: OfficialEarningLine) => compact(line.code);
+const earningLineName = (line: OfficialEarningLine) => compact(line.name || line.label);
+
+const matchesEarningLine = (line: OfficialEarningLine, pattern: RegExp) => {
+  const code = earningLineCode(line);
+  const name = earningLineName(line);
+  return pattern.test(`${code} ${name}`) || pattern.test(code) || pattern.test(name);
+};
+
+const mealAllowanceColumn = (sheet: SalariedEarningSheet) =>
+  (sheet === 'cont' ? 'MEAL ALLOWANCE (Earning)' : 'Meal Allowance (Earning)');
+
+/**
+ * Map one earning line onto one component column.
+ * The first matching rule wins, so a line cannot be printed under two headers.
+ */
+const assignEarningColumn = (line: OfficialEarningLine, sheet: SalariedEarningSheet): string => {
+  if (matchesEarningLine(line, /JNR.?STAFF.?MEAL|PER_MEAL_JNR/i)) return 'Jnr Staff_Meal Allowance (Earning)';
+  if (matchesEarningLine(line, /MEAL ALLOW|PER_MEAL(?!_JNR)|MEAL_ALLOW/i)) return mealAllowanceColumn(sheet);
+  if (matchesEarningLine(line, /TCMMEAL|(?:^|\s)MEAL(?! ALLOW)(?:\s|$)/i)) return 'MEAL (Earning)';
+
+  if (matchesEarningLine(line, /JNR.?MEDICAL/i)) return 'JNR MEDICAL (Earning)';
+  if (matchesEarningLine(line, /JNR.?OTHER/i)) return 'JNR OTHER ALLOWANCE (Earning)';
+  if (matchesEarningLine(line, /JNR.?UTIL/i)) return 'JNR UTILITY (Earning)';
+  if (matchesEarningLine(line, /JUNIOR UNION|JNR_UNION(?!_DUES)/i)) return 'JUNIOR UNION (Earning)';
+  if (matchesEarningLine(line, /SNR UNION(?! DUES)|SNR_UNION(?!_DUES)/i)) return 'SNR UNION (Earning)';
+
+  if (matchesEarningLine(line, /SENIOR MANAGEMENT HOUSING|SNMHOUSING/i)) return 'SENIOR MANAGEMENT HOUSING_TAX (Earning)';
+  if (matchesEarningLine(line, /SENIOR MANAGEMENT OTHER|SNMOTHERALL|SNMOTHALL/i)) return 'SENIOR MANAGEMENT OTHER ALLOWANCE_T (Earning)';
+  if (matchesEarningLine(line, /SENIOR MANAGER TRANSPORT|SENIOR MANAGEMENT TRANSPORT|SNMTRANSP|SNM_TRANS/i)) return 'SENIOR MANAGER TRANSPORT (Earning)';
+
+  if (matchesEarningLine(line, /EXP_?\s*SMGT BASIC|EXP_BASIC/i)) return 'EXP_ SMGT BASIC (Earning)';
+  if (matchesEarningLine(line, /EXP_?\s*SMGT OTHER|EXP_OTHALL/i)) return 'EXP_ SMGT OTHER ALLOWANCE (Earning)';
+  if (matchesEarningLine(line, /EXP_SMGT HOUSING|EXP_HOUSING/i)) return 'EXP_SMGT HOUSING (Earning)';
+  if (matchesEarningLine(line, /EXP_SNMG TRANSPORT|EXP_TRANSP/i)) return 'EXP_SNMG TRANSPORT (Earning)';
+
+  if (matchesEarningLine(line, /TCM.?TRN|TCMTRANS|TCM_TRNSPT/i)) return 'TCM TRANSPORT (Earning)';
+  if (matchesEarningLine(line, /WEEKLY TRANSPORT|TRANSPORT_WK/i)) return 'Weekly Transport ';
+
+  if (matchesEarningLine(line, /LUMPSUM ALLOW/i)) return 'LUMPSUM ALLOWANCE (Earning)';
+  if (matchesEarningLine(line, /LUMSUM AMOUNT|BASIC1_LUMPSUM|LUMPSUMTAX|LUMSUM/i)) return 'LUMSUM AMOUNT (Earning)';
+
+  if (matchesEarningLine(line, /^(UTILITY)$/i)) return 'UTILITY (Earning)';
+  if (matchesEarningLine(line, /UTILIT/i)) return 'UTILITIES (Earning)';
+  if (matchesEarningLine(line, /FURN/i) && matchesEarningLine(line, /ALLOW/i)) return 'FURNITURE ALLOWANCE (Earning)';
+  if (matchesEarningLine(line, /FURN/i)) return 'FURNITURE (Earning)';
+  if (matchesEarningLine(line, /HOUS/i)) return 'HOUSING (Earning)';
+  if (matchesEarningLine(line, /OTHALL|OTHER ALLOW/i)) return 'OTHER ALLOWANCE (Earning)';
+  if (matchesEarningLine(line, /TRANSP|TRANSPORT/i)) return 'TRANSPORT ALLOWANCE (Earning)';
+  if (matchesEarningLine(line, /MEDICAL/i)) return 'MEDICAL (Earning)';
+  if (matchesEarningLine(line, /NJIC/i)) return 'NJIC (Earning)';
+  if (matchesEarningLine(line, /LEAVE/i)) return 'Leave Allowance (Earning)';
+
+  if (sheet === 'usd') {
+    if (matchesEarningLine(line, /^(BASIC|BASIC SALARY|BASICPAY)$/i)) return 'BASIC SALARY (Earning)';
+  } else if (matchesEarningLine(line, /(?<!EXP_.{0,30})(BASIC(?!1_LUMPSUM)|SNM_BASIC|MD BASIC)/i)) {
+    return 'BASIC SALARY (Earning)';
+  }
+
+  if (matchesEarningLine(line, /PENSION.?REFUND/i)) return 'PENSION REFUND (Earning)';
+  if (matchesEarningLine(line, /^ARREARS$/i)) return 'ARREARS (Earning)';
+  if (matchesEarningLine(line, /IT ALLOW|^ITALLOW$/i) && !matchesEarningLine(line, /NYSC/i)) return 'IT ALLOWANCE (Earning)';
+  if (matchesEarningLine(line, /NYSC/i)) return 'NYSC ALLOWANCE (Earning)';
+  if (matchesEarningLine(line, /NIGHT ALLOW|JCWEEKDAY_NT/i)) return 'NIGHT ALLOWANCE (Earning)';
+  if (matchesEarningLine(line, /OVERTIME|WEEKDAYOVT|SATEARN|SUNDAYEARN|PUBHOL|\bOVT\b/i)) return 'OVERTIME (Earning)';
+  if (matchesEarningLine(line, /SITE ALLOW/i)) return 'SITE ALLOWANCE (Earning)';
+  if (matchesEarningLine(line, /STOCK COUNT/i)) return 'STOCK COUNT (Earning)';
+  if (matchesEarningLine(line, /^REFUND$/i)) return 'REFUND (Earning)';
+  if (matchesEarningLine(line, /MD BASIC/i)) return 'MD BASIC (Earning)';
+
+  const name = earningLineName(line) || earningLineCode(line) || 'Earning';
+  return `${name} (Earning)`;
 };
 
 const PERM_EARNING_LABELS = [
@@ -583,6 +619,7 @@ const PERM_EARNING_LABELS = [
   'Leave Allowance (Earning)',
   'MEAL (Earning)',
   'Meal Allowance (Earning)',
+  'NJIC (Earning)',
   'MEDICAL (Earning)',
   'OTHER ALLOWANCE (Earning)',
   'OVERTIME (Earning)',
@@ -674,28 +711,13 @@ const CONT_TAIL_COLUMNS = [
   'Supervisor (HA)',
 ] as const;
 
-const knownEarningPatterns = () => Object.values(EARNING_PATTERN_BY_LABEL);
-
-const earningLineBlob = (line: { code?: string | null; name?: string | null; label?: string | null }) =>
-  `${line.code || ''} ${line.name || ''} ${line.label || ''}`;
-
-const lineCoveredByStandardColumns = (code: string, name: string) => {
-  if (earningComponentFamily(code, name)) return true;
-  const token = `${code} ${name}`;
-  return knownEarningPatterns().some((pattern) => pattern.test(token) || pattern.test(code) || pattern.test(name));
-};
-
-const dynamicEarningLabels = (records: Enriched[], reservedLabels: string[]) => {
-  const seen = new Set(reservedLabels);
+const dynamicEarningLabels = (records: Enriched[], reservedLabels: readonly string[], sheet: SalariedEarningSheet) => {
+  const seen = new Set<string>(reservedLabels);
   const extra: string[] = [];
   for (const record of records) {
     for (const line of record.earningLines || []) {
-      const code = compact(line.code);
-      const name = compact((line as { name?: string }).name || line.label || code);
-      if (!code && !name) continue;
       if (Number(line.amount || 0) === 0) continue;
-      if (lineCoveredByStandardColumns(code, name)) continue;
-      const label = `${name || code} (Earning)`;
+      const label = assignEarningColumn(line, sheet);
       if (seen.has(label)) continue;
       seen.add(label);
       extra.push(label);
@@ -704,55 +726,10 @@ const dynamicEarningLabels = (records: Enriched[], reservedLabels: string[]) => 
   return extra.sort();
 };
 
-const earningValue = (record: Enriched, label: string) => {
-  const lines = record.earningLines || [];
-  const amountWhere = (match: (line: (typeof lines)[number]) => boolean) =>
-    roundMoney(lines.reduce((sum, line) => (match(line) ? sum + Number(line.amount || 0) : sum), 0));
-  const familyOf = (line: (typeof lines)[number]) => earningComponentFamily(String(line.code || ''), String(line.name || ''));
-  if (label === 'UTILITIES (Earning)') {
-    return amountWhere((line) => familyOf(line) === 'utilities' && !/JNR/i.test(earningLineBlob(line)));
-  }
-  if (label === 'JNR UTILITY (Earning)') {
-    return amountWhere((line) => familyOf(line) === 'utilities' && /JNR/i.test(earningLineBlob(line)));
-  }
-  if (label === 'UTILITY (Earning)') {
-    return amountWhere((line) => /^(UTILITY)$/i.test(compact(line.code)) || /^(UTILITY)$/i.test(compact(line.name)));
-  }
-  if (label === 'HOUSING (Earning)') {
-    return amountWhere((line) => {
-      const blob = earningLineBlob(line);
-      return familyOf(line) === 'housing' && !/EXP/i.test(blob) && !/TAX/i.test(blob);
-    });
-  }
-  if (label === 'FURNITURE (Earning)') {
-    return amountWhere((line) => familyOf(line) === 'furniture' && !/ALLOW/i.test(earningLineBlob(line)));
-  }
-  if (label === 'FURNITURE ALLOWANCE (Earning)') {
-    return amountWhere((line) => familyOf(line) === 'furniture' && /ALLOW/i.test(earningLineBlob(line)));
-  }
-  if (label === 'MEDICAL (Earning)') {
-    return amountWhere((line) => familyOf(line) === 'medical' && !/JNR/i.test(earningLineBlob(line)));
-  }
-  if (label === 'JNR MEDICAL (Earning)') {
-    return amountWhere((line) => familyOf(line) === 'medical' && /JNR/i.test(earningLineBlob(line)));
-  }
-  if (label === 'OTHER ALLOWANCE (Earning)') {
-    return amountWhere((line) => familyOf(line) === 'other' && !/JNR/i.test(earningLineBlob(line)) && !/EXP/i.test(earningLineBlob(line)));
-  }
-  if (label === 'JNR OTHER ALLOWANCE (Earning)') {
-    return amountWhere((line) => familyOf(line) === 'other' && /JNR/i.test(earningLineBlob(line)));
-  }
-  if (label === 'TRANSPORT ALLOWANCE (Earning)') {
-    return amountWhere((line) => {
-      const blob = earningLineBlob(line);
-      return familyOf(line) === 'transport' && !/TCM|WEEKLY|EXP|SNM/i.test(blob);
-    });
-  }
-  const pattern = EARNING_PATTERN_BY_LABEL[label];
-  if (pattern) return lineAmount(lines, pattern);
-  const bare = label.replace(/\s*\(Earning\)$/i, '');
-  return lineAmount(lines, new RegExp(`^${bare.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i'));
-};
+const earningValue = (record: Enriched, label: string, sheet: SalariedEarningSheet) =>
+  roundMoney((record.earningLines || []).reduce((sum, line) => (
+    assignEarningColumn(line, sheet) === label ? sum + Number(line.amount || 0) : sum
+  ), 0));
 
 const splitEmployerStatutory = (record: Enriched) => {
   const gross = Number(record.grossPay || 0);
@@ -813,8 +790,9 @@ const buildSalariedSheet = (
   periodLabel: string,
 ): ExcelWorksheetInput => {
   const isPerm = sheetName === 'PERM.STAFF';
+  const sheetKind: SalariedEarningSheet = isPerm ? 'perm' : 'cont';
   const baseEarnings = [...(isPerm ? PERM_EARNING_LABELS : CONT_EARNING_LABELS)];
-  const extraEarnings = dynamicEarningLabels(records, baseEarnings);
+  const extraEarnings = dynamicEarningLabels(records, baseEarnings, sheetKind);
   const earningLabels = [...baseEarnings, ...extraEarnings];
   const deductionColumns = isPerm ? PERM_DEDUCTION_COLUMNS : CONT_DEDUCTION_COLUMNS;
   const identity = isPerm
@@ -830,8 +808,8 @@ const buildSalariedSheet = (
   ];
 
   const dataRows = records.map((record) => {
-    const earningTotal = roundMoney((record.earningLines || []).reduce((sum, line) => sum + Number(line.amount || 0), 0))
-      || roundMoney(Number(record.grossPay || 0));
+    const earningCells = earningLabels.map((label) => earningValue(record, label, sheetKind));
+    const earningTotal = roundMoney(earningCells.reduce((sum, value) => sum + Number(value || 0), 0));
     const deductionTotal = roundMoney(Number(record.totalDeductions || record.deductions || 0));
     const { itf, nsitf } = isPensionEligibleStaff(record) ? splitEmployerStatutory(record) : { itf: 0, nsitf: 0 };
     const pensionEr = isPensionEligibleStaff(record) ? roundMoney(Number(record.pensionEmployer || 0)) : 0;
@@ -865,8 +843,7 @@ const buildSalariedSheet = (
           Number(record.timesheetDaysWorked ?? record.timesheetTotalDaysWorked ?? 0),
         ];
 
-    for (const label of earningLabels) values.push(earningValue(record, label));
-    values.push(earningTotal);
+    values.push(...earningCells, earningTotal);
 
     for (const column of deductionColumns) {
       if (column.label === 'Column2') {
@@ -1029,14 +1006,8 @@ const buildUsdSalaryRegisterSheet = (records: PayrollCalculationRecord[], period
   };
 };
 
-const usdEarningValue = (record: Enriched, label: string) => {
-  if (label === 'BASIC SALARY (Earning)') {
-    return lineAmount(record.earningLines, /^(BASIC|BASIC SALARY|BASICPAY)$/i);
-  }
-  return earningValue(record, label);
-};
-
 const buildUsdReportSheet = (records: Enriched[], periodLabel: string): ExcelWorksheetInput => {
+  const earningLabels = [...USD_EARNING_LABELS, ...dynamicEarningLabels(records, USD_EARNING_LABELS, 'usd')];
   const columns = [
     'Employee Code',
     'EmployeeSurname',
@@ -1047,7 +1018,7 @@ const buildUsdReportSheet = (records: Enriched[], periodLabel: string): ExcelWor
     'Gender',
     'Date Joined Group',
     'Job Title Long Description',
-    ...USD_EARNING_LABELS,
+    ...earningLabels,
     'Earning Total',
     'PAYE Tax (Deduction)',
     'Pension (Deduction)',
@@ -1075,8 +1046,8 @@ const buildUsdReportSheet = (records: Enriched[], periodLabel: string): ExcelWor
   for (const section of sections) {
     dataRows.push(padRow([section.label, section.summaryLabel], columns.length));
     for (const record of section.rows) {
-      const earningTotal = roundMoney((record.earningLines || []).reduce((sum, line) => sum + Number(line.amount || 0), 0))
-        || roundMoney(Number(record.grossPay || 0));
+      const earningCells = earningLabels.map((label) => earningValue(record, label, 'usd'));
+      const earningTotal = roundMoney(earningCells.reduce((sum, value) => sum + Number(value || 0), 0));
       const deductionTotal = roundMoney(Number(record.totalDeductions || record.deductions || 0));
       const { itf, nsitf } = isPensionEligibleStaff(record) ? splitEmployerStatutory(record) : { itf: 0, nsitf: 0 };
       const periodSalary = roundMoney(Number(record.periodPackageGross || record.grossPay || 0));
@@ -1090,7 +1061,7 @@ const buildUsdReportSheet = (records: Enriched[], periodLabel: string): ExcelWor
         record._gender,
         record._dateJoined,
         record._jobTitle,
-        ...USD_EARNING_LABELS.map((label) => usdEarningValue(record, label)),
+        ...earningCells,
         earningTotal,
         lineAmount(record.deductionLines, /^PAYE$/i) || roundMoney(Number(record.paye || 0)),
         isPensionEligibleStaff(record)
