@@ -37,6 +37,16 @@ export const isUnionEarningLine = (code: unknown, name: unknown) => {
   return /UNION/i.test(blob) && /EARN/i.test(blob) && !/DUES|DED/.test(blob);
 };
 
+/** Final-settlement recoveries and any already-tagged other deduction, shown as one heading. */
+export const isOtherDeductionLine = (code: unknown, name: unknown) => {
+  const codeText = upper(code);
+  const blob = `${codeText} ${upper(name)}`;
+  if (/PRORATED[-\s_]*LEAVE/.test(blob)) return true;
+  if (/NOTICE[-\s_]*(?:PERIOD[-\s_]*)?RECOVERY/.test(blob)) return true;
+  if (codeText === 'OTHER' || /OTHER\s*DEDUCTIONS?/.test(blob)) return true;
+  return false;
+};
+
 export const summarizePayrollComponentKey = (kind: 'earning' | 'benefit' | 'deduction', code: unknown, name: unknown) => {
   const safeCode = compact(code) || compact(name) || 'UNKNOWN';
   if (kind === 'earning' && isBasicEarningLine(code, name)) {
@@ -47,6 +57,9 @@ export const summarizePayrollComponentKey = (kind: 'earning' | 'benefit' | 'dedu
   }
   if (kind === 'deduction' && isUnionDeductionLine(code, name)) {
     return { key: 'deduction:UNION_DEDUCTIONS', label: 'Union Deductions' };
+  }
+  if (kind === 'deduction' && isOtherDeductionLine(code, name)) {
+    return { key: 'deduction:OTHER_DEDUCTIONS', label: 'Other Deductions' };
   }
   if (kind === 'benefit') {
     return { key: `benefit:${safeCode.toUpperCase()}`, label: `Benefit: ${compact(name) || safeCode}` };

@@ -93,6 +93,8 @@ const collectComponentDefs = (records: PayrollReviewRecord[]) => {
     lineBucketAmount(row.earningLines as Array<Record<string, unknown>>, 'earning', 'earning:BASIC_EARNING'));
   add('deduction:UNION_DEDUCTIONS', 'Union Deductions', (row) =>
     lineBucketAmount(row.deductionLines as unknown as Array<Record<string, unknown>>, 'deduction', 'deduction:UNION_DEDUCTIONS'));
+  add('deduction:OTHER_DEDUCTIONS', 'Other Deductions', (row) =>
+    lineBucketAmount(row.deductionLines as unknown as Array<Record<string, unknown>>, 'deduction', 'deduction:OTHER_DEDUCTIONS'));
 
   add('total:gross', 'Gross Salary', (row) => Number(row.grossPay || 0));
   add('total:deductions', 'Total Deductions', (row) => Number(row.deductions || 0));
@@ -103,6 +105,7 @@ const collectComponentDefs = (records: PayrollReviewRecord[]) => {
   const preferredOrder = [
     'earning:BASIC_EARNING',
     'deduction:UNION_DEDUCTIONS',
+    'deduction:OTHER_DEDUCTIONS',
     'total:gross',
     'total:deductions',
     'total:paye',

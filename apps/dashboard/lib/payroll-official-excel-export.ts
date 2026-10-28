@@ -658,6 +658,9 @@ const USD_EARNING_LABELS = [
   'EXP_SNMG TRANSPORT (Earning)',
 ] as const;
 
+/** Prorated leave, notice-period recovery, and any line already named Other Deductions. */
+const OTHER_DEDUCTION_PATTERN = /prorated[-\s_]*leave|notice[-\s_]*(?:period[-\s_]*)?recovery|^OTHER$|other deductions?/i;
+
 const PERM_DEDUCTION_COLUMNS: DeductionColumnDef[] = [
   { label: 'NHF - National Housing Fund (Deduction)', pattern: /^NHF$/i },
   { label: 'PAYE Tax (Deduction)', pattern: /^PAYE$/i, fallback: (r) => Number(r.paye || 0) },
@@ -665,10 +668,12 @@ const PERM_DEDUCTION_COLUMNS: DeductionColumnDef[] = [
   { label: 'Pension (Deduction)', pattern: /^PENSION_EE$|^PENSION$/i, fallback: (r) => Number(r.pensionEmployee || r.pension || 0) },
   { label: 'PENSION EE2 (Deduction)', pattern: /PENSION_EE2|VOLPENS|ADDITIONAL EMPLOYEE PENSION/i },
   { label: 'UNION DUES (Deduction)', pattern: /UNION/i },
+  { label: 'Other Deductions (Deduction)', pattern: OTHER_DEDUCTION_PATTERN },
 ];
 
 const CONT_DEDUCTION_COLUMNS: DeductionColumnDef[] = [
   { label: 'PAYE Tax (Deduction)', pattern: /^PAYE$/i, fallback: (r) => Number(r.paye || 0) },
+  { label: 'Other Deductions (Deduction)', pattern: OTHER_DEDUCTION_PATTERN },
 ];
 
 const PERM_TAIL_COLUMNS = [

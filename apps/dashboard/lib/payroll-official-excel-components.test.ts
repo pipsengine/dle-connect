@@ -4,6 +4,7 @@
  */
 import assert from 'node:assert/strict';
 import { buildOfficialSalariedDetailWorksheets } from './payroll-official-excel-export';
+import { summarizePayrollComponentKey } from './payroll-earning-summary';
 
 const round = (value: number) => Math.round(value * 100) / 100;
 
@@ -133,6 +134,18 @@ const sheets = buildOfficialSalariedDetailWorksheets([
     line('TRANSPORT_WK', 'WEEKLY TRANSPORT', 2000),
     line('SITE_ALLOW', 'SITE ALLOWANCE', 1500),
   ]),
+  record('P1107', 'Permanent', [
+    line('BASIC', 'BASIC SALARY', 228222),
+  ], {
+    paye: 16287,
+    deductionLines: [
+      { code: 'paye', label: 'Tax Deduction', amount: 16287 },
+      { code: 'pension', label: 'Pension', amount: 11309 },
+      { code: 'prorated-leave', label: 'Prorated Leave (less remaining days in 2026)', amount: 108768 },
+      { code: 'notice-recovery', label: 'Notice Period Recovery', amount: 10144 },
+      { code: 'union-dues', label: 'Union Dues', amount: 0 },
+    ],
+  }),
   record('P9001', 'Permanent', [
     line('BASIC', 'BASIC SALARY', 200),
     line('EXP_BASIC', 'EXP SMGT BASIC', 1000),
@@ -179,6 +192,7 @@ assertFoots(perm, permCode('P1103'));
 assertFoots(perm, permCode('P1104'));
 assertFoots(perm, permCode('P1105'));
 assertFoots(perm, permCode('P1106'));
+assertFoots(perm, permCode('P1107'));
 assertFoots(cont, 'L1101');
 assertFoots(cont, 'L1102');
 assertFoots(cont, 'NYSC0025');
@@ -248,5 +262,18 @@ assert.equal(amount(usd, '9001_', 'EXP_ SMGT OTHER ALLOWANCE (Earning)'), 500);
 assert.equal(amount(usd, '9001_', 'EXP_SMGT HOUSING (Earning)'), 400);
 assert.equal(amount(usd, '9001_', 'EXP_SNMG TRANSPORT (Earning)'), 300);
 assert.equal(amount(usd, '9001_', 'Meal Allowance (Earning)'), 50);
+
+assert.equal(amount(perm, permCode('P1107'), 'Other Deductions (Deduction)'), 118912);
+assert.equal(amount(perm, permCode('P1107'), 'PAYE Tax (Deduction)'), 16287);
+assert.equal(amount(perm, permCode('P1107'), 'UNION DUES (Deduction)'), 0);
+assert.equal(
+  summarizePayrollComponentKey('deduction', 'prorated-leave', 'Prorated Leave (less remaining days in 2026)').label,
+  'Other Deductions',
+);
+assert.equal(
+  summarizePayrollComponentKey('deduction', 'notice-recovery', 'Notice Period Recovery').label,
+  'Other Deductions',
+);
+assert.equal(summarizePayrollComponentKey('deduction', 'paye', 'Tax Deduction').label, 'Tax Deduction');
 
 console.log('payroll-official-excel-components.test.ts ok');
