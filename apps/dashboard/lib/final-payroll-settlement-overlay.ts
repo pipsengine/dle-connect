@@ -25,6 +25,13 @@ const employeeKeys = (code?: string | null, id?: string | null, name?: string | 
   return [...keys];
 };
 
+/** Leave allowance is taxed once. Gratuity, severance, and other leave payments stay outside PAYE. */
+const isTaxableSettlementEarning = (line: Pick<FinalPayrollLine, 'id' | 'label'>) => {
+  const text = `${line.id} ${line.label}`;
+  if (/leave[-_\s]*allow/i.test(text)) return true;
+  return !/gratuity|severance|leave/i.test(text);
+};
+
 const includedAmount = (lines: FinalPayrollLine[], pattern: RegExp) =>
   roundMoney(
     (lines || [])
@@ -56,7 +63,7 @@ const overlayFromSettlement = (
       code: line.id,
       name: line.label,
       amount: roundMoney(line.amount),
-      taxable: !/gratuity|leave/i.test(`${line.id} ${line.label}`),
+      taxable: isTaxableSettlementEarning(line),
     }));
   const deductionLines = [...(settlement.deductions || []), ...(settlement.statutory || [])]
     .filter((line) => line.included && Number(line.amount || 0) > 0)

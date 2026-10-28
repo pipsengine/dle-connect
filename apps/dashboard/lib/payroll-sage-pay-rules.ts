@@ -1,6 +1,6 @@
 import type { DleEmployeeDirectoryRow } from '@/lib/dle-enterprise-db';
 import type { PayrollEarningLine, PayrollEarningsResult, PayrollEarningProfileId } from '@/lib/payroll-earnings-engine';
-import { isMealEarningForPaye, splitEarningLinesForPaye } from '@/lib/payroll-earning-tax-classification';
+import { isLeaveAllowanceEarningForPaye, isMealEarningForPaye, splitEarningLinesForPaye } from '@/lib/payroll-earning-tax-classification';
 import { isSagePayeRefundEarning } from '@/lib/payroll-refund-policy';
 
 export type PayeCalculationRules = {
@@ -266,7 +266,8 @@ export const calculateUsdSeniorManagementPaye = (monthlyTaxable: number, rate = 
 const mapPayrollLines = (lines: PayrollEarningLine[]): SagePayeEarningLine[] =>
   lines.map((line) => {
     const meal = isMealEarningForPaye(line);
-    const taxable = meal || line.taxable !== false;
+    const leaveAllowance = isLeaveAllowanceEarningForPaye(line);
+    const taxable = meal || leaveAllowance || line.taxable !== false;
     return {
       code: line.code,
       name: line.name,

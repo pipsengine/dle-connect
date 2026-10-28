@@ -37,6 +37,22 @@ assert.equal(isVariableEarningForPaye({ code: 'SATPAY', name: 'SATURDAY PAY' }),
 assert.equal(isVariableEarningForPaye({ code: 'SATEARNING', name: 'SATURDAY EARNING' }), true);
 assert.equal(isVariableEarningForPaye({ code: 'SATEARN', name: 'SATURDAY EARNING' }), true);
 assert.equal(isVariableEarningForPaye({ code: 'MEAL', name: 'MEAL ALLOWANCE' }, { category: 'lumpsum' }), false);
+assert.equal(isVariableEarningForPaye({ code: 'leave-allowance', name: '2026 Leave Allowance' }), true);
+assert.equal(isVariableEarningForPaye({ code: 'LEAVE_ALLOWANCE', name: 'Leave Allowance' }), true);
+assert.equal(isVariableEarningForPaye({ code: 'LEAVEALLWCE', name: 'Leave Allowance' }), true);
+
+const leaveOnce = hrisPayeFromEmployee({
+  employee: employee({ employeeCode: 'P0462', employmentType: 'Permanent', salaryGrade: 'SS5' }),
+  earnings: earnings('senior-permanent', [
+    { code: 'gross-salary', name: 'Salary Earned', amount: 373064.01, taxable: true },
+    { code: 'leave-allowance', name: '2026 Leave Allowance', amount: 154299, taxable: false },
+  ]),
+  nhfApplicable: false,
+  additionalEmployeePensionMonthly: 17169.48,
+});
+assert.equal(leaveOnce.variableTaxable, 154299, 'leave allowance stays in the month it is paid');
+assert.equal(leaveOnce.fixedPaye, 39061.02, 'prorated salary PAYE before the leave allowance');
+assert.equal(leaveOnce.paye, 41375.5, 'leave allowance is taxed once on top of the prorated salary');
 
 const reuben = hrisPayeFromEmployee({
   employee: employee({ employeeCode: 'L2216', employmentType: 'Lumpsum' }),

@@ -888,6 +888,8 @@ export const buildComputedStatutory = async (input: {
   period: string;
   currency: 'NGN' | 'USD';
   lastWorkingDay?: string | null;
+  /** Annual leave allowance paid in this settlement. Taxed once, not prorated and not annualized. */
+  leaveAllowanceAmount?: number;
 }): Promise<FinalPayrollLine[]> => {
   const defaults = buildDefaultStatutory();
   if (!input.employee) {
@@ -908,8 +910,10 @@ export const buildComputedStatutory = async (input: {
     const factor = monthDays > 0 ? Math.min(1, Math.max(0, days / monthDays)) : 1;
     const options = { period: input.period, useHrisPackageLines: true as const };
     const earnings = calculatePayrollEarnings(input.employee, options);
+    const leaveAllowanceAmount = roundMoney(Math.max(0, Number(input.leaveAllowanceAmount || 0)));
     // The schedule taxes the prorated month as that month's pay. Scaling a full-month
     // PAYE by days/30 overstates tax once the bands and the fixed rent relief apply.
+    // Leave allowance is the amount actually paid, added once on top of that prorated salary.
     const proratedLines = (earnings.paidEarningLines || earnings.earningLines || [])
       .filter((line) => Number(line.amount || 0) > 0 && !/gratuity|severance|leave allow/i.test(`${line.code} ${line.name}`))
       .map((line) => ({
@@ -917,6 +921,28 @@ export const buildComputedStatutory = async (input: {
         amount: factor >= 0.999 ? roundMoney(line.amount) : roundMoney(Number(line.amount) * factor),
       }))
       .filter((line) => line.amount > 0);
+    if (leaveAllowanceAmount > 0) {
+      proratedLines.push({
+        code: 'LEAVEALLOW',
+        name: 'Leave Allowance',
+        taxable: true,
+        percentOfGross: 0,
+        calculation: 'Leave allowance taxed once in the month paid',
+        runFrequency: 'leave-period',
+        includeInMonthlyPayroll: true,
+        amount: leaveAllowanceAmount,
+      });
+    }
+    const taxEmployee = leaveAllowanceAmount > 0 && input.employee.payeCalculation
+      ? {
+          ...input.employee,
+          payeCalculation: {
+            ...input.employee.payeCalculation,
+            monthlyPayeOverride: undefined,
+            ngnMonthlyPayeOverride: undefined,
+          },
+        }
+      : input.employee;
     const proratedEarnings = {
       ...earnings,
       earningLines: proratedLines,
@@ -944,7 +970,7 @@ export const buildComputedStatutory = async (input: {
     const pension = calculatePension(pensionInputFromEmployee(input.employee, options), pensionVersion);
     const tax = calculatePayrollTax(
       {
-        ...payrollInputFromEmployee(input.employee, options, proratedEarnings),
+        ...payrollInputFromEmployee(taxEmployee, options, proratedEarnings),
         additionalEmployeePensionMonthly: pension.voluntaryContribution,
       },
       taxVersion,
@@ -953,10 +979,12 @@ export const buildComputedStatutory = async (input: {
       ? calculateStatutoryFunds(statutoryFundInputFromEmployee(input.employee, 1, options), fundsVersion)
       : null;
 
-    const payeOverride = Number(
-      input.employee.payeCalculation?.ngnMonthlyPayeOverride
-        ?? input.employee.payeCalculation?.monthlyPayeOverride,
-    );
+    const payeOverride = leaveAllowanceAmount > 0
+      ? Number.NaN
+      : Number(
+          input.employee.payeCalculation?.ngnMonthlyPayeOverride
+            ?? input.employee.payeCalculation?.monthlyPayeOverride,
+        );
     const monthlyPaye = Number.isFinite(payeOverride)
       ? roundMoney(payeOverride * factor)
       : roundMoney(tax.monthlyPaye);
@@ -975,7 +1003,11 @@ export const buildComputedStatutory = async (input: {
         policyBasis: 'Statutory',
         periodDays: `${days} days`,
         amount: monthlyPaye,
-        remarks: Number.isFinite(payeOverride) ? prorationNote : 'PAYE on prorated earnings for the days worked',
+        remarks: Number.isFinite(payeOverride)
+          ? prorationNote
+          : leaveAllowanceAmount > 0
+            ? 'PAYE on prorated earnings, with leave allowance taxed once'
+            : 'PAYE on prorated earnings for the days worked',
         included: true,
       },
       {
@@ -1360,6 +1392,7 @@ export const recalculateSettlement = async (settlement: FinalPayrollSettlement):
       period: settlement.period,
       currency: settlement.currency,
       lastWorkingDay: settlement.lastWorkingDay,
+      leaveAllowanceAmount: earnings.find((line) => line.id === 'leave-allowance' && line.included)?.amount,
     }),
     updatedAt: nowIso(),
   };
@@ -1706,6 +1739,7 @@ export const createFinalPayrollSettlement = async (input: {
       period,
       currency: settlement.currency,
       lastWorkingDay,
+      leaveAllowanceAmount: entitlement.leaveAllowancePaid ? 0 : entitlement.leaveAllowanceCredit,
     }),
   };
 

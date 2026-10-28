@@ -40,6 +40,15 @@ const FIXED_EARNING_CODE = new Set([
   'TCM_TRANSPORT',
 ]);
 
+/** Paid annual leave allowance is taxed once in the month it is paid. */
+export const isLeaveAllowanceEarningForPaye = (line: PayeEarningLineRef) => {
+  const code = canonicalCode(line.code);
+  if (/^LEAVE_?ALLW/.test(code) || code === 'LEAVE_ALLOWANCE' || code === 'LEAVEALLOWANCE' || code === 'LEAVE_ALLOW') {
+    return true;
+  }
+  return /\bLEAVE\s*ALLOWANCE\b/.test(lineText(line));
+};
+
 const VARIABLE_EARNING_CODE = new Set([
   'ARREARS',
   'WKDAY_OVT',
@@ -98,6 +107,7 @@ export const isVariableEarningForPaye = (line: PayeEarningLineRef, _options?: { 
 
   if (!code && !String(line.name || '').trim()) return false;
 
+  if (isLeaveAllowanceEarningForPaye(line)) return true;
   if (isLumpsumBaseEarning(code, text)) return false;
   if (FIXED_EARNING_CODE.has(code)) return false;
   if (isStructuralProfileCode(code)) return false;
