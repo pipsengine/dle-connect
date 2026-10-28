@@ -36,8 +36,11 @@ export default function Reports() {
     return dates;
   }, [snapshot.publicHolidays, snapshot.records]);
   const rows = useMemo(
-    () => buildBookingSummary(bookings, holidayDates, snapshot.standardHours || 8),
-    [bookings, holidayDates, snapshot.standardHours],
+    () => buildBookingSummary(bookings, holidayDates, snapshot.standardHours || 8).map((row) => ({
+      ...row,
+      site: snapshot.directory?.sites?.[String(row.id || '').trim().toUpperCase()] || '',
+    })),
+    [bookings, holidayDates, snapshot.standardHours, snapshot.directory],
   );
   const weekdayBookings = useMemo(
     () => bookings.filter((booking) => bookingDayKind(booking.workDate, holidayDates) === 'weekday'),
@@ -65,6 +68,7 @@ export default function Reports() {
   const exportReport = () => exportTimesheet(rows.map((row) => ({
     Code: row.id,
     Employee: row.name,
+    Site: row.site,
     Days: row.days.size,
     'Weekday Hrs': row.weekdayHours,
     'Weekday OVT': row.weekdayOvt,
@@ -101,15 +105,15 @@ export default function Reports() {
     <div className="panel reportSheet"><div className="panelHead"><div><h3>{tab}</h3><p>{period?.name || 'No period selected'}</p></div><Badge tone="green">DLE ENTERPRISE</Badge></div>
       {tab === 'Daily Detail'
         ? <Table headers={['Date', 'Code', 'Employee', 'REG', 'OVT', 'Night', 'Status']} rows={detailPage.map((booking) => [booking.workDate, booking.employeeCode, booking.employeeName, booking.regularHours, booking.ovtHours, nightDetail(booking), booking.status])} empty="No bookings saved." />
-        : <Table headers={['Code', 'Employee', 'Days', 'Weekday Hrs', 'Weekday OVT', 'Sat Hrs', 'Sat OVT', 'Sun Hrs', 'Sun OVT', 'PH Hrs', 'PH OVT', 'Night', 'Night Hrs', 'Status']} rows={summaryPage.map((row) => [row.id, row.name, row.days.size, row.weekdayHours, row.weekdayOvt, row.saturdayHours, row.saturdayOvt, row.sundayHours, row.sundayOvt, row.phHours, row.phOvt, row.night, row.nightHours, <Badge tone={row.status === 'Exception' ? 'amber' : 'green'}>{row.status}</Badge>])} empty="No bookings saved for this period." />}
+        : <Table headers={['Code', 'Employee', 'Site', 'Days', 'Weekday Hrs', 'Weekday OVT', 'Sat Hrs', 'Sat OVT', 'Sun Hrs', 'Sun OVT', 'PH Hrs', 'PH OVT', 'Night', 'Night Hrs', 'Status']} rows={summaryPage.map((row) => [row.id, row.name, row.site, row.days.size, row.weekdayHours, row.weekdayOvt, row.saturdayHours, row.saturdayOvt, row.sundayHours, row.sundayOvt, row.phHours, row.phOvt, row.night, row.nightHours, <Badge tone={row.status === 'Exception' ? 'amber' : 'green'}>{row.status}</Badge>])} empty="No bookings saved for this period." />}
       <div className="crewPager"><span>Showing {from} to {to} of {listedCount}</span><div><button type="button" disabled={safePage === 1} onClick={() => setPage(safePage - 1)}>‹</button><span>{safePage} / {pageCount}</span><button type="button" disabled={safePage === pageCount} onClick={() => setPage(safePage + 1)}>›</button><select value={pageSize} onChange={changePageSize}><option value={10}>10 / page</option><option value={25}>25 / page</option><option value={50}>50 / page</option><option value={100}>100 / page</option></select></div></div>
     </div>
     {detail && <DetailModal title={detail.title} headers={detail.headers} rows={detail.rows} onClose={() => setDetail(null)} />}
   </>;
 }
 
-const summaryHeaders = ['Code', 'Employee', 'Days', 'Weekday', 'Sat', 'Sun', 'PH', 'OVT', 'Night', 'Status'];
-const summaryCells = (row) => [row.id, row.name, row.days.size, row.weekdayHours, row.saturdayHours, row.sundayHours, row.phHours, row.weekdayOvt + row.saturdayOvt + row.sundayOvt + row.phOvt, row.night, row.status];
+const summaryHeaders = ['Code', 'Employee', 'Site', 'Days', 'Weekday', 'Sat', 'Sun', 'PH', 'OVT', 'Night', 'Status'];
+const summaryCells = (row) => [row.id, row.name, row.site, row.days.size, row.weekdayHours, row.saturdayHours, row.sundayHours, row.phHours, row.weekdayOvt + row.saturdayOvt + row.sundayOvt + row.phOvt, row.night, row.status];
 const workedDayRows = (bookings) => {
   const byDate = new Map();
   for (const booking of bookings) {

@@ -1779,6 +1779,14 @@ export const pensionablePayrollInputFromEmployee = (employee: DleEmployeeDirecto
 };
 
 export const calculatePermanentUnionDues = (employee: DleEmployeeDirectoryRow, options?: PayrollEarningsOptions) => {
+  if (employee.unionDuesApplicable === false) {
+    return {
+      code: 'UNION_DUES',
+      name: 'Union Dues',
+      basis: 'Not applicable for this employee',
+      amount: 0,
+    };
+  }
   const earnings = calculatePayrollEarnings(employee, { ...options, includePeriodAdjustments: false });
   if (earnings.profileId === 'junior-permanent') {
     return {

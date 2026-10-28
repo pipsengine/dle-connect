@@ -1,5 +1,6 @@
 import sql from 'mssql';
 import { dleEnterpriseLastPoolError, getDleEnterpriseDbPool } from '@/lib/dle-enterprise-db';
+import { normalizePayrollCompany, resolvePayrollCompany, type PayrollCompany } from '@/lib/payroll-schedule-scope';
 import { readTimesheetCrewState, type TimesheetCrewAssignment, type TimesheetCrewEvent, type TimesheetCrewRemoval } from '@/lib/timesheet-crew-store';
 import { applyApprovedLeaveHours, clearWeekendLeaveHours } from '@/lib/timesheet-entry-workspace';
 
@@ -11,6 +12,7 @@ export type TimesheetManagementEmployee = {
   workCenter: string;
   department: string;
   employeeType: string;
+  site: PayrollCompany;
 };
 
 export type TimesheetManagementProject = { code: string; name: string };
@@ -70,6 +72,7 @@ export type TimesheetManagementSnapshot = {
   generatedAt: string;
   directory: {
     employees: TimesheetManagementEmployee[];
+    sites: Record<string, PayrollCompany>;
     projects: TimesheetManagementProject[];
     locations: string[];
     workCenters: string[];
@@ -83,6 +86,25 @@ export type TimesheetManagementSnapshot = {
   crewAssignments: TimesheetCrewAssignment[];
   crewEvents: TimesheetCrewEvent[];
   crewRemovals: TimesheetCrewRemoval[];
+};
+
+/**
+ * Timesheet site is the employee's company: DLE or DLPC.
+ * Business unit is the company stamp. Payroll group is only a fallback, because many DLPC crew still have payroll group DLE.
+ */
+export const timesheetCompanySite = (record: {
+  businessUnit?: string | null;
+  payrollGroup?: string | null;
+  department?: string | null;
+  location?: string | null;
+}): PayrollCompany => {
+  const fromBusinessUnit = normalizePayrollCompany(record.businessUnit);
+  if (fromBusinessUnit) return fromBusinessUnit;
+  return resolvePayrollCompany({
+    payrollGroup: record.payrollGroup,
+    department: record.department,
+    location: record.location,
+  });
 };
 
 const text = (value: unknown) => String(value ?? '').trim();
@@ -272,26 +294,41 @@ const readDirectory = async (connection: sql.ConnectionPool): Promise<TimesheetM
       ISNULL(v.reporting_manager, N'') AS reporting_manager,
       ISNULL(v.department, N'') AS department,
       ISNULL(v.employment_type, N'') AS employment_type,
+      ISNULL(v.employment_status, N'') AS employment_status,
+      ISNULL(v.business_unit, N'') AS business_unit,
+      ISNULL(payroll.payroll_group, N'') AS payroll_group,
       COALESCE(NULLIF(v.work_location, N''), NULLIF(j.office_location, N''), N'') AS location
     FROM [hris].[EmployeeMasterView] v
     LEFT JOIN [hris].[EmployeeJobInfo] j ON j.employee_id = v.employee_id
+    LEFT JOIN [hris].[EmployeePayrollSetup] payroll ON payroll.employee_id = v.employee_id
     WHERE v.employee_code LIKE N'C[0-9]%'
-      AND ISNULL(v.employment_status, N'') NOT LIKE N'%terminated%'
-      AND ISNULL(v.employment_status, N'') NOT LIKE N'%resigned%'
-      AND ISNULL(v.employment_status, N'') NOT LIKE N'%retired%'
-      AND ISNULL(v.employment_status, N'') NOT LIKE N'%inactive%'
-      AND ISNULL(v.employment_status, N'') NOT LIKE N'%deceased%'
     ORDER BY v.employee_code
   `);
-  const employees: TimesheetManagementEmployee[] = (employeesResult.recordset || []).map((row) => ({
-    code: text(row.employee_code),
-    name: text(row.full_name),
-    supervisor: text(row.reporting_manager),
-    location: text(row.location),
-    workCenter: text(row.department),
+  const leftTheCompany = (status: string) => /terminated|resigned|retired|inactive|deceased/i.test(status);
+  const siteOf = (row: Record<string, unknown>): PayrollCompany => timesheetCompanySite({
+    businessUnit: text(row.business_unit),
+    payrollGroup: text(row.payroll_group),
     department: text(row.department),
-    employeeType: text(row.employment_type),
-  }));
+    location: text(row.location),
+  });
+  const sites: Record<string, PayrollCompany> = {};
+  const employees: TimesheetManagementEmployee[] = [];
+  for (const row of employeesResult.recordset || []) {
+    const code = text(row.employee_code).toUpperCase();
+    const site = siteOf(row);
+    if (code) sites[code] = site;
+    if (leftTheCompany(text(row.employment_status))) continue;
+    employees.push({
+      code: text(row.employee_code),
+      name: text(row.full_name),
+      supervisor: text(row.reporting_manager),
+      location: text(row.location),
+      workCenter: text(row.department),
+      department: text(row.department),
+      employeeType: text(row.employment_type),
+      site,
+    });
+  }
 
   let projects: TimesheetManagementProject[] = [];
   let locations: string[] = [];
@@ -322,6 +359,7 @@ const readDirectory = async (connection: sql.ConnectionPool): Promise<TimesheetM
   const employeeLocations = employees.map((employee) => employee.location).filter(Boolean);
   return {
     employees,
+    sites,
     projects,
     locations: [...new Set([...locations, ...employeeLocations])].sort(),
     workCenters: [...new Set([...workCenters, ...employees.map((employee) => employee.workCenter).filter(Boolean)])].sort(),

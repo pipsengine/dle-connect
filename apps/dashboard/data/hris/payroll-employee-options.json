@@ -361,8 +361,8 @@
     "employeeId": "0413",
     "employeeCode": "P0413",
     "nhfApplicable": false,
-    "updatedAt": "2026-09-28T17:04:17.393Z",
-    "updatedBy": "September 2026 MD schedule",
+    "updatedAt": "2026-10-28T09:38:59.429Z",
+    "updatedBy": "October 2026 PAYE includes telephone allowance",
     "excludedFromPayrollRun": false,
     "setupAssignedToPayroll": true,
     "payrollGroup": "DLE_USD",
@@ -371,8 +371,8 @@
       "includeRefundInTaxable": false,
       "disablePensionPayeRelief": false,
       "annualRentRelief": 500000,
-      "monthlyPayeOverride": 2167.64,
-      "ngnMonthlyPayeOverride": 1925583.33
+      "monthlyPayeOverride": 1908,
+      "ngnMonthlyPayeOverride": 1825833.33
     }
   },
   {
@@ -624,8 +624,9 @@
     "employeeId": "0462",
     "employeeCode": "P0462",
     "nhfApplicable": false,
-    "updatedAt": "2026-06-27T00:18:59.190Z",
-    "updatedBy": "Sage cutover sync"
+    "updatedAt": "2026-10-28T09:38:59.479Z",
+    "updatedBy": "October 2026 HR: no union deduction",
+    "unionDuesApplicable": false
   },
   {
     "employeeId": "0463",

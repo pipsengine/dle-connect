@@ -129,6 +129,8 @@ export type DleEmployeeDirectoryRow = {
   pensionPin?: string;
   taxIdentificationNumber?: string;
   nhfApplicable?: boolean;
+  /** False when HR has confirmed this employee has no union deduction. */
+  unionDuesApplicable?: boolean;
   annualRent?: number | null;
   annualRentRelief?: number | null;
   /** HRIS setup: fixed monthly additional employee pension (PENSION_EE2). */

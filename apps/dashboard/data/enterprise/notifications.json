@@ -2,20 +2,965 @@
   "schemaVersion": 1,
   "notifications": [
     {
-      "id": "ntf-1792765089378-xwzu9m",
+      "id": "ntf-1793031682752-1zpw18",
+      "recipientUserId": "P0392",
+      "recipientUsername": "P0392",
+      "recipientEmployeeCode": "P0392",
+      "recipientRoles": [],
+      "kind": "Approval",
+      "module": "Finance Approvals",
+      "title": "Payment approval required",
+      "body": "Mr. ADEKUNLE ADESINA submitted Expense Payment DLPC261032 (NGN 844,203.03) for Reporting Manager approval.",
+      "severity": "warning",
+      "status": "Unread",
+      "href": "/finance/approvals/request/PREQ-1792771105873",
+      "createdAt": "2026-10-26T16:21:22.752Z",
+      "actor": "Payment Approval Reminder",
+      "channels": [
+        "In-App",
+        "Email"
+      ],
+      "metadata": {
+        "requestId": "PREQ-1792771105873",
+        "requestNumber": "DLPC261032",
+        "stage": "Reporting Manager",
+        "recipientCode": "P0392",
+        "recipientName": "Mr. JUDE UMUKORO"
+      }
+    },
+    {
+      "id": "ntf-1793031681637-qwzwaf",
+      "recipientUserId": "P0072",
+      "recipientUsername": "P0072",
+      "recipientEmployeeCode": "P0072",
+      "recipientRoles": [],
+      "kind": "Approval",
+      "module": "Finance Approvals",
+      "title": "Payment approval required",
+      "body": "Miss ADENUBI GLORY KEHINDE submitted Supplier Invoice Payment DLPC26108 (NGN 38,406,400.03) for Cost Centre Manager approval.",
+      "severity": "warning",
+      "status": "Unread",
+      "href": "/finance/approvals/request/PREQ-1791556637674",
+      "createdAt": "2026-10-26T16:21:21.637Z",
+      "actor": "Payment Approval Reminder",
+      "channels": [
+        "In-App",
+        "Email"
+      ],
+      "metadata": {
+        "requestId": "PREQ-1791556637674",
+        "requestNumber": "DLPC26108",
+        "stage": "Cost Centre Manager",
+        "recipientCode": "P0072",
+        "recipientName": "Mr. AKANDE OWOLOJA"
+      }
+    },
+    {
+      "id": "ntf-1793030781658-dxxqor",
+      "recipientUserId": "P0392",
+      "recipientUsername": "P0392",
+      "recipientEmployeeCode": "P0392",
+      "recipientRoles": [],
+      "kind": "Approval",
+      "module": "Finance Approvals",
+      "title": "Payment approval required",
+      "body": "Mr. ADEKUNLE ADESINA submitted Expense Payment DLE2610129 (NGN 1,272,775.51) for Reporting Manager approval.",
+      "severity": "warning",
+      "status": "Unread",
+      "href": "/finance/approvals/request/PREQ-1792770778601",
+      "createdAt": "2026-10-26T16:06:21.658Z",
+      "actor": "Payment Approval Reminder",
+      "channels": [
+        "In-App",
+        "Email"
+      ],
+      "metadata": {
+        "requestId": "PREQ-1792770778601",
+        "requestNumber": "DLE2610129",
+        "stage": "Reporting Manager",
+        "recipientCode": "P0392",
+        "recipientName": "Mr. JUDE UMUKORO"
+      }
+    },
+    {
+      "id": "ntf-1793028982452-jxl5w5",
+      "recipientUserId": "P0429",
+      "recipientUsername": "P0429",
+      "recipientEmployeeCode": "P0429",
+      "recipientRoles": [],
+      "kind": "Approval",
+      "module": "Payroll Management",
+      "title": "Payroll approval required — October 2026 · DLPC · Day-rate",
+      "body": "Finance Manager review is required for October 2026 · DLPC · Day-rate. Gross ₦1,738,812.5, Net ₦1,651,871.85, 9 employees. Approvals are pack-specific (Salaries vs Wages).",
+      "severity": "warning",
+      "status": "Unread",
+      "href": "https://dleconnect.dormanlongeng.com:1432/hris/payroll/payroll-approval/authorize?token=eyJydW5JZCI6InBheXJvbGwtMjAyNi0xMC1kYWlseS1yYXRlLURMUEMiLCJwZXJpb2QiOiIyMDI2LTEwIiwic3RhZ2VJZCI6ImZpbmFuY2UtbWFuYWdlciIsImRlY2lzaW9uIjoiYXBwcm92ZSIsInJlY2lwaWVudEVtYWlsIjoicmFwaGVhbGl5YW5kYUBkb3JtYW5sb25nZW5nLmNvbSIsInJlY2lwaWVudFVzZXJuYW1lIjoicDA0MjkiLCJleHAiOjE3OTM2MzM3ODI0NTJ9.LRAOsB5wDMyqHuwxuteUzT1YJY4CmGjwfcKSIW6DWYI",
+      "createdAt": "2026-10-26T15:36:22.452Z",
+      "actor": "Payroll Approval Reminder",
+      "channels": [
+        "In-App",
+        "Email"
+      ],
+      "metadata": {
+        "runId": "payroll-2026-10-daily-rate-DLPC",
+        "period": "2026-10",
+        "pack": "daily-rate",
+        "stageId": "finance-manager",
+        "audience": "named-recipient"
+      }
+    },
+    {
+      "id": "ntf-1793028082409-tlwy8z",
+      "recipientUserId": "P0429",
+      "recipientUsername": "P0429",
+      "recipientEmployeeCode": "P0429",
+      "recipientRoles": [],
+      "kind": "Approval",
+      "module": "Payroll Management",
+      "title": "Payroll approval required — October 2026 · DLPC · Salaries",
+      "body": "Finance Manager review is required for October 2026 · DLPC · Salaries. Gross ₦14,299,330.31, Net ₦12,107,210.88, 36 employees. Approvals are pack-specific (Salaries vs Wages).",
+      "severity": "warning",
+      "status": "Unread",
+      "href": "https://dleconnect.dormanlongeng.com:1432/hris/payroll/payroll-approval/authorize?token=eyJydW5JZCI6InBheXJvbGwtMjAyNi0xMC1zYWxhcmllZC1ETFBDIiwicGVyaW9kIjoiMjAyNi0xMCIsInN0YWdlSWQiOiJmaW5hbmNlLW1hbmFnZXIiLCJkZWNpc2lvbiI6ImFwcHJvdmUiLCJyZWNpcGllbnRFbWFpbCI6InJhcGhlYWxpeWFuZGFAZG9ybWFubG9uZ2VuZy5jb20iLCJyZWNpcGllbnRVc2VybmFtZSI6InAwNDI5IiwiZXhwIjoxNzkzNjMyODgyNDA4fQ.NZMggfGtpWlA_gE6icxD8j_OgMrywUc5Bffhr2zSOhI",
+      "createdAt": "2026-10-26T15:21:22.409Z",
+      "actor": "Payroll Approval Reminder",
+      "channels": [
+        "In-App",
+        "Email"
+      ],
+      "metadata": {
+        "runId": "payroll-2026-10-salaried-DLPC",
+        "period": "2026-10",
+        "pack": "salaried",
+        "stageId": "finance-manager",
+        "audience": "named-recipient"
+      }
+    },
+    {
+      "id": "ntf-1793026282438-j54xp8",
+      "recipientUserId": "P0429",
+      "recipientUsername": "P0429",
+      "recipientEmployeeCode": "P0429",
+      "recipientRoles": [],
+      "kind": "Approval",
+      "module": "Payroll Management",
+      "title": "Payroll approval required — October 2026 · DLE · Day-rate",
+      "body": "Finance Manager review is required for October 2026 · DLE · Day-rate. Gross ₦62,374,403.83, Net ₦59,255,683.55, 175 employees. Approvals are pack-specific (Salaries vs Wages).",
+      "severity": "warning",
+      "status": "Unread",
+      "href": "https://dleconnect.dormanlongeng.com:1432/hris/payroll/payroll-approval/authorize?token=eyJydW5JZCI6InBheXJvbGwtMjAyNi0xMC1kYWlseS1yYXRlLURMRSIsInBlcmlvZCI6IjIwMjYtMTAiLCJzdGFnZUlkIjoiZmluYW5jZS1tYW5hZ2VyIiwiZGVjaXNpb24iOiJhcHByb3ZlIiwicmVjaXBpZW50RW1haWwiOiJyYXBoZWFsaXlhbmRhQGRvcm1hbmxvbmdlbmcuY29tIiwicmVjaXBpZW50VXNlcm5hbWUiOiJwMDQyOSIsImV4cCI6MTc5MzYzMTA4MjQzNX0.hR1lVblhnBwxjpHLoz8M5wGiQyiKwcPo4ttdIDw-nEc",
+      "createdAt": "2026-10-26T14:51:22.438Z",
+      "actor": "Payroll Approval Reminder",
+      "channels": [
+        "In-App",
+        "Email"
+      ],
+      "metadata": {
+        "runId": "payroll-2026-10-daily-rate-DLE",
+        "period": "2026-10",
+        "pack": "daily-rate",
+        "stageId": "finance-manager",
+        "audience": "named-recipient"
+      }
+    },
+    {
+      "id": "ntf-1793021781658-6uba3c",
+      "recipientUserId": "P0436",
+      "recipientUsername": "P0436",
+      "recipientEmployeeCode": "P0436",
+      "recipientRoles": [],
+      "kind": "Approval",
+      "module": "Finance Approvals",
+      "title": "Payment approval required",
+      "body": "MATTHEW ROTIMI submitted Cash Advance Payment DLE2610128 (NGN 137,000) for Reporting Manager approval.",
+      "severity": "warning",
+      "status": "Unread",
+      "href": "/finance/approvals/request/PREQ-1792761774766",
+      "createdAt": "2026-10-26T13:36:21.658Z",
+      "actor": "Payment Approval Reminder",
+      "channels": [
+        "In-App",
+        "Email"
+      ],
+      "metadata": {
+        "requestId": "PREQ-1792761774766",
+        "requestNumber": "DLE2610128",
+        "stage": "Reporting Manager",
+        "recipientCode": "P0436",
+        "recipientName": "Mr. SUNDAY OKEWU"
+      }
+    },
+    {
+      "id": "ntf-1793020882129-oxrfar",
+      "recipientUserId": "P0455",
+      "recipientUsername": "P0455",
+      "recipientEmployeeCode": "P0455",
+      "recipientRoles": [],
+      "kind": "Approval",
+      "module": "Finance Approvals",
+      "title": "Payment approval required",
+      "body": "Mrs. NWANKWO ONYINYE CLAUDIA submitted Expense Payment DLE2610124 (NGN 240,000) for Project Manager approval.",
+      "severity": "warning",
+      "status": "Unread",
+      "href": "/finance/approvals/request/PREQ-1792671131552",
+      "createdAt": "2026-10-26T13:21:22.129Z",
+      "actor": "Payment Approval Reminder",
+      "channels": [
+        "In-App",
+        "Email"
+      ],
+      "metadata": {
+        "requestId": "PREQ-1792671131552",
+        "requestNumber": "DLE2610124",
+        "stage": "Project Manager",
+        "recipientCode": "P0455",
+        "recipientName": "ABUBAKAR ASIPITA IDRIS"
+      }
+    },
+    {
+      "id": "ntf-1793013693357-fz2lyc",
+      "recipientUserId": "P0392",
+      "recipientUsername": "P0392",
+      "recipientEmployeeCode": "P0392",
+      "recipientRoles": [],
+      "kind": "Approval",
+      "module": "Finance Approvals",
+      "title": "Payment approval required",
+      "body": "IDOKO PETER submitted Expense Payment DLPC261031 (NGN 680,000) for Reporting Manager approval.",
+      "severity": "warning",
+      "status": "Unread",
+      "href": "/finance/approvals/request/PREQ-1792753477248",
+      "createdAt": "2026-10-26T11:21:33.357Z",
+      "actor": "Payment Approval Reminder",
+      "channels": [
+        "In-App",
+        "Email"
+      ],
+      "metadata": {
+        "requestId": "PREQ-1792753477248",
+        "requestNumber": "DLPC261031",
+        "stage": "Reporting Manager",
+        "recipientCode": "P0392",
+        "recipientName": "Mr. UMUKORO JUDE"
+      }
+    },
+    {
+      "id": "ntf-1793013693261-za7vhq",
+      "recipientUserId": "P0467",
+      "recipientUsername": "P0467",
+      "recipientEmployeeCode": "P0467",
+      "recipientRoles": [],
+      "kind": "Approval",
+      "module": "Finance Approvals",
+      "title": "Payment approval required",
+      "body": "OKPOK EDET submitted Expense Payment DLE2609160 (NGN 595,125) for Cost Centre Manager approval.",
+      "severity": "warning",
+      "status": "Unread",
+      "href": "/finance/approvals/request/PREQ-1790321997903",
+      "createdAt": "2026-10-26T11:21:33.261Z",
+      "actor": "Payment Approval Reminder",
+      "channels": [
+        "In-App",
+        "Email"
+      ],
+      "metadata": {
+        "requestId": "PREQ-1790321997903",
+        "requestNumber": "DLE2609160",
+        "stage": "Cost Centre Manager",
+        "recipientCode": "P0467",
+        "recipientName": "Mr. ADESHINA ADESEGUN FAWAZ"
+      }
+    },
+    {
+      "id": "ntf-1793013693199-lepinv",
+      "recipientUserId": "P0467",
+      "recipientUsername": "P0467",
+      "recipientEmployeeCode": "P0467",
+      "recipientRoles": [],
+      "kind": "Approval",
+      "module": "Finance Approvals",
+      "title": "Payment approval required",
+      "body": "OKPOK EDET submitted Expense Payment DLE2609161 (NGN 396,746) for Cost Centre Manager approval.",
+      "severity": "warning",
+      "status": "Unread",
+      "href": "/finance/approvals/request/PREQ-1790322377515",
+      "createdAt": "2026-10-26T11:21:33.199Z",
+      "actor": "Payment Approval Reminder",
+      "channels": [
+        "In-App",
+        "Email"
+      ],
+      "metadata": {
+        "requestId": "PREQ-1790322377515",
+        "requestNumber": "DLE2609161",
+        "stage": "Cost Centre Manager",
+        "recipientCode": "P0467",
+        "recipientName": "Mr. ADESHINA ADESEGUN FAWAZ"
+      }
+    },
+    {
+      "id": "ntf-1793013693139-vneq28",
+      "recipientUserId": "P0467",
+      "recipientUsername": "P0467",
+      "recipientEmployeeCode": "P0467",
+      "recipientRoles": [],
+      "kind": "Approval",
+      "module": "Finance Approvals",
+      "title": "Payment approval required",
+      "body": "OKPOK EDET submitted Expense Payment DLE2609164 (NGN 1,482,750) for Cost Centre Manager approval.",
+      "severity": "warning",
+      "status": "Unread",
+      "href": "/finance/approvals/request/PREQ-1790328064735",
+      "createdAt": "2026-10-26T11:21:33.139Z",
+      "actor": "Payment Approval Reminder",
+      "channels": [
+        "In-App",
+        "Email"
+      ],
+      "metadata": {
+        "requestId": "PREQ-1790328064735",
+        "requestNumber": "DLE2609164",
+        "stage": "Cost Centre Manager",
+        "recipientCode": "P0467",
+        "recipientName": "Mr. ADESHINA ADESEGUN FAWAZ"
+      }
+    },
+    {
+      "id": "ntf-1793013692608-0xr48t",
+      "recipientUserId": "P0467",
+      "recipientUsername": "P0467",
+      "recipientEmployeeCode": "P0467",
+      "recipientRoles": [],
+      "kind": "Approval",
+      "module": "Finance Approvals",
+      "title": "Payment approval required",
+      "body": "OKPOK EDET submitted Expense Payment DLE2609166 (NGN 332,250) for Cost Centre Manager approval.",
+      "severity": "warning",
+      "status": "Unread",
+      "href": "/finance/approvals/request/PREQ-1790328973727",
+      "createdAt": "2026-10-26T11:21:32.608Z",
+      "actor": "Payment Approval Reminder",
+      "channels": [
+        "In-App",
+        "Email"
+      ],
+      "metadata": {
+        "requestId": "PREQ-1790328973727",
+        "requestNumber": "DLE2609166",
+        "stage": "Cost Centre Manager",
+        "recipientCode": "P0467",
+        "recipientName": "Mr. ADESHINA ADESEGUN FAWAZ"
+      }
+    },
+    {
+      "id": "ntf-1793013681601-tw1y3v",
+      "recipientUserId": "P0467",
+      "recipientUsername": "P0467",
+      "recipientEmployeeCode": "P0467",
+      "recipientRoles": [],
+      "kind": "Approval",
+      "module": "Finance Approvals",
+      "title": "Payment approval required",
+      "body": "OKPOK EDET submitted Expense Payment DLE2609162 (NGN 676,250) for Cost Centre Manager approval.",
+      "severity": "warning",
+      "status": "Unread",
+      "href": "/finance/approvals/request/PREQ-1790322739930",
+      "createdAt": "2026-10-26T11:21:21.601Z",
+      "actor": "Payment Approval Reminder",
+      "channels": [
+        "In-App",
+        "Email"
+      ],
+      "metadata": {
+        "requestId": "PREQ-1790322739930",
+        "requestNumber": "DLE2609162",
+        "stage": "Cost Centre Manager",
+        "recipientCode": "P0467",
+        "recipientName": "Mr. ADESHINA ADESEGUN FAWAZ"
+      }
+    },
+    {
+      "id": "ntf-1793010082177-uf3rsr",
+      "recipientUserId": "L2792",
+      "recipientUsername": "L2792",
+      "recipientEmployeeCode": "L2792",
+      "recipientRoles": [],
+      "kind": "Approval",
+      "module": "Finance Approvals",
+      "title": "Payment approval required",
+      "body": "Miss ABE COMFORT OLUFUNKE submitted Supplier Invoice Payment DLPC261030 (NGN 14,835) for Cost Centre Manager approval.",
+      "severity": "warning",
+      "status": "Unread",
+      "href": "/finance/approvals/request/PREQ-1792745656649",
+      "createdAt": "2026-10-26T10:21:22.177Z",
+      "actor": "Payment Approval Reminder",
+      "channels": [
+        "In-App",
+        "Email"
+      ],
+      "metadata": {
+        "requestId": "PREQ-1792745656649",
+        "requestNumber": "DLPC261030",
+        "stage": "Cost Centre Manager",
+        "recipientCode": "L2792",
+        "recipientName": "Mr. BASSEY AGAH CLETUS"
+      }
+    },
+    {
+      "id": "ntf-1793009181590-x21z69",
+      "recipientUserId": "P0429",
+      "recipientUsername": "P0429",
+      "recipientEmployeeCode": "P0429",
+      "recipientRoles": [],
+      "kind": "Approval",
+      "module": "Finance Approvals",
+      "title": "Payment approval required",
+      "body": "Mr. AMANZE LEONARD submitted Supplier Invoice Payment DLE2610123 (USD 72,286.85) for Finance Manager approval.",
+      "severity": "warning",
+      "status": "Unread",
+      "href": "/finance/approvals/request/PREQ-1792661913959",
+      "createdAt": "2026-10-26T10:06:21.590Z",
+      "actor": "Payment Approval Reminder",
+      "channels": [
+        "In-App",
+        "Email"
+      ],
+      "metadata": {
+        "requestId": "PREQ-1792661913959",
+        "requestNumber": "DLE2610123",
+        "stage": "Finance Manager",
+        "recipientCode": "P0429",
+        "recipientName": "IYANDA OLAITAN RAPHEAL"
+      }
+    },
+    {
+      "id": "ntf-1793008294392-jbz3n0",
+      "recipientUserId": "P0072",
+      "recipientUsername": "P0072",
+      "recipientEmployeeCode": "P0072",
+      "recipientRoles": [],
+      "kind": "Approval",
+      "module": "Finance Approvals",
+      "title": "Payment approval required",
+      "body": "Mr. IHUARULAM OSI CHARLES submitted Supplier Invoice Payment DLPC260942 (NGN 252,000) for Cost Centre Manager approval.",
+      "severity": "warning",
+      "status": "Unread",
+      "href": "/finance/approvals/request/PREQ-1790256184457",
+      "createdAt": "2026-10-26T09:51:34.392Z",
+      "actor": "Payment Approval Reminder",
+      "channels": [
+        "In-App",
+        "Email"
+      ],
+      "metadata": {
+        "requestId": "PREQ-1790256184457",
+        "requestNumber": "DLPC260942",
+        "stage": "Cost Centre Manager",
+        "recipientCode": "P0072",
+        "recipientName": "Mr. AKANDE OWOLOJA"
+      }
+    },
+    {
+      "id": "ntf-1793008293832-mej31j",
+      "recipientUserId": "P0072",
+      "recipientUsername": "P0072",
+      "recipientEmployeeCode": "P0072",
+      "recipientRoles": [],
+      "kind": "Approval",
+      "module": "Finance Approvals",
+      "title": "Payment approval required",
+      "body": "Mr. IHUARULAM OSI CHARLES submitted Supplier Invoice Payment DLPC260941 (NGN 180,000) for Cost Centre Manager approval.",
+      "severity": "warning",
+      "status": "Unread",
+      "href": "/finance/approvals/request/PREQ-1790255492681",
+      "createdAt": "2026-10-26T09:51:33.832Z",
+      "actor": "Payment Approval Reminder",
+      "channels": [
+        "In-App",
+        "Email"
+      ],
+      "metadata": {
+        "requestId": "PREQ-1790255492681",
+        "requestNumber": "DLPC260941",
+        "stage": "Cost Centre Manager",
+        "recipientCode": "P0072",
+        "recipientName": "Mr. AKANDE OWOLOJA"
+      }
+    },
+    {
+      "id": "ntf-1793008293770-s82h2j",
+      "recipientUserId": "P0442",
+      "recipientUsername": "P0442",
+      "recipientEmployeeCode": "P0442",
+      "recipientRoles": [],
+      "kind": "Approval",
+      "module": "Finance Approvals",
+      "title": "Payment approval required",
+      "body": "Miss OLUFUNKE COMFORT ABE submitted Supplier Invoice Payment DLE260940 (NGN 618,125) for Project Manager approval.",
+      "severity": "warning",
+      "status": "Unread",
+      "href": "/finance/approvals/request/PREQ-1788776598499",
+      "createdAt": "2026-10-26T09:51:33.770Z",
+      "actor": "Payment Approval Reminder",
+      "channels": [
+        "In-App",
+        "Email"
+      ],
+      "metadata": {
+        "requestId": "PREQ-1788776598499",
+        "requestNumber": "DLE260940",
+        "stage": "Project Manager",
+        "recipientCode": "P0442",
+        "recipientName": "Mrs. ODULATE ABIODUN TEMITOPE"
+      }
+    },
+    {
+      "id": "ntf-1793008293689-tizt1y",
+      "recipientUserId": "P0392",
+      "recipientUsername": "P0392",
+      "recipientEmployeeCode": "P0392",
+      "recipientRoles": [],
+      "kind": "Approval",
+      "module": "Finance Approvals",
+      "title": "Payment approval required",
+      "body": "Mr ADEKUNLE ADESINA submitted Expense Payment DLE2609108 (NGN 582,000) for Reporting Manager approval.",
+      "severity": "warning",
+      "status": "Unread",
+      "href": "/finance/approvals/request/PREQ-1789737678930",
+      "createdAt": "2026-10-26T09:51:33.689Z",
+      "actor": "Payment Approval Reminder",
+      "channels": [
+        "In-App",
+        "Email"
+      ],
+      "metadata": {
+        "requestId": "PREQ-1789737678930",
+        "requestNumber": "DLE2609108",
+        "stage": "Reporting Manager",
+        "recipientCode": "P0392",
+        "recipientName": "Mr JUDE UMUKORO"
+      }
+    },
+    {
+      "id": "ntf-1793008293164-ttsk1b",
+      "recipientUserId": "P0442",
+      "recipientUsername": "P0442",
+      "recipientEmployeeCode": "P0442",
+      "recipientRoles": [],
+      "kind": "Approval",
+      "module": "Finance Approvals",
+      "title": "Payment approval required",
+      "body": "Miss OLUFUNKE COMFORT ABE submitted Supplier Invoice Payment DLE260939 (NGN 20,277,720) for Project Manager approval.",
+      "severity": "warning",
+      "status": "Unread",
+      "href": "/finance/approvals/request/PREQ-1788776151332",
+      "createdAt": "2026-10-26T09:51:33.164Z",
+      "actor": "Payment Approval Reminder",
+      "channels": [
+        "In-App",
+        "Email"
+      ],
+      "metadata": {
+        "requestId": "PREQ-1788776151332",
+        "requestNumber": "DLE260939",
+        "stage": "Project Manager",
+        "recipientCode": "P0442",
+        "recipientName": "Mrs TEMITOPE ABIODUN ODULATE"
+      }
+    },
+    {
+      "id": "ntf-1793008282250-lmeenb",
+      "recipientUserId": "P0370",
+      "recipientUsername": "P0370",
+      "recipientEmployeeCode": "P0370",
+      "recipientRoles": [],
+      "kind": "Approval",
+      "module": "Finance Approvals",
+      "title": "Payment approval required",
+      "body": "MATTHEW ROTIMI submitted Supplier Invoice Payment DLE260910 (NGN 182,000) for Project Manager approval.",
+      "severity": "warning",
+      "status": "Unread",
+      "href": "/finance/approvals/request/PREQ-1788272887470",
+      "createdAt": "2026-10-26T09:51:22.250Z",
+      "actor": "Payment Approval Reminder",
+      "channels": [
+        "In-App",
+        "Email"
+      ],
+      "metadata": {
+        "requestId": "PREQ-1788272887470",
+        "requestNumber": "DLE260910",
+        "stage": "Project Manager",
+        "recipientCode": "P0370",
+        "recipientName": "Mr JOHN EJEMBI OCHIGBO"
+      }
+    },
+    {
+      "id": "ntf-1793004693240-hjnyba",
       "recipientUserId": "P0468",
       "recipientUsername": "P0468",
       "recipientEmployeeCode": "P0468",
       "recipientRoles": [],
       "kind": "Approval",
-      "module": "Payroll Management",
-      "title": "Payroll approval required — October 2026 · DLE · Salaries",
-      "body": "HR Manager review is required for October 2026 · DLE · Salaries. Gross ₦116,160,915.59, Net ₦93,598,005.05, 139 employees.",
+      "module": "Finance Approvals",
+      "title": "Payment approval required",
+      "body": "Mr. EMESIANA IFEANYICHUKWU submitted Expense Payment DLE2610117 (NGN 779,500) for Cost Centre Manager approval.",
       "severity": "warning",
       "status": "Unread",
-      "href": "https://dleconnect.dormanlongeng.com:1432/hris/payroll/payroll-approval/authorize?token=eyJydW5JZCI6InBheXJvbGwtMjAyNi0xMC1zYWxhcmllZC1ETEUiLCJwZXJpb2QiOiIyMDI2LTEwIiwic3RhZ2VJZCI6ImhyLW1hbmFnZXIiLCJkZWNpc2lvbiI6ImFwcHJvdmUiLCJyZWNpcGllbnRFbWFpbCI6Im9tb2xvbHViYW5rb2xlQGRvcm1hbmxvbmdlbmcuY29tIiwicmVjaXBpZW50VXNlcm5hbWUiOiJwMDQ2OCIsImV4cCI6MTc5MzM2OTg4OTM3NX0.Y3_9CDnxdqDdbX-FqlonavNjFXPxK0NuNrySNZl1wI8",
-      "createdAt": "2026-10-23T14:18:09.378Z",
-      "actor": "Payroll Workflow",
+      "href": "/finance/approvals/request/PREQ-1792575683606",
+      "createdAt": "2026-10-26T08:51:33.240Z",
+      "actor": "Payment Approval Reminder",
+      "channels": [
+        "In-App",
+        "Email"
+      ],
+      "metadata": {
+        "requestId": "PREQ-1792575683606",
+        "requestNumber": "DLE2610117",
+        "stage": "Cost Centre Manager",
+        "recipientCode": "P0468",
+        "recipientName": "Mr. BANKOLE OMOLOLU P0468"
+      }
+    },
+    {
+      "id": "ntf-1793004692699-hu7jt9",
+      "recipientUserId": "P0442",
+      "recipientUsername": "P0442",
+      "recipientEmployeeCode": "P0442",
+      "recipientRoles": [],
+      "kind": "Approval",
+      "module": "Finance Approvals",
+      "title": "Payment approval required",
+      "body": "Miss ADENUBI GLORY KEHINDE submitted Supplier Invoice Payment DLPC261018 (NGN 42,570,000) for GM approval.",
+      "severity": "warning",
+      "status": "Unread",
+      "href": "/finance/approvals/request/PREQ-1792078727375",
+      "createdAt": "2026-10-26T08:51:32.699Z",
+      "actor": "Payment Approval Reminder",
+      "channels": [
+        "In-App",
+        "Email"
+      ],
+      "metadata": {
+        "requestId": "PREQ-1792078727375",
+        "requestNumber": "DLPC261018",
+        "stage": "GM",
+        "recipientCode": "P0442",
+        "recipientName": "Mrs. ODULATE ABIODUN TEMITOPE"
+      }
+    },
+    {
+      "id": "ntf-1793004682135-ml7s9d",
+      "recipientUserId": "P0458",
+      "recipientUsername": "P0458",
+      "recipientEmployeeCode": "P0458",
+      "recipientRoles": [],
+      "kind": "Approval",
+      "module": "Finance Approvals",
+      "title": "Payment approval required",
+      "body": "Miss ADENUBI GLORY KEHINDE submitted Supplier Invoice Payment DLPC261010 (NGN 6,427,586.25) for CFO approval.",
+      "severity": "warning",
+      "status": "Unread",
+      "href": "/finance/approvals/request/PREQ-1791811949042",
+      "createdAt": "2026-10-26T08:51:22.135Z",
+      "actor": "Payment Approval Reminder",
+      "channels": [
+        "In-App",
+        "Email"
+      ],
+      "metadata": {
+        "requestId": "PREQ-1791811949042",
+        "requestNumber": "DLPC261010",
+        "stage": "CFO",
+        "recipientCode": "P0458",
+        "recipientName": "Mrs. MAMORA OLUWAFUNMI ABIODUN"
+      }
+    },
+    {
+      "id": "ntf-1793002893021-51015k",
+      "recipientUserId": "P0272",
+      "recipientUsername": "P0272",
+      "recipientEmployeeCode": "P0272",
+      "recipientRoles": [],
+      "kind": "Approval",
+      "module": "Finance Approvals",
+      "title": "Payment approval required",
+      "body": "Mr. ANIMASHAUN AFEES submitted Expense Payment DLE2610115 (NGN 682,425) for Cost Centre Manager approval.",
+      "severity": "warning",
+      "status": "Unread",
+      "href": "/finance/approvals/request/PREQ-1792568685782",
+      "createdAt": "2026-10-26T08:21:33.021Z",
+      "actor": "Payment Approval Reminder",
+      "channels": [
+        "In-App",
+        "Email"
+      ],
+      "metadata": {
+        "requestId": "PREQ-1792568685782",
+        "requestNumber": "DLE2610115",
+        "stage": "Cost Centre Manager",
+        "recipientCode": "P0272",
+        "recipientName": "Mr. EREMOGAMHE EROMETSE AUSTIN"
+      }
+    },
+    {
+      "id": "ntf-1793002882376-5qbq42",
+      "recipientUserId": "P0467",
+      "recipientUsername": "P0467",
+      "recipientEmployeeCode": "P0467",
+      "recipientRoles": [],
+      "kind": "Approval",
+      "module": "Finance Approvals",
+      "title": "Payment approval required",
+      "body": "Mr. OKEWU SUNDAY submitted Expense Payment DLPC261011 (NGN 830,805.9) for Cost Centre Manager approval.",
+      "severity": "warning",
+      "status": "Unread",
+      "href": "/finance/approvals/request/PREQ-1791818369684",
+      "createdAt": "2026-10-26T08:21:22.376Z",
+      "actor": "Payment Approval Reminder",
+      "channels": [
+        "In-App",
+        "Email"
+      ],
+      "metadata": {
+        "requestId": "PREQ-1791818369684",
+        "requestNumber": "DLPC261011",
+        "stage": "Cost Centre Manager",
+        "recipientCode": "P0467",
+        "recipientName": "Mr. ADESHINA ADESEGUN FAWAZ"
+      }
+    },
+    {
+      "id": "ntf-1792944944207-27371r",
+      "recipientUserId": "P0392",
+      "recipientUsername": "P0392",
+      "recipientEmployeeCode": "P0392",
+      "recipientRoles": [],
+      "kind": "Approval",
+      "module": "Finance Approvals",
+      "title": "Payment approval required",
+      "body": "Mr. ADEKUNLE ADESINA submitted Expense Payment DLPC261032 (NGN 844,203.03) for Reporting Manager approval.",
+      "severity": "warning",
+      "status": "Unread",
+      "href": "/finance/approvals/request/PREQ-1792771105873",
+      "createdAt": "2026-10-25T16:15:44.207Z",
+      "actor": "Payment Approval Reminder",
+      "channels": [
+        "In-App",
+        "Email"
+      ],
+      "metadata": {
+        "requestId": "PREQ-1792771105873",
+        "requestNumber": "DLPC261032",
+        "stage": "Reporting Manager",
+        "recipientCode": "P0392",
+        "recipientName": "Mr. JUDE UMUKORO"
+      }
+    },
+    {
+      "id": "ntf-1792944943084-9mne23",
+      "recipientUserId": "P0072",
+      "recipientUsername": "P0072",
+      "recipientEmployeeCode": "P0072",
+      "recipientRoles": [],
+      "kind": "Approval",
+      "module": "Finance Approvals",
+      "title": "Payment approval required",
+      "body": "Miss ADENUBI GLORY KEHINDE submitted Supplier Invoice Payment DLPC26108 (NGN 38,406,400.03) for Cost Centre Manager approval.",
+      "severity": "warning",
+      "status": "Unread",
+      "href": "/finance/approvals/request/PREQ-1791556637674",
+      "createdAt": "2026-10-25T16:15:43.084Z",
+      "actor": "Payment Approval Reminder",
+      "channels": [
+        "In-App",
+        "Email"
+      ],
+      "metadata": {
+        "requestId": "PREQ-1791556637674",
+        "requestNumber": "DLPC26108",
+        "stage": "Cost Centre Manager",
+        "recipientCode": "P0072",
+        "recipientName": "Mr. AKANDE OWOLOJA"
+      }
+    },
+    {
+      "id": "ntf-1792942245928-33dk90",
+      "recipientUserId": "P0429",
+      "recipientUsername": "P0429",
+      "recipientEmployeeCode": "P0429",
+      "recipientRoles": [],
+      "kind": "Approval",
+      "module": "Finance Approvals",
+      "title": "Payment approval required",
+      "body": "AKPO JACOB submitted Expense Payment DLPC261027 (NGN 288,000) for Finance Manager approval.",
+      "severity": "warning",
+      "status": "Unread",
+      "href": "/finance/approvals/request/PREQ-1792668362220",
+      "createdAt": "2026-10-25T15:30:45.928Z",
+      "actor": "Payment Approval Reminder",
+      "channels": [
+        "In-App",
+        "Email"
+      ],
+      "metadata": {
+        "requestId": "PREQ-1792668362220",
+        "requestNumber": "DLPC261027",
+        "stage": "Finance Manager",
+        "recipientCode": "P0429",
+        "recipientName": "RAPHEAL OLAITAN IYANDA"
+      }
+    },
+    {
+      "id": "ntf-1792942244089-qpqy9i",
+      "recipientUserId": "P0429",
+      "recipientUsername": "P0429",
+      "recipientEmployeeCode": "P0429",
+      "recipientRoles": [],
+      "kind": "Approval",
+      "module": "Payroll Management",
+      "title": "Payroll approval required — October 2026 · DLPC · Day-rate",
+      "body": "Finance Manager review is required for October 2026 · DLPC · Day-rate. Gross ₦1,738,812.5, Net ₦1,651,871.85, 9 employees. Approvals are pack-specific (Salaries vs Wages).",
+      "severity": "warning",
+      "status": "Unread",
+      "href": "https://dleconnect.dormanlongeng.com:1432/hris/payroll/payroll-approval/authorize?token=eyJydW5JZCI6InBheXJvbGwtMjAyNi0xMC1kYWlseS1yYXRlLURMUEMiLCJwZXJpb2QiOiIyMDI2LTEwIiwic3RhZ2VJZCI6ImZpbmFuY2UtbWFuYWdlciIsImRlY2lzaW9uIjoiYXBwcm92ZSIsInJlY2lwaWVudEVtYWlsIjoicmFwaGVhbGl5YW5kYUBkb3JtYW5sb25nZW5nLmNvbSIsInJlY2lwaWVudFVzZXJuYW1lIjoicDA0MjkiLCJleHAiOjE3OTM1NDcwNDQwODl9.lnIOD1eyIQ6CiNPlDGy3usjPvv-uXNLJ_mTkUXmcDlI",
+      "createdAt": "2026-10-25T15:30:44.090Z",
+      "actor": "Payroll Approval Reminder",
+      "channels": [
+        "In-App",
+        "Email"
+      ],
+      "metadata": {
+        "runId": "payroll-2026-10-daily-rate-DLPC",
+        "period": "2026-10",
+        "pack": "daily-rate",
+        "stageId": "finance-manager",
+        "audience": "named-recipient"
+      }
+    },
+    {
+      "id": "ntf-1792942243139-ct3iy7",
+      "recipientUserId": "P0429",
+      "recipientUsername": "P0429",
+      "recipientEmployeeCode": "P0429",
+      "recipientRoles": [],
+      "kind": "Approval",
+      "module": "Finance Approvals",
+      "title": "Payment approval required",
+      "body": "ADEDOYIN DUROJAYE submitted Expense Payment DLPC261028 (NGN 77,400) for Finance Manager approval.",
+      "severity": "warning",
+      "status": "Unread",
+      "href": "/finance/approvals/request/PREQ-1792669116632",
+      "createdAt": "2026-10-25T15:30:43.139Z",
+      "actor": "Payment Approval Reminder",
+      "channels": [
+        "In-App",
+        "Email"
+      ],
+      "metadata": {
+        "requestId": "PREQ-1792669116632",
+        "requestNumber": "DLPC261028",
+        "stage": "Finance Manager",
+        "recipientCode": "P0429",
+        "recipientName": "RAPHEAL OLAITAN IYANDA"
+      }
+    },
+    {
+      "id": "ntf-1792941343975-8li08s",
+      "recipientUserId": "P0429",
+      "recipientUsername": "P0429",
+      "recipientEmployeeCode": "P0429",
+      "recipientRoles": [],
+      "kind": "Approval",
+      "module": "Payroll Management",
+      "title": "Payroll approval required — October 2026 · DLPC · Salaries",
+      "body": "Finance Manager review is required for October 2026 · DLPC · Salaries. Gross ₦14,299,330.31, Net ₦12,107,210.88, 36 employees. Approvals are pack-specific (Salaries vs Wages).",
+      "severity": "warning",
+      "status": "Unread",
+      "href": "https://dleconnect.dormanlongeng.com:1432/hris/payroll/payroll-approval/authorize?token=eyJydW5JZCI6InBheXJvbGwtMjAyNi0xMC1zYWxhcmllZC1ETFBDIiwicGVyaW9kIjoiMjAyNi0xMCIsInN0YWdlSWQiOiJmaW5hbmNlLW1hbmFnZXIiLCJkZWNpc2lvbiI6ImFwcHJvdmUiLCJyZWNpcGllbnRFbWFpbCI6InJhcGhlYWxpeWFuZGFAZG9ybWFubG9uZ2VuZy5jb20iLCJyZWNpcGllbnRVc2VybmFtZSI6InAwNDI5IiwiZXhwIjoxNzkzNTQ2MTQzOTc1fQ.qz7_cjx9xgSY8jVw2pCJGqcQDqIqn10jGmq9tFj4NAQ",
+      "createdAt": "2026-10-25T15:15:43.975Z",
+      "actor": "Payroll Approval Reminder",
+      "channels": [
+        "In-App",
+        "Email"
+      ],
+      "metadata": {
+        "runId": "payroll-2026-10-salaried-DLPC",
+        "period": "2026-10",
+        "pack": "salaried",
+        "stageId": "finance-manager",
+        "audience": "named-recipient"
+      }
+    },
+    {
+      "id": "ntf-1792940443099-h53f4c",
+      "recipientUserId": "P0429",
+      "recipientUsername": "P0429",
+      "recipientEmployeeCode": "P0429",
+      "recipientRoles": [],
+      "kind": "Approval",
+      "module": "Finance Approvals",
+      "title": "Payment approval required",
+      "body": "ESAU CLETUS UDUAK submitted Expense Payment DLE261095 (NGN 215,000) for Finance Manager approval.",
+      "severity": "warning",
+      "status": "Unread",
+      "href": "/finance/approvals/request/PREQ-1792164179310",
+      "createdAt": "2026-10-25T15:00:43.099Z",
+      "actor": "Payment Approval Reminder",
+      "channels": [
+        "In-App",
+        "Email"
+      ],
+      "metadata": {
+        "requestId": "PREQ-1792164179310",
+        "requestNumber": "DLE261095",
+        "stage": "Finance Manager",
+        "recipientCode": "P0429",
+        "recipientName": "IYANDA OLAITAN RAPHEAL"
+      }
+    },
+    {
+      "id": "ntf-1792939544197-4vvvyp",
+      "recipientUserId": "P0429",
+      "recipientUsername": "P0429",
+      "recipientEmployeeCode": "P0429",
+      "recipientRoles": [],
+      "kind": "Approval",
+      "module": "Payroll Management",
+      "title": "Payroll approval required — October 2026 · DLE · Day-rate",
+      "body": "Finance Manager review is required for October 2026 · DLE · Day-rate. Gross ₦62,374,403.83, Net ₦59,255,683.55, 175 employees. Approvals are pack-specific (Salaries vs Wages).",
+      "severity": "warning",
+      "status": "Unread",
+      "href": "https://dleconnect.dormanlongeng.com:1432/hris/payroll/payroll-approval/authorize?token=eyJydW5JZCI6InBheXJvbGwtMjAyNi0xMC1kYWlseS1yYXRlLURMRSIsInBlcmlvZCI6IjIwMjYtMTAiLCJzdGFnZUlkIjoiZmluYW5jZS1tYW5hZ2VyIiwiZGVjaXNpb24iOiJhcHByb3ZlIiwicmVjaXBpZW50RW1haWwiOiJyYXBoZWFsaXlhbmRhQGRvcm1hbmxvbmdlbmcuY29tIiwicmVjaXBpZW50VXNlcm5hbWUiOiJwMDQyOSIsImV4cCI6MTc5MzU0NDM0NDE5NX0.BH-0LzqI9wBsML75sruuxit2YmX-G1CD1aj-iywOJVA",
+      "createdAt": "2026-10-25T14:45:44.197Z",
+      "actor": "Payroll Approval Reminder",
+      "channels": [
+        "In-App",
+        "Email"
+      ],
+      "metadata": {
+        "runId": "payroll-2026-10-daily-rate-DLE",
+        "period": "2026-10",
+        "pack": "daily-rate",
+        "stageId": "finance-manager",
+        "audience": "named-recipient"
+      }
+    },
+    {
+      "id": "ntf-1792938643964-gpc5tk",
+      "recipientUserId": "P0429",
+      "recipientUsername": "P0429",
+      "recipientEmployeeCode": "P0429",
+      "recipientRoles": [],
+      "kind": "Approval",
+      "module": "Payroll Management",
+      "title": "Payroll approval required — October 2026 · DLE · Salaries",
+      "body": "Finance Manager review is required for October 2026 · DLE · Salaries. Gross ₦116,160,915.59, Net ₦93,598,005.05, 139 employees. Approvals are pack-specific (Salaries vs Wages).",
+      "severity": "warning",
+      "status": "Unread",
+      "href": "https://dleconnect.dormanlongeng.com:1432/hris/payroll/payroll-approval/authorize?token=eyJydW5JZCI6InBheXJvbGwtMjAyNi0xMC1zYWxhcmllZC1ETEUiLCJwZXJpb2QiOiIyMDI2LTEwIiwic3RhZ2VJZCI6ImZpbmFuY2UtbWFuYWdlciIsImRlY2lzaW9uIjoiYXBwcm92ZSIsInJlY2lwaWVudEVtYWlsIjoicmFwaGVhbGl5YW5kYUBkb3JtYW5sb25nZW5nLmNvbSIsInJlY2lwaWVudFVzZXJuYW1lIjoicDA0MjkiLCJleHAiOjE3OTM1NDM0NDM5NjJ9.WF-81darJpmbuo8WbO9VwXV2ceYb0srbE646A_fUFcs",
+      "createdAt": "2026-10-25T14:30:43.964Z",
+      "actor": "Payroll Approval Reminder",
       "channels": [
         "In-App",
         "Email"
@@ -24,8 +969,1007 @@
         "runId": "payroll-2026-10-salaried-DLE",
         "period": "2026-10",
         "pack": "salaried",
-        "stageId": "hr-manager",
+        "stageId": "finance-manager",
         "audience": "named-recipient"
+      }
+    },
+    {
+      "id": "ntf-1792935044587-aavt6o",
+      "recipientUserId": "P0436",
+      "recipientUsername": "P0436",
+      "recipientEmployeeCode": "P0436",
+      "recipientRoles": [],
+      "kind": "Approval",
+      "module": "Finance Approvals",
+      "title": "Payment approval required",
+      "body": "MATTHEW ROTIMI submitted Cash Advance Payment DLE2610128 (NGN 137,000) for Reporting Manager approval.",
+      "severity": "warning",
+      "status": "Unread",
+      "href": "/finance/approvals/request/PREQ-1792761774766",
+      "createdAt": "2026-10-25T13:30:44.587Z",
+      "actor": "Payment Approval Reminder",
+      "channels": [
+        "In-App",
+        "Email"
+      ],
+      "metadata": {
+        "requestId": "PREQ-1792761774766",
+        "requestNumber": "DLE2610128",
+        "stage": "Reporting Manager",
+        "recipientCode": "P0436",
+        "recipientName": "Mr. SUNDAY OKEWU"
+      }
+    },
+    {
+      "id": "ntf-1792935043114-mfiymx",
+      "recipientUserId": "P0458",
+      "recipientUsername": "P0458",
+      "recipientEmployeeCode": "P0458",
+      "recipientRoles": [],
+      "kind": "Approval",
+      "module": "Finance Approvals",
+      "title": "Payment approval required",
+      "body": "Miss ADENUBI GLORY KEHINDE submitted Supplier Invoice Payment DLE261085 (NGN 6,640,920) for CFO approval.",
+      "severity": "warning",
+      "status": "Unread",
+      "href": "/finance/approvals/request/PREQ-1792075968696",
+      "createdAt": "2026-10-25T13:30:43.114Z",
+      "actor": "Payment Approval Reminder",
+      "channels": [
+        "In-App",
+        "Email"
+      ],
+      "metadata": {
+        "requestId": "PREQ-1792075968696",
+        "requestNumber": "DLE261085",
+        "stage": "CFO",
+        "recipientCode": "P0458",
+        "recipientName": "Mrs. MAMORA OLUWAFUNMI ABIODUN"
+      }
+    },
+    {
+      "id": "ntf-1792934146000-c2hgo6",
+      "recipientUserId": "P0413",
+      "recipientUsername": "P0413",
+      "recipientEmployeeCode": "P0413",
+      "recipientRoles": [],
+      "kind": "Approval",
+      "module": "Finance Approvals",
+      "title": "Payment approval required",
+      "body": "Mr. IHUARULAM OSI CHARLES submitted Supplier Invoice Payment DLPC261029 (NGN 1,304,448) for MD/CEO approval.",
+      "severity": "warning",
+      "status": "Unread",
+      "href": "/finance/approvals/request/PREQ-1792745587319",
+      "createdAt": "2026-10-25T13:15:46.000Z",
+      "actor": "Payment Approval Reminder",
+      "channels": [
+        "In-App",
+        "Email"
+      ],
+      "metadata": {
+        "requestId": "PREQ-1792745587319",
+        "requestNumber": "DLPC261029",
+        "stage": "MD/CEO",
+        "recipientCode": "P0413",
+        "recipientName": "Mr. CHRIS IJELI"
+      }
+    },
+    {
+      "id": "ntf-1792934143851-yy9zjq",
+      "recipientUserId": "P0455",
+      "recipientUsername": "P0455",
+      "recipientEmployeeCode": "P0455",
+      "recipientRoles": [],
+      "kind": "Approval",
+      "module": "Finance Approvals",
+      "title": "Payment approval required",
+      "body": "Mrs. NWANKWO ONYINYE CLAUDIA submitted Expense Payment DLE2610124 (NGN 240,000) for Project Manager approval.",
+      "severity": "warning",
+      "status": "Unread",
+      "href": "/finance/approvals/request/PREQ-1792671131552",
+      "createdAt": "2026-10-25T13:15:43.851Z",
+      "actor": "Payment Approval Reminder",
+      "channels": [
+        "In-App",
+        "Email"
+      ],
+      "metadata": {
+        "requestId": "PREQ-1792671131552",
+        "requestNumber": "DLE2610124",
+        "stage": "Project Manager",
+        "recipientCode": "P0455",
+        "recipientName": "ABUBAKAR ASIPITA IDRIS"
+      }
+    },
+    {
+      "id": "ntf-1792929643052-qjbqoe",
+      "recipientUserId": "P0429",
+      "recipientUsername": "P0429",
+      "recipientEmployeeCode": "P0429",
+      "recipientRoles": [],
+      "kind": "Approval",
+      "module": "Finance Approvals",
+      "title": "Payment approval required",
+      "body": "Miss ADENUBI GLORY KEHINDE submitted Supplier Invoice Payment DLE2610122 (NGN 1,763,000) for Finance Manager approval.",
+      "severity": "warning",
+      "status": "Unread",
+      "href": "/finance/approvals/request/PREQ-1792660675256",
+      "createdAt": "2026-10-25T12:00:43.052Z",
+      "actor": "Payment Approval Reminder",
+      "channels": [
+        "In-App",
+        "Email"
+      ],
+      "metadata": {
+        "requestId": "PREQ-1792660675256",
+        "requestNumber": "DLE2610122",
+        "stage": "Finance Manager",
+        "recipientCode": "P0429",
+        "recipientName": "IYANDA OLAITAN RAPHEAL"
+      }
+    },
+    {
+      "id": "ntf-1792926949799-xa2skn",
+      "recipientUserId": "P0392",
+      "recipientUsername": "P0392",
+      "recipientEmployeeCode": "P0392",
+      "recipientRoles": [],
+      "kind": "Approval",
+      "module": "Finance Approvals",
+      "title": "Payment approval required",
+      "body": "IDOKO PETER submitted Expense Payment DLPC261031 (NGN 680,000) for Reporting Manager approval.",
+      "severity": "warning",
+      "status": "Unread",
+      "href": "/finance/approvals/request/PREQ-1792753477248",
+      "createdAt": "2026-10-25T11:15:49.799Z",
+      "actor": "Payment Approval Reminder",
+      "channels": [
+        "In-App",
+        "Email"
+      ],
+      "metadata": {
+        "requestId": "PREQ-1792753477248",
+        "requestNumber": "DLPC261031",
+        "stage": "Reporting Manager",
+        "recipientCode": "P0392",
+        "recipientName": "Mr. UMUKORO JUDE"
+      }
+    },
+    {
+      "id": "ntf-1792926948732-9fgpq3",
+      "recipientUserId": "P0467",
+      "recipientUsername": "P0467",
+      "recipientEmployeeCode": "P0467",
+      "recipientRoles": [],
+      "kind": "Approval",
+      "module": "Finance Approvals",
+      "title": "Payment approval required",
+      "body": "OKPOK EDET submitted Expense Payment DLE2609160 (NGN 595,125) for Cost Centre Manager approval.",
+      "severity": "warning",
+      "status": "Unread",
+      "href": "/finance/approvals/request/PREQ-1790321997903",
+      "createdAt": "2026-10-25T11:15:48.732Z",
+      "actor": "Payment Approval Reminder",
+      "channels": [
+        "In-App",
+        "Email"
+      ],
+      "metadata": {
+        "requestId": "PREQ-1790321997903",
+        "requestNumber": "DLE2609160",
+        "stage": "Cost Centre Manager",
+        "recipientCode": "P0467",
+        "recipientName": "Mr. ADESHINA ADESEGUN FAWAZ"
+      }
+    },
+    {
+      "id": "ntf-1792926947616-t4g2xn",
+      "recipientUserId": "P0467",
+      "recipientUsername": "P0467",
+      "recipientEmployeeCode": "P0467",
+      "recipientRoles": [],
+      "kind": "Approval",
+      "module": "Finance Approvals",
+      "title": "Payment approval required",
+      "body": "OKPOK EDET submitted Expense Payment DLE2609161 (NGN 396,746) for Cost Centre Manager approval.",
+      "severity": "warning",
+      "status": "Unread",
+      "href": "/finance/approvals/request/PREQ-1790322377515",
+      "createdAt": "2026-10-25T11:15:47.616Z",
+      "actor": "Payment Approval Reminder",
+      "channels": [
+        "In-App",
+        "Email"
+      ],
+      "metadata": {
+        "requestId": "PREQ-1790322377515",
+        "requestNumber": "DLE2609161",
+        "stage": "Cost Centre Manager",
+        "recipientCode": "P0467",
+        "recipientName": "Mr. ADESHINA ADESEGUN FAWAZ"
+      }
+    },
+    {
+      "id": "ntf-1792926946706-jo21uh",
+      "recipientUserId": "P0467",
+      "recipientUsername": "P0467",
+      "recipientEmployeeCode": "P0467",
+      "recipientRoles": [],
+      "kind": "Approval",
+      "module": "Finance Approvals",
+      "title": "Payment approval required",
+      "body": "OKPOK EDET submitted Expense Payment DLE2609164 (NGN 1,482,750) for Cost Centre Manager approval.",
+      "severity": "warning",
+      "status": "Unread",
+      "href": "/finance/approvals/request/PREQ-1790328064735",
+      "createdAt": "2026-10-25T11:15:46.706Z",
+      "actor": "Payment Approval Reminder",
+      "channels": [
+        "In-App",
+        "Email"
+      ],
+      "metadata": {
+        "requestId": "PREQ-1790328064735",
+        "requestNumber": "DLE2609164",
+        "stage": "Cost Centre Manager",
+        "recipientCode": "P0467",
+        "recipientName": "Mr. ADESHINA ADESEGUN FAWAZ"
+      }
+    },
+    {
+      "id": "ntf-1792926945731-b8i7xg",
+      "recipientUserId": "P0467",
+      "recipientUsername": "P0467",
+      "recipientEmployeeCode": "P0467",
+      "recipientRoles": [],
+      "kind": "Approval",
+      "module": "Finance Approvals",
+      "title": "Payment approval required",
+      "body": "OKPOK EDET submitted Expense Payment DLE2609166 (NGN 332,250) for Cost Centre Manager approval.",
+      "severity": "warning",
+      "status": "Unread",
+      "href": "/finance/approvals/request/PREQ-1790328973727",
+      "createdAt": "2026-10-25T11:15:45.732Z",
+      "actor": "Payment Approval Reminder",
+      "channels": [
+        "In-App",
+        "Email"
+      ],
+      "metadata": {
+        "requestId": "PREQ-1790328973727",
+        "requestNumber": "DLE2609166",
+        "stage": "Cost Centre Manager",
+        "recipientCode": "P0467",
+        "recipientName": "Mr. ADESHINA ADESEGUN FAWAZ"
+      }
+    },
+    {
+      "id": "ntf-1792926943645-pwkcyt",
+      "recipientUserId": "P0467",
+      "recipientUsername": "P0467",
+      "recipientEmployeeCode": "P0467",
+      "recipientRoles": [],
+      "kind": "Approval",
+      "module": "Finance Approvals",
+      "title": "Payment approval required",
+      "body": "OKPOK EDET submitted Expense Payment DLE2609162 (NGN 676,250) for Cost Centre Manager approval.",
+      "severity": "warning",
+      "status": "Unread",
+      "href": "/finance/approvals/request/PREQ-1790322739930",
+      "createdAt": "2026-10-25T11:15:43.646Z",
+      "actor": "Payment Approval Reminder",
+      "channels": [
+        "In-App",
+        "Email"
+      ],
+      "metadata": {
+        "requestId": "PREQ-1790322739930",
+        "requestNumber": "DLE2609162",
+        "stage": "Cost Centre Manager",
+        "recipientCode": "P0467",
+        "recipientName": "Mr. ADESHINA ADESEGUN FAWAZ"
+      }
+    },
+    {
+      "id": "ntf-1792917949200-gyonwk",
+      "recipientUserId": "P0468",
+      "recipientUsername": "P0468",
+      "recipientEmployeeCode": "P0468",
+      "recipientRoles": [],
+      "kind": "Approval",
+      "module": "Finance Approvals",
+      "title": "Payment approval required",
+      "body": "Mr. EMESIANA IFEANYICHUKWU submitted Expense Payment DLE2610117 (NGN 779,500) for Cost Centre Manager approval.",
+      "severity": "warning",
+      "status": "Unread",
+      "href": "/finance/approvals/request/PREQ-1792575683606",
+      "createdAt": "2026-10-25T08:45:49.200Z",
+      "actor": "Payment Approval Reminder",
+      "channels": [
+        "In-App",
+        "Email"
+      ],
+      "metadata": {
+        "requestId": "PREQ-1792575683606",
+        "requestNumber": "DLE2610117",
+        "stage": "Cost Centre Manager",
+        "recipientCode": "P0468",
+        "recipientName": "Mr. BANKOLE OMOLOLU P0468"
+      }
+    },
+    {
+      "id": "ntf-1792917947441-5wcght",
+      "recipientUserId": "P0442",
+      "recipientUsername": "P0442",
+      "recipientEmployeeCode": "P0442",
+      "recipientRoles": [],
+      "kind": "Approval",
+      "module": "Finance Approvals",
+      "title": "Payment approval required",
+      "body": "Miss ADENUBI GLORY KEHINDE submitted Supplier Invoice Payment DLPC261018 (NGN 42,570,000) for GM approval.",
+      "severity": "warning",
+      "status": "Unread",
+      "href": "/finance/approvals/request/PREQ-1792078727375",
+      "createdAt": "2026-10-25T08:45:47.441Z",
+      "actor": "Payment Approval Reminder",
+      "channels": [
+        "In-App",
+        "Email"
+      ],
+      "metadata": {
+        "requestId": "PREQ-1792078727375",
+        "requestNumber": "DLPC261018",
+        "stage": "GM",
+        "recipientCode": "P0442",
+        "recipientName": "Mrs. ODULATE ABIODUN TEMITOPE"
+      }
+    },
+    {
+      "id": "ntf-1792917945941-xl3dit",
+      "recipientUserId": "P0442",
+      "recipientUsername": "P0442",
+      "recipientEmployeeCode": "P0442",
+      "recipientRoles": [],
+      "kind": "Approval",
+      "module": "Finance Approvals",
+      "title": "Payment approval required",
+      "body": "Miss ADENUBI GLORY KEHINDE submitted Supplier Invoice Payment DLPC261019 (NGN 38,915,000) for GM approval.",
+      "severity": "warning",
+      "status": "Unread",
+      "href": "/finance/approvals/request/PREQ-1792138919456",
+      "createdAt": "2026-10-25T08:45:45.941Z",
+      "actor": "Payment Approval Reminder",
+      "channels": [
+        "In-App",
+        "Email"
+      ],
+      "metadata": {
+        "requestId": "PREQ-1792138919456",
+        "requestNumber": "DLPC261019",
+        "stage": "GM",
+        "recipientCode": "P0442",
+        "recipientName": "Mrs. ODULATE ABIODUN TEMITOPE"
+      }
+    },
+    {
+      "id": "ntf-1792917943675-2i3fe4",
+      "recipientUserId": "P0458",
+      "recipientUsername": "P0458",
+      "recipientEmployeeCode": "P0458",
+      "recipientRoles": [],
+      "kind": "Approval",
+      "module": "Finance Approvals",
+      "title": "Payment approval required",
+      "body": "Miss ADENUBI GLORY KEHINDE submitted Supplier Invoice Payment DLPC261010 (NGN 6,427,586.25) for CFO approval.",
+      "severity": "warning",
+      "status": "Unread",
+      "href": "/finance/approvals/request/PREQ-1791811949042",
+      "createdAt": "2026-10-25T08:45:43.675Z",
+      "actor": "Payment Approval Reminder",
+      "channels": [
+        "In-App",
+        "Email"
+      ],
+      "metadata": {
+        "requestId": "PREQ-1791811949042",
+        "requestNumber": "DLPC261010",
+        "stage": "CFO",
+        "recipientCode": "P0458",
+        "recipientName": "Mrs. MAMORA OLUWAFUNMI ABIODUN"
+      }
+    },
+    {
+      "id": "ntf-1792916185585-19ytyi",
+      "recipientUserId": "P0272",
+      "recipientUsername": "P0272",
+      "recipientEmployeeCode": "P0272",
+      "recipientRoles": [],
+      "kind": "Approval",
+      "module": "Finance Approvals",
+      "title": "Payment approval required",
+      "body": "Mr. ANIMASHAUN AFEES submitted Expense Payment DLE2610115 (NGN 682,425) for Cost Centre Manager approval.",
+      "severity": "warning",
+      "status": "Unread",
+      "href": "/finance/approvals/request/PREQ-1792568685782",
+      "createdAt": "2026-10-25T08:16:25.586Z",
+      "actor": "Payment Approval Reminder",
+      "channels": [
+        "In-App",
+        "Email"
+      ],
+      "metadata": {
+        "requestId": "PREQ-1792568685782",
+        "requestNumber": "DLE2610115",
+        "stage": "Cost Centre Manager",
+        "recipientCode": "P0272",
+        "recipientName": "Mr. EREMOGAMHE EROMETSE AUSTIN"
+      }
+    },
+    {
+      "id": "ntf-1792916178571-zzpkws",
+      "recipientUserId": "P0467",
+      "recipientUsername": "P0467",
+      "recipientEmployeeCode": "P0467",
+      "recipientRoles": [],
+      "kind": "Approval",
+      "module": "Finance Approvals",
+      "title": "Payment approval required",
+      "body": "Mr. OKEWU SUNDAY submitted Expense Payment DLPC261011 (NGN 830,805.9) for Cost Centre Manager approval.",
+      "severity": "warning",
+      "status": "Unread",
+      "href": "/finance/approvals/request/PREQ-1791818369684",
+      "createdAt": "2026-10-25T08:16:18.571Z",
+      "actor": "Payment Approval Reminder",
+      "channels": [
+        "In-App",
+        "Email"
+      ],
+      "metadata": {
+        "requestId": "PREQ-1791818369684",
+        "requestNumber": "DLPC261011",
+        "stage": "Cost Centre Manager",
+        "recipientCode": "P0467",
+        "recipientName": "Mr. ADESHINA ADESEGUN FAWAZ"
+      }
+    },
+    {
+      "id": "ntf-1792858297026-ga8bwf",
+      "recipientUserId": "P0392",
+      "recipientUsername": "P0392",
+      "recipientEmployeeCode": "P0392",
+      "recipientRoles": [],
+      "kind": "Approval",
+      "module": "Finance Approvals",
+      "title": "Payment approval required",
+      "body": "Mr. ADEKUNLE ADESINA submitted Expense Payment DLPC261032 (NGN 844,203.03) for Reporting Manager approval.",
+      "severity": "warning",
+      "status": "Unread",
+      "href": "/finance/approvals/request/PREQ-1792771105873",
+      "createdAt": "2026-10-24T16:11:37.026Z",
+      "actor": "Payment Approval Reminder",
+      "channels": [
+        "In-App",
+        "Email"
+      ],
+      "metadata": {
+        "requestId": "PREQ-1792771105873",
+        "requestNumber": "DLPC261032",
+        "stage": "Reporting Manager",
+        "recipientCode": "P0392",
+        "recipientName": "Mr. JUDE UMUKORO"
+      }
+    },
+    {
+      "id": "ntf-1792858296411-d4qs8z",
+      "recipientUserId": "P0072",
+      "recipientUsername": "P0072",
+      "recipientEmployeeCode": "P0072",
+      "recipientRoles": [],
+      "kind": "Approval",
+      "module": "Finance Approvals",
+      "title": "Payment approval required",
+      "body": "Miss ADENUBI GLORY KEHINDE submitted Supplier Invoice Payment DLPC26108 (NGN 38,406,400.03) for Cost Centre Manager approval.",
+      "severity": "warning",
+      "status": "Unread",
+      "href": "/finance/approvals/request/PREQ-1791556637674",
+      "createdAt": "2026-10-24T16:11:36.411Z",
+      "actor": "Payment Approval Reminder",
+      "channels": [
+        "In-App",
+        "Email"
+      ],
+      "metadata": {
+        "requestId": "PREQ-1791556637674",
+        "requestNumber": "DLPC26108",
+        "stage": "Cost Centre Manager",
+        "recipientCode": "P0072",
+        "recipientName": "Mr. AKANDE OWOLOJA"
+      }
+    },
+    {
+      "id": "ntf-1792857395877-wovu2j",
+      "recipientUserId": "P0392",
+      "recipientUsername": "P0392",
+      "recipientEmployeeCode": "P0392",
+      "recipientRoles": [],
+      "kind": "Approval",
+      "module": "Finance Approvals",
+      "title": "Payment approval required",
+      "body": "Mr. ADEKUNLE ADESINA submitted Expense Payment DLE2610129 (NGN 1,272,775.51) for Reporting Manager approval.",
+      "severity": "warning",
+      "status": "Unread",
+      "href": "/finance/approvals/request/PREQ-1792770778601",
+      "createdAt": "2026-10-24T15:56:35.877Z",
+      "actor": "Payment Approval Reminder",
+      "channels": [
+        "In-App",
+        "Email"
+      ],
+      "metadata": {
+        "requestId": "PREQ-1792770778601",
+        "requestNumber": "DLE2610129",
+        "stage": "Reporting Manager",
+        "recipientCode": "P0392",
+        "recipientName": "Mr. JUDE UMUKORO"
+      }
+    },
+    {
+      "id": "ntf-1792855598247-kgmjuo",
+      "recipientUserId": "P0429",
+      "recipientUsername": "P0429",
+      "recipientEmployeeCode": "P0429",
+      "recipientRoles": [],
+      "kind": "Approval",
+      "module": "Finance Approvals",
+      "title": "Payment approval required",
+      "body": "AKPO JACOB submitted Expense Payment DLPC261027 (NGN 288,000) for Finance Manager approval.",
+      "severity": "warning",
+      "status": "Unread",
+      "href": "/finance/approvals/request/PREQ-1792668362220",
+      "createdAt": "2026-10-24T15:26:38.247Z",
+      "actor": "Payment Approval Reminder",
+      "channels": [
+        "In-App",
+        "Email"
+      ],
+      "metadata": {
+        "requestId": "PREQ-1792668362220",
+        "requestNumber": "DLPC261027",
+        "stage": "Finance Manager",
+        "recipientCode": "P0429",
+        "recipientName": "RAPHEAL OLAITAN IYANDA"
+      }
+    },
+    {
+      "id": "ntf-1792855596602-nrd2pw",
+      "recipientUserId": "P0429",
+      "recipientUsername": "P0429",
+      "recipientEmployeeCode": "P0429",
+      "recipientRoles": [],
+      "kind": "Approval",
+      "module": "Payroll Management",
+      "title": "Payroll approval required — October 2026 · DLPC · Day-rate",
+      "body": "Finance Manager review is required for October 2026 · DLPC · Day-rate. Gross ₦1,738,812.5, Net ₦1,651,871.85, 9 employees. Approvals are pack-specific (Salaries vs Wages).",
+      "severity": "warning",
+      "status": "Unread",
+      "href": "https://dleconnect.dormanlongeng.com:1432/hris/payroll/payroll-approval/authorize?token=eyJydW5JZCI6InBheXJvbGwtMjAyNi0xMC1kYWlseS1yYXRlLURMUEMiLCJwZXJpb2QiOiIyMDI2LTEwIiwic3RhZ2VJZCI6ImZpbmFuY2UtbWFuYWdlciIsImRlY2lzaW9uIjoiYXBwcm92ZSIsInJlY2lwaWVudEVtYWlsIjoicmFwaGVhbGl5YW5kYUBkb3JtYW5sb25nZW5nLmNvbSIsInJlY2lwaWVudFVzZXJuYW1lIjoicDA0MjkiLCJleHAiOjE3OTM0NjAzOTY2MDJ9.qLJ9bgMCDfLs0y0mqWz1ab2UNXYlUyimqLdIOal0cXM",
+      "createdAt": "2026-10-24T15:26:36.602Z",
+      "actor": "Payroll Approval Reminder",
+      "channels": [
+        "In-App",
+        "Email"
+      ],
+      "metadata": {
+        "runId": "payroll-2026-10-daily-rate-DLPC",
+        "period": "2026-10",
+        "pack": "daily-rate",
+        "stageId": "finance-manager",
+        "audience": "named-recipient"
+      }
+    },
+    {
+      "id": "ntf-1792855595822-yxidlq",
+      "recipientUserId": "P0429",
+      "recipientUsername": "P0429",
+      "recipientEmployeeCode": "P0429",
+      "recipientRoles": [],
+      "kind": "Approval",
+      "module": "Finance Approvals",
+      "title": "Payment approval required",
+      "body": "ADEDOYIN DUROJAYE submitted Expense Payment DLPC261028 (NGN 77,400) for Finance Manager approval.",
+      "severity": "warning",
+      "status": "Unread",
+      "href": "/finance/approvals/request/PREQ-1792669116632",
+      "createdAt": "2026-10-24T15:26:35.822Z",
+      "actor": "Payment Approval Reminder",
+      "channels": [
+        "In-App",
+        "Email"
+      ],
+      "metadata": {
+        "requestId": "PREQ-1792669116632",
+        "requestNumber": "DLPC261028",
+        "stage": "Finance Manager",
+        "recipientCode": "P0429",
+        "recipientName": "RAPHEAL OLAITAN IYANDA"
+      }
+    },
+    {
+      "id": "ntf-1792854696778-yk5qgz",
+      "recipientUserId": "P0429",
+      "recipientUsername": "P0429",
+      "recipientEmployeeCode": "P0429",
+      "recipientRoles": [],
+      "kind": "Approval",
+      "module": "Payroll Management",
+      "title": "Payroll approval required — October 2026 · DLPC · Salaries",
+      "body": "Finance Manager review is required for October 2026 · DLPC · Salaries. Gross ₦14,299,330.31, Net ₦12,107,210.88, 36 employees. Approvals are pack-specific (Salaries vs Wages).",
+      "severity": "warning",
+      "status": "Unread",
+      "href": "https://dleconnect.dormanlongeng.com:1432/hris/payroll/payroll-approval/authorize?token=eyJydW5JZCI6InBheXJvbGwtMjAyNi0xMC1zYWxhcmllZC1ETFBDIiwicGVyaW9kIjoiMjAyNi0xMCIsInN0YWdlSWQiOiJmaW5hbmNlLW1hbmFnZXIiLCJkZWNpc2lvbiI6ImFwcHJvdmUiLCJyZWNpcGllbnRFbWFpbCI6InJhcGhlYWxpeWFuZGFAZG9ybWFubG9uZ2VuZy5jb20iLCJyZWNpcGllbnRVc2VybmFtZSI6InAwNDI5IiwiZXhwIjoxNzkzNDU5NDk2Nzc3fQ.SVxgyID5FW-YA94PZ1CfztRWsH8o3BztgZR0DgvHm7c",
+      "createdAt": "2026-10-24T15:11:36.778Z",
+      "actor": "Payroll Approval Reminder",
+      "channels": [
+        "In-App",
+        "Email"
+      ],
+      "metadata": {
+        "runId": "payroll-2026-10-salaried-DLPC",
+        "period": "2026-10",
+        "pack": "salaried",
+        "stageId": "finance-manager",
+        "audience": "named-recipient"
+      }
+    },
+    {
+      "id": "ntf-1792853795836-dw71vt",
+      "recipientUserId": "P0429",
+      "recipientUsername": "P0429",
+      "recipientEmployeeCode": "P0429",
+      "recipientRoles": [],
+      "kind": "Approval",
+      "module": "Finance Approvals",
+      "title": "Payment approval required",
+      "body": "ESAU CLETUS UDUAK submitted Expense Payment DLE261095 (NGN 215,000) for Finance Manager approval.",
+      "severity": "warning",
+      "status": "Unread",
+      "href": "/finance/approvals/request/PREQ-1792164179310",
+      "createdAt": "2026-10-24T14:56:35.836Z",
+      "actor": "Payment Approval Reminder",
+      "channels": [
+        "In-App",
+        "Email"
+      ],
+      "metadata": {
+        "requestId": "PREQ-1792164179310",
+        "requestNumber": "DLE261095",
+        "stage": "Finance Manager",
+        "recipientCode": "P0429",
+        "recipientName": "IYANDA OLAITAN RAPHEAL"
+      }
+    },
+    {
+      "id": "ntf-1792852896937-4pbwbz",
+      "recipientUserId": "P0429",
+      "recipientUsername": "P0429",
+      "recipientEmployeeCode": "P0429",
+      "recipientRoles": [],
+      "kind": "Approval",
+      "module": "Payroll Management",
+      "title": "Payroll approval required — October 2026 · DLE · Day-rate",
+      "body": "Finance Manager review is required for October 2026 · DLE · Day-rate. Gross ₦62,374,403.83, Net ₦59,255,683.55, 175 employees. Approvals are pack-specific (Salaries vs Wages).",
+      "severity": "warning",
+      "status": "Unread",
+      "href": "https://dleconnect.dormanlongeng.com:1432/hris/payroll/payroll-approval/authorize?token=eyJydW5JZCI6InBheXJvbGwtMjAyNi0xMC1kYWlseS1yYXRlLURMRSIsInBlcmlvZCI6IjIwMjYtMTAiLCJzdGFnZUlkIjoiZmluYW5jZS1tYW5hZ2VyIiwiZGVjaXNpb24iOiJhcHByb3ZlIiwicmVjaXBpZW50RW1haWwiOiJyYXBoZWFsaXlhbmRhQGRvcm1hbmxvbmdlbmcuY29tIiwicmVjaXBpZW50VXNlcm5hbWUiOiJwMDQyOSIsImV4cCI6MTc5MzQ1NzY5NjkzNn0.lOzZ-TNOsscL2lZ8YzLMwWgpP_-pBw2c4ft0_U9V14M",
+      "createdAt": "2026-10-24T14:41:36.937Z",
+      "actor": "Payroll Approval Reminder",
+      "channels": [
+        "In-App",
+        "Email"
+      ],
+      "metadata": {
+        "runId": "payroll-2026-10-daily-rate-DLE",
+        "period": "2026-10",
+        "pack": "daily-rate",
+        "stageId": "finance-manager",
+        "audience": "named-recipient"
+      }
+    },
+    {
+      "id": "ntf-1792851996711-f74cup",
+      "recipientUserId": "P0429",
+      "recipientUsername": "P0429",
+      "recipientEmployeeCode": "P0429",
+      "recipientRoles": [],
+      "kind": "Approval",
+      "module": "Payroll Management",
+      "title": "Payroll approval required — October 2026 · DLE · Salaries",
+      "body": "Finance Manager review is required for October 2026 · DLE · Salaries. Gross ₦116,160,915.59, Net ₦93,598,005.05, 139 employees. Approvals are pack-specific (Salaries vs Wages).",
+      "severity": "warning",
+      "status": "Unread",
+      "href": "https://dleconnect.dormanlongeng.com:1432/hris/payroll/payroll-approval/authorize?token=eyJydW5JZCI6InBheXJvbGwtMjAyNi0xMC1zYWxhcmllZC1ETEUiLCJwZXJpb2QiOiIyMDI2LTEwIiwic3RhZ2VJZCI6ImZpbmFuY2UtbWFuYWdlciIsImRlY2lzaW9uIjoiYXBwcm92ZSIsInJlY2lwaWVudEVtYWlsIjoicmFwaGVhbGl5YW5kYUBkb3JtYW5sb25nZW5nLmNvbSIsInJlY2lwaWVudFVzZXJuYW1lIjoicDA0MjkiLCJleHAiOjE3OTM0NTY3OTY3MDl9.2OjpuRoyasLtqfE584yfhPAkr_LqcEKNpHQRLLZBTQQ",
+      "createdAt": "2026-10-24T14:26:36.711Z",
+      "actor": "Payroll Approval Reminder",
+      "channels": [
+        "In-App",
+        "Email"
+      ],
+      "metadata": {
+        "runId": "payroll-2026-10-salaried-DLE",
+        "period": "2026-10",
+        "pack": "salaried",
+        "stageId": "finance-manager",
+        "audience": "named-recipient"
+      }
+    },
+    {
+      "id": "ntf-1792848398540-duh45x",
+      "recipientUserId": "P0436",
+      "recipientUsername": "P0436",
+      "recipientEmployeeCode": "P0436",
+      "recipientRoles": [],
+      "kind": "Approval",
+      "module": "Finance Approvals",
+      "title": "Payment approval required",
+      "body": "MATTHEW ROTIMI submitted Cash Advance Payment DLE2610128 (NGN 137,000) for Reporting Manager approval.",
+      "severity": "warning",
+      "status": "Unread",
+      "href": "/finance/approvals/request/PREQ-1792761774766",
+      "createdAt": "2026-10-24T13:26:38.540Z",
+      "actor": "Payment Approval Reminder",
+      "channels": [
+        "In-App",
+        "Email"
+      ],
+      "metadata": {
+        "requestId": "PREQ-1792761774766",
+        "requestNumber": "DLE2610128",
+        "stage": "Reporting Manager",
+        "recipientCode": "P0436",
+        "recipientName": "Mr. SUNDAY OKEWU"
+      }
+    },
+    {
+      "id": "ntf-1792848395849-xfl2i1",
+      "recipientUserId": "P0458",
+      "recipientUsername": "P0458",
+      "recipientEmployeeCode": "P0458",
+      "recipientRoles": [],
+      "kind": "Approval",
+      "module": "Finance Approvals",
+      "title": "Payment approval required",
+      "body": "Miss ADENUBI GLORY KEHINDE submitted Supplier Invoice Payment DLE261085 (NGN 6,640,920) for CFO approval.",
+      "severity": "warning",
+      "status": "Unread",
+      "href": "/finance/approvals/request/PREQ-1792075968696",
+      "createdAt": "2026-10-24T13:26:35.850Z",
+      "actor": "Payment Approval Reminder",
+      "channels": [
+        "In-App",
+        "Email"
+      ],
+      "metadata": {
+        "requestId": "PREQ-1792075968696",
+        "requestNumber": "DLE261085",
+        "stage": "CFO",
+        "recipientCode": "P0458",
+        "recipientName": "Mrs. MAMORA OLUWAFUNMI ABIODUN"
+      }
+    },
+    {
+      "id": "ntf-1792847499548-0hhmxk",
+      "recipientUserId": "P0413",
+      "recipientUsername": "P0413",
+      "recipientEmployeeCode": "P0413",
+      "recipientRoles": [],
+      "kind": "Approval",
+      "module": "Finance Approvals",
+      "title": "Payment approval required",
+      "body": "Mr. IHUARULAM OSI CHARLES submitted Supplier Invoice Payment DLPC261029 (NGN 1,304,448) for MD/CEO approval.",
+      "severity": "warning",
+      "status": "Unread",
+      "href": "/finance/approvals/request/PREQ-1792745587319",
+      "createdAt": "2026-10-24T13:11:39.548Z",
+      "actor": "Payment Approval Reminder",
+      "channels": [
+        "In-App",
+        "Email"
+      ],
+      "metadata": {
+        "requestId": "PREQ-1792745587319",
+        "requestNumber": "DLPC261029",
+        "stage": "MD/CEO",
+        "recipientCode": "P0413",
+        "recipientName": "Mr. CHRIS IJELI"
+      }
+    },
+    {
+      "id": "ntf-1792847496448-e0ttz7",
+      "recipientUserId": "P0455",
+      "recipientUsername": "P0455",
+      "recipientEmployeeCode": "P0455",
+      "recipientRoles": [],
+      "kind": "Approval",
+      "module": "Finance Approvals",
+      "title": "Payment approval required",
+      "body": "Mrs. NWANKWO ONYINYE CLAUDIA submitted Expense Payment DLE2610124 (NGN 240,000) for Project Manager approval.",
+      "severity": "warning",
+      "status": "Unread",
+      "href": "/finance/approvals/request/PREQ-1792671131552",
+      "createdAt": "2026-10-24T13:11:36.448Z",
+      "actor": "Payment Approval Reminder",
+      "channels": [
+        "In-App",
+        "Email"
+      ],
+      "metadata": {
+        "requestId": "PREQ-1792671131552",
+        "requestNumber": "DLE2610124",
+        "stage": "Project Manager",
+        "recipientCode": "P0455",
+        "recipientName": "ABUBAKAR ASIPITA IDRIS"
+      }
+    },
+    {
+      "id": "ntf-1792831301283-uf5sxv",
+      "recipientUserId": "P0468",
+      "recipientUsername": "P0468",
+      "recipientEmployeeCode": "P0468",
+      "recipientRoles": [],
+      "kind": "Approval",
+      "module": "Finance Approvals",
+      "title": "Payment approval required",
+      "body": "Mr. EMESIANA IFEANYICHUKWU submitted Expense Payment DLE2610117 (NGN 779,500) for Cost Centre Manager approval.",
+      "severity": "warning",
+      "status": "Unread",
+      "href": "/finance/approvals/request/PREQ-1792575683606",
+      "createdAt": "2026-10-24T08:41:41.283Z",
+      "actor": "Payment Approval Reminder",
+      "channels": [
+        "In-App",
+        "Email"
+      ],
+      "metadata": {
+        "requestId": "PREQ-1792575683606",
+        "requestNumber": "DLE2610117",
+        "stage": "Cost Centre Manager",
+        "recipientCode": "P0468",
+        "recipientName": "Mr. BANKOLE OMOLOLU P0468"
+      }
+    },
+    {
+      "id": "ntf-1792831299390-9tvttf",
+      "recipientUserId": "P0442",
+      "recipientUsername": "P0442",
+      "recipientEmployeeCode": "P0442",
+      "recipientRoles": [],
+      "kind": "Approval",
+      "module": "Finance Approvals",
+      "title": "Payment approval required",
+      "body": "Miss ADENUBI GLORY KEHINDE submitted Supplier Invoice Payment DLPC261018 (NGN 42,570,000) for GM approval.",
+      "severity": "warning",
+      "status": "Unread",
+      "href": "/finance/approvals/request/PREQ-1792078727375",
+      "createdAt": "2026-10-24T08:41:39.390Z",
+      "actor": "Payment Approval Reminder",
+      "channels": [
+        "In-App",
+        "Email"
+      ],
+      "metadata": {
+        "requestId": "PREQ-1792078727375",
+        "requestNumber": "DLPC261018",
+        "stage": "GM",
+        "recipientCode": "P0442",
+        "recipientName": "Mrs. ODULATE ABIODUN TEMITOPE"
+      }
+    },
+    {
+      "id": "ntf-1792831298133-wr6vih",
+      "recipientUserId": "P0442",
+      "recipientUsername": "P0442",
+      "recipientEmployeeCode": "P0442",
+      "recipientRoles": [],
+      "kind": "Approval",
+      "module": "Finance Approvals",
+      "title": "Payment approval required",
+      "body": "Miss ADENUBI GLORY KEHINDE submitted Supplier Invoice Payment DLPC261019 (NGN 38,915,000) for GM approval.",
+      "severity": "warning",
+      "status": "Unread",
+      "href": "/finance/approvals/request/PREQ-1792138919456",
+      "createdAt": "2026-10-24T08:41:38.133Z",
+      "actor": "Payment Approval Reminder",
+      "channels": [
+        "In-App",
+        "Email"
+      ],
+      "metadata": {
+        "requestId": "PREQ-1792138919456",
+        "requestNumber": "DLPC261019",
+        "stage": "GM",
+        "recipientCode": "P0442",
+        "recipientName": "Mrs. ODULATE ABIODUN TEMITOPE"
+      }
+    },
+    {
+      "id": "ntf-1792831296403-58xdr9",
+      "recipientUserId": "P0458",
+      "recipientUsername": "P0458",
+      "recipientEmployeeCode": "P0458",
+      "recipientRoles": [],
+      "kind": "Approval",
+      "module": "Finance Approvals",
+      "title": "Payment approval required",
+      "body": "Miss ADENUBI GLORY KEHINDE submitted Supplier Invoice Payment DLPC261010 (NGN 6,427,586.25) for CFO approval.",
+      "severity": "warning",
+      "status": "Unread",
+      "href": "/finance/approvals/request/PREQ-1791811949042",
+      "createdAt": "2026-10-24T08:41:36.403Z",
+      "actor": "Payment Approval Reminder",
+      "channels": [
+        "In-App",
+        "Email"
+      ],
+      "metadata": {
+        "requestId": "PREQ-1791811949042",
+        "requestNumber": "DLPC261010",
+        "stage": "CFO",
+        "recipientCode": "P0458",
+        "recipientName": "Mrs. MAMORA OLUWAFUNMI ABIODUN"
+      }
+    },
+    {
+      "id": "ntf-1792829499325-rp0887",
+      "recipientUserId": "P0272",
+      "recipientUsername": "P0272",
+      "recipientEmployeeCode": "P0272",
+      "recipientRoles": [],
+      "kind": "Approval",
+      "module": "Finance Approvals",
+      "title": "Payment approval required",
+      "body": "Mr. ANIMASHAUN AFEES submitted Expense Payment DLE2610115 (NGN 682,425) for Cost Centre Manager approval.",
+      "severity": "warning",
+      "status": "Unread",
+      "href": "/finance/approvals/request/PREQ-1792568685782",
+      "createdAt": "2026-10-24T08:11:39.325Z",
+      "actor": "Payment Approval Reminder",
+      "channels": [
+        "In-App",
+        "Email"
+      ],
+      "metadata": {
+        "requestId": "PREQ-1792568685782",
+        "requestNumber": "DLE2610115",
+        "stage": "Cost Centre Manager",
+        "recipientCode": "P0272",
+        "recipientName": "Mr. EREMOGAMHE EROMETSE AUSTIN"
+      }
+    },
+    {
+      "id": "ntf-1792829496516-qykvhc",
+      "recipientUserId": "P0467",
+      "recipientUsername": "P0467",
+      "recipientEmployeeCode": "P0467",
+      "recipientRoles": [],
+      "kind": "Approval",
+      "module": "Finance Approvals",
+      "title": "Payment approval required",
+      "body": "Mr. OKEWU SUNDAY submitted Expense Payment DLPC261011 (NGN 830,805.9) for Cost Centre Manager approval.",
+      "severity": "warning",
+      "status": "Unread",
+      "href": "/finance/approvals/request/PREQ-1791818369684",
+      "createdAt": "2026-10-24T08:11:36.516Z",
+      "actor": "Payment Approval Reminder",
+      "channels": [
+        "In-App",
+        "Email"
+      ],
+      "metadata": {
+        "requestId": "PREQ-1791818369684",
+        "requestNumber": "DLPC261011",
+        "stage": "Cost Centre Manager",
+        "recipientCode": "P0467",
+        "recipientName": "Mr. ADESHINA ADESEGUN FAWAZ"
       }
     },
     {
@@ -3439,33 +5383,6 @@
         "stage": "Cost Centre Manager",
         "recipientCode": "P0072",
         "recipientName": "Mr. AKANDE OWOLOJA"
-      }
-    },
-    {
-      "id": "ntf-1790862516281-8q6yue",
-      "recipientUserId": "P0432",
-      "recipientUsername": "P0432",
-      "recipientEmployeeCode": "P0432",
-      "recipientRoles": [],
-      "kind": "Approval",
-      "module": "Payroll Management",
-      "title": "Payroll approval required — September 2026 · DLPC · Day-rate",
-      "body": "HR Manager review is required for September 2026 · DLPC · Day-rate. Gross ₦1,401,162.5, Net ₦1,331,104.35, 7 employees. Approvals are pack-specific (Salaries vs Wages).",
-      "severity": "warning",
-      "status": "Unread",
-      "href": "https://dleconnect.dormanlongeng.com:1432/hris/payroll/payroll-approval/authorize?token=eyJydW5JZCI6InBheXJvbGwtMjAyNi0wOS1kYWlseS1yYXRlLURMUEMiLCJwZXJpb2QiOiIyMDI2LTA5Iiwic3RhZ2VJZCI6ImhyLW1hbmFnZXIiLCJkZWNpc2lvbiI6ImFwcHJvdmUiLCJyZWNpcGllbnRFbWFpbCI6Im9sYW1pZGViYWRldGFuQGRvcm1hbmxvbmdlbmcuY29tIiwicmVjaXBpZW50VXNlcm5hbWUiOiJwMDQzMiIsImV4cCI6MTc5MTQ2NzMxNjI3OX0.khdt3ULTm-Hs7NSf5uQzxsQTYvkbNCeb1PTw3q82tlQ",
-      "createdAt": "2026-10-01T13:48:36.281Z",
-      "actor": "Payroll Approval Reminder",
-      "channels": [
-        "In-App",
-        "Email"
-      ],
-      "metadata": {
-        "runId": "payroll-2026-09-daily-rate-DLPC",
-        "period": "2026-09",
-        "pack": "daily-rate",
-        "stageId": "hr-manager",
-        "audience": "named-recipient"
       }
     },
     {

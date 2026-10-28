@@ -7,6 +7,8 @@ export type PayrollEmployeeOption = {
   employeeId: string;
   employeeCode?: string;
   nhfApplicable?: boolean;
+  /** False when HR has confirmed this employee has no union deduction. */
+  unionDuesApplicable?: boolean;
   nhfNumber?: string | null;
   annualRentRelief?: number | null;
   /** Fixed monthly additional employee pension (PENSION_EE2 / voluntary). */
@@ -186,6 +188,7 @@ export const applyPayrollEmployeeOptions = async (employees: DleEmployeeDirector
     return {
       ...employee,
       nhfApplicable: typeof option.nhfApplicable === 'boolean' ? option.nhfApplicable : employee.nhfApplicable,
+      unionDuesApplicable: typeof option.unionDuesApplicable === 'boolean' ? option.unionDuesApplicable : employee.unionDuesApplicable,
       annualRentRelief: Number.isFinite(Number(option.annualRentRelief)) ? Number(option.annualRentRelief) : employee.annualRentRelief,
       additionalEmployeePensionMonthly: Number.isFinite(Number(option.additionalEmployeePensionMonthly))
         ? Number(option.additionalEmployeePensionMonthly)

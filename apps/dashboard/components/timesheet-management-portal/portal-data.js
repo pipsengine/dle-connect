@@ -4,7 +4,7 @@ import React, { createContext, useCallback, useContext, useEffect, useMemo, useS
 const PortalDataContext = createContext(null);
 
 const emptySnapshot = {
-  directory: { employees: [], projects: [], locations: [], workCenters: [], supervisors: [] },
+  directory: { employees: [], sites: {}, projects: [], locations: [], workCenters: [], supervisors: [] },
   periods: [],
   bookings: [],
   records: [],
