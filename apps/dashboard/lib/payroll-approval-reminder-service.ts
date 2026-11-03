@@ -8,6 +8,7 @@ import {
 import { notifyPayrollApprovalStage } from '@/lib/payroll-approval-notification-service';
 import { normalizePayrollRunPack } from '@/lib/payroll-employee-classification';
 import { normalizePayrollCompany } from '@/lib/payroll-schedule-scope';
+import { payrollRunScopeMismatchMessage } from '@/lib/payroll-run-scope-guard';
 import {
   appendPayrollAudit,
   getPayrollRun,
@@ -70,6 +71,7 @@ export const sendPayrollApprovalReminder = async (input: {
   period?: string | null;
   pack?: string | null;
   company?: string | null;
+  scheduleId?: string | null;
   actor: string;
   role?: string;
   baseUrl?: string | null;
@@ -85,6 +87,10 @@ export const sendPayrollApprovalReminder = async (input: {
     run = await getPayrollRunForPeriod(input.period, pack, company);
   }
   if (!run) throw new Error('Payroll run not found.');
+  if (input.runId) {
+    const mismatch = payrollRunScopeMismatchMessage(run, input);
+    if (mismatch) throw new Error(mismatch);
+  }
   if (!isPayrollRunAwaitingApproval(run)) {
     throw new Error('Reminders can only be sent while payroll is awaiting approval.');
   }

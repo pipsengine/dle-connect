@@ -1002,6 +1002,7 @@ export async function POST(request: Request) {
         period,
         pack: compact(body.pack) || null,
         company: compact(body.company) || null,
+        scheduleId: compact(body.scheduleId) || null,
         runId: compact(body.runId) || null,
         actor,
         role,

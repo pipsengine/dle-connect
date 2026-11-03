@@ -277,8 +277,10 @@ export const resolvePaymentStageApprover = async (input: {
   } else if (/cost controller/.test(stageKey)) {
     matched = matchJobTitle(employees, [/cost\s*controller/i]);
   } else if (/hr\s*manager/.test(stageKey)) {
-    // Prefer Active auth accounts with exact "HR Manager" role; fall back to directory title.
-    try {
+    // HR Manager seat is Mr Bankole Omololu (P0468), not the previous role holder.
+    const { findNamedHrManager } = await import('@/lib/payroll-acting-approvers');
+    matched = findNamedHrManager(employees) || null;
+    if (!matched) try {
       const { readUsers } = await import('@/lib/auth/auth-store');
       const users = await readUsers().catch(() => [] as Awaited<ReturnType<typeof readUsers>>);
       const hrManagers = (users || [])

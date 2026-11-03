@@ -17,6 +17,7 @@ import {
 } from '@/lib/mail-service';
 import { getNigeriaLgas, getNigeriaStates, getRegionForState } from '@/lib/nigeria-locations';
 import { invalidatePayrollEmployeeCache, readPayrollEmployees } from '@/lib/payroll-employee-source';
+import { findNamedHrManager, isNamedHrManagerIdentity } from '@/lib/payroll-acting-approvers';
 import { resolveWorkflowLinkOrigin } from '@/lib/public-app-url';
 
 export type EssProfileFieldMeta = {
@@ -135,6 +136,29 @@ export const resolveProfileHrRecipients = async (
       roles: Array.from(new Set([...(existing?.roles || []), ...(input.roles || [])])),
     });
   };
+
+  const namedEmployee = findNamedHrManager(directory);
+  const namedUser = users.find((user) => (user.status === 'Active' || !user.status) && isNamedHrManagerIdentity({
+    employeeCode: user.employeeCode,
+    employeeId: user.employeeId,
+    username: user.username,
+    fullName: user.fullName,
+  })) || null;
+  if (namedEmployee || namedUser) {
+    const code = compact(namedUser?.employeeCode || namedUser?.employeeId || namedUser?.username || namedEmployee?.employeeCode || namedEmployee?.employeeId);
+    const directoryEmployee = namedEmployee || directory.find((employee) =>
+      [employee.employeeCode, employee.employeeId, employee.sourceEmployeeId]
+        .some((value) => employeeCodesMatch(value, code)),
+    ) || null;
+    await upsert({
+      employeeCode: code,
+      fullName: namedUser?.fullName || directoryEmployee?.fullName,
+      email: namedUser?.email,
+      roles: ['HR Manager'],
+      directoryEmployee,
+    });
+    return Array.from(byCode.values()).filter((item) => item.email || item.employeeCode);
+  }
 
   // Primary: Active auth users with exact "HR Manager" role only.
   for (const user of users.filter((item) => item.status === 'Active' || !item.status)) {
@@ -401,22 +425,24 @@ const notifyProfileSubmittedToHr = async (input: {
   const workspaceLink = `${origin}${href}`;
   const summary = changeSummary(input.request.profileChanges);
 
-  await createEnterpriseNotification(session, {
-    kind: 'Approval',
-    module: 'Profile',
-    title: `Profile update awaiting HR approval — ${input.requester.fullName}`,
-    body: `${input.requester.fullName} submitted ${input.request.title} (${summary}). Review and approve in ESS.`,
-    severity: 'warning',
-    href,
-    actor: input.actorName,
-    channels: ['In-App'],
-    recipientRoles: ['HR Manager'],
-    metadata: {
-      requestId: input.request.id,
-      module: 'ess-profile-update',
-      serviceId: PROFILE_SERVICE_ID,
-    },
-  }).catch(() => undefined);
+  if (!input.recipients.length) {
+    await createEnterpriseNotification(session, {
+      kind: 'Approval',
+      module: 'Profile',
+      title: `Profile update awaiting HR approval — ${input.requester.fullName}`,
+      body: `${input.requester.fullName} submitted ${input.request.title} (${summary}). Review and approve in ESS.`,
+      severity: 'warning',
+      href,
+      actor: input.actorName,
+      channels: ['In-App'],
+      recipientRoles: ['HR Manager'],
+      metadata: {
+        requestId: input.request.id,
+        module: 'ess-profile-update',
+        serviceId: PROFILE_SERVICE_ID,
+      },
+    }).catch(() => undefined);
+  }
 
   for (const recipient of input.recipients.slice(0, 8)) {
     await createEnterpriseNotification(session, {

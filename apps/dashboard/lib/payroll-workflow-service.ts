@@ -43,6 +43,7 @@ import {
   normalizePayrollCompany,
   type PayrollCompany,
 } from '@/lib/payroll-schedule-scope';
+import { payrollRunScopeMismatchMessage } from '@/lib/payroll-run-scope-guard';
 import type { PayrollSessionRole } from '@/lib/payroll-session';
 import {
   clearPayrollApprovalReminder,
@@ -85,6 +86,8 @@ type WorkflowInput = {
   /** Target pack for approval / artifact actions. Calculate/create without pack+company updates all four schedules. */
   pack?: PayrollRunPack | string | null;
   company?: PayrollCompany | string | null;
+  /** Schedule card the user acted on. DLE USD shares the DLE salaried run. */
+  scheduleId?: string | null;
   runId?: string | null;
 };
 
@@ -273,7 +276,12 @@ export const executePayrollWorkflowAction = async (input: WorkflowInput) => {
 
   const pack = packsToProcess[0];
   const company = resolvedCompany || 'DLE';
-  let run = (input.runId ? await getPayrollRun(input.runId) : null) || (await getPayrollRunForPeriod(period, pack, company)) || (await ensurePayrollRun(period, periodLabel, actor, pack, company));
+  const runFromId = input.runId ? await getPayrollRun(input.runId) : null;
+  if (runFromId) {
+    const mismatch = payrollRunScopeMismatchMessage(runFromId, input);
+    if (mismatch) throw new Error(mismatch);
+  }
+  let run = runFromId || (await getPayrollRunForPeriod(period, pack, company)) || (await ensurePayrollRun(period, periodLabel, actor, pack, company));
   run.pack = resolvePayrollRunPack(run);
   run.company = resolvePayrollRunCompany(run) || company;
   run.periodLabel = payrollRunPeriodLabelForPack(periodLabel, run.pack, run.company);

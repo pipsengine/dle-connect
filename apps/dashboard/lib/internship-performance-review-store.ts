@@ -1,5 +1,6 @@
 import sql from 'mssql';
 import { readPayrollEmployees } from '@/lib/payroll-employee-source';
+import { findNamedHrManager } from '@/lib/payroll-acting-approvers';
 import { isStipendPayrollEmployeeCode } from '@/lib/payroll-employee-classification';
 import { readUsers } from '@/lib/auth/auth-store';
 import { createEnterpriseNotification } from '@/lib/enterprise-notifications-store';
@@ -698,7 +699,7 @@ export const initiateInternshipReview = async (
     const employees = await directoryEmployees();
     const hrManagers = findRoleHolders(employees, HR_MANAGER_ROLE_PATTERN);
     const md = resolveManagingDirector(employees);
-    const hrManager = hrManagers[0] || null;
+    const hrManager = findNamedHrManager(employees) || hrManagers[0] || null;
     const hod = intern.hod || input.hod || '';
     const hodSkipReason = intern.hod
       ? ''

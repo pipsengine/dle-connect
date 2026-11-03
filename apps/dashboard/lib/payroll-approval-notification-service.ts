@@ -28,6 +28,8 @@ import {
   PAYROLL_NAMED_CFO_CODES,
   PAYROLL_NAMED_HR_MANAGER_CODES,
   PAYROLL_NAMED_MD_CEO_CODES,
+  findNamedHrManager,
+  isNamedHrManagerIdentity,
 } from '@/lib/payroll-acting-approvers';
 import { isProtectedGlobalSuperAdminIdentity } from '@/lib/auth/protected-global-admin';
 import type { UnifiedPayrollRun } from '@/lib/payroll-run-store';
@@ -97,11 +99,19 @@ const systemSessionFor = (recipient: ApproverRecipient): SessionPayload => ({
 });
 
 export const userMatchesPayrollApproverStage = (
-  user: { id?: string; username?: string; employeeCode?: string; employeeId?: string; roles?: string[]; jobTitle?: string; status?: string; isGlobalAdmin?: boolean },
+  user: { id?: string; username?: string; employeeCode?: string; employeeId?: string; fullName?: string; roles?: string[]; jobTitle?: string; status?: string; isGlobalAdmin?: boolean },
   stageId: PayrollApprovalStageId,
 ) => {
   if (stageId === 'payroll-officer') return false;
   if (compact(user.status) && compact(user.status) !== 'Active') return false;
+  if (stageId === 'hr-manager') {
+    return isNamedHrManagerIdentity({
+      employeeCode: user.employeeCode,
+      employeeId: user.employeeId,
+      username: user.username,
+      fullName: user.fullName,
+    });
+  }
   const code = compact(user.employeeCode || user.employeeId || user.username).toUpperCase();
   const namedCodes = STAGE_NAMED_CODES[stageId] || [];
   if (code && namedCodes.some((item) => item === code)) return true;
@@ -121,7 +131,31 @@ export const userMatchesPayrollApproverStage = (
 export const resolvePayrollApproverRecipients = async (stageId: PayrollApprovalStageId): Promise<ApproverRecipient[]> => {
   if (stageId === 'payroll-officer') return [];
   const users = await readUsers();
-  const matches = users.filter((user) => userMatchesPayrollApproverStage(user, stageId));
+  let matches = users.filter((user) => userMatchesPayrollApproverStage(user, stageId));
+  if (stageId === 'hr-manager' && !matches.length) {
+    const { readDirectoryEmployees } = await import('@/lib/payroll-employee-source');
+    const directory = await readDirectoryEmployees().catch(() => ({ employees: [] }));
+    const named = findNamedHrManager(directory.employees || []);
+    const code = compact(named?.employeeCode || named?.employeeId);
+    if (named && code) {
+      const email = await resolveEmployeeMailbox({
+        employeeCode: code,
+        employeeId: named.employeeId || code,
+        fullName: named.fullName,
+        officialEmail: named.officialEmail,
+        email: named.email,
+      } as never);
+      if (email) {
+        return [{
+          id: code,
+          username: code,
+          fullName: compact(named.fullName) || 'HR Manager',
+          email,
+          roles: ['HR Manager'],
+        }];
+      }
+    }
+  }
   const withEmail = [];
   for (const user of matches) {
     let email = compact(user.email);

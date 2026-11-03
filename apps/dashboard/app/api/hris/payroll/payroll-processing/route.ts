@@ -194,6 +194,7 @@ export async function POST(request: Request) {
     const period = compact(body.period) || (await getActivePayrollPeriod());
     const pack = compact(body.pack) || null;
     const company = compact(body.company) || null;
+    const scheduleId = compact(body.scheduleId) || null;
     const runId = compact(body.runId) || null;
     const note = compact(body.note);
     const reason = compact(body.reason);
@@ -213,6 +214,7 @@ export async function POST(request: Request) {
         period,
         pack,
         company,
+        scheduleId,
         actor,
         role,
         baseUrl: origin,
@@ -261,6 +263,7 @@ export async function POST(request: Request) {
       period,
       pack,
       company,
+      scheduleId,
       runId,
       actor,
       role,

@@ -520,6 +520,11 @@ export default function PayrollApprovalWorkspace({
   const pendingApproverStage = stages.find((stage) => stage.current && stage.id !== 'payroll-officer') || null;
   const canSendReminder = Boolean(payload?.permissions.canSubmit && pendingApproverStage);
 
+  const selectedScope =
+    PAYROLL_SCHEDULE_SCOPES.find((scope) => scope.id === scheduleId)
+    || PAYROLL_SCHEDULE_SCOPES.find((scope) => scope.pack === pack && scope.company === company)
+    || PAYROLL_SCHEDULE_SCOPES[0];
+
   const canActOnStage = (stage: StageState | null) => {
     if (!stage) return false;
     const perms = payload?.permissions;
@@ -533,27 +538,17 @@ export default function PayrollApprovalWorkspace({
     return perms.canApproveMdCeo;
   };
 
-  const approveLabel =
-    activeStage?.id === 'payroll-officer'
-      ? 'Submit for Approval'
-      : activeStage?.id === 'hr-manager'
-        ? 'Approve'
-        : activeStage?.id === 'finance-manager'
-          ? 'Approve'
-          : activeStage?.id === 'cfo'
-            ? 'Approve'
-            : 'Approve';
+  const scheduleReady = !loading && payload?.scheduleId === scheduleId;
+  const scheduleName = selectedScope.label;
+  const approveLabel = activeStage?.id === 'payroll-officer'
+    ? `Submit ${scheduleName}`
+    : `Approve ${scheduleName}`;
 
   const payrollComputed = Boolean(run && !['Draft', 'Open', 'Reopened'].includes(run.status));
   const previewPay = sumRecordPay(payload?.records);
   const previewGross = Number(payload?.summary.scheduleGrossPay || 0) || previewPay.grossPay;
   const previewNet = Number(payload?.summary.scheduleNetPay || 0) || previewPay.netPay;
   const previewDeductions = previewPay.deductions;
-
-  const selectedScope =
-    PAYROLL_SCHEDULE_SCOPES.find((scope) => scope.id === scheduleId)
-    || PAYROLL_SCHEDULE_SCOPES.find((scope) => scope.pack === pack && scope.company === company)
-    || PAYROLL_SCHEDULE_SCOPES[0];
 
   const packCards = useMemo(() => {
     const packs = payload?.packs || [];
@@ -703,6 +698,18 @@ export default function PayrollApprovalWorkspace({
   };
 
   const action = async (actionName: string) => {
+    const scheduleLabel = selectedScope.label;
+    const actionScheduleId = scheduleId;
+    const actionPack = pack;
+    const actionCompany = company;
+    if (loading || payload?.scheduleId !== scheduleId) {
+      setToast(`Wait for ${scheduleLabel} to finish loading.`);
+      return;
+    }
+    if (run && ((run.pack && run.pack !== selectedScope.pack) || (run.company && run.company !== selectedScope.company))) {
+      setToast(`This approval requires ${scheduleLabel} to finish loading. Reload the schedule and try again.`);
+      return;
+    }
     setPosting(actionName);
     setToast('');
     try {
@@ -712,10 +719,11 @@ export default function PayrollApprovalWorkspace({
         body: JSON.stringify({
           action: actionName,
           period,
-          pack,
-          company,
+          pack: actionPack,
+          company: actionCompany,
+          scheduleId: actionScheduleId,
           runId: run?.id || undefined,
-          note: note || `${actionName} from payroll approval workspace (${company} ${pack})`,
+          note: note || `${actionName} from payroll approval workspace (${scheduleLabel})`,
         }),
       });
       const json = (await res.json()) as ApiResponse<{
@@ -732,10 +740,10 @@ export default function PayrollApprovalWorkspace({
             : '.'),
         );
       } else {
-        setToast(`${json.data?.run.packLabel || pack} pack moved to ${json.data?.run.status || 'updated'}.`);
+        setToast(`${scheduleLabel} moved to ${json.data?.run.status || 'updated'}.`);
         setNote('');
       }
-      await load(period, role, pack, company);
+      await load(period, role, actionPack, actionCompany, actionScheduleId);
     } catch (event) {
       setToast(event instanceof Error ? event.message : 'Unable to update payroll approval');
     } finally {
@@ -1108,7 +1116,7 @@ export default function PayrollApprovalWorkspace({
           {canSendReminder ? (
             <button
               type="button"
-              disabled={posting === 'send-reminder'}
+              disabled={!scheduleReady || Boolean(posting)}
               onClick={() => void action('send-reminder')}
               className="mt-2 inline-flex h-9 w-full items-center justify-center gap-2 rounded-lg border border-sky-300 bg-white px-3 text-[11px] font-extrabold text-sky-900 hover:bg-sky-50 disabled:opacity-50"
             >
@@ -1116,25 +1124,29 @@ export default function PayrollApprovalWorkspace({
             </button>
           ) : null}
 
-          {activeStage && (activeStage.current || (payload?.permissions.canApproveAnyStage && !activeStage.done)) ? (
+          {!scheduleReady ? (
+            <p className="mt-3 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-[11px] font-semibold text-slate-600">
+              Loading {scheduleName}…
+            </p>
+          ) : activeStage && (activeStage.current || (payload?.permissions.canApproveAnyStage && !activeStage.done)) ? (
             <div className={styles.approvalBtns}>
               {activeStage.id !== 'payroll-officer' ? (
                 <>
                   <button
                     type="button"
                     className={styles.reject}
-                    disabled={posting === 'reject-run'}
+                    disabled={Boolean(posting)}
                     onClick={() => void action('reject-run')}
                   >
-                    Reject
+                    Reject {scheduleName}
                   </button>
                   <button
                     type="button"
                     className={styles.return}
-                    disabled={posting === 'request-revision'}
+                    disabled={Boolean(posting)}
                     onClick={() => void action('request-revision')}
                   >
-                    Return for Revision
+                    Return {scheduleName}
                   </button>
                 </>
               ) : (
@@ -1144,7 +1156,7 @@ export default function PayrollApprovalWorkspace({
                 type="button"
                 className={styles.approve}
                 style={activeStage.id === 'payroll-officer' ? { gridColumn: '1 / -1' } : undefined}
-                disabled={!canActOnStage(activeStage) || posting === activeStage.action}
+                disabled={!canActOnStage(activeStage) || Boolean(posting)}
                 onClick={() => void action(activeStage.action)}
               >
                 <CheckCircle2 size={14} className={posting === activeStage.action ? 'animate-spin' : ''} />
@@ -1159,7 +1171,7 @@ export default function PayrollApprovalWorkspace({
             </p>
           )}
 
-          {activeStage?.current && !canActOnStage(activeStage) ? (
+          {scheduleReady && activeStage?.current && !canActOnStage(activeStage) ? (
             <p className="mt-2 text-[11px] font-bold text-amber-700">
               Your signed-in role cannot action this stage. Wait for the stage owner, or sign in with an authorized role.
             </p>

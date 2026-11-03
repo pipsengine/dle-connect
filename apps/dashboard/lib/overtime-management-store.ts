@@ -17,6 +17,7 @@ import { readSupervisorAssignments } from '@/lib/supervisor-assignment-store';
 import { supervisorCodesMatch } from '@/lib/timesheet-agege-blasting';
 import { overtimeDayTypeForDate, isPremiumTimesheetDay, overtimePaysHoursAboveStandard } from '@/lib/timesheet-entry-shared';
 import { getPayrollPublicHolidayDates } from '@/lib/nigeria-public-holidays';
+import { PAYROLL_NAMED_HR_MANAGER_CODES } from '@/lib/payroll-acting-approvers';
 
 export type OvertimeRole =
   | 'Employee'
@@ -359,7 +360,7 @@ const resolveGmOperations = (employees: DleEmployeeDirectoryRow[]) =>
   });
 
 const resolveHrApprover = (employees: DleEmployeeDirectoryRow[]) =>
-  resolveByTitle(employees, process.env.HRIS_HR_MANAGER_EMPLOYEE_CODE, (title) => {
+  resolveByTitle(employees, process.env.HRIS_HR_MANAGER_EMPLOYEE_CODE || PAYROLL_NAMED_HR_MANAGER_CODES[0], (title) => {
     if (/head.*human resource|group.*hr|chief.*people/.test(title)) return 100;
     if (/hr manager|human resources? manager/.test(title)) return 90;
     if (/\bhr\b.*(manager|head|lead|officer|business partner)/.test(title)) return 70;

@@ -56,7 +56,7 @@ import {
   isTravellingExpenseNature,
   type SupplierInvoiceCategory,
 } from '@/lib/finance-intelligence/payment-invoice-category';
-import { applyCostCentreManagerStage, isCostCentreManagerStage } from '@/lib/finance-intelligence/payment-cost-centre';
+import { applyCostCentreManagerStage, isCostCentreManagerStage, samePaymentPrincipal } from '@/lib/finance-intelligence/payment-cost-centre';
 import { isCorporateOrPlaceholderProjectCode } from '@/lib/finance-intelligence/payment-request-departments';
 
 /** Supplier invoice (PO) or expense (no PO) — both pay a vendor/supplier. */
@@ -386,6 +386,9 @@ const resolveInitialStage = async (
     costCentre: context?.costCentre,
     requesterCode: context?.requesterCode,
     department: context?.department,
+    projectCode: context?.projectCode,
+    supervisorName: context?.supervisorName,
+    paymentType,
   });
   try {
     const matched = await resolveApprovalChain({
@@ -1222,6 +1225,9 @@ const ensureApprovalStages = async (row: PaymentRequestRow): Promise<string[]> =
           costCentre: row.costCentre,
           requesterCode: row.requesterCode,
           department: row.department,
+          projectCode: row.projectCode,
+          supervisorName: row.supervisorName,
+          paymentType: row.paymentType,
         }).catch(() => nextStages);
       }
       nextStages = await applyGmApprovesOnceBeforeCfo({
@@ -1395,6 +1401,156 @@ WHERE [RequestId] = @RequestId
     return refreshed;
   }
   return (await getPaymentRequestById(row.requestId)) || refreshed;
+};
+
+const principalNameOf = (principal?: { name?: string | null; employee?: { fullName?: string | null } | null } | null) =>
+  compact(principal?.employee?.fullName || principal?.name);
+
+const approvalsThisCycle = (actions: PaymentRequestActionRow[]) => {
+  const ordered = [...actions].sort((left, right) => left.createdAt.localeCompare(right.createdAt));
+  const restartAt = [...ordered].reverse().find((action) => /resubmit|^return$|returned/i.test(action.actionType))?.createdAt || '';
+  return ordered.filter((action) => /approve/i.test(action.actionType) && (!restartAt || action.createdAt > restartAt));
+};
+
+const resolveRowStagePrincipal = (row: PaymentRequestRow, stage: string) => resolvePaymentStageApprover({
+  stage,
+  requesterCode: row.requesterCode,
+  projectCode: row.projectCode,
+  department: row.department,
+  costCentre: row.costCentre,
+  supervisorName: row.supervisorName,
+  paymentType: row.paymentType,
+  principalOnly: true,
+});
+
+/**
+ * A cost-centre step for someone who already approved this request is not a second approval.
+ * Move the request on to the next different person.
+ */
+export const repairDuplicateCostCentreApproval = async (row: PaymentRequestRow): Promise<PaymentRequestRow> => {
+  if (!['Pending Approval', 'Submitted', 'Finance Review'].includes(row.status)) return row;
+  if (!isCostCentreManagerStage(row.currentStage)) return row;
+
+  const stages = await ensureApprovalStages(row);
+  let currentPrincipal: Awaited<ReturnType<typeof resolvePaymentStageApprover>> | null = null;
+  try {
+    currentPrincipal = await resolveRowStagePrincipal(row, row.currentStage);
+  } catch (error) {
+    console.error('[payment-requests] duplicate cost-centre approver lookup failed', error);
+    return row;
+  }
+  if (!currentPrincipal?.code && !principalNameOf(currentPrincipal)) return row;
+
+  const actions = await listPaymentRequestActions(row.requestId);
+  const cycleApprovals = approvalsThisCycle(actions).filter((action) => !isCostCentreManagerStage(action.stage));
+  if (!cycleApprovals.length) return row;
+
+  let alreadyApproved = false;
+  for (const action of cycleApprovals) {
+    if (samePaymentPrincipal(currentPrincipal, { code: action.actorCode, name: action.actorName })) {
+      alreadyApproved = true;
+      break;
+    }
+    try {
+      const principal = await resolveRowStagePrincipal(row, action.stage);
+      if (samePaymentPrincipal(currentPrincipal, principal)) {
+        alreadyApproved = true;
+        break;
+      }
+    } catch {
+      // Keep checking the other approvals.
+    }
+  }
+  if (!alreadyApproved) return row;
+
+  const approvedKeys = new Set(cycleApprovals.map((action) => compact(action.stage).toLowerCase()));
+  let nextStage = '';
+  for (const stage of stages) {
+    if (isCostCentreManagerStage(stage) || approvedKeys.has(compact(stage).toLowerCase())) continue;
+    try {
+      const principal = await resolveRowStagePrincipal(row, stage);
+      if (samePaymentPrincipal(currentPrincipal, principal)) continue;
+    } catch {
+      // An unresolved later seat still has to be actioned by someone else.
+    }
+    nextStage = stage;
+    break;
+  }
+
+  const pool = await ensureFinanceDb().catch(() => null);
+  if (!pool) return row;
+  const handoffToTreasury = !nextStage;
+  const landedStage = nextStage || 'Treasury';
+  const landedStatus = handoffToTreasury ? 'Ready for Treasury' : 'Pending Approval';
+  try {
+    await pool.request()
+      .input('RequestId', sql.NVarChar(60), row.requestId)
+      .input('Status', sql.NVarChar(40), landedStatus)
+      .input('CurrentStage', sql.NVarChar(80), landedStage)
+      .query(`
+UPDATE [finance].[PaymentRequests]
+SET [Status] = @Status,
+    [CurrentStage] = @CurrentStage,
+    [UpdatedAt] = SYSUTCDATETIME()
+WHERE [RequestId] = @RequestId
+`);
+    if (nextStage) {
+      await assignCurrentApprover({
+        requestId: row.requestId,
+        stage: nextStage,
+        requesterCode: row.requesterCode,
+        projectCode: row.projectCode,
+        department: row.department,
+        costCentre: row.costCentre,
+        supervisorName: row.supervisorName,
+        paymentType: row.paymentType,
+      });
+    } else {
+      await pool.request()
+        .input('RequestId', sql.NVarChar(60), row.requestId)
+        .query(`
+UPDATE [finance].[PaymentRequests]
+SET [CurrentApproverCode] = NULL,
+    [CurrentApproverName] = NULL,
+    [UpdatedAt] = SYSUTCDATETIME()
+WHERE [RequestId] = @RequestId
+`);
+    }
+    await logAction({
+      requestId: row.requestId,
+      actionType: 'repair-stages',
+      stage: row.currentStage,
+      actorName: 'System',
+      actorCode: 'system',
+      comment: `Skipped ${row.currentStage} because ${currentPrincipal.name || currentPrincipal.code} has already approved this request.`,
+    });
+  } catch (error) {
+    console.error('[payment-requests] duplicate cost-centre approval repair failed', error);
+    return row;
+  }
+
+  const repaired = (await getPaymentRequestById(row.requestId)) || {
+    ...row,
+    currentStage: landedStage,
+    status: landedStatus,
+  };
+  if (nextStage) {
+    await notifyPaymentApprovalRequired({
+      request: repaired,
+      stage: nextStage,
+      actorName: 'System',
+      baseUrl: resolveWorkflowLinkOrigin(),
+    }).catch((error) => console.error('[payment-requests] duplicate cost-centre skip notification failed', error));
+  } else {
+    await notifyPaymentDecision({
+      request: repaired,
+      event: 'approved',
+      actorName: 'System',
+      stage: row.currentStage,
+      baseUrl: resolveWorkflowLinkOrigin(),
+    }).catch((error) => console.error('[payment-requests] duplicate cost-centre final notification failed', error));
+  }
+  return repaired;
 };
 
 /**
@@ -1649,6 +1805,9 @@ export const repairMisroutedProjectPathWithoutProject = async (row: PaymentReque
       costCentre: row.costCentre,
       requesterCode: row.requesterCode,
       department: row.department,
+      projectCode: row.projectCode,
+      supervisorName: row.supervisorName,
+      paymentType: row.paymentType,
     }).catch(() => nextStages);
   }
   nextStages = await applyGmApprovesOnceBeforeCfo({
@@ -1831,6 +1990,63 @@ WHERE [RequestId] = @RequestId
       baseUrl: resolveWorkflowLinkOrigin(),
     }).catch((error) => console.error('[payment-requests] dual-hat reroute notification failed', error));
   }
+  return next;
+};
+
+/** HR Manager approvals belong to Omololu (P0468), including requests already sitting with someone else. */
+export const repairMisroutedHrManager = async (row: PaymentRequestRow): Promise<PaymentRequestRow> => {
+  if (!['Pending Approval', 'Submitted', 'Finance Review'].includes(row.status)) return row;
+  if (!/hr\s*manager/i.test(compact(row.currentStage))) return row;
+  const approver = await resolvePaymentStageApprover({
+    stage: row.currentStage,
+    requesterCode: row.requesterCode,
+    projectCode: row.projectCode,
+    department: row.department,
+    costCentre: row.costCentre,
+    supervisorName: row.supervisorName,
+    paymentType: row.paymentType,
+  }).catch((error) => {
+    console.error('[payment-requests] HR manager reroute lookup failed', error);
+    return null;
+  });
+  if (!approver?.code) return row;
+  if (paymentEmployeeCodesMatch(row.currentApproverCode, approver.code)) return row;
+
+  try {
+    await assignCurrentApprover({
+      requestId: row.requestId,
+      stage: row.currentStage,
+      requesterCode: row.requesterCode,
+      projectCode: row.projectCode,
+      department: row.department,
+      costCentre: row.costCentre,
+      supervisorName: row.supervisorName,
+      paymentType: row.paymentType,
+    });
+    await logAction({
+      requestId: row.requestId,
+      actionType: 'repair-stages',
+      stage: row.currentStage,
+      actorName: 'System',
+      actorCode: 'system',
+      comment: `Re-routed HR Manager from ${row.currentApproverName || row.currentApproverCode || 'the previous assignee'} to ${approver.name} (${approver.code}).`,
+    });
+  } catch (error) {
+    console.error('[payment-requests] HR manager reroute failed', error);
+    return row;
+  }
+
+  const next = (await getPaymentRequestById(row.requestId)) || {
+    ...row,
+    currentApproverCode: approver.code,
+    currentApproverName: approver.name,
+  };
+  await notifyPaymentApprovalRequired({
+    request: next,
+    stage: row.currentStage,
+    actorName: 'System',
+    baseUrl: resolveWorkflowLinkOrigin(),
+  }).catch((error) => console.error('[payment-requests] HR manager reroute notification failed', error));
   return next;
 };
 
@@ -2269,7 +2485,7 @@ export const buildPaymentRequestsWorkspace = async (input?: {
   const mineFor = compact(input?.mineFor);
   const scopedToActorCode = compact(input?.scopedToActorCode);
   const awaitingApproverCode = compact(input?.awaitingApproverCode);
-  const rows = await listRows({
+  let rows = await listRows({
     paymentType: input?.paymentType,
     mineFor: mineFor || undefined,
     scopedToActorCode: scopedToActorCode || undefined,
@@ -2278,6 +2494,39 @@ export const buildPaymentRequestsWorkspace = async (input?: {
     includeMdCeoStage: Boolean(input?.includeMdCeoStage),
     requireActorScope: Boolean(input?.restrictToActor),
   });
+
+  if (awaitingApproverCode) {
+    const leftInbox = new Set<string>();
+    for (let index = 0; index < rows.length; index += 1) {
+      if (!isCostCentreManagerStage(rows[index]?.currentStage)) continue;
+      const beforeStage = rows[index].currentStage;
+      try {
+        rows[index] = await repairDuplicateCostCentreApproval(rows[index]);
+      } catch (error) {
+        console.error('[payment-requests] inbox duplicate cost-centre repair failed', rows[index]?.requestNumber, error);
+        continue;
+      }
+      if (compact(rows[index].currentStage).toLowerCase() !== compact(beforeStage).toLowerCase()
+        && !paymentEmployeeCodesMatch(rows[index].currentApproverCode, awaitingApproverCode)) {
+        leftInbox.add(rows[index].requestId);
+      }
+    }
+    for (let index = 0; index < rows.length; index += 1) {
+      if (leftInbox.has(rows[index]?.requestId) || !/hr\s*manager/i.test(compact(rows[index]?.currentStage))) continue;
+      const beforeCode = rows[index].currentApproverCode;
+      try {
+        rows[index] = await repairMisroutedHrManager(rows[index]);
+      } catch (error) {
+        console.error('[payment-requests] inbox HR manager reroute failed', rows[index]?.requestNumber, error);
+        continue;
+      }
+      if (!paymentEmployeeCodesMatch(beforeCode, rows[index].currentApproverCode)
+        && !paymentEmployeeCodesMatch(rows[index].currentApproverCode, awaitingApproverCode)) {
+        leftInbox.add(rows[index].requestId);
+      }
+    }
+    if (leftInbox.size) rows = rows.filter((row) => !leftInbox.has(row.requestId));
+  }
 
   if (input?.runRepairs) {
   // New project submissions still sitting with the PM (no approval yet) get line manager first.
@@ -2309,11 +2558,29 @@ export const buildPaymentRequestsWorkspace = async (input?: {
   }
 
   for (let index = 0; index < rows.length; index += 1) {
+    if (!/hr\s*manager/i.test(compact(rows[index]?.currentStage))) continue;
+    try {
+      rows[index] = await repairMisroutedHrManager(rows[index]);
+    } catch (error) {
+      console.error('[payment-requests] HR manager reroute failed', rows[index]?.requestNumber, error);
+    }
+  }
+
+  for (let index = 0; index < rows.length; index += 1) {
     if (!compact(rows[index]?.costCentre)) continue;
     try {
       rows[index] = await repairMissingCostCentreGm(rows[index]);
     } catch (error) {
       console.error('[payment-requests] cost-centre GM repair failed', rows[index]?.requestNumber, error);
+    }
+  }
+
+  for (let index = 0; index < rows.length; index += 1) {
+    if (!isCostCentreManagerStage(rows[index]?.currentStage)) continue;
+    try {
+      rows[index] = await repairDuplicateCostCentreApproval(rows[index]);
+    } catch (error) {
+      console.error('[payment-requests] duplicate cost-centre approval repair failed', rows[index]?.requestNumber, error);
     }
   }
 
@@ -3609,10 +3876,12 @@ export const transitionPaymentRequest = async (input: {
   const existingRaw = (await listRows()).find((row) => row.requestId === input.requestId)
     || await getPaymentRequestById(input.requestId);
   if (!existingRaw) throw new Error('Payment request not found.');
-  const existing = await repairMissingCostCentreGm(
-    await repairMisroutedDepartmentHatReportingManager(
-      await repairMisroutedProjectPathWithoutProject(
-        await repairMissingProjectLineManager(await repairPrematureTreasuryHandoff(existingRaw)),
+  const existing = await repairMisroutedHrManager(
+    await repairMissingCostCentreGm(
+      await repairMisroutedDepartmentHatReportingManager(
+        await repairMisroutedProjectPathWithoutProject(
+          await repairMissingProjectLineManager(await repairPrematureTreasuryHandoff(existingRaw)),
+        ),
       ),
     ),
   );
@@ -3621,6 +3890,13 @@ export const transitionPaymentRequest = async (input: {
     const assigned = compact(existing.currentApproverCode).toLowerCase();
     if (actorCode && assigned && actorCode !== assigned) {
       throw new Error('This request was routed to the requester\'s line manager first. Only the assigned approver can action it.');
+    }
+  }
+
+  if (input.action === 'approve' && isCostCentreManagerStage(existing.currentStage)) {
+    const satisfied = await repairDuplicateCostCentreApproval(existing);
+    if (compact(satisfied.currentStage).toLowerCase() !== compact(existing.currentStage).toLowerCase()) {
+      return { request: satisfied };
     }
   }
 
@@ -3644,19 +3920,40 @@ export const transitionPaymentRequest = async (input: {
   let notifyEvent: 'approved' | 'rejected' | 'returned' | 'cancelled' | 'stage-advanced' | 'paid' | 'posted' | 'retirement-submitted' | 'retirement-acknowledged' | null = null;
   let completedStage = existing.currentStage;
   let advancedTo: string | undefined;
+  const skippedDuplicateStages: string[] = [];
   let assignedApprover: Awaited<ReturnType<typeof assignCurrentApprover>> | null = null;
 
   switch (input.action) {
     case 'approve': {
       let stages = await ensureApprovalStages(existing);
-      let currentIdx = stages.findIndex((stage) => stage.toLowerCase() === compact(existing.currentStage).toLowerCase());
+      const stageKey = (stage: string) => compact(stage).toLowerCase();
+      let currentIdx = stages.findIndex((stage) => stageKey(stage) === stageKey(existing.currentStage));
       // Stage label drift (e.g. "Line Manager" vs "Reporting Manager") — treat as first pending stage.
-      if (currentIdx < 0 && stages.length) {
+      if (currentIdx < 0 && stages.length && !isCostCentreManagerStage(existing.currentStage)) {
         currentIdx = 0;
       }
-      const hasNext = currentIdx >= 0 && currentIdx < stages.length - 1;
-      if (hasNext) {
-        nextStage = stages[currentIdx + 1];
+      let anchor: Awaited<ReturnType<typeof resolvePaymentStageApprover>> | null = null;
+      try {
+        anchor = await resolveRowStagePrincipal(existing, existing.currentStage);
+      } catch (error) {
+        console.error('[payment-requests] same-approver skip lookup failed', error);
+      }
+      let nextIndex = currentIdx + 1;
+      while (nextIndex < stages.length) {
+        const candidate = stages[nextIndex];
+        if (!anchor || (!anchor.code && !principalNameOf(anchor))) break;
+        try {
+          const nextPrincipal = await resolveRowStagePrincipal(existing, candidate);
+          if (!samePaymentPrincipal(anchor, nextPrincipal)) break;
+        } catch (error) {
+          console.error('[payment-requests] same-approver skip lookup failed', candidate, error);
+          break;
+        }
+        skippedDuplicateStages.push(candidate);
+        nextIndex += 1;
+      }
+      if (nextIndex < stages.length) {
+        nextStage = stages[nextIndex];
         nextStatus = 'Pending Approval';
         notifyEvent = 'stage-advanced';
         advancedTo = nextStage;
@@ -3966,6 +4263,17 @@ WHERE [RequestId] = @RequestId
     comment: input.comment,
     reason: input.reason,
   });
+
+  if (skippedDuplicateStages.length) {
+    await logAction({
+      requestId: input.requestId,
+      actionType: 'repair-stages',
+      stage: skippedDuplicateStages.join(', '),
+      actorName: 'System',
+      actorCode: 'system',
+      comment: `Skipped ${skippedDuplicateStages.join(', ')} because ${input.actor} already approved this request as ${completedStage}.`,
+    });
+  }
 
   // Always reload the persisted row so notification uses the assigned Finance Manager code/name.
   const request = (await getPaymentRequestById(input.requestId)) || existing;

@@ -2,6 +2,7 @@ import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import sql from 'mssql';
 import { readUsers } from '@/lib/auth/auth-store';
+import { findNamedHrManager } from '@/lib/payroll-acting-approvers';
 import type { SessionPayload } from '@/lib/auth/session';
 import { getDleEnterpriseDbPool, type DleEmployeeDirectoryRow } from '@/lib/dle-enterprise-db';
 import {
@@ -1130,6 +1131,9 @@ export const notifyLeaveAwaitingHrApproval = async (input: {
       }),
     }));
 
+  const hrRecipients = await resolveHrRecipients((await readPayrollEmployees()).employees || []);
+  const hrManager = hrRecipients[0];
+  const hrManagerCode = compact(hrManager?.employeeCode || hrManager?.employeeId);
   await safeLeaveNotification('hr approval queue notification', () =>
     createEnterpriseNotification(session, {
       kind: 'Approval',
@@ -1137,7 +1141,8 @@ export const notifyLeaveAwaitingHrApproval = async (input: {
       title: 'Leave request awaiting HR approval',
       body: `${requestLabel} has been approved by the line manager and is awaiting HR Manager / Head approval.`,
       severity: 'warning',
-      recipientRoles: ['HR Manager', 'HR Head', 'HR Director'],
+      recipientEmployeeCode: hrManagerCode || undefined,
+      recipientRoles: hrManagerCode ? [] : ['HR Manager', 'HR Head', 'HR Director'],
       href: '/workforce-portal?tab=leave&leaveSection=Approvals',
       channels: ['In-App', 'Email'],
       metadata: { requestId: input.request.id },
@@ -1204,6 +1209,8 @@ export const notifyLeaveWithdrawn = async (input: {
     await notifyApprover(recipient);
   }
 
+  const withdrawnHr = hrRecipients[0];
+  const withdrawnHrCode = compact(withdrawnHr?.employeeCode || withdrawnHr?.employeeId);
   await safeLeaveNotification('leave withdrawal hr in-app notification', () =>
     createEnterpriseNotification(session, {
       kind: 'Approval',
@@ -1211,7 +1218,8 @@ export const notifyLeaveWithdrawn = async (input: {
       title: 'Leave request withdrawn',
       body,
       severity: 'info',
-      recipientRoles: ['HR Manager', 'HR Head', 'HR Director'],
+      recipientEmployeeCode: withdrawnHrCode || undefined,
+      recipientRoles: withdrawnHrCode ? [] : ['HR Manager', 'HR Head', 'HR Director'],
       href: '/workforce-portal?tab=leave&leaveSection=Approvals',
       channels: ['In-App'],
       metadata: { requestId: input.request.id },
@@ -1504,6 +1512,9 @@ const actorMatchesLeaveReference = (actor: DleEmployeeDirectoryRow, reference?: 
 };
 
 const resolveHrRecipients = async (employees: DleEmployeeDirectoryRow[]) => {
+  const named = findNamedHrManager(employees);
+  if (named) return [named];
+
   const users = await readUsers().catch(() => []);
   const byKey = new Map<string, DleEmployeeDirectoryRow>();
 

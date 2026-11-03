@@ -14,6 +14,7 @@ import {
   isCountableLeaveAllowanceEvent,
 } from '@/lib/leave-allowance-policy';
 import { normalizePayrollMatchKey } from '@/lib/sage-people-payroll-store';
+import { findNamedHrManager, isNamedHrManagerIdentity } from '@/lib/payroll-acting-approvers';
 import { readPayrollLeaveAllowanceEvents } from '@/lib/payroll-leave-allowance-store';
 import { nigeriaFallbackHolidaysForYear, resolveNigeriaPublicHolidays } from '@/lib/nigeria-public-holidays';
 import {
@@ -186,6 +187,23 @@ const resolveHrManagers = async () => {
       email: mailbox,
     });
   };
+
+  const namedEmployee = findNamedHrManager(employees);
+  const namedUser = users.find((user) => !user.deleted && !['Inactive', 'Disabled'].includes(String(user.status || '')) && isNamedHrManagerIdentity({
+    employeeCode: user.employeeCode,
+    employeeId: user.employeeId,
+    username: user.username,
+    fullName: user.fullName,
+  })) || null;
+  if (namedEmployee || namedUser) {
+    const code = compact(namedUser?.employeeCode || namedUser?.employeeId || namedUser?.username || namedEmployee?.employeeCode || namedEmployee?.employeeId);
+    const directory = namedEmployee || employees.find((employee) =>
+      [employee.employeeCode, employee.employeeId, employee.sourceEmployeeId]
+        .some((value) => compact(value).toUpperCase() === code.toUpperCase()),
+    ) || null;
+    await push(code, namedUser?.fullName || directory?.fullName || 'HR Manager', namedUser?.email || '', directory);
+    return recipients;
+  }
 
   for (const user of users) {
     if (user.deleted || ['Inactive', 'Disabled'].includes(String(user.status || ''))) continue;

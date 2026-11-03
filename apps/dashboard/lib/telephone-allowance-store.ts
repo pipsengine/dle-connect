@@ -413,10 +413,14 @@ const resolveNoticeRecipients = async (opts: {
   const users = await readUsers().catch(() => [] as UserAccount[]);
   const active = users.filter((user) => accountCanReceiveTelephoneNotice(user));
   const namedCode = compact(opts.recipientEmployeeCode);
-  const pinned = namedCode ? active.filter((user) => accountMatchesTelephoneIdentity(user, namedCode)) : [];
-  if (namedCode && pinned.length && !compact(opts.preparedBy)) {
+  if (namedCode && !compact(opts.preparedBy)) {
+    let pinned = active.filter((user) => accountMatchesTelephoneIdentity(user, namedCode));
+    if (!pinned.length && /^P?0*468$/i.test(namedCode.replace(/[^A-Z0-9]/g, ''))) {
+      pinned = active.filter((user) => /omololu/i.test(compact(user.fullName)) && /bankole/i.test(compact(user.fullName)));
+    }
     return Promise.all(pinned.map((user) => noticeRecipientFromUser(user)));
   }
+  const pinned = namedCode ? active.filter((user) => accountMatchesTelephoneIdentity(user, namedCode)) : [];
   const prepared = compact(opts.preparedBy)
     ? active.filter((user) => accountMatchesTelephoneIdentity(user, opts.preparedBy || ''))
     : [];
@@ -451,6 +455,15 @@ export const deliverTelephoneAllowanceNotice = async (opts: {
   const deliveries: TelephoneNoticeDelivery[] = [];
 
   if (!recipients.length) {
+    if (opts.recipientEmployeeCode) {
+      return [{
+        employeeCode: compact(opts.recipientEmployeeCode),
+        fullName: 'HR Manager',
+        email: '',
+        sent: false,
+        reason: 'The HR Manager account for Omololu (P0468) was not found.',
+      }];
+    }
     try {
       await createEnterpriseNotification(systemSession(opts.actor), {
         title: opts.title,
@@ -1953,7 +1966,8 @@ export const initiateApproval = async (
     title: `Approval initiated — ${cycle.cycleCode}`,
     body: `${cycle.cycleCode} is locked and pending HR formal approval.`,
     href: approvalHref(cycle.id),
-    roles: ['HR Manager', 'HR Approver'],
+    roles: ['HR Manager'],
+    recipientEmployeeCode: 'P0468',
   });
   return cycle;
 };
@@ -2882,6 +2896,7 @@ export const remindTelephoneAllowanceApproval = async (cycleId: string, actor: T
     body: `${actor} sent a reminder. ${cycle.pairLabel} ${cycle.year} telephone allowance (${cycle.cycleCode}) is still waiting for ${stage}.`,
     href: approvalHref(cycle.id),
     roles: reminderRolesForStatus(cycle.status),
+    recipientEmployeeCode: cycle.status === 'PENDING_HR_APPROVAL' ? 'P0468' : undefined,
     severity: 'warning',
   });
   await appendAudit(mode, {
