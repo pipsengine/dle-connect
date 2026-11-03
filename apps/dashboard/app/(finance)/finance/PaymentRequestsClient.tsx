@@ -1,8 +1,8 @@
 'use client';
 
 import Link from 'next/link';
-import { useEffect, useMemo, useState } from 'react';
-import { useRouter } from 'next/navigation';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { usePathname, useRouter } from 'next/navigation';
 import {
   AlertTriangle,
   ArrowRight,
@@ -84,6 +84,20 @@ import {
   type PaymentColumnKey,
   type SortDir,
 } from './payment-requests-column-header';
+import {
+  armPaymentListRestore,
+  consumePaymentListRestore,
+  defaultPaymentListTab,
+  emptyPaymentListView,
+  listReturnPath,
+  loadPaymentListView,
+  parsePaymentListView,
+  paymentListQueryHasView,
+  paymentRequestHref,
+  savePaymentListView,
+  serializePaymentListView,
+  type PaymentListViewState,
+} from '@/lib/finance-intelligence/payment-list-return';
 
 type Props = {
   initialWorkspace: PaymentRequestsWorkspace;
@@ -98,6 +112,8 @@ type Props = {
   listMode?: 'default' | 'inbox' | 'mine' | 'approved' | 'team';
   /** Prefill Payment Type filter (from ?type= or legacy redirects). */
   initialPaymentType?: 'All' | PaymentRequestType;
+  /** Current list query, including filters used to return from a payment. */
+  initialListQuery?: Record<string, string | string[] | undefined>;
 };
 
 type ComposerForm = {
@@ -500,47 +516,115 @@ const isPaidThisMonth = (row: PaymentRequestRow) => {
   return paidAt.getMonth() === now.getMonth() && paidAt.getFullYear() === now.getFullYear();
 };
 
+const isTabId = (value?: string | null): value is TabId =>
+  ['all', 'mine', 'drafts', 'pending', 'returned', 'approved', 'ready', 'paid', 'rejected', 'retirement'].includes(String(value || ''));
+
+const isKpiId = (value?: string | null): value is KpiId =>
+  ['total', 'pending', 'returned', 'approved', 'ready', 'progress', 'paid', 'rejected'].includes(String(value || ''));
+
+const isPaymentColumn = (value?: string | null): value is PaymentColumnKey =>
+  ['requestNumber', 'paymentType', 'beneficiary', 'description', 'grossAmount', 'netAmount', 'amountNgn', 'currency', 'department', 'project', 'submitted', 'currentStage', 'approver', 'status'].includes(String(value || ''));
+
+const viewFromQuery = (
+  listMode: Props['listMode'],
+  initialPaymentType: 'All' | PaymentRequestType,
+  query: Record<string, string | string[] | undefined> | undefined,
+  saved?: PaymentListViewState | null,
+) => {
+  const base = emptyPaymentListView(defaultPaymentListTab(listMode));
+  const parsed = query && paymentListQueryHasView(query) ? parsePaymentListView(query) : {};
+  const source = Object.keys(parsed).length ? parsed : (saved || {});
+  const paymentType = (source.paymentType || initialPaymentType) as 'All' | PaymentRequestType;
+  return {
+    tab: isTabId(source.tab) ? source.tab : base.tab,
+    kpi: isKpiId(source.kpi) ? source.kpi : null,
+    q: source.q || '',
+    paymentType: paymentType === 'Cash Advance Payment' || paymentType === 'Supplier Invoice Payment' || paymentType === 'Expense Payment' || paymentType === 'All'
+      ? paymentType
+      : initialPaymentType,
+    status: source.status || 'All',
+    department: source.department || 'All',
+    project: source.project || 'All',
+    currency: source.currency || 'All',
+    approver: source.approver || 'All',
+    location: source.location || 'All',
+    submittedFrom: source.submittedFrom || '',
+    submittedTo: source.submittedTo || '',
+    sort: isPaymentColumn(source.sort) ? source.sort : null,
+    dir: source.dir === 'desc' ? 'desc' as const : 'asc' as const,
+    page: source.page && source.page > 0 ? source.page : 1,
+    pageSize: source.pageSize || FINANCE_PAGE_SIZE,
+    headers: (source.headers || {}) as HeaderFilters,
+  };
+};
+
 export default function PaymentRequestsClient({
   initialWorkspace,
   selfServiceMode = false,
   listMode = 'default',
   initialPaymentType = 'All',
+  initialListQuery,
 }: Props) {
   const router = useRouter();
+  const pathname = usePathname();
+  const openingView = viewFromQuery(listMode, initialPaymentType, initialListQuery);
+  const hasOpeningQuery = Boolean(initialListQuery && paymentListQueryHasView(initialListQuery));
   const [workspace, setWorkspace] = useState(initialWorkspace);
   // Prefer server flag; fall back to selfServiceMode prop from SSR.
   const restrictedToOwnPayments = selfServiceMode || workspace.viewer?.canViewAll === false;
-  const [tab, setTab] = useState<TabId>(() => {
-    if (listMode === 'inbox') return 'pending';
-    if (listMode === 'approved') return 'approved';
-    if (listMode === 'mine') return 'mine';
-    if (listMode === 'team') return 'all';
-    return 'all';
-  });
-  const [detailFocus, setDetailFocus] = useState<KpiId | null>(null);
-  const [query, setQuery] = useState('');
-  const [paymentTypeFilter, setPaymentTypeFilter] = useState<'All' | PaymentRequestType>(initialPaymentType);
-  const [statusFilter, setStatusFilter] = useState('All');
-  const [departmentFilter, setDepartmentFilter] = useState('All');
-  const [projectFilter, setProjectFilter] = useState('All');
-  const [currencyFilter, setCurrencyFilter] = useState('All');
-  const [approverFilter, setApproverFilter] = useState('All');
-  const [locationFilter, setLocationFilter] = useState('All');
-  const [submittedFrom, setSubmittedFrom] = useState('');
-  const [submittedTo, setSubmittedTo] = useState('');
+  const [tab, setTab] = useState<TabId>(openingView.tab as TabId);
+  const [detailFocus, setDetailFocus] = useState<KpiId | null>(openingView.kpi);
+  const [query, setQuery] = useState(openingView.q);
+  const [paymentTypeFilter, setPaymentTypeFilter] = useState<'All' | PaymentRequestType>(openingView.paymentType);
+  const [statusFilter, setStatusFilter] = useState(openingView.status);
+  const [departmentFilter, setDepartmentFilter] = useState(openingView.department);
+  const [projectFilter, setProjectFilter] = useState(openingView.project);
+  const [currencyFilter, setCurrencyFilter] = useState(openingView.currency);
+  const [approverFilter, setApproverFilter] = useState(openingView.approver);
+  const [locationFilter, setLocationFilter] = useState(openingView.location);
+  const [submittedFrom, setSubmittedFrom] = useState(openingView.submittedFrom);
+  const [submittedTo, setSubmittedTo] = useState(openingView.submittedTo);
   const [moreFiltersOpen, setMoreFiltersOpen] = useState(false);
-  const [sortKey, setSortKey] = useState<PaymentColumnKey | null>(null);
-  const [sortDir, setSortDir] = useState<SortDir>('asc');
-  const [headerFilters, setHeaderFilters] = useState<HeaderFilters>({});
-  const [page, setPage] = useState(1);
-  const [pageSize, setPageSize] = useState(FINANCE_PAGE_SIZE);
+  const [sortKey, setSortKey] = useState<PaymentColumnKey | null>(openingView.sort);
+  const [sortDir, setSortDir] = useState<SortDir>(openingView.dir);
+  const [headerFilters, setHeaderFilters] = useState<HeaderFilters>(openingView.headers);
+  const [page, setPage] = useState(openingView.page);
+  const [pageSize, setPageSize] = useState(openingView.pageSize);
   const [loading, setLoading] = useState(false);
+  const [viewHydrated, setViewHydrated] = useState(hasOpeningQuery);
+  const pageResetReady = useRef(false);
+
+  const applyRememberedView = (saved: PaymentListViewState) => {
+    const next = viewFromQuery(listMode, initialPaymentType, undefined, saved);
+    setTab(next.tab as TabId);
+    setDetailFocus(next.kpi);
+    setQuery(next.q);
+    setPaymentTypeFilter(next.paymentType);
+    setStatusFilter(next.status);
+    setDepartmentFilter(next.department);
+    setProjectFilter(next.project);
+    setCurrencyFilter(next.currency);
+    setApproverFilter(next.approver);
+    setLocationFilter(next.location);
+    setSubmittedFrom(next.submittedFrom);
+    setSubmittedTo(next.submittedTo);
+    setSortKey(next.sort);
+    setSortDir(next.dir);
+    setHeaderFilters(next.headers);
+    setPage(next.page);
+    setPageSize(next.pageSize);
+  };
 
   useEffect(() => {
-    const fromQuery = String(new URLSearchParams(window.location.search).get('tab') || '').trim().toLowerCase();
-    const allowed: TabId[] = ['all', 'mine', 'drafts', 'pending', 'returned', 'approved', 'ready', 'paid', 'rejected', 'retirement'];
-    if (allowed.includes(fromQuery as TabId)) setTab(fromQuery as TabId);
-  }, []);
+    const armed = consumePaymentListRestore(pathname);
+    if (!hasOpeningQuery && armed) {
+      const saved = loadPaymentListView(pathname);
+      if (saved) applyRememberedView(saved);
+    }
+    setViewHydrated(true);
+    // Restore once for this list. Later filter edits are written from the current state.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pathname]);
   const [toast, setToast] = useState('');
   const [composerOpen, setComposerOpen] = useState(false);
   const [composerType, setComposerType] = useState<PaymentRequestType>('Cash Advance Payment');
@@ -939,9 +1023,87 @@ export default function PaymentRequestsClient({
 
   const headerFilterCount = Object.values(headerFilters).filter((item) => isHeaderFilterActive(item)).length;
 
+  const currentListView = (): PaymentListViewState => ({
+    tab,
+    kpi: detailFocus || '',
+    q: query,
+    paymentType: paymentTypeFilter,
+    status: statusFilter,
+    department: departmentFilter,
+    project: projectFilter,
+    currency: currencyFilter,
+    approver: approverFilter,
+    location: locationFilter,
+    submittedFrom,
+    submittedTo,
+    sort: sortKey || '',
+    dir: sortDir,
+    page,
+    pageSize,
+    headers: headerFilters,
+  });
+
+  const rememberListReturn = () => {
+    const view = currentListView();
+    savePaymentListView(pathname, view);
+    armPaymentListRestore(pathname);
+  };
+
+  const requestHref = (requestId: string) => paymentRequestHref(
+    requestId,
+    listReturnPath(pathname, currentListView(), defaultPaymentListTab(listMode)),
+  );
+
+  const openRequest = (requestId: string) => {
+    rememberListReturn();
+    router.push(requestHref(requestId));
+  };
+
   useEffect(() => {
+    if (!viewHydrated) return;
+    const view = currentListView();
+    savePaymentListView(pathname, view);
+    const params = serializePaymentListView(view, defaultPaymentListTab(listMode));
+    const edit = new URLSearchParams(window.location.search).get('edit');
+    if (edit) params.set('edit', edit);
+    const qs = params.toString();
+    const nextUrl = `${pathname}${qs ? `?${qs}` : ''}`;
+    const currentUrl = `${window.location.pathname}${window.location.search}`;
+    if (currentUrl !== nextUrl) window.history.replaceState(window.history.state, '', nextUrl);
+    // currentListView is derived from the dependencies below.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    viewHydrated,
+    pathname,
+    listMode,
+    tab,
+    detailFocus,
+    query,
+    paymentTypeFilter,
+    statusFilter,
+    departmentFilter,
+    projectFilter,
+    currencyFilter,
+    approverFilter,
+    locationFilter,
+    submittedFrom,
+    submittedTo,
+    sortKey,
+    sortDir,
+    page,
+    pageSize,
+    headerFilters,
+  ]);
+
+  useEffect(() => {
+    if (!viewHydrated) return;
+    if (!pageResetReady.current) {
+      pageResetReady.current = true;
+      return;
+    }
     setPage(1);
   }, [
+    viewHydrated,
     query,
     tab,
     paymentTypeFilter,
@@ -1144,7 +1306,10 @@ export default function PaymentRequestsClient({
     if (!row) return;
     if (workspace.viewer?.editableReturnedRequestIds?.includes(row.requestId)) {
       openEditReturned(row);
-      router.replace('/finance/approvals/payments');
+      const params = new URLSearchParams(window.location.search);
+      params.delete('edit');
+      const qs = params.toString();
+      window.history.replaceState(window.history.state, '', `${pathname}${qs ? `?${qs}` : ''}`);
       return;
     }
     const ownsRequest = Boolean(
@@ -1993,12 +2158,12 @@ export default function PaymentRequestsClient({
                 className="cursor-pointer rounded-xl border border-slate-200 bg-white p-3 shadow-sm hover:border-[#008FD5] hover:bg-[#EAF6FF]"
                 onClick={(event) => {
                   if ((event.target as HTMLElement).closest('a, button')) return;
-                  router.push(`/finance/approvals/request/${row.requestId}`);
+                  openRequest(row.requestId);
                 }}
               >
                 <div className="flex items-start justify-between gap-2">
                   <div className="min-w-0">
-                    <Link href={`/finance/approvals/request/${row.requestId}`} className="text-sm font-semibold text-[#008FD5] hover:underline">
+                    <Link href={requestHref(row.requestId)} onClick={rememberListReturn} className="text-sm font-semibold text-[#008FD5] hover:underline">
                       {row.requestNumber}
                     </Link>
                     <p className="mt-0.5 truncate text-xs text-slate-500">{row.paymentType}</p>
@@ -2052,7 +2217,7 @@ export default function PaymentRequestsClient({
                         </button>
                       </>
                     ) : (
-                      <Link href={`/finance/approvals/request/${row.requestId}`} className="text-[11px] font-semibold text-[#008FD5] hover:underline">View</Link>
+                      <Link href={requestHref(row.requestId)} onClick={rememberListReturn} className="text-[11px] font-semibold text-[#008FD5] hover:underline">View</Link>
                     )}
                   </div>
                 </div>
@@ -2115,17 +2280,17 @@ export default function PaymentRequestsClient({
                     className="group cursor-pointer hover:bg-[#EAF6FF]"
                     onClick={(event) => {
                       if ((event.target as HTMLElement).closest('a, button, input')) return;
-                      router.push(`/finance/approvals/request/${row.requestId}`);
+                      openRequest(row.requestId);
                     }}
                   >
                     <td className="sticky left-0 z-10 bg-white px-2.5 py-2 shadow-[1px_0_0_#e2e8f0] group-hover:bg-[#EAF6FF]">
                       <div className="flex flex-col gap-0.5">
-                        <Link href={`/finance/approvals/request/${row.requestId}`} className="font-semibold text-[#008FD5] hover:underline">
+                        <Link href={requestHref(row.requestId)} onClick={rememberListReturn} className="font-semibold text-[#008FD5] hover:underline">
                           {row.requestNumber}
                         </Link>
                         {(row.attachments || []).filter((file) => file.kind !== 'payment-evidence' && file.kind !== 'retirement-evidence').length ? (
                           <Link
-                            href={`/finance/approvals/request/${row.requestId}`}
+                            href={requestHref(row.requestId)} onClick={rememberListReturn}
                             className="inline-flex w-fit items-center gap-1 text-[10px] font-semibold text-slate-500 hover:text-[#008FD5]"
                             title="View supporting documents"
                           >
@@ -2237,7 +2402,7 @@ export default function PaymentRequestsClient({
                             </button>
                           ) : null}
                           <Link
-                            href={`/finance/approvals/request/${row.requestId}`}
+                            href={requestHref(row.requestId)} onClick={rememberListReturn}
                             className="text-[11px] font-semibold text-[#008FD5] hover:underline"
                           >
                             View
@@ -2263,7 +2428,7 @@ export default function PaymentRequestsClient({
                             Send reminder
                           </button>
                           <Link
-                            href={`/finance/approvals/request/${row.requestId}`}
+                            href={requestHref(row.requestId)} onClick={rememberListReturn}
                             className="text-[11px] font-semibold text-[#008FD5] hover:underline"
                           >
                             View
@@ -2271,7 +2436,7 @@ export default function PaymentRequestsClient({
                         </div>
                       ) : (
                         <Link
-                          href={`/finance/approvals/request/${row.requestId}`}
+                          href={requestHref(row.requestId)} onClick={rememberListReturn}
                           className="text-[11px] font-semibold text-[#008FD5] hover:underline"
                         >
                           View

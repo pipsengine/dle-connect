@@ -226,6 +226,8 @@ export default async function FinanceCatchAllPage({ params, searchParams }: Prop
       paymentRequests={paymentRequests}
       paymentListMode={paymentListMode}
       initialPaymentType={initialPaymentType}
+      listQuery={query}
+      paymentReturnTo={String(Array.isArray(query.from) ? query.from[0] : query.from || '')}
       approvalMatrix={approvalMatrix}
       approvalDelegations={approvalDelegations}
       cashAdvanceControls={cashAdvanceControls}

@@ -26,6 +26,7 @@ import {
 import { filterDocumentPaymentActions } from '@/lib/finance-intelligence/payment-action-visibility';
 import PaymentAttachmentLinks from '@/app/(finance)/finance/PaymentAttachmentLinks';
 import PaymentRequestCommentsThread from '@/app/(finance)/finance/PaymentRequestCommentsThread';
+import { paymentEditHref, paymentReturnLabel, safePaymentReturnPath } from '@/lib/finance-intelligence/payment-list-return';
 
 const money = new Intl.NumberFormat('en-NG', { style: 'currency', currency: 'NGN', maximumFractionDigits: 2 });
 
@@ -88,7 +89,9 @@ type DetailPayload = {
   };
 };
 
-export default function PaymentApprovalDetailClient() {
+export default function PaymentApprovalDetailClient({ returnTo = '' }: { returnTo?: string }) {
+  const backHref = safePaymentReturnPath(returnTo);
+  const backLabel = paymentReturnLabel(backHref);
   const pathname = usePathname();
   const router = useRouter();
   const requestId = useMemo(() => {
@@ -364,8 +367,8 @@ export default function PaymentApprovalDetailClient() {
   if (error || !detail?.request) {
     return (
       <div className="space-y-4">
-        <Link href="/finance/approvals/payments" className="inline-flex items-center gap-1.5 text-sm font-medium text-[#008FD5]">
-          <ArrowLeft className="h-4 w-4" /> Back to payment requests
+        <Link href={backHref} className="inline-flex items-center gap-1.5 text-sm font-medium text-[#008FD5]">
+          <ArrowLeft className="h-4 w-4" /> {backLabel}
         </Link>
         <div className="rounded-2xl border border-rose-100 bg-rose-50 p-5 text-sm text-rose-800">
           <div className="flex items-start gap-2">
@@ -400,6 +403,7 @@ export default function PaymentApprovalDetailClient() {
   const showActionBar = canApprove;
   const showRetirementBar = canSubmitRetirement;
   const showDoNotPayBar = canDoNotPay && !showActionBar && !showRetirementBar;
+  const editHref = paymentEditHref(request.requestId, backHref);
   const returnReason = [...(detail.actions || [])]
     .find((action) => /return/i.test(action.actionType))?.reason
     || [...(detail.actions || [])].find((action) => /return/i.test(action.actionType))?.comment
@@ -408,13 +412,13 @@ export default function PaymentApprovalDetailClient() {
   return (
     <div className={`space-y-4 ${showActionBar || showRetirementBar || showDoNotPayBar ? 'pb-36' : 'pb-6'}`}>
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <Link href="/finance/approvals/payments" className="inline-flex items-center gap-1.5 text-sm font-medium text-[#008FD5]">
-          <ArrowLeft className="h-4 w-4" /> Payment requests
+        <Link href={backHref} className="inline-flex items-center gap-1.5 text-sm font-medium text-[#008FD5]">
+          <ArrowLeft className="h-4 w-4" /> {backLabel}
         </Link>
         <div className="flex flex-wrap items-center gap-2">
           {canEditOwn ? (
             <Link
-              href={`/finance/approvals/payments?edit=${encodeURIComponent(request.requestId)}`}
+              href={editHref}
               className="inline-flex items-center gap-1.5 rounded-xl bg-[#008FD5] px-3 py-1.5 text-xs font-semibold text-white hover:bg-[#007bb8]"
             >
               <FileUp className="h-3.5 w-3.5" /> {isDraft ? 'Edit & submit' : pending ? 'Edit' : 'Edit & resend'}
@@ -468,7 +472,7 @@ export default function PaymentApprovalDetailClient() {
               </p>
               {canEditOwn ? (
                 <Link
-                  href={`/finance/approvals/payments?edit=${encodeURIComponent(request.requestId)}`}
+                  href={editHref}
                   className="mt-2 inline-flex text-xs font-semibold text-[#008FD5] hover:underline"
                 >
                   Open editor to update and submit
@@ -504,7 +508,7 @@ export default function PaymentApprovalDetailClient() {
               </p>
               {canEditOwn ? (
                 <Link
-                  href={`/finance/approvals/payments?edit=${encodeURIComponent(request.requestId)}`}
+                  href={editHref}
                   className="mt-2 inline-flex text-xs font-semibold text-[#008FD5] hover:underline"
                 >
                   Open editor to correct and resend

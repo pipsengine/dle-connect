@@ -16,6 +16,7 @@ import {
 } from 'lucide-react';
 import type { EmployeePaymentDashboard } from '@/lib/finance-intelligence/payment-requests-service';
 import { personGreetingName } from '@/lib/person-display-name';
+import { paymentRequestHref } from '@/lib/finance-intelligence/payment-list-return';
 
 type Props = {
   dashboard: EmployeePaymentDashboard;
@@ -130,7 +131,7 @@ export default function EmployeePaymentsDashboardClient({ dashboard, employeeNam
             {dashboard.awaitingMyApproval.length ? dashboard.awaitingMyApproval.map((row) => (
               <Link
                 key={row.requestId}
-                href={`/finance/approvals/request/${encodeURIComponent(row.requestId)}`}
+                href={paymentRequestHref(row.requestId, '/finance/approvals')}
                 className="flex cursor-pointer items-start justify-between gap-3 px-4 py-3 hover:bg-[#EAF6FF]"
               >
                 <div className="min-w-0">
@@ -159,7 +160,7 @@ export default function EmployeePaymentsDashboardClient({ dashboard, employeeNam
             {dashboard.recentMine.length ? dashboard.recentMine.map((row) => (
               <Link
                 key={row.requestId}
-                href={`/finance/approvals/request/${encodeURIComponent(row.requestId)}`}
+                href={paymentRequestHref(row.requestId, '/finance/approvals')}
                 className="flex cursor-pointer items-start justify-between gap-3 px-4 py-3 hover:bg-[#EAF6FF]"
               >
                 <div className="min-w-0">
@@ -194,7 +195,7 @@ export default function EmployeePaymentsDashboardClient({ dashboard, employeeNam
             {(dashboard.recentTeam || []).length ? dashboard.recentTeam.map((row) => (
               <Link
                 key={row.requestId}
-                href={`/finance/approvals/request/${encodeURIComponent(row.requestId)}`}
+                href={paymentRequestHref(row.requestId, '/finance/approvals')}
                 className="flex cursor-pointer items-start justify-between gap-3 px-4 py-3 hover:bg-[#EAF6FF]"
               >
                 <div className="min-w-0">

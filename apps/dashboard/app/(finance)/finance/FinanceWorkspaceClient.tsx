@@ -63,6 +63,8 @@ type Props = {
   paymentRequests?: PaymentRequestsWorkspace | null;
   paymentListMode?: 'default' | 'inbox' | 'mine' | 'approved' | 'team';
   initialPaymentType?: 'All' | 'Cash Advance Payment' | 'Supplier Invoice Payment' | 'Expense Payment';
+  listQuery?: Record<string, string | string[] | undefined>;
+  paymentReturnTo?: string;
   approvalMatrix?: ApprovalMatrixWorkspace | null;
   approvalDelegations?: ApprovalDelegationWorkspace | null;
   cashAdvanceControls?: CashAdvanceControlsWorkspace | null;
@@ -839,6 +841,8 @@ export default function FinanceWorkspaceClient({
   paymentRequests,
   paymentListMode = 'default',
   initialPaymentType = 'All',
+  listQuery,
+  paymentReturnTo,
   approvalMatrix,
   approvalDelegations,
   cashAdvanceControls,
@@ -899,6 +903,7 @@ export default function FinanceWorkspaceClient({
             selfServiceMode={paymentSelfService}
             listMode={paymentListMode}
             initialPaymentType={initialPaymentType}
+            initialListQuery={listQuery}
           />
         )
         : null}
@@ -908,7 +913,7 @@ export default function FinanceWorkspaceClient({
       {page.kind === 'approval-matrix' && approvalMatrix ? <ApprovalMatrixClient initialWorkspace={approvalMatrix} /> : null}
       {page.kind === 'approval-limits' && approvalMatrix ? <ApprovalLimitsClient initialWorkspace={approvalMatrix} /> : null}
       {page.kind === 'delegation-rules' && approvalDelegations ? <DelegationRulesClient initialWorkspace={approvalDelegations} /> : null}
-      {page.kind === 'approval-detail' ? <PaymentApprovalDetailClient /> : null}
+      {page.kind === 'approval-detail' ? <PaymentApprovalDetailClient returnTo={paymentReturnTo} /> : null}
       {page.kind === 'section-dashboard' ? <SectionDashboard page={page} childLinks={childLinks} /> : null}
       {!['command-centre', 'reporting-hub', 'analysis-hub', 'analysis-workspace', 'ai-copilot', 'approvals-dashboard', 'payment-requests', 'cash-advance-controls', 'treasury-ops', 'finance-posting', 'approval-matrix', 'approval-limits', 'delegation-rules', 'approval-queue', 'approval-detail', 'section-dashboard'].includes(page.kind)
         ? <GenericWorkspace page={page} />
