@@ -418,6 +418,13 @@ IF COL_LENGTH(N'commercial.TenderOpportunities', N'OriginalInternalDeadline') IS
   ALTER TABLE [commercial].[TenderOpportunities] ADD [OriginalInternalDeadline] DATE NULL;
 IF COL_LENGTH(N'commercial.TenderOpportunities', N'GmBidDecision') IS NULL
   ALTER TABLE [commercial].[TenderOpportunities] ADD [GmBidDecision] NVARCHAR(20) NULL;
+IF COL_LENGTH(N'commercial.TenderOpportunities', N'AssignedOfficersJson') IS NULL
+  ALTER TABLE [commercial].[TenderOpportunities] ADD [AssignedOfficersJson] NVARCHAR(MAX) NULL;
+-- Multi-assignee display names can exceed the original 180-character owner field.
+IF COL_LENGTH(N'commercial.TenderOpportunities', N'OwnerName') IS NOT NULL
+  ALTER TABLE [commercial].[TenderOpportunities] ALTER COLUMN [OwnerName] NVARCHAR(500) NULL;
+IF COL_LENGTH(N'commercial.TenderOpportunities', N'OwnerEmployeeCode') IS NOT NULL
+  ALTER TABLE [commercial].[TenderOpportunities] ALTER COLUMN [OwnerEmployeeCode] NVARCHAR(240) NULL;
 
 IF COL_LENGTH(N'commercial.TenderOpportunities', N'CommercialKind') IS NOT NULL
   AND NOT EXISTS (

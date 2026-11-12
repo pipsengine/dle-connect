@@ -45,6 +45,8 @@ export type TenderOpportunity = {
   clientStatus: string;
   awardedToDle: string;
   ownerEmployeeCode: string;
+  /** GM Commercial may assign one or more employees to a bid. Lead remains ownerName / ownerEmployeeCode. */
+  assignedOfficers: Array<{ employeeCode: string; fullName: string }>;
   assignedAt: string;
   acknowledgedAt: string;
   deadlineOverrideReason: string;

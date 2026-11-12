@@ -7,6 +7,7 @@ import { resolveRepoRoot } from '@/lib/finance-intelligence/payment-attachment-s
 import { readSystemDepartmentsFromOrganizationDb } from '@/lib/organization-departments-store';
 import { ensureTenderSchemaSql } from '@/lib/commercial/tender-sql-schema';
 import {
+  assignedOfficersLabel,
   awardedToDleOf,
   clientStatusOf,
   externalDeadlineOf,
@@ -22,10 +23,13 @@ import {
   internalDeadlineFromExternal,
   internalDeadlineOf,
   isEnquiryRecord,
+  parseAssignedOfficers,
   preparationOf,
   PROPOSAL_REVIEW_STAGE,
   requiresUrgentAuthorization,
+  serializeAssignedOfficers,
   tenderDraftFromEnquiry,
+  type AssignedOfficer,
 } from '@/lib/commercial/tender-workflow';
 import type {
   TenderApproval,
@@ -128,14 +132,18 @@ const mapOpportunity = (row: Record<string, unknown>): TenderOpportunity => ({
   invitationDate: dateOnly(row.InvitationDate),
   siteVisitDate: dateOnly(row.SiteVisitDate),
   clarificationDeadline: dateOnly(row.ClarificationDeadline),
-  ownerName: clean(row.OwnerName, 180),
+  ownerName: clean(row.OwnerName, 500),
   teamNotes: clean(row.TeamNotes),
   approvalNotes: clean(row.ApprovalNotes),
   watchlisted: bit(row.Watchlisted),
   preparationStatus: clean(row.PreparationStatus, 20),
   clientStatus: clean(row.ClientStatus, 20),
   awardedToDle: clean(row.AwardedToDle, 20),
-  ownerEmployeeCode: clean(row.OwnerEmployeeCode, 80),
+  ownerEmployeeCode: clean(row.OwnerEmployeeCode, 240),
+  assignedOfficers: parseAssignedOfficers(row.AssignedOfficersJson, {
+    ownerName: clean(row.OwnerName, 500),
+    ownerEmployeeCode: clean(row.OwnerEmployeeCode, 240),
+  }),
   assignedAt: iso(row.AssignedAt),
   acknowledgedAt: iso(row.AcknowledgedAt),
   deadlineOverrideReason: clean(row.DeadlineOverrideReason, 500),
@@ -476,6 +484,7 @@ export const duplicateOpportunity = async (id: string, actor: string) => {
     stage: enquiry ? 'Enquiry' : 'Tender/Bid',
     ownerName: '',
     ownerEmployeeCode: '',
+    assignedOfficers: [],
     bidDecision: '',
     gmBidDecision: '',
     commercialReview: '',
@@ -1490,18 +1499,43 @@ const stampWorkflow = async (pool: sql.ConnectionPool, opportunityId: string) =>
     `);
 };
 
+const normalizeOfficerInput = (input: {
+  officerName?: string;
+  employeeCode?: string;
+  officers?: Array<{ fullName?: string; name?: string; employeeCode?: string; employeeId?: string }>;
+}): AssignedOfficer[] => {
+  const fromList = Array.isArray(input.officers)
+    ? input.officers.map((item) => ({
+      fullName: clean(item.fullName || item.name, 180),
+      employeeCode: clean(item.employeeCode || item.employeeId, 80),
+    })).filter((item) => item.fullName || item.employeeCode)
+    : [];
+  if (fromList.length) return parseAssignedOfficers(fromList);
+  const officer = clean(input.officerName, 500);
+  if (!officer) return [];
+  return parseAssignedOfficers([], { ownerName: officer, ownerEmployeeCode: clean(input.employeeCode, 240) });
+};
+
 export const assignTenderOfficer = async (
   id: string,
-  input: { officerName: string; employeeCode?: string; internalDeadline?: string; reason?: string },
+  input: {
+    officerName?: string;
+    employeeCode?: string;
+    officers?: Array<{ fullName?: string; name?: string; employeeCode?: string; employeeId?: string }>;
+    internalDeadline?: string;
+    reason?: string;
+  },
   actor: string,
 ) => {
   const current = await getOpportunity(id);
   if (!current) throw new Error('Opportunity was not found.');
-  const officer = clean(input.officerName, 180);
-  if (!officer) throw new Error('Select a responsible officer from the employee directory.');
+  const officers = normalizeOfficerInput(input);
+  if (!officers.length) throw new Error('Select at least one employee from the directory.');
+  const officerLabel = assignedOfficersLabel(officers);
+  const lead = officers[0];
   const enquiry = isEnquiryRecord(current);
-  const previousOfficer = clean(current.ownerName, 180);
-  const reassignment = Boolean(previousOfficer) && previousOfficer.toLowerCase() !== officer.toLowerCase();
+  const previousOfficer = clean(current.ownerName, 500);
+  const reassignment = Boolean(previousOfficer) && previousOfficer.toLowerCase() !== officerLabel.toLowerCase();
   if (reassignment && !clean(input.reason, 500)) throw new Error('A reason is required to reassign the responsible officer.');
   const external = externalDeadlineOf(current);
   const proposedInternal = clean(input.internalDeadline, 40);
@@ -1514,21 +1548,23 @@ export const assignTenderOfficer = async (
   const pool = await ensureTenderDb();
   const request = pool.request()
     .input('Id', sql.NVarChar(40), id)
-    .input('OwnerName', sql.NVarChar(180), officer)
-    .input('OwnerEmployeeCode', sql.NVarChar(80), clean(input.employeeCode, 80))
+    .input('OwnerName', sql.NVarChar(500), officerLabel.slice(0, 500))
+    .input('OwnerEmployeeCode', sql.NVarChar(240), clean(lead.employeeCode, 80))
+    .input('AssignedOfficersJson', sql.NVarChar(sql.MAX), serializeAssignedOfficers(officers))
     .input('Reason', sql.NVarChar(500), clean(input.reason, 500))
     .input('UpdatedBy', sql.NVarChar(120), clean(actor, 120));
   request.input('Internal', sql.Date, dateOrNull(internal));
   request.input('OriginalInternal', sql.Date, dateOrNull(defaultInternal || internal));
   const assignmentSql = `
-    SET [OwnerName]=@OwnerName, [OwnerEmployeeCode]=@OwnerEmployeeCode, ${enquiry ? '[ClarificationDeadline]' : '[ClosingDate]'}=@Internal,
+    SET [OwnerName]=@OwnerName, [OwnerEmployeeCode]=@OwnerEmployeeCode, [AssignedOfficersJson]=@AssignedOfficersJson,
+        ${enquiry ? '[ClarificationDeadline]' : '[ClosingDate]'}=@Internal,
         [OriginalInternalDeadline]=COALESCE([OriginalInternalDeadline], @OriginalInternal),
         [AssignedAt]=SYSUTCDATETIME(), [AcknowledgedAt]=NULL, [DeadlineOverrideReason]=@Reason,
         [PreparationStatus]=CASE WHEN [PreparationStatus] IN (N'Submitted', N'In Progress') THEN [PreparationStatus] ELSE N'Not Started' END,
         [UpdatedAt]=SYSUTCDATETIME(), [UpdatedBy]=@UpdatedBy
     WHERE [OpportunityId]=@Id`;
   await request.query(`UPDATE [commercial].[TenderOpportunities] ${assignmentSql}`);
-  await audit(pool, id, actor, reassignment ? 'REASSIGNED' : 'ASSIGNED', `${previousOfficer || 'Unassigned'} -> ${officer}. Internal deadline ${internal}. ${clean(input.reason, 500)}`);
+  await audit(pool, id, actor, reassignment ? 'REASSIGNED' : 'ASSIGNED', `${previousOfficer || 'Unassigned'} -> ${officerLabel}. Internal deadline ${internal}. ${clean(input.reason, 500)}`);
   return getOpportunity(id);
 };
 
@@ -1640,10 +1676,17 @@ export const recordOpportunityAudit = async (id: string, actor: string, action: 
   await audit(pool, id, actor, clean(action, 40), clean(details, 500));
 };
 
-/** GM Commercial assigns the handler, records BID or NO BID, and gives the first approval. */
+/** GM Commercial assigns one or more handlers, records BID or NO BID, and gives the first approval. */
 export const recordGmCommercialDecision = async (
   id: string,
-  input: { decision: string; comments?: string; officerName?: string; employeeCode?: string; internalDeadline?: string },
+  input: {
+    decision: string;
+    comments?: string;
+    officerName?: string;
+    employeeCode?: string;
+    officers?: Array<{ fullName?: string; name?: string; employeeCode?: string; employeeId?: string }>;
+    internalDeadline?: string;
+  },
   actor: string,
 ) => {
   const current = await getOpportunity(id);
@@ -1659,8 +1702,8 @@ export const recordGmCommercialDecision = async (
   if (!bid && !noBid) throw new Error('Choose Bid or No Bid.');
   const comments = clean(input.comments);
   if (noBid && !comments) throw new Error('A reason is required to record NO BID.');
-  const officer = clean(input.officerName, 180);
-  if (!officer) throw new Error('Assign the employee who will handle this opportunity.');
+  const officers = normalizeOfficerInput(input);
+  if (!officers.length) throw new Error('Assign at least one employee who will handle this opportunity.');
   const kind = commercialKindOf(current);
   const external = externalDeadlineOf(current);
   const proposed = clean(input.internalDeadline, 40);
@@ -1670,8 +1713,7 @@ export const recordGmCommercialDecision = async (
     throw new Error('A reason is required to override the internal deadline.');
   }
   await assignTenderOfficer(id, {
-    officerName: officer,
-    employeeCode: clean(input.employeeCode, 80),
+    officers,
     internalDeadline: internal,
     reason: comments || 'GM Commercial assignment',
   }, actor);
@@ -1704,7 +1746,7 @@ export const recordGmCommercialDecision = async (
       `);
   if (!updated.rowsAffected[0]) throw new Error('This opportunity can no longer be approved by GM Commercial.');
   await insertWorkflowApproval(pool, id, 'GM Commercial Approval', gmDecision === 'No Bid' ? 'NO BID' : 'BID', actor, comments);
-  await audit(pool, id, actor, noBid ? 'GM_NO_BID' : 'GM_BID', `${kind}. ${officer}. ${terminal ? 'Completed with GM Commercial.' : 'Sent to the MD for final approval.'} ${comments}`);
+  await audit(pool, id, actor, noBid ? 'GM_NO_BID' : 'GM_BID', `${kind}. ${assignedOfficersLabel(officers)}. ${terminal ? 'Completed with GM Commercial.' : 'Sent to the MD for final approval.'} ${comments}`);
   const saved = await getOpportunity(id);
   return { opportunity: saved, terminal, kind };
 };
@@ -1767,10 +1809,17 @@ export const decideBid = async (
 export const acknowledgeAssignment = async (id: string, actor: string, actorCode = '') => {
   const current = await getOpportunity(id);
   if (!current) throw new Error('Opportunity was not found.');
-  if (!clean(current.ownerName, 180)) throw new Error('This record has not been assigned.');
-  const samePerson = actor.toLowerCase() === current.ownerName.toLowerCase()
-    || (actorCode && actorCode.toLowerCase() === current.ownerEmployeeCode.toLowerCase());
-  if (!samePerson) throw new Error('Only the assigned responsible officer can acknowledge this assignment.');
+  const officers = current.assignedOfficers?.length
+    ? current.assignedOfficers
+    : parseAssignedOfficers([], { ownerName: current.ownerName, ownerEmployeeCode: current.ownerEmployeeCode });
+  if (!officers.length) throw new Error('This record has not been assigned.');
+  const actorName = actor.toLowerCase();
+  const actorId = String(actorCode || '').toLowerCase();
+  const samePerson = officers.some((officer) =>
+    (officer.fullName && officer.fullName.toLowerCase() === actorName)
+    || (actorId && officer.employeeCode && officer.employeeCode.toLowerCase() === actorId)
+    || (current.ownerName && current.ownerName.toLowerCase().includes(actorName)));
+  if (!samePerson) throw new Error('Only an assigned employee can acknowledge this assignment.');
   if (current.acknowledgedAt) return current;
   const pool = await ensureTenderDb();
   await pool.request().input('Id', sql.NVarChar(40), id).query(`
@@ -1801,6 +1850,7 @@ export const convertEnquiryToTender = async (id: string, actor: string) => {
     referenceNo: '',
     ownerName: '',
     ownerEmployeeCode: '',
+    assignedOfficers: [],
     acknowledgedAt: '',
     assignedAt: '',
     teamNotes: enquiry.teamNotes,

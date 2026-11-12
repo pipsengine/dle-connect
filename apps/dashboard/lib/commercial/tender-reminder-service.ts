@@ -76,7 +76,11 @@ export const runTenderDeadlineReminders = async (session: SessionPayload) => {
     ].filter((item) => !existing.has(item.key));
     if (!due.length) continue;
     const summary = due.map((item) => item.label).join('; ');
-    if (!row.ownerEmployeeCode) {
+    const officerCodes = Array.from(new Set([
+      ...(row.assignedOfficers || []).map((officer) => String(officer.employeeCode || '').trim()).filter(Boolean),
+      String(row.ownerEmployeeCode || '').trim(),
+    ].filter(Boolean)));
+    if (!officerCodes.length) {
       for (const item of due) {
         await markReminder(item.key, row.id, item.overdue ? `${item.clock}-overdue` : `${item.clock}-${item.slot?.period || 'slot'}`, 'FAILED', 'No responsible officer employee code.');
         failed.push(item.key);
@@ -84,14 +88,16 @@ export const runTenderDeadlineReminders = async (session: SessionPayload) => {
       continue;
     }
     try {
-      await notifyOfficer(
-        session,
-        due.some((item) => item.overdue) ? `Deadline escalation · ${row.referenceNo}` : `Deadline reminder · ${row.referenceNo}`,
-        `${row.title} for ${row.clientName}. ${summary}. Responsible officer: ${row.ownerName}.`,
-        `/commercial/tenders/workspace?id=${row.id}`,
-        row.ownerEmployeeCode,
-        due.some((item) => item.overdue) ? 'critical' : 'warning',
-      );
+      for (const code of officerCodes) {
+        await notifyOfficer(
+          session,
+          due.some((item) => item.overdue) ? `Deadline escalation · ${row.referenceNo}` : `Deadline reminder · ${row.referenceNo}`,
+          `${row.title} for ${row.clientName}. ${summary}. Responsible officer(s): ${row.ownerName}.`,
+          `/commercial/tenders/workspace?id=${row.id}`,
+          code,
+          due.some((item) => item.overdue) ? 'critical' : 'warning',
+        );
+      }
       for (const item of due) {
         await markReminder(item.key, row.id, item.overdue ? `${item.clock}-overdue` : `${item.clock}-${item.slot?.period || 'slot'}`, 'SENT', summary);
         sent.push(item.key);

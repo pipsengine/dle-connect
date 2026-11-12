@@ -204,9 +204,12 @@ export const notifyCommercialAssigned = async (session: SessionPayload, opportun
     statusBadge: 'Assigned',
     auditAction: 'ASSIGNED_NOTIFIED',
     match: isCommercialTeamRecipient,
-    extraPeople: opportunity.ownerEmployeeCode || opportunity.ownerName
-      ? [{ code: opportunity.ownerEmployeeCode || '', name: opportunity.ownerName || '', email: '' }]
-      : [],
+    extraPeople: (opportunity.assignedOfficers?.length
+      ? opportunity.assignedOfficers
+      : opportunity.ownerEmployeeCode || opportunity.ownerName
+        ? [{ employeeCode: opportunity.ownerEmployeeCode || '', fullName: opportunity.ownerName || '' }]
+        : []
+    ).map((person) => ({ code: person.employeeCode || '', name: person.fullName || '', email: '' })),
     fallbackRoles: COMMERCIAL_TEAM_ROLES,
     actionLabel: 'Open Workspace',
   });
@@ -229,7 +232,7 @@ export const notifyCommercialOutcome = async (session: SessionPayload, opportuni
       : 'Final approval is complete. Response preparation can continue.',
     body: [
       `${opportunity.title} (${kind}) for ${opportunity.clientName || 'the client'} is ${decision === 'NO BID' ? 'NO BID and stays closed with GM Commercial' : 'approved for response preparation'}.`,
-      `Assigned employee: ${opportunity.ownerName || '—'}.`,
+      `Assigned employee${(opportunity.assignedOfficers?.length || 0) > 1 ? 's' : ''}: ${opportunity.ownerName || '—'}.`,
       kind === 'EOI' ? 'EOI approval stays with GM Commercial.' : decision === 'BID' ? 'The Managing Director has given final approval.' : 'NO BID did not go to the Managing Director.',
     ].join(' '),
     href,
@@ -237,9 +240,12 @@ export const notifyCommercialOutcome = async (session: SessionPayload, opportuni
     statusBadge: decision,
     auditAction: 'OUTCOME_NOTIFIED',
     match: isCommercialOutcomeRecipient,
-    extraPeople: opportunity.ownerEmployeeCode || opportunity.ownerName
-      ? [{ code: opportunity.ownerEmployeeCode || '', name: opportunity.ownerName || '', email: '' }]
-      : [],
+    extraPeople: (opportunity.assignedOfficers?.length
+      ? opportunity.assignedOfficers
+      : opportunity.ownerEmployeeCode || opportunity.ownerName
+        ? [{ employeeCode: opportunity.ownerEmployeeCode || '', fullName: opportunity.ownerName || '' }]
+        : []
+    ).map((person) => ({ code: person.employeeCode || '', name: person.fullName || '', email: '' })),
     fallbackRoles: ['Proposal', 'Sales', 'Managing Director', 'MD', 'Executive Director', 'Executive Management', 'GM Operations', 'CFO', 'GM Commercial'],
     includeChairman: true,
     actionLabel: decision === 'BID' ? 'Open Bid Preparation' : 'Open Opportunity',

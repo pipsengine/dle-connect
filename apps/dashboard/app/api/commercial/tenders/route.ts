@@ -325,11 +325,18 @@ export async function POST(request: NextRequest) {
       }
       case 'gm-decision': {
         if (!canActAsGmCommercial(session)) return err(403, 'Only GM Commercial can assign an employee and give the first approval.');
+        const officers = Array.isArray(body.officers)
+          ? body.officers.map((item: { fullName?: string; name?: string; employeeCode?: string; employeeId?: string }) => ({
+            fullName: String(item?.fullName || item?.name || ''),
+            employeeCode: String(item?.employeeCode || item?.employeeId || ''),
+          }))
+          : undefined;
         const result = await recordGmCommercialDecision(id, {
           decision: String(body.decision || ''),
           comments: String(body.comments || ''),
           officerName: String(body.officerName || ''),
           employeeCode: String(body.employeeCode || ''),
+          officers,
           internalDeadline: String(body.internalDeadline || ''),
         }, actor);
         const saved = result.opportunity;
@@ -346,9 +353,16 @@ export async function POST(request: NextRequest) {
         const enquiry = String(body.recordType || '') === 'enquiry';
         if (enquiry && !isGmCommercial(session)) return err(403, 'Only GM Commercial can assign an enquiry.');
         if (!enquiry && !isManagingDirector(session)) return err(403, 'Only the Managing Director can assign a tender opportunity.');
+        const officers = Array.isArray(body.officers)
+          ? body.officers.map((item: { fullName?: string; name?: string; employeeCode?: string; employeeId?: string }) => ({
+            fullName: String(item?.fullName || item?.name || ''),
+            employeeCode: String(item?.employeeCode || item?.employeeId || ''),
+          }))
+          : undefined;
         const saved = await assignTenderOfficer(id, {
           officerName: String(body.officerName || ''),
           employeeCode: String(body.employeeCode || ''),
+          officers,
           internalDeadline: String(body.internalDeadline || ''),
           reason: String(body.reason || ''),
         }, actor);

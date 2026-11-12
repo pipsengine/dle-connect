@@ -2,6 +2,87 @@
   "schemaVersion": 1,
   "notifications": [
     {
+      "id": "ntf-1794478426726-b78vfb",
+      "recipientUserId": "P0467",
+      "recipientUsername": "P0467",
+      "recipientEmployeeCode": "P0467",
+      "recipientRoles": [],
+      "kind": "Approval",
+      "module": "Finance Approvals",
+      "title": "Payment approval required",
+      "body": "Mr. SUNDAY OKEWU submitted Expense Payment DLE261172 (NGN 124,362.51) for Cost Centre Manager approval.",
+      "severity": "warning",
+      "status": "Unread",
+      "href": "/finance/approvals/request/PREQ-1794391515765",
+      "createdAt": "2026-11-12T10:13:46.726Z",
+      "actor": "Payment Approval Reminder",
+      "channels": [
+        "In-App",
+        "Email"
+      ],
+      "metadata": {
+        "requestId": "PREQ-1794391515765",
+        "requestNumber": "DLE261172",
+        "stage": "Cost Centre Manager",
+        "recipientCode": "P0467",
+        "recipientName": "Mr. FAWAZ ADESEGUN ADESHINA"
+      }
+    },
+    {
+      "id": "ntf-1794478425466-47838x",
+      "recipientUserId": "P0060",
+      "recipientUsername": "P0060",
+      "recipientEmployeeCode": "P0060",
+      "recipientRoles": [],
+      "kind": "Approval",
+      "module": "Finance Approvals",
+      "title": "Payment approval required",
+      "body": "Mr. JAMES ESEWI EVBUOMWAN submitted Cash Advance Payment DLE261173 (NGN 120,000) for Cost Centre Manager approval.",
+      "severity": "warning",
+      "status": "Unread",
+      "href": "/finance/approvals/request/PREQ-1794391650595",
+      "createdAt": "2026-11-12T10:13:45.466Z",
+      "actor": "Payment Approval Reminder",
+      "channels": [
+        "In-App",
+        "Email"
+      ],
+      "metadata": {
+        "requestId": "PREQ-1794391650595",
+        "requestNumber": "DLE261173",
+        "stage": "Cost Centre Manager",
+        "recipientCode": "P0060",
+        "recipientName": "Mrs. ROSEMARY NGOZICHUKWUKA BENSON"
+      }
+    },
+    {
+      "id": "ntf-1794477525587-8cuvho",
+      "recipientUserId": "P0455",
+      "recipientUsername": "P0455",
+      "recipientEmployeeCode": "P0455",
+      "recipientRoles": [],
+      "kind": "Approval",
+      "module": "Finance Approvals",
+      "title": "Payment approval required",
+      "body": "Mrs. CLAUDIA ONYINYE NWANKWO submitted Expense Payment DLE261157 (NGN 280,000) for Project Manager approval.",
+      "severity": "warning",
+      "status": "Unread",
+      "href": "/finance/approvals/request/PREQ-1794216675771",
+      "createdAt": "2026-11-12T09:58:45.587Z",
+      "actor": "Payment Approval Reminder",
+      "channels": [
+        "In-App",
+        "Email"
+      ],
+      "metadata": {
+        "requestId": "PREQ-1794216675771",
+        "requestNumber": "DLE261157",
+        "stage": "Project Manager",
+        "recipientCode": "P0455",
+        "recipientName": "IDRIS ASIPITA ABUBAKAR"
+      }
+    },
+    {
       "id": "ntf-1794476625548-mwmgn9",
       "recipientUserId": "P0455",
       "recipientUsername": "P0455",

@@ -26,6 +26,9 @@ import {
   overdueOpportunity,
   tenderApprovalBucket,
   preparationOf,
+  parseAssignedOfficers,
+  assignedOfficersLabel,
+  serializeAssignedOfficers,
   reminderKey,
   requiresUrgentAuthorization,
   tenderDraftFromEnquiry,
@@ -175,6 +178,14 @@ assert.equal(overdueOpportunity({ source: 'Proposal Register 2026', status: 'His
 assert.equal(departmentalReviewAllowed({ bidDecision: 'Bid', ownerName: 'Ada' }), true);
 assert.equal(departmentalReviewAllowed({ bidDecision: 'Bid', ownerName: '' }), false);
 assert.equal(departmentalReviewAllowed({ bidDecision: 'No Bid', ownerName: 'Ada' }), false);
+
+const multi = parseAssignedOfficers(serializeAssignedOfficers([
+  { employeeCode: 'P0001', fullName: 'Ada Okeke' },
+  { employeeCode: 'P0002', fullName: 'Ben Musa' },
+]));
+assert.equal(multi.length, 2);
+assert.equal(assignedOfficersLabel(multi), 'Ada Okeke; Ben Musa');
+assert.equal(parseAssignedOfficers('', { ownerName: 'Ada Okeke', ownerEmployeeCode: 'P0001' })[0].employeeCode, 'P0001');
 assert.equal(stageMatchesActor('Engineering Review', 'Engineering', []), true);
 assert.equal(stageMatchesActor('Finance Review', 'Sales', []), false);
 assert.equal(stageMatchesActor('Management Approval', 'Operations', ['Managing Director']), true);

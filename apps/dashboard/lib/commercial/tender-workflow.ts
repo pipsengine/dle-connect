@@ -480,6 +480,60 @@ export const tenderApprovalBucket = (row: {
 export const departmentalReviewAllowed = (row: { bidDecision?: string; ownerName?: string }) =>
   bidChoiceOf(row) === 'Bid' && Boolean(String(row.ownerName || '').trim());
 
+export type AssignedOfficer = { employeeCode: string; fullName: string };
+
+export const parseAssignedOfficers = (
+  raw: unknown,
+  fallback?: { ownerName?: string; ownerEmployeeCode?: string },
+): AssignedOfficer[] => {
+  const fromJson = (() => {
+    if (Array.isArray(raw)) return raw;
+    const text = String(raw || '').trim();
+    if (!text) return [] as unknown[];
+    try {
+      const parsed = JSON.parse(text);
+      return Array.isArray(parsed) ? parsed : [];
+    } catch {
+      return [] as unknown[];
+    }
+  })();
+  const officers = fromJson
+    .map((item) => {
+      if (!item || typeof item !== 'object') return null;
+      const row = item as Record<string, unknown>;
+      const fullName = String(row.fullName || row.name || '').trim();
+      const employeeCode = String(row.employeeCode || row.employeeId || row.code || '').trim();
+      if (!fullName && !employeeCode) return null;
+      return { fullName, employeeCode };
+    })
+    .filter((item): item is AssignedOfficer => Boolean(item));
+  if (officers.length) {
+    const unique = new Map<string, AssignedOfficer>();
+    for (const officer of officers) {
+      const key = `${officer.employeeCode}|${officer.fullName}`.toLowerCase();
+      if (!unique.has(key)) unique.set(key, officer);
+    }
+    return Array.from(unique.values());
+  }
+  const name = String(fallback?.ownerName || '').trim();
+  const code = String(fallback?.ownerEmployeeCode || '').trim();
+  if (!name && !code) return [];
+  // Legacy single-owner rows, or semicolon-separated display names.
+  const names = name.split(/\s*;\s*/).map((part) => part.trim()).filter(Boolean);
+  const codes = code.split(/\s*;\s*/).map((part) => part.trim()).filter(Boolean);
+  if (names.length <= 1) return [{ fullName: name || code, employeeCode: code }];
+  return names.map((fullName, index) => ({ fullName, employeeCode: codes[index] || '' }));
+};
+
+export const assignedOfficersLabel = (officers: AssignedOfficer[]) =>
+  officers.map((item) => item.fullName || item.employeeCode).filter(Boolean).join('; ');
+
+export const serializeAssignedOfficers = (officers: AssignedOfficer[]) =>
+  JSON.stringify(officers.map((item) => ({
+    employeeCode: String(item.employeeCode || '').trim(),
+    fullName: String(item.fullName || '').trim(),
+  })).filter((item) => item.fullName || item.employeeCode));
+
 export const stageMatchesActor = (stage: string, department = '', roles: string[] = []) => {
   const text = `${department} ${roles.join(' ')}`.toLowerCase();
   const name = stage.toLowerCase();
