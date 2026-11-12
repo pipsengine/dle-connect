@@ -143,7 +143,7 @@ export default function OffshoreMobilization() {
       </section>
     </>}
     {card && <OffshoreCardDetail kind={card} cards={workspace.cards || {}} onClose={() => setCard(null)} />}
-    {modal === 'create' && <CreateModal periods={snapshot.periods} onClose={() => setModal(null)} onCreated={async (result) => { setNotice(`${result.mobilizationNo} created successfully for ${result.employees} employee${result.employees === 1 ? '' : 's'}.`); setModal(null); setTab('Mobilized Crew'); await load(); }} />}
+    {modal === 'create' && <CreateModal periods={snapshot.periods} onClose={() => setModal(null)} onCreated={async (result) => { setNotice(`${result.mobilizationNo} created successfully for ${result.employees} employee${result.employees === 1 ? '' : 's'}${result.reassigned ? ` (${result.reassigned} re-assigned from another offshore supervisor)` : ''}.`); setModal(null); setTab('Mobilized Crew'); await load(); }} />}
     {modal?.type === 'demobilize' && <ActionModal title="Demobilize" onClose={() => setModal(null)} onSave={(form) => run({ action: 'demobilize', employeeRowIds: modal.ids, ...form }, (result) => `${result.updated} employee${result.updated === 1 ? '' : 's'} demobilized. Home crew is unchanged and no hours were created.`)} fields={[{ name: 'demobilizationDate', label: 'Actual demobilization date', type: 'date' }, { name: 'returnDate', label: 'Actual return date', type: 'date' }, { name: 'destination', label: 'Destination / home location' }, { name: 'reason', label: 'Reason' }, { name: 'notes', label: 'Notes' }]} />}
     {modal?.type === 'extend' && <ActionModal title="Extend mobilization" onClose={() => setModal(null)} onSave={(form) => run({ action: 'extend', employeeRowIds: modal.ids, ...form }, (result) => `${result.updated} mobilization${result.updated === 1 ? '' : 's'} extended. The previous return date stays in history.`)} fields={[{ name: 'expectedReturn', label: `New expected return${modal.current ? ` (current ${formatDisplayDate(modal.current)})` : ''}`, type: 'date' }, { name: 'reason', label: 'Extension reason' }, { name: 'authorizationRef', label: 'Authorization / reference' }, { name: 'notes', label: 'Notes' }]} />}
     {modal?.type === 'return' && <ActionModal title="Confirm return to base" onClose={() => setModal(null)} onSave={(form) => run({ action: 'return', employeeRowIds: modal.ids, ...form }, (result) => `${result.updated} employee${result.updated === 1 ? '' : 's'} returned to the home crew. No new supervisor assignment was created.`)} fields={[{ name: 'returnDate', label: 'Return date', type: 'date' }, { name: 'reason', label: 'Notes' }]} />}
@@ -184,6 +184,7 @@ function CreateModal({ periods, onClose, onCreated }) {
   const [found, setFound] = useState([]);
   const [selected, setSelected] = useState([]);
   const [validation, setValidation] = useState(null);
+  const [reassignAnswers, setReassignAnswers] = useState({});
   const [error, setError] = useState('');
   const [saving, setSaving] = useState(false);
   useEffect(() => {
@@ -206,8 +207,9 @@ function CreateModal({ periods, onClose, onCreated }) {
     if (missing.length) { setError(`${missing.join(', ')} ${missing.length === 1 ? 'is' : 'are'} required.`); return; }
     if (expected < from) { setError('Expected return cannot be earlier than the mobilization date.'); return; }
     try {
-      const result = await post({ action: 'validate', employeeCodes: selected.map((item) => item.code), effectiveFrom: from, expectedReturn: expected });
+      const result = await post({ action: 'validate', employeeCodes: selected.map((item) => item.code), effectiveFrom: from, expectedReturn: expected, targetSupervisor: supervisor });
       setValidation(result);
+      setReassignAnswers({});
       setStep('confirm');
     } catch (reviewError) {
       setError(reviewError.message);
@@ -217,7 +219,10 @@ function CreateModal({ periods, onClose, onCreated }) {
     setSaving(true);
     setError('');
     try {
-      const result = await post({ action: 'create', periodId, projectCode: project.code, projectName: project.name, site, supervisor, effectiveFrom: from, expectedReturn: expected, authorizationRef: reference, reason, transport, notes, employeeCodes: selected.map((item) => item.code) });
+      const confirmReassignCodes = Object.entries(reassignAnswers)
+        .filter(([code, answer]) => answer === 'yes' && selected.some((item) => item.code === code))
+        .map(([code]) => code);
+      const result = await post({ action: 'create', periodId, projectCode: project.code, projectName: project.name, site, supervisor, effectiveFrom: from, expectedReturn: expected, authorizationRef: reference, reason, transport, notes, employeeCodes: selected.map((item) => item.code), confirmReassignCodes });
       onCreated(result);
     } catch (saveError) {
       setError(saveError.message);
@@ -226,6 +231,9 @@ function CreateModal({ periods, onClose, onCreated }) {
     }
   };
   const blocked = validation?.employees?.filter((item) => item.issues.some((issue) => issue.severity === 'block')) || [];
+  const reassignCandidates = validation?.employees?.filter((item) => item.issues.some((issue) => issue.severity === 'confirm' && issue.code === 'mobilized')) || [];
+  const pendingReassign = reassignCandidates.filter((item) => reassignAnswers[item.code] !== 'yes');
+  const canMobilize = !saving && blocked.length === 0 && pendingReassign.length === 0 && selected.length > 0;
   return <div className="overlay"><div className="modal mobilizationModal"><div className="modalHead"><div><span className="eyebrow">OFFSHORE & MOBILIZATION</span><h3>New crew mobilization</h3><p>One mobilization can include many employees. Their home supervisor, location, and work centre are not changed.</p></div><button onClick={onClose}>×</button></div>
     <div className="modalBody">
       {error && <div className="validationError">{error}</div>}
@@ -253,9 +261,43 @@ function CreateModal({ periods, onClose, onCreated }) {
           {selected.length > 0 && <div className="tableWrap"><table><thead><tr><th>Code</th><th>Name</th><th>Current supervisor</th><th>Home location</th><th>Work centre</th><th></th></tr></thead><tbody>{selected.map((item) => <tr key={item.code}><td>{item.code}</td><td>{item.name}</td><td>{item.supervisor || '—'}</td><td>{item.location || '—'}</td><td>{item.workCenter || '—'}</td><td><button className="link" onClick={() => setSelected((current) => current.filter((picked) => picked.code !== item.code))}>Remove</button></td></tr>)}</tbody></table></div>}
         </div>
         <Field label="Notes"><textarea value={notes} onChange={(event) => setNotes(event.target.value)} placeholder="Operational instructions, client requirements, or logistics" /></Field>
-      </> : <div className="confirmSummary"><h3>New offshore mobilization</h3><p>Project: {project?.code} — {project?.name}</p><p>Site: {site}</p><p>Mobilization date: {formatDisplayDate(from)}</p><p>Expected return: {formatDisplayDate(expected)}</p><p>Offshore supervisor: {supervisor}</p><p>Employees selected: {selected.length}</p><p>Eligible: {validation?.eligible || 0}</p><p>Already mobilized: {validation?.alreadyMobilized || 0}</p><p>On approved leave: {validation?.onLeave || 0}</p><p>Assignment warnings: {validation?.conflicts || 0}</p>{blocked.length > 0 && <div className="validationError">{blocked.map((item) => <div key={item.code}>{item.code} · {item.name}: {item.issues.filter((issue) => issue.severity === 'block').map((issue) => issue.message).join(' ')}</div>)}<button className="link" onClick={() => { const blockedCodes = new Set(blocked.map((item) => item.code)); setSelected((current) => current.filter((item) => !blockedCodes.has(item.code))); setStep('edit'); }}>Remove blocking employees</button></div>}</div>}
+      </> : <div className="confirmSummary"><h3>New offshore mobilization</h3><p>Project: {project?.code} — {project?.name}</p><p>Site: {site}</p><p>Mobilization date: {formatDisplayDate(from)}</p><p>Expected return: {formatDisplayDate(expected)}</p><p>Offshore supervisor: {supervisor}</p><p>Employees selected: {selected.length}</p><p>Eligible: {validation?.eligible || 0}</p><p>Already mobilized: {validation?.alreadyMobilized || 0}</p><p>On approved leave: {validation?.onLeave || 0}</p><p>Assignment warnings: {validation?.conflicts || 0}</p>
+        {reassignCandidates.length > 0 && <div className="infoBox" style={{ marginTop: 12 }}>{reassignCandidates.map((item) => {
+          const issue = item.issues.find((entry) => entry.severity === 'confirm' && entry.code === 'mobilized');
+          const answer = reassignAnswers[item.code];
+          return <div key={item.code} style={{ marginBottom: 10 }}>
+            <div><b>{item.code} · {item.name}</b></div>
+            <div>This employee is already assigned to <b>{issue?.currentSupervisor || 'another supervisor'}</b>. Do you want to re-assign to <b>{supervisor}</b>?</div>
+            <div className="actions" style={{ marginTop: 6 }}>
+              <Button kind={answer === 'yes' ? undefined : 'secondary'} onClick={() => setReassignAnswers((current) => ({ ...current, [item.code]: 'yes' }))}>Yes</Button>
+              <Button kind="secondary" onClick={() => {
+                setSelected((current) => current.filter((picked) => picked.code !== item.code));
+                setValidation((current) => {
+                  if (!current) return current;
+                  const employees = current.employees.filter((row) => row.code !== item.code);
+                  return {
+                    ...current,
+                    employees,
+                    eligible: employees.filter((row) => !row.issues.some((issue) => issue.severity === 'block' || issue.severity === 'confirm')).length,
+                    blocked: employees.filter((row) => row.issues.some((issue) => issue.severity === 'block')).length,
+                    needsReassignConfirm: employees.filter((row) => row.issues.some((issue) => issue.severity === 'confirm')).length,
+                    alreadyMobilized: employees.filter((row) => row.issues.some((issue) => issue.code === 'mobilized')).length,
+                  };
+                });
+                setReassignAnswers((current) => {
+                  const next = { ...current };
+                  delete next[item.code];
+                  return next;
+                });
+              }}>No</Button>
+              {answer === 'yes' ? <small>Will re-assign on Mobilize</small> : null}
+            </div>
+          </div>;
+        })}</div>}
+        {blocked.length > 0 && <div className="validationError">{blocked.map((item) => <div key={item.code}>{item.code} · {item.name}: {item.issues.filter((issue) => issue.severity === 'block').map((issue) => issue.message).join(' ')}</div>)}<button className="link" onClick={() => { const blockedCodes = new Set(blocked.map((item) => item.code)); setSelected((current) => current.filter((item) => !blockedCodes.has(item.code))); setStep('edit'); }}>Remove blocking employees</button></div>}
+      </div>}
     </div>
-    <div className="modalFoot"><div className="footSummary"><b>{selected.length}</b><span> selected</span>{project ? <span> · {project.code}</span> : null}{site ? <span> · {site}</span> : null}</div><Button kind="secondary" onClick={step === 'confirm' ? () => setStep('edit') : onClose}>{step === 'confirm' ? 'Back' : 'Cancel'}</Button>{step === 'edit' ? <Button onClick={review}>Review</Button> : <Button disabled={saving || blocked.length > 0} onClick={save}>{saving ? 'Saving…' : `Mobilize ${selected.length} employee${selected.length === 1 ? '' : 's'}`}</Button>}</div>
+    <div className="modalFoot"><div className="footSummary"><b>{selected.length}</b><span> selected</span>{project ? <span> · {project.code}</span> : null}{site ? <span> · {site}</span> : null}</div><Button kind="secondary" onClick={step === 'confirm' ? () => setStep('edit') : onClose}>{step === 'confirm' ? 'Back' : 'Cancel'}</Button>{step === 'edit' ? <Button onClick={review}>Review</Button> : <Button disabled={!canMobilize} onClick={save}>{saving ? 'Saving…' : `Mobilize ${selected.length} employee${selected.length === 1 ? '' : 's'}`}</Button>}</div>
   </div></div>;
 }
 

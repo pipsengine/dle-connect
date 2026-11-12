@@ -1,8 +1,10 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
+import { useSearchParams } from 'next/navigation';
 import {
+  Bell,
   CheckCircle2,
   Eye,
   FileText,
@@ -114,6 +116,8 @@ type PrForm = {
   status: string;
   assignedBuyer: string;
   assignedBuyerCode: string;
+  lineManagerName: string;
+  lineManagerCode: string;
   currency: string;
   estimatedAmount: string;
   requiredDate: string;
@@ -136,6 +140,8 @@ const emptyForm = (): PrForm => ({
   status: 'Draft',
   assignedBuyer: '',
   assignedBuyerCode: '',
+  lineManagerName: '',
+  lineManagerCode: '',
   currency: 'NGN',
   estimatedAmount: '',
   requiredDate: '',
@@ -174,7 +180,21 @@ function statusNorm(s: string) {
   return s.trim().toLowerCase();
 }
 
+const codesEqual = (left?: string | null, right?: string | null) => {
+  const a = String(left || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+  const b = String(right || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+  return Boolean(a && b && a === b);
+};
+
+const nameKey = (value?: string | null) =>
+  String(value || '').toLowerCase().replace(/^(mr|mrs|ms|miss|dr|engr)\.?\s+/, '').replace(/[^a-z0-9]/g, '');
+
+const awaitingApproval = (status: string) =>
+  /line manager|^submitted$|procurement manager|under review|under approval/i.test(status);
+
 export function PurchaseRequisitionsClient() {
+  const searchParams = useSearchParams();
+  const deepLinkOpened = useRef<string | null>(null);
   const [rows, setRows] = useState<PurchaseRequisitionRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -194,6 +214,8 @@ export function PurchaseRequisitionsClient() {
   const [workflowCtx, setWorkflowCtx] = useState<PrWorkflowContext | null>(null);
   const [workflowComment, setWorkflowComment] = useState('');
   const [workflowEvents, setWorkflowEvents] = useState<NonNullable<PurchaseRequisitionRow['workflow']>>([]);
+  const [notice, setNotice] = useState('');
+  const [remindingId, setRemindingId] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -268,7 +290,7 @@ export function PurchaseRequisitionsClient() {
     setModalOpen(true);
   };
 
-  const openEdit = (row: PurchaseRequisitionRow) => {
+  const openEdit = useCallback((row: PurchaseRequisitionRow) => {
     setForm({
       prId: row.prId,
       title: row.title,
@@ -279,6 +301,8 @@ export function PurchaseRequisitionsClient() {
       status: row.status || 'Draft',
       assignedBuyer: row.assignedBuyer || '',
       assignedBuyerCode: row.assignedBuyerCode || '',
+      lineManagerName: row.lineManagerName || '',
+      lineManagerCode: row.lineManagerCode || '',
       currency: row.currency || 'NGN',
       estimatedAmount: row.estimatedAmount == null ? '' : String(row.estimatedAmount),
       requiredDate: toDateInput(row.requiredDate),
@@ -310,7 +334,17 @@ export function PurchaseRequisitionsClient() {
     setWorkflowComment('');
     setError('');
     setModalOpen(true);
-  };
+  }, []);
+
+  useEffect(() => {
+    if (loading || modalOpen) return;
+    const deepLinkId = String(searchParams.get('prId') || searchParams.get('id') || '').trim();
+    if (!deepLinkId || deepLinkOpened.current === deepLinkId) return;
+    const row = rows.find((item) => item.prId.toLowerCase() === deepLinkId.toLowerCase());
+    if (!row) return;
+    deepLinkOpened.current = deepLinkId;
+    openEdit(row);
+  }, [loading, modalOpen, openEdit, rows, searchParams]);
 
   const onImported = (result: PrImportResult) => {
     setForm((current) => ({
@@ -404,6 +438,33 @@ export function PurchaseRequisitionsClient() {
     }
   };
 
+  const ownsRequest = (row: { requesterCode?: string | null; requesterName?: string | null }) => {
+    if (workflowCtx?.isSuper) return true;
+    if (codesEqual(workflowCtx?.actorCode, row.requesterCode)) return true;
+    const actor = nameKey(workflowCtx?.actor);
+    const requester = nameKey(row.requesterName);
+    return Boolean(actor && requester && (actor === requester || actor.includes(requester) || requester.includes(actor)));
+  };
+
+  const canRemind = (row: { status: string; requesterCode?: string | null; requesterName?: string | null }) =>
+    awaitingApproval(row.status) && ownsRequest(row);
+
+  const sendReminder = async (row: Pick<PurchaseRequisitionRow, 'prId' | 'currentWith'>) => {
+    setRemindingId(row.prId);
+    setError('');
+    setNotice('');
+    try {
+      const result = await procurementPost<{ message: string; workflow?: PurchaseRequisitionRow['workflow'] }>('remind-pr', { prId: row.prId });
+      setNotice(result.message || `Reminder sent to ${row.currentWith || 'the current approver'}.`);
+      if (result.workflow?.length && form.prId === row.prId) setWorkflowEvents(result.workflow);
+      await load();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Unable to send reminder.');
+    } finally {
+      setRemindingId(null);
+    }
+  };
+
   const runWorkflow = async (decision: 'approve' | 'reject' | 'return' | 'assign-buyer' | 'acknowledge') => {
     if (!form.prId) return;
     if ((decision === 'reject' || decision === 'return') && !workflowComment.trim()) {
@@ -436,7 +497,16 @@ export function PurchaseRequisitionsClient() {
   const stage = form.status;
   const canEditHeader = !form.prId || /draft|returned/i.test(stage);
   const showBuyerField = /procurement manager|approved/i.test(stage);
-  const canLineManagerAct = /line manager|^submitted$/i.test(stage);
+  const isAssignedLineManager = Boolean(
+    workflowCtx?.isSuper
+    || codesEqual(workflowCtx?.actorCode, form.lineManagerCode)
+    || (() => {
+      const actor = nameKey(workflowCtx?.actor);
+      const manager = nameKey(form.lineManagerName || form.currentWith);
+      return Boolean(actor && manager && (actor === manager || actor.includes(manager) || manager.includes(actor)));
+    })(),
+  );
+  const canLineManagerAct = /line manager|^submitted$/i.test(stage) && isAssignedLineManager;
   const canProcurementAct = /procurement manager/i.test(stage) && Boolean(workflowCtx?.isProcurementManager || workflowCtx?.isSuper);
 
   return (
@@ -463,6 +533,9 @@ export function PurchaseRequisitionsClient() {
 
       {error && !modalOpen ? (
         <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{error}</div>
+      ) : null}
+      {notice && !modalOpen ? (
+        <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800">{notice}</div>
       ) : null}
 
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-6">
@@ -598,6 +671,18 @@ export function PurchaseRequisitionsClient() {
                       <td className="px-3 py-3 text-slate-600">{formatWhen(row.updatedAt)}</td>
                       <td className="px-3 py-3">
                         <div className="flex items-center gap-1">
+                          {canRemind(row) ? (
+                            <button
+                              type="button"
+                              disabled={remindingId === row.prId}
+                              title={`Send a reminder to ${row.currentWith || 'the current approver'}`}
+                              onClick={() => void sendReminder(row)}
+                              className="inline-flex items-center gap-1 rounded-md border border-amber-200 bg-amber-50 px-2 py-1 text-[11px] font-semibold text-amber-800 hover:bg-amber-100 disabled:opacity-50"
+                            >
+                              {remindingId === row.prId ? <Loader2 className="h-3 w-3 animate-spin" /> : <Bell className="h-3 w-3" />}
+                              Remind
+                            </button>
+                          ) : null}
                           <button type="button" className="rounded-md border border-slate-200 p-1.5 hover:bg-white" onClick={() => openEdit(row)} title="View / Edit">
                             <Eye className="h-3.5 w-3.5 text-slate-600" />
                           </button>
@@ -625,6 +710,17 @@ export function PurchaseRequisitionsClient() {
         footer={
           <>
             <button type="button" className={secondaryBtnClass} onClick={() => setModalOpen(false)}>Cancel</button>
+            {form.prId && canRemind(form) ? (
+              <button
+                type="button"
+                className={secondaryBtnClass}
+                disabled={saving || remindingId === form.prId}
+                onClick={() => void sendReminder({ prId: form.prId!, currentWith: form.currentWith })}
+              >
+                {remindingId === form.prId ? <Loader2 className="h-4 w-4 animate-spin" /> : <Bell className="h-4 w-4" />}
+                Send reminder
+              </button>
+            ) : null}
             {canEditHeader ? (
               <>
                 <button type="button" className={secondaryBtnClass} disabled={saving} onClick={() => void save(false)}>
@@ -665,6 +761,9 @@ export function PurchaseRequisitionsClient() {
       >
         {error && modalOpen ? (
           <div className="mb-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{error}</div>
+        ) : null}
+        {notice && modalOpen ? (
+          <div className="mb-3 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800">{notice}</div>
         ) : null}
         <div className={`grid gap-3 md:grid-cols-2 ${canEditHeader ? '' : 'pointer-events-none opacity-80'}`}>
           <div className="md:col-span-2">

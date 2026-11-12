@@ -1,18 +1,20 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
-import { ArrowLeft, FileText, Save, Send } from 'lucide-react';
-import type { TenderDocument, TenderOpportunity } from '@/lib/commercial/tender-types';
-import { commercialKindOf, documentChecklistFor, type CommercialKind } from '@/lib/commercial/tender-workflow';
-import { tenderGet, tenderPost, tenderUpload } from './tender-api';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { ArrowLeft, FileText, Paperclip, Save, Send, Trash2, X } from 'lucide-react';
+import type { TenderClient, TenderDocument, TenderOpportunity } from '@/lib/commercial/tender-types';
+import { COMMERCIAL_SECTORS, COMMERCIAL_SOURCES } from '@/lib/commercial/tender-lookups';
+import { commercialKindOf, documentChecklistFor, PROPOSAL_REVIEW_STAGE, type CommercialKind } from '@/lib/commercial/tender-workflow';
+import { fileSize } from '@/lib/commercial/tender-present';
+import { tenderDeleteDocument, tenderGet, tenderPost, tenderUpload } from './tender-api';
 
 const KINDS: Array<{ id: CommercialKind; label: string }> = [
   { id: 'ITT', label: 'Invitation to Tender (ITT)' },
   { id: 'RFQ', label: 'Request for Quotation (RFQ)' },
   { id: 'EOI', label: 'Expression of Interest (EOI)' },
 ];
-const SECTORS = ['Oil & Gas', 'Energy', 'Construction', 'Infrastructure', 'Fabrication', 'Industrial', 'Maintenance', 'Marine'];
-const SOURCES = ['Client Direct', 'Email', 'Invitation', 'Public Portal', 'Referral', 'Tender Portal', 'Website'];
+const SECTORS = [...COMMERCIAL_SECTORS];
+const SOURCES = [...COMMERCIAL_SOURCES];
 const PRIORITIES = ['High', 'Medium', 'Low'];
 
 const inputClass = 'h-10 w-full rounded-lg border border-slate-200 bg-white px-3 text-[13px] outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100';
@@ -48,8 +50,10 @@ export function CommercialOpportunityModal({
   const [checked, setChecked] = useState<string[]>([]);
   const [files, setFiles] = useState<File[]>([]);
   const [documents, setDocuments] = useState<TenderDocument[]>([]);
+  const [clientDirectory, setClientDirectory] = useState<TenderClient[]>([]);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   useEffect(() => {
     if (!open) return;
@@ -75,6 +79,9 @@ export function CommercialOpportunityModal({
     setFiles([]);
     setDocuments([]);
     setError('');
+    tenderGet<TenderClient[]>('clients')
+      .then((rows) => setClientDirectory(Array.isArray(rows) ? rows : []))
+      .catch(() => setClientDirectory([]));
     if (initial?.id) {
       tenderGet<{ documents: TenderDocument[] }>('opportunity', { id: initial.id })
         .then((detail) => setDocuments(detail.documents || []))
@@ -84,6 +91,20 @@ export function CommercialOpportunityModal({
 
   const checklist = useMemo(() => documentChecklistFor(kind || 'ITT'), [kind]);
   const locked = Boolean(initial?.bidDecision && /bid/i.test(initial.bidDecision));
+  const clientNames = useMemo(
+    () => Array.from(new Set([...clients, ...clientDirectory.map((row) => row.name)].filter(Boolean))).sort((a, b) => a.localeCompare(b)),
+    [clientDirectory, clients],
+  );
+
+  const applyClient = (name: string) => {
+    setClient(name);
+    const match = clientDirectory.find((row) => row.name.toLowerCase() === name.trim().toLowerCase());
+    if (!match) return;
+    if (!contact && match.contactPerson) setContact(match.contactPerson);
+    if (!email && match.email) setEmail(match.email);
+    if (!phone && match.phone) setPhone(match.phone);
+    if (!sector && match.sector) setSector(match.sector);
+  };
 
   if (!open) return null;
 
@@ -118,9 +139,45 @@ export function CommercialOpportunityModal({
     location: initial?.location || '',
     site: initial?.site || '',
     status: mode === 'draft' ? 'Draft' : initial?.status && initial.status !== 'Draft' ? initial.status : 'Under Review',
-    stage: mode === 'draft' ? 'Registration' : initial?.commercialReview === 'Reviewed' ? initial.stage : 'GM Commercial Review',
+    stage: mode === 'draft' ? 'Registration' : initial?.commercialReview === 'Reviewed' ? initial.stage : PROPOSAL_REVIEW_STAGE,
     saveMode: mode,
   });
+
+  const addFiles = (list: FileList | null) => {
+    if (!list?.length) return;
+    const next = Array.from(list);
+    setFiles((current) => {
+      const keys = new Set(current.map((file) => `${file.name}:${file.size}:${file.lastModified}`));
+      const merged = [...current];
+      for (const file of next) {
+        const key = `${file.name}:${file.size}:${file.lastModified}`;
+        if (!keys.has(key)) {
+          keys.add(key);
+          merged.push(file);
+        }
+      }
+      return merged;
+    });
+    if (fileInputRef.current) fileInputRef.current.value = '';
+  };
+
+  const removePendingFile = (index: number) => {
+    setFiles((current) => current.filter((_, item) => item !== index));
+    if (fileInputRef.current) fileInputRef.current.value = '';
+  };
+
+  const removeUploadedDocument = async (documentId: string) => {
+    setBusy(true);
+    setError('');
+    try {
+      const next = await tenderDeleteDocument(documentId) as TenderDocument[];
+      setDocuments(Array.isArray(next) ? next : documents.filter((item) => item.id !== documentId));
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : 'The attachment was not removed.');
+    } finally {
+      setBusy(false);
+    }
+  };
 
   const save = async (mode: 'draft' | 'submit') => {
     if (!kind) {
@@ -139,8 +196,16 @@ export function CommercialOpportunityModal({
     setError('');
     try {
       const saved = await tenderPost<TenderOpportunity>({ action: 'save', opportunity: payload(mode) });
-      if (saved?.id && files.length) await Promise.all(files.map((file) => tenderUpload(saved.id, file, `${kind} document`)));
-      onSaved(mode === 'draft' ? `${saved?.referenceNo || 'Draft'} saved.` : `${saved?.referenceNo || 'Opportunity'} submitted for GM Commercial review.`);
+      if (saved?.id && files.length) {
+        let uploaded = documents;
+        for (const file of files) {
+          uploaded = await tenderUpload(saved.id, file, `${kind} document`) as TenderDocument[];
+        }
+        setDocuments(Array.isArray(uploaded) ? uploaded : documents);
+        setFiles([]);
+        if (fileInputRef.current) fileInputRef.current.value = '';
+      }
+      onSaved(mode === 'draft' ? `${saved?.referenceNo || 'Draft'} saved.` : `${saved?.referenceNo || 'Opportunity'} submitted for Proposal review.`);
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : 'The opportunity was not saved.');
     } finally {
@@ -156,7 +221,7 @@ export function CommercialOpportunityModal({
             <span className="inline-flex h-11 w-11 items-center justify-center rounded-xl bg-[#2563eb] text-white"><FileText className="h-5 w-5" /></span>
             <div>
               <h2 className="text-[18px] font-black text-slate-950">{initial ? 'Edit Opportunity' : 'New Opportunity'}</h2>
-              <p className="text-[12px] text-slate-500">A submitted ITT, RFQ or EOI goes to GM Commercial review. The reference is generated on save.</p>
+              <p className="text-[12px] text-slate-500">A submitted ITT, RFQ or EOI goes to Proposal review first, then GM Commercial, then the MD where required. The reference is generated on save.</p>
             </div>
           </div>
           <button type="button" onClick={onClose} className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-slate-200 px-3 text-[12px] font-bold text-slate-700"><ArrowLeft className="h-3.5 w-3.5" /> Back</button>
@@ -174,8 +239,8 @@ export function CommercialOpportunityModal({
               <input value={referenceNo} readOnly placeholder="Assigned on save" className={`${inputClass} mt-1 bg-slate-50`} />
             </label>
             <label className="block text-[12px] font-semibold text-slate-600 md:col-span-2">Client <span className="text-rose-500">*</span>
-              <input required list="commercial-clients" value={client} onChange={(event) => setClient(event.target.value)} placeholder="Client name" className={`${inputClass} mt-1`} />
-              <datalist id="commercial-clients">{clients.map((name) => <option key={name} value={name} />)}</datalist>
+              <input required list="commercial-clients" value={client} onChange={(event) => applyClient(event.target.value)} placeholder="Search or type a client name" className={`${inputClass} mt-1`} />
+              <datalist id="commercial-clients">{clientNames.map((name) => <option key={name} value={name} />)}</datalist>
             </label>
             <label className="block text-[12px] font-semibold text-slate-600 md:col-span-2">Project Title <span className="text-rose-500">*</span>
               <input required value={title} onChange={(event) => setTitle(event.target.value)} placeholder="Project title" className={`${inputClass} mt-1`} />
@@ -233,10 +298,52 @@ export function CommercialOpportunityModal({
               ))}
             </div>
           </fieldset>
-          <label className="block text-[12px] font-semibold text-slate-600">Supporting attachments
-            <input type="file" multiple onChange={(event) => setFiles(Array.from(event.target.files || []))} className="mt-1 block w-full text-[12px]" />
-          </label>
-          {documents.length ? <p className="text-[12px] text-slate-500">{documents.length} document{documents.length === 1 ? '' : 's'} already attached.</p> : null}
+          <div className="rounded-xl border border-slate-200 p-3">
+            <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+              <div className="text-[12px] font-bold text-slate-700">Supporting attachments</div>
+              <label className="inline-flex h-9 cursor-pointer items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 text-[12px] font-bold text-slate-700">
+                <Paperclip className="h-3.5 w-3.5" /> Add files
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  multiple
+                  onChange={(event) => addFiles(event.target.files)}
+                  className="sr-only"
+                />
+              </label>
+            </div>
+            {!files.length && !documents.length ? (
+              <p className="text-[12px] text-slate-500">No attachments yet. Add files, then remove any you do not need before saving.</p>
+            ) : (
+              <ul className="space-y-2">
+                {documents.map((doc) => (
+                  <li key={doc.id} className="flex items-center justify-between gap-3 rounded-lg border border-slate-100 bg-slate-50 px-3 py-2 text-[12px]">
+                    <span className="min-w-0">
+                      <span className="block truncate font-semibold text-slate-800">{doc.fileName}</span>
+                      <span className="text-slate-500">{doc.category || 'Document'} · {fileSize(doc.sizeBytes)} · saved</span>
+                    </span>
+                    <span className="flex shrink-0 items-center gap-2">
+                      <a href={`/api/commercial/tenders?resource=document&documentId=${doc.id}`} className="font-bold text-[#2563eb]">Open</a>
+                      <button type="button" disabled={busy || locked} onClick={() => void removeUploadedDocument(doc.id)} className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-rose-600 hover:bg-rose-50 disabled:opacity-40" aria-label={`Remove ${doc.fileName}`}>
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </button>
+                    </span>
+                  </li>
+                ))}
+                {files.map((file, index) => (
+                  <li key={`${file.name}-${file.size}-${file.lastModified}-${index}`} className="flex items-center justify-between gap-3 rounded-lg border border-blue-100 bg-blue-50/40 px-3 py-2 text-[12px]">
+                    <span className="min-w-0">
+                      <span className="block truncate font-semibold text-slate-800">{file.name}</span>
+                      <span className="text-slate-500">{fileSize(file.size)} · ready to upload</span>
+                    </span>
+                    <button type="button" disabled={busy} onClick={() => removePendingFile(index)} className="inline-flex h-8 items-center gap-1 rounded-lg px-2 font-bold text-slate-600 hover:bg-white disabled:opacity-40" aria-label={`Remove ${file.name}`}>
+                      <X className="h-3.5 w-3.5" /> Remove
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
           <div className="flex flex-wrap justify-end gap-2 border-t border-slate-100 pt-4">
             <button type="button" disabled={busy} onClick={() => void save('draft')} className="inline-flex h-10 items-center gap-1.5 rounded-lg border border-slate-200 px-4 text-[13px] font-bold text-slate-700"><Save className="h-4 w-4" /> Save Draft</button>
             <button type="submit" disabled={busy} className="inline-flex h-10 items-center gap-1.5 rounded-lg bg-[#2563eb] px-4 text-[13px] font-bold text-white"><Send className="h-4 w-4" /> Submit for Review</button>

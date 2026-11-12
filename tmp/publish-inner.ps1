@@ -1,5 +1,6 @@
 $ErrorActionPreference = "Stop"
 Set-Location "F:\Dorman-Long\dle-connect"
+Remove-Item Env:NODE_OPTIONS -ErrorAction SilentlyContinue
 $log = "F:\Dorman-Long\dle-connect\deployment\iis\publish-elevated.log"
 $host.UI.RawUI.WindowTitle = "DLE Connect publish"
 "START $(Get-Date -Format o)" | Set-Content -LiteralPath $log

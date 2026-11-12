@@ -36,6 +36,35 @@ export const normalizeLeaveIsoDate = (value: unknown): string => {
   return `${y}-${m}-${d}`;
 };
 
+/**
+ * Days to mark on the employee leave calendar.
+ * Selected days win. A full working-day block with no saved list marks those working days.
+ * A shorter charge inside a longer window is not marked, because the chosen days are unknown.
+ * Public holidays are not leave days.
+ */
+export const leaveCalendarMarkDates = (item: {
+  from?: string | null;
+  to?: string | null;
+  dates?: string[] | null;
+  days?: number | null;
+  status?: string | null;
+  holidays?: Array<string | LeaveHoliday> | null;
+}): string[] => {
+  if (/public holiday/i.test(String(item.status || ''))) return [];
+  const selected = Array.from(new Set((item.dates || []).map(normalizeLeaveIsoDate).filter(Boolean))).sort();
+  if (selected.length) return selected;
+  const from = normalizeLeaveIsoDate(item.from);
+  const to = normalizeLeaveIsoDate(item.to || item.from);
+  if (!from || !to) return [];
+  const chargeable = defaultChargeableDatesInPeriod(from, to, item.holidays);
+  const counted = Number(item.days);
+  if (Number.isFinite(counted) && counted > 0) {
+    if (counted === chargeable.length) return chargeable;
+    return [];
+  }
+  return enumerateInclusiveDates(from, to);
+};
+
 export const enumerateInclusiveDates = (startDate: string, endDate: string): string[] => {
   const start = normalizeLeaveIsoDate(startDate);
   const end = normalizeLeaveIsoDate(endDate);

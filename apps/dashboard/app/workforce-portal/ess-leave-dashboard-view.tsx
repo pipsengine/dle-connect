@@ -19,6 +19,7 @@ import {
   Users,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
+import { leaveCalendarMarkDates } from '@/lib/leave-day-engine';
 import {
   EssCard,
   EssNotificationItem,
@@ -45,6 +46,9 @@ export type LeaveCalendarItem = {
   label?: string;
   from?: string;
   to?: string;
+  /** Chargeable days actually taken or requested. Absent on older records that only stored the period. */
+  dates?: string[];
+  days?: number;
   status?: string;
   scope?: string;
 };
@@ -173,30 +177,45 @@ function MiniCalendar({ calendar }: { calendar: LeaveCalendarItem[] }) {
   const daysInMonth = new Date(year, month + 1, 0).getDate();
   const today = now.getDate();
 
+  const monthKey = `${year}-${String(month + 1).padStart(2, '0')}`;
+  const monthStart = `${monthKey}-01`;
+  const monthEnd = `${monthKey}-${String(daysInMonth).padStart(2, '0')}`;
+  const formatShort = (iso: string) => {
+    const [markYear, markMonth, markDay] = iso.split('-').map(Number);
+    if (!markYear || !markMonth || !markDay) return iso;
+    return new Date(markYear, markMonth - 1, markDay).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
+  };
+  const unmarkedNotes: string[] = [];
   const approvedDays = new Set<number>();
   const pendingDays = new Set<number>();
   for (const item of calendar) {
-    if (!item.from) continue;
-    const start = new Date(`${item.from}T00:00:00`);
-    const end = new Date(`${item.to || item.from}T00:00:00`);
-    for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
-      if (d.getMonth() !== month || d.getFullYear() !== year) continue;
-      const day = d.getDate();
-      if (/approved|completed/i.test(String(item.status))) approvedDays.add(day);
-      else pendingDays.add(day);
+    const marked = leaveCalendarMarkDates(item);
+    const from = String(item.from || '');
+    const to = String(item.to || item.from || '');
+    const overlapsMonth = Boolean(from && to && from <= monthEnd && to >= monthStart);
+    if (overlapsMonth && !marked.some((iso) => iso.startsWith(monthKey)) && Number(item.days) > 0) {
+      const stateLabel = /approved|completed/i.test(String(item.status)) ? 'Approved' : 'Pending';
+      unmarkedNotes.push(`${stateLabel}: ${item.days} day${Number(item.days) === 1 ? '' : 's'} from ${formatShort(from)} to ${formatShort(to)}. The chosen days were not stored, so they are not marked.`);
+    }
+    for (const iso of marked) {
+      const [markYear, markMonth, markDay] = iso.split('-').map(Number);
+      if (markYear !== year || markMonth !== month + 1 || !markDay) continue;
+      if (/approved|completed/i.test(String(item.status))) approvedDays.add(markDay);
+      else pendingDays.add(markDay);
     }
   }
 
-  const cells: Array<{ day: number | null; kind?: 'today' | 'approved' | 'pending' | 'sun' }> = [];
+  const cells: Array<{ day: number | null; kind?: 'today' | 'approved' | 'pending' | 'sun'; leave?: 'approved' | 'pending' }> = [];
   for (let index = 0; index < firstDay; index += 1) cells.push({ day: null });
   for (let day = 1; day <= daysInMonth; day += 1) {
     const weekday = new Date(year, month, day).getDay();
+    const leave = approvedDays.has(day) ? 'approved' as const : pendingDays.has(day) ? 'pending' as const : undefined;
     let kind: 'today' | 'approved' | 'pending' | 'sun' | undefined;
     if (day === today) kind = 'today';
-    else if (approvedDays.has(day)) kind = 'approved';
-    else if (pendingDays.has(day)) kind = 'pending';
+    else if (leave === 'approved') kind = 'approved';
+    else if (leave === 'pending') kind = 'pending';
     else if (weekday === 0) kind = 'sun';
-    cells.push({ day, kind });
+    cells.push({ day, kind, leave });
   }
 
   return (
@@ -215,15 +234,19 @@ function MiniCalendar({ calendar }: { calendar: LeaveCalendarItem[] }) {
             className={`flex h-8 items-center justify-center rounded-lg text-[12px] font-semibold ${
               !cell.day
                 ? ''
-                : cell.kind === 'today'
-                  ? 'bg-[#2563EB] text-white ring-2 ring-[#93C5FD]'
-                  : cell.kind === 'approved'
-                    ? 'bg-[#ECFDF5] text-[#047857]'
-                    : cell.kind === 'pending'
-                      ? 'bg-[#FFFBEB] text-[#B45309]'
-                      : cell.kind === 'sun'
-                        ? 'text-[#EF4444]'
-                        : 'text-[#475569] hover:bg-[#F8FAFC]'
+                : cell.kind === 'today' && cell.leave === 'approved'
+                  ? 'bg-[#ECFDF5] text-[#047857] ring-2 ring-[#2563EB]'
+                  : cell.kind === 'today' && cell.leave === 'pending'
+                    ? 'bg-[#FFFBEB] text-[#B45309] ring-2 ring-[#2563EB]'
+                    : cell.kind === 'today'
+                      ? 'bg-[#2563EB] text-white ring-2 ring-[#93C5FD]'
+                      : cell.kind === 'approved'
+                        ? 'bg-[#ECFDF5] text-[#047857]'
+                        : cell.kind === 'pending'
+                          ? 'bg-[#FFFBEB] text-[#B45309]'
+                          : cell.kind === 'sun'
+                            ? 'text-[#EF4444]'
+                            : 'text-[#475569] hover:bg-[#F8FAFC]'
             }`}
           >
             {cell.day || ''}
@@ -235,6 +258,13 @@ function MiniCalendar({ calendar }: { calendar: LeaveCalendarItem[] }) {
         <span className="flex items-center gap-1.5"><span className="h-2 w-2 rounded-full bg-[#F59E0B]" /> Pending</span>
         <span className="flex items-center gap-1.5"><span className="h-2 w-2 rounded-full bg-[#2563EB]" /> Today</span>
       </div>
+      {unmarkedNotes.length > 0 && (
+        <div className="mt-3 space-y-1 text-[11px] leading-4 text-[#64748B]">
+          {unmarkedNotes.map((note) => (
+            <p key={note}>{note}</p>
+          ))}
+        </div>
+      )}
     </EssCard>
   );
 }
@@ -268,7 +298,7 @@ export function EssLeaveDashboardView({ payload, initialNow, activeTab, onTabCha
 
   const onLeaveToday = useMemo(() => {
     const today = todayIso();
-    return calendar.filter((item) => item.from && item.to && item.from <= today && item.to >= today && /approved|completed/i.test(String(item.status || ''))).length;
+    return calendar.filter((item) => /approved|completed/i.test(String(item.status || '')) && leaveCalendarMarkDates({ ...item, status: item.status }).includes(today)).length;
   }, [calendar]);
 
   const teamTotal = Math.max(teamPeers.length, 1);

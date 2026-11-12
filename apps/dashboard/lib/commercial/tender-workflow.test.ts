@@ -20,6 +20,7 @@ import {
   awaitsManagingDirector,
   gmBidChoiceOf,
   isCommercialOutcomeRecipient,
+  isCommercialTeamRecipient,
   mdDecisionPermitted,
   registerStatusOf,
   overdueOpportunity,
@@ -41,14 +42,19 @@ assert.equal(requiresUrgentAuthorization(external, new Date(soon.getTime() - 10 
 assert.equal(requiresUrgentAuthorization(external, new Date(soon.getTime() - 30 * 60 * 60 * 1000)), false);
 
 const deadline = new Date('2026-10-20T00:00:00+01:00');
-const at72 = new Date(deadline.getTime() - 72 * 60 * 60 * 1000);
-const at24 = new Date(deadline.getTime() - 24 * 60 * 60 * 1000);
-const after = new Date(deadline.getTime() + 60 * 60 * 1000);
-assert.deepEqual(dueReminderSlots(external, at72), [72]);
-assert.deepEqual(dueReminderSlots(external, at24), [72, 48, 24]);
+const morningThreeDaysOut = new Date('2026-10-17T09:05:00+01:00');
+const afternoonSameDay = new Date('2026-10-20T15:05:00+01:00');
+const after = new Date('2026-10-21T00:05:00+01:00');
+const openedMorning = dueReminderSlots(external, morningThreeDaysOut);
+assert.equal(openedMorning.length, 1);
+assert.equal(openedMorning[0]?.day, '2026-10-17');
+assert.equal(openedMorning[0]?.period, 'am');
+const openedAfternoon = dueReminderSlots(external, afternoonSameDay);
+assert.ok(openedAfternoon.some((slot) => slot.day === '2026-10-20' && slot.period === 'pm'));
+assert.ok(openedAfternoon.length >= 7);
 assert.deepEqual(dueReminderSlots(external, after), []);
-assert.equal(reminderKey('opp-1', 'internal', 72), reminderKey('opp-1', 'internal', 72));
-assert.notEqual(reminderKey('opp-1', 'internal', 72), reminderKey('opp-1', 'external', 72));
+assert.equal(reminderKey('opp-1', 'internal', openedMorning[0]!), reminderKey('opp-1', 'internal', openedMorning[0]!));
+assert.notEqual(reminderKey('opp-1', 'internal', openedMorning[0]!), reminderKey('opp-1', 'external', openedMorning[0]!));
 
 const draft = tenderDraftFromEnquiry({
   title: 'Jetty rehabilitation',
@@ -89,6 +95,7 @@ assert.equal(bidChoiceOf({ bidDecision: 'Bid' }), 'Bid');
 assert.equal(bidChoiceOf({ bidDecision: 'No Bid' }), 'No Bid');
 assert.equal(tenderApprovalBucket({ opportunityType: 'Client Tender', status: 'Draft', stage: 'Tender/Bid' }), 'enquiry');
 assert.equal(tenderApprovalBucket({ opportunityType: 'Client Tender', status: 'Open', stage: 'Tender/Bid' }), 'gm');
+assert.equal(tenderApprovalBucket({ opportunityType: 'ITT', commercialReview: 'Awaiting Review', status: 'Under Review', stage: 'Proposal Review' }), 'proposal');
 assert.equal(tenderApprovalBucket({ opportunityType: 'ITT', commercialReview: 'Awaiting Review', status: 'Under Review', stage: 'GM Commercial Review' }), 'gm');
 assert.equal(tenderApprovalBucket({ opportunityType: 'ITT', commercialReview: 'Reviewed', status: 'Under Review', stage: 'MD Decision' }), 'gm');
 assert.equal(tenderApprovalBucket({ commercialKind: 'ITT', gmBidDecision: 'Bid', commercialReview: 'Reviewed', status: 'Under Review', stage: 'MD Final Approval' }), 'pending');
@@ -106,6 +113,7 @@ assert.equal(commercialReviewOf({ commercialReview: 'Awaiting Review', status: '
 assert.equal(commercialReviewOf({ status: 'Open', opportunityType: 'Client Tender' }), 'Reviewed');
 assert.equal(mdDecisionOf({ bidDecision: 'Bid' }), 'BID');
 assert.equal(mdDecisionOf({ bidDecision: '' }), 'Pending');
+assert.equal(registerStatusOf({ commercialReview: 'Awaiting Review', status: 'Under Review', stage: 'Proposal Review', opportunityType: 'ITT', preparationStatus: 'Not Started' }), 'Awaiting Proposal Review');
 assert.equal(registerStatusOf({ commercialReview: 'Awaiting Review', status: 'Under Review', stage: 'GM Commercial Review', opportunityType: 'ITT', preparationStatus: 'Not Started' }), 'Awaiting GM Review');
 assert.equal(registerStatusOf({ commercialReview: 'Reviewed', gmBidDecision: 'Bid', status: 'Under Review', stage: 'MD Final Approval', opportunityType: 'RFQ', preparationStatus: 'Not Started' }), 'Awaiting MD Decision');
 assert.equal(registerStatusOf({ commercialReview: 'Reviewed', gmBidDecision: 'Bid', status: 'Under Review', stage: 'GM Commercial Approval', commercialKind: 'EOI', preparationStatus: 'Not Started' }), 'Awaiting GM Review');
@@ -113,6 +121,11 @@ assert.equal(awaitsManagingDirector({ commercialKind: 'ITT', gmBidDecision: 'Bid
 assert.equal(awaitsManagingDirector({ commercialKind: 'EOI', gmBidDecision: 'Bid' }), false);
 assert.equal(awaitsManagingDirector({ commercialKind: 'RFQ', gmBidDecision: 'No Bid' }), false);
 assert.equal(gmBidChoiceOf({ gmBidDecision: 'No Bid' }), 'No Bid');
+assert.equal(isCommercialTeamRecipient({ department: 'Proposal', jobTitle: 'Proposal Officer' }), true);
+assert.equal(isCommercialTeamRecipient({ department: 'Sales', jobTitle: 'Sales Executive' }), true);
+assert.equal(isCommercialTeamRecipient({ jobTitle: 'GM Commercial' }), true);
+assert.equal(isCommercialTeamRecipient({ jobTitle: 'Managing Director' }), true);
+assert.equal(isCommercialTeamRecipient({ jobTitle: 'CFO' }), false);
 assert.equal(isCommercialOutcomeRecipient({ department: 'Proposal', jobTitle: 'Proposal Officer' }), true);
 assert.equal(isCommercialOutcomeRecipient({ department: 'Sales', jobTitle: 'Sales Executive' }), true);
 assert.equal(isCommercialOutcomeRecipient({ jobTitle: 'Managing Director' }), true);

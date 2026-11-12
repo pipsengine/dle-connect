@@ -259,7 +259,8 @@ function Remove-PathWithRetry {
     [Parameter(Mandatory = $true)][string]$TargetDirectory,
     [int]$Attempts = 8,
     [int]$DelaySeconds = 3,
-    [switch]$AttemptStopLocks
+    [switch]$AttemptStopLocks,
+    [switch]$ContinueIfLocked
   )
 
   if ([string]::IsNullOrWhiteSpace($TargetDirectory)) {
@@ -302,6 +303,10 @@ function Remove-PathWithRetry {
       }
 
       if ($Attempt -eq $Attempts) {
+        if ($ContinueIfLocked -and (Test-Path -LiteralPath $TargetDirectory)) {
+          Write-Warning "Could not delete '$TargetDirectory' because a process still has it open. The publish will overwrite the folder in place. $originalError"
+          return
+        }
         throw @"
 Could not remove '$TargetDirectory'.
 
@@ -531,6 +536,27 @@ function Clear-StandalonePublishLoops {
   }
 }
 
+function Repair-NextWindowsReadlink {
+  # Node on Windows returns EPERM, not EINVAL, when readlink hits a Git pack file.
+  # Next's file tracer treats that as a fatal webpack error and the IIS build stops.
+  $targets = @(
+    (Join-Path $RepoRoot "node_modules\next\dist\build\webpack\plugins\next-trace-entrypoints-plugin.js"),
+    (Join-Path $RepoRoot "node_modules\next\dist\build\collect-build-traces.js")
+  )
+  foreach ($target in $targets) {
+    if (-not (Test-Path -LiteralPath $target)) { continue }
+    $text = [System.IO.File]::ReadAllText($target)
+    $old = "e.code === 'EINVAL' || e.code === 'ENOENT' || e.code === 'UNKNOWN'"
+    $new = "e.code === 'EINVAL' || e.code === 'ENOENT' || e.code === 'UNKNOWN' || e.code === 'EPERM'"
+    if ($text.Contains($new)) { continue }
+    if (-not $text.Contains($old)) { continue }
+    $updated = $text.Replace($old, $new)
+    $utf8NoBom = New-Object System.Text.UTF8Encoding $false
+    [System.IO.File]::WriteAllText($target, $updated, $utf8NoBom)
+    Write-Host "Patched Next.js Windows readlink handling: $target"
+  }
+}
+
 function Invoke-CheckedCommand {
   param(
     [Parameter(Mandatory = $true)][string]$FilePath,
@@ -751,6 +777,7 @@ try {
   }
 
   Write-Host "Keeping apps\dashboard\.next\cache so the production compile can reuse it."
+  Repair-NextWindowsReadlink
   Invoke-CheckedCommand -FilePath "npm" -ArgumentList @("run", "build")
 
   if (-not (Test-Path -LiteralPath $StandalonePath)) {
@@ -812,10 +839,10 @@ try {
   }
 
   if (Test-Path -LiteralPath $ResolvedOutputPath) {
-    Remove-PathWithRetry -TargetDirectory $ResolvedOutputPath -AttemptStopLocks:(-not $NoStop)
+    Remove-PathWithRetry -TargetDirectory $ResolvedOutputPath -AttemptStopLocks:(-not $NoStop) -ContinueIfLocked
   }
 
-  New-Item -ItemType Directory -Path $ResolvedOutputPath | Out-Null
+  New-Item -ItemType Directory -Path $ResolvedOutputPath -Force | Out-Null
 
   Clear-StandalonePublishLoops -StandaloneRoot $StandalonePath
   Copy-TreeSafe -SourcePath $StandalonePath -DestinationPath $ResolvedOutputPath -ExcludeDirectoryNames @('deployment')

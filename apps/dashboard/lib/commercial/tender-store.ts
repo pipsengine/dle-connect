@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, unlink, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import sql from 'mssql';
 import { getDleEnterpriseDbPool } from '@/lib/dle-enterprise-db';
@@ -10,16 +10,20 @@ import {
   awardedToDleOf,
   clientStatusOf,
   externalDeadlineOf,
+  awaitsGmCommercial,
   awaitsManagingDirector,
+  awaitsProposalReview,
   bidChoiceOf,
   commercialKindOf,
   dateOnly,
   departmentalReviewAllowed,
   DEPARTMENT_REVIEW_STAGES,
+  GM_COMMERCIAL_REVIEW_STAGE,
   internalDeadlineFromExternal,
   internalDeadlineOf,
   isEnquiryRecord,
   preparationOf,
+  PROPOSAL_REVIEW_STAGE,
   requiresUrgentAuthorization,
   tenderDraftFromEnquiry,
 } from '@/lib/commercial/tender-workflow';
@@ -27,6 +31,7 @@ import type {
   TenderApproval,
   TenderAuditEvent,
   TenderAward,
+  TenderClient,
   TenderDashboard,
   TenderDocument,
   TenderItem,
@@ -151,10 +156,19 @@ const mapOpportunity = (row: Record<string, unknown>): TenderOpportunity => ({
 const nextCode = async (pool: sql.ConnectionPool, column: string, prefix: string) => {
   const year = new Date().getFullYear();
   const stem = `${prefix}-${year}-`;
+  // Continue the commercial sequence from live DLE-T numbers and historical PST/PR register rows for the same year.
   const result = await pool
     .request()
-    .input('Stem', sql.NVarChar(40), `${stem}%`)
-    .query(`SELECT [${column}] AS Code FROM [commercial].[TenderOpportunities] WHERE [${column}] LIKE @Stem`);
+    .input('Year', sql.NVarChar(10), String(year))
+    .query(`
+      SELECT [${column}] AS Code
+      FROM [commercial].[TenderOpportunities]
+      WHERE (
+        [${column}] LIKE N'DLE-T-' + @Year + N'-%'
+        OR [${column}] LIKE N'PST-' + @Year + N'-%'
+        OR [${column}] LIKE N'PR-' + @Year + N'-%'
+      )
+    `);
   let max = 0;
   for (const row of result.recordset) {
     const match = String(row.Code || '').match(/-(\d+)$/);
@@ -310,14 +324,18 @@ const persistCommercial = async (pool: sql.ConnectionPool, id: string, input: Te
   if (!current) return;
   const locked = current.commercialReview === 'Reviewed' || Boolean(bidChoiceOf(current));
   const review = mode === 'submit' ? (locked ? 'Reviewed' : 'Awaiting Review') : current.commercialReview;
+  const stageText = String(current.stage || '').toLowerCase();
+  const keepStage = /gm commercial|md final|bid preparation|no bid/.test(stageText);
+  const nextStage = keepStage ? current.stage : 'Proposal Review';
   const request = pool.request()
     .input('Id', sql.NVarChar(40), id)
     .input('Kind', sql.NVarChar(10), kind)
-    .input('Review', sql.NVarChar(40), review);
+    .input('Review', sql.NVarChar(40), review)
+    .input('Stage', sql.NVarChar(40), nextStage);
   if (mode === 'submit' && !locked) {
     await request.query(`
       UPDATE [commercial].[TenderOpportunities]
-      SET [CommercialKind]=@Kind, [CommercialReview]=@Review, [Status]=N'Under Review', [Stage]=N'GM Commercial Review', [UpdatedAt]=SYSUTCDATETIME()
+      SET [CommercialKind]=@Kind, [CommercialReview]=@Review, [Status]=N'Under Review', [Stage]=@Stage, [UpdatedAt]=SYSUTCDATETIME()
       WHERE [OpportunityId]=@Id AND ISNULL([BidDecision], N'')=N''
     `);
     return;
@@ -397,7 +415,9 @@ export const saveOpportunity = async (input: TenderOpportunityInput, actor: stri
     await audit(pool, existingId, actor, mode === 'submit' ? 'SUBMITTED_FOR_REVIEW' : 'UPDATED', referenceNo);
     await stampWorkflow(pool, existingId);
     await persistCommercial(pool, existingId, input, mode);
-    return getOpportunity(existingId);
+    const updated = await getOpportunity(existingId);
+    if (updated) await upsertTenderClient(updated, actor).catch(() => undefined);
+    return updated;
   }
 
   const id = idFor('TOP');
@@ -431,7 +451,9 @@ export const saveOpportunity = async (input: TenderOpportunityInput, actor: stri
   await audit(pool, id, actor, mode === 'submit' ? 'SUBMITTED_FOR_REVIEW' : 'CREATED', referenceNo);
   await stampWorkflow(pool, id);
   await persistCommercial(pool, id, input, mode);
-  return getOpportunity(id);
+  const created = await getOpportunity(id);
+  if (created) await upsertTenderClient(created, actor).catch(() => undefined);
+  return created;
 };
 
 export const patchOpportunity = async (id: string, patch: Partial<TenderOpportunity>, actor: string) => {
@@ -1007,6 +1029,31 @@ export const getDocumentFile = async (documentId: string) => {
   };
 };
 
+export const deleteDocument = async (documentId: string, actor: string) => {
+  const pool = await ensureTenderDb();
+  const result = await pool
+    .request()
+    .input('Id', sql.NVarChar(40), clean(documentId, 40))
+    .query(`
+      SELECT [DocumentId],[OpportunityId],[FileName],[StorageKey]
+      FROM [commercial].[TenderDocuments]
+      WHERE [DocumentId]=@Id
+    `);
+  const row = result.recordset[0];
+  if (!row) throw new Error('Document was not found.');
+  const opportunityId = clean(row.OpportunityId, 40);
+  const storageKey = clean(row.StorageKey, 500);
+  await pool.request().input('Id', sql.NVarChar(40), clean(documentId, 40)).query(`
+    DELETE FROM [commercial].[TenderDocuments] WHERE [DocumentId]=@Id
+  `);
+  if (storageKey && !storageKey.includes('..')) {
+    const absolute = path.join(documentsRoot(), storageKey);
+    await unlink(absolute).catch(() => undefined);
+  }
+  await audit(pool, opportunityId, actor, 'DOCUMENT_REMOVED', clean(row.FileName, 260));
+  return listDocuments(opportunityId);
+};
+
 export const listLines = async (opportunityId: string): Promise<TenderLine[]> => {
   const pool = await ensureTenderDb();
   const result = await pool
@@ -1516,6 +1563,64 @@ export const reviewCommercialOpportunity = async (
   throw new Error('GM Commercial approval requires an assigned employee and a BID or NO BID decision on the Approvals page.');
 };
 
+const PRIORITIES = new Set(['High', 'Medium', 'Low']);
+
+/** Proposal reviewer (Nkechi) sets priority, reviews, and forwards to GM Commercial. */
+export const recordProposalReview = async (
+  id: string,
+  input: { decision: string; comments?: string; priority?: string },
+  actor: string,
+) => {
+  const current = await getOpportunity(id);
+  if (!current) throw new Error('Opportunity was not found.');
+  if (!awaitsProposalReview(current)) throw new Error('This opportunity is not waiting for Proposal review.');
+  const decision = clean(input.decision, 20).toLowerCase();
+  const comments = clean(input.comments);
+  const pool = await ensureTenderDb();
+  if (decision === 'return') {
+    if (!comments) throw new Error('A comment is required to return this opportunity for correction.');
+    const updated = await pool.request()
+      .input('Id', sql.NVarChar(40), id)
+      .input('Note', sql.NVarChar(sql.MAX), comments)
+      .input('Actor', sql.NVarChar(120), clean(actor, 120))
+      .query(`
+        UPDATE [commercial].[TenderOpportunities]
+        SET [CommercialReview]=N'Returned for Correction', [CommercialReviewNote]=@Note,
+            [CommercialReviewedBy]=@Actor, [CommercialReviewedAt]=SYSUTCDATETIME(),
+            [Status]=N'Draft', [Stage]=N'Correction',
+            [UpdatedAt]=SYSUTCDATETIME(), [UpdatedBy]=@Actor
+        WHERE [OpportunityId]=@Id AND ISNULL([BidDecision], N'')=N'' AND ISNULL([GmBidDecision], N'')=N''
+      `);
+    if (!updated.rowsAffected[0]) throw new Error('This opportunity can no longer be returned.');
+    await insertWorkflowApproval(pool, id, PROPOSAL_REVIEW_STAGE, 'RETURN', actor, comments);
+    await audit(pool, id, actor, 'PROPOSAL_RETURNED', comments);
+    return getOpportunity(id);
+  }
+  if (decision !== 'approve' && decision !== 'forward') {
+    throw new Error('Approve the opportunity for GM Commercial review, or return it for correction.');
+  }
+  const priority = clean(input.priority, 20) || current.priority || 'Medium';
+  if (!PRIORITIES.has(priority)) throw new Error('Set the priority to High, Medium, or Low.');
+  const updated = await pool.request()
+    .input('Id', sql.NVarChar(40), id)
+    .input('Priority', sql.NVarChar(20), priority)
+    .input('Note', sql.NVarChar(sql.MAX), comments)
+    .input('Actor', sql.NVarChar(120), clean(actor, 120))
+    .input('Stage', sql.NVarChar(40), GM_COMMERCIAL_REVIEW_STAGE)
+    .query(`
+      UPDATE [commercial].[TenderOpportunities]
+      SET [Priority]=@Priority, [CommercialReview]=N'Awaiting Review', [CommercialReviewNote]=@Note,
+          [CommercialReviewedBy]=@Actor, [CommercialReviewedAt]=SYSUTCDATETIME(),
+          [Status]=N'Under Review', [Stage]=@Stage,
+          [UpdatedAt]=SYSUTCDATETIME(), [UpdatedBy]=@Actor
+      WHERE [OpportunityId]=@Id AND ISNULL([BidDecision], N'')=N'' AND ISNULL([GmBidDecision], N'')=N''
+    `);
+  if (!updated.rowsAffected[0]) throw new Error('This opportunity can no longer be approved by Proposal.');
+  await insertWorkflowApproval(pool, id, PROPOSAL_REVIEW_STAGE, 'APPROVE', actor, comments || `Priority ${priority}`);
+  await audit(pool, id, actor, 'PROPOSAL_APPROVED', `Priority ${priority}. Sent to GM Commercial. ${comments}`);
+  return getOpportunity(id);
+};
+
 const insertWorkflowApproval = async (pool: sql.ConnectionPool, opportunityId: string, stage: string, result: string, actor: string, note: string) => {
   await pool.request()
     .input('Id', sql.NVarChar(40), idFor('TAP'))
@@ -1545,6 +1650,9 @@ export const recordGmCommercialDecision = async (
   if (!current) throw new Error('Opportunity was not found.');
   if (bidChoiceOf(current)) throw new Error('This opportunity already has a final decision.');
   if (awaitsManagingDirector(current)) throw new Error('This opportunity is with the Managing Director for final approval.');
+  if (awaitsProposalReview(current) || !awaitsGmCommercial(current)) {
+    throw new Error('GM Commercial acts after Proposal has set the priority and approved the opportunity.');
+  }
   const normalized = clean(input.decision, 20).toLowerCase();
   const noBid = normalized === 'no bid' || normalized === 'no-bid' || normalized === 'nobid';
   const bid = normalized === 'bid';
@@ -1732,6 +1840,84 @@ export const setClientOutcome = async (
     `);
   await audit(pool, id, actor, 'CLIENT_DECISION', `${current.clientStatus || 'Pending'} -> ${clientStatus}; Awarded to DLE ${current.awardedToDle || 'Pending Decision'} -> ${awarded}. ${clean(input.reason, 500)}`);
   return getOpportunity(id);
+};
+
+export const listTenderClients = async (query = ''): Promise<TenderClient[]> => {
+  const pool = await ensureTenderDb();
+  const existingCount = await pool.request().query(`SELECT COUNT(1) AS [Rows] FROM [commercial].[TenderClients]`);
+  if (!num(existingCount.recordset[0]?.Rows)) {
+    await pool.request().query(`
+      INSERT INTO [commercial].[TenderClients] ([ClientId],[ClientName],[ContactPerson],[Email],[Phone],[AddressLine],[Sector],[CreatedBy],[UpdatedBy])
+      SELECT CONCAT(N'TCL-', LEFT(CONVERT(varchar(40), NEWID()), 12)), src.[ClientName], src.[ContactPerson], src.[Email], src.[Phone], src.[ClientAddress], src.[Category], N'System', N'System'
+      FROM (
+        SELECT [ClientName],
+               MAX([ContactPerson]) AS [ContactPerson],
+               MAX([Email]) AS [Email],
+               MAX([Phone]) AS [Phone],
+               MAX([ClientAddress]) AS [ClientAddress],
+               MAX([Category]) AS [Category]
+        FROM [commercial].[TenderOpportunities]
+        WHERE ISNULL([ClientName], N'') <> N'' AND [ClientName] NOT LIKE N'Not recorded%'
+        GROUP BY [ClientName]
+      ) src
+      WHERE NOT EXISTS (SELECT 1 FROM [commercial].[TenderClients] c WHERE c.[ClientName] = src.[ClientName])
+    `);
+  }
+  const needle = clean(query, 120);
+  const request = pool.request().input('Query', sql.NVarChar(120), needle ? `%${needle}%` : '');
+  const result = await request.query(`
+    SELECT TOP 200 [ClientId],[ClientName],[ContactPerson],[Email],[Phone],[AddressLine],[Sector],[Notes],[UpdatedAt]
+    FROM [commercial].[TenderClients]
+    WHERE (@Query = N'' OR [ClientName] LIKE @Query OR [ContactPerson] LIKE @Query OR [Email] LIKE @Query)
+    ORDER BY [ClientName]
+  `);
+  return result.recordset.map((row) => ({
+    id: clean(row.ClientId, 40),
+    name: clean(row.ClientName, 220),
+    contactPerson: clean(row.ContactPerson, 180),
+    email: clean(row.Email, 200),
+    phone: clean(row.Phone, 80),
+    address: clean(row.AddressLine, 500),
+    sector: clean(row.Sector, 80),
+    notes: clean(row.Notes),
+    updatedAt: iso(row.UpdatedAt),
+  }));
+};
+
+export const upsertTenderClient = async (row: Pick<TenderOpportunity, 'clientName' | 'contactPerson' | 'email' | 'phone' | 'clientAddress' | 'category'>, actor: string) => {
+  const name = clean(row.clientName, 220);
+  if (!name || /^not recorded/i.test(name)) return null;
+  const pool = await ensureTenderDb();
+  const existing = await pool.request()
+    .input('Name', sql.NVarChar(220), name)
+    .query(`SELECT [ClientId] FROM [commercial].[TenderClients] WHERE [ClientName]=@Name`);
+  const id = clean(existing.recordset[0]?.ClientId, 40) || idFor('TCL');
+  await pool.request()
+    .input('Id', sql.NVarChar(40), id)
+    .input('Name', sql.NVarChar(220), name)
+    .input('Contact', sql.NVarChar(180), clean(row.contactPerson, 180))
+    .input('Email', sql.NVarChar(200), clean(row.email, 200))
+    .input('Phone', sql.NVarChar(80), clean(row.phone, 80))
+    .input('Address', sql.NVarChar(500), clean(row.clientAddress, 500))
+    .input('Sector', sql.NVarChar(80), clean(row.category, 80))
+    .input('Actor', sql.NVarChar(120), clean(actor, 120))
+    .query(`
+      MERGE [commercial].[TenderClients] AS target
+      USING (SELECT @Name AS [ClientName]) AS source
+      ON target.[ClientName] = source.[ClientName]
+      WHEN MATCHED THEN UPDATE SET
+        [ContactPerson]=COALESCE(NULLIF(@Contact, N''), [ContactPerson]),
+        [Email]=COALESCE(NULLIF(@Email, N''), [Email]),
+        [Phone]=COALESCE(NULLIF(@Phone, N''), [Phone]),
+        [AddressLine]=COALESCE(NULLIF(@Address, N''), [AddressLine]),
+        [Sector]=COALESCE(NULLIF(@Sector, N''), [Sector]),
+        [UpdatedAt]=SYSUTCDATETIME(),
+        [UpdatedBy]=@Actor
+      WHEN NOT MATCHED THEN INSERT
+        ([ClientId],[ClientName],[ContactPerson],[Email],[Phone],[AddressLine],[Sector],[CreatedBy],[UpdatedBy])
+        VALUES (@Id,@Name,@Contact,@Email,@Phone,@Address,@Sector,@Actor,@Actor);
+    `);
+  return id;
 };
 
 export const listReminderKeys = async (opportunityId: string) => {

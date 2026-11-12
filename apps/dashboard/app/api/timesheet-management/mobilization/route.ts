@@ -63,6 +63,7 @@ export async function POST(request: Request) {
         employeeCodes: Array.isArray(body.employeeCodes) ? body.employeeCodes.map(String) : [],
         effectiveFrom: String(body.effectiveFrom || ''),
         expectedReturn: String(body.expectedReturn || ''),
+        targetSupervisor: String(body.targetSupervisor || body.supervisor || ''),
       }));
     }
     if (action === 'create') {
@@ -79,6 +80,7 @@ export async function POST(request: Request) {
         transport: String(body.transport || ''),
         notes: String(body.notes || ''),
         employeeCodes: Array.isArray(body.employeeCodes) ? body.employeeCodes.map(String) : [],
+        confirmReassignCodes: Array.isArray(body.confirmReassignCodes) ? body.confirmReassignCodes.map(String) : [],
         actor,
         role,
       }));

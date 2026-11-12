@@ -2,6 +2,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { AnchoredMenu, Badge, Button, DetailModal, Field, Modal, Table } from '../components/UI';
 import { timesheetCrewMatchesLocation, timesheetCrewMatchesWorkCenter } from '@/lib/timesheet-agege-blasting';
+import { bookedOffshoreLinesForSheet, isMobilizedOffshoreEmployee, keepMobilizedLineOnSheet, mobilizationBelongsOnSheet, mobilizationRosterSite, mobilizedEmployeeCodes, offshoreMobilizationsForSheet } from '@/lib/timesheet-mobilization-sheet';
 import { formatDisplayDate, usePortalData } from '../portal-data';
 
 const emptyLine = (employee) => ({
@@ -110,31 +111,20 @@ export default function Entry({ setPage }) {
       return { ...item, regularHours };
     });
   };
-  const namesMatch = (left, right) => {
-    const a = String(left || '').trim().toLowerCase();
-    const b = String(right || '').trim().toLowerCase();
-    if (!a || !b || a === '—' || b === '—' || a === 'unassigned' || b === 'unassigned') return false;
-    return a === b || a.includes(b) || b.includes(a);
-  };
-  const samePerson = (left, right) => {
-    const a = String(left || '').trim().toLowerCase();
-    const b = String(right || '').trim().toLowerCase();
-    if (!a || !b || a === '—' || b === '—' || a === 'unassigned' || b === 'unassigned') return false;
-    if (a === b) return true;
-    const shorter = a.length < b.length ? a : b;
-    const longer = a.length < b.length ? b : a;
-    return shorter.length >= 8 && longer.includes(shorter);
-  };
   const siteExact = (site) => String(site || '').trim().toLowerCase() === String(location || '').trim().toLowerCase();
-  const mobilizedHere = (row) => samePerson(row.supervisor, supervisor?.name || '')
-    || samePerson(row.supervisor, supervisor?.code || '')
-    || lines.some((line) => samePerson(row.supervisor, line.employeeName) || samePerson(row.supervisor, line.employeeCode));
-  const offshoreHere = location ? offshoreCrew.filter((row) => siteExact(row.site) && mobilizedHere(row)) : [];
-  const viewingOffshore = Boolean(location) && offshoreCrew.some((row) => siteExact(row.site));
+  const mobilizedCodes = mobilizedEmployeeCodes(offshoreCrew);
+  const hostedByThisSupervisor = (employeeCode) => offshoreCrew.some((row) =>
+    String(row.employeeCode || '').trim().toUpperCase() === String(employeeCode || '').trim().toUpperCase()
+    && mobilizationBelongsOnSheet(row.supervisor, supervisor?.name || '', supervisor?.code || ''),
+  );
+  const offshoreHere = offshoreMobilizationsForSheet(offshoreCrew, location, supervisor?.name || '', supervisor?.code || '');
+  const viewingOffshore = Boolean(location) && offshoreCrew.some((row) => siteExact(mobilizationRosterSite(row.site)));
+  const offshoreShown = new Set(offshoreHere.map((row) => String(row.employeeCode || '').trim().toUpperCase()));
   const visible = (viewingOffshore
-    ? offshoreHere.map((row) => {
+    ? [
+      ...offshoreHere.map((row) => {
       const existing = lines.find((line) => line.employeeCode === row.employeeCode);
-      if (existing) return existing;
+      if (existing) return { ...existing, location: row.site || existing.location, operationalStatus: existing.operationalStatus === 'Approved Leave' ? existing.operationalStatus : 'Mobilized Offshore' };
       const onLeave = (context?.classification?.dayKind || 'Weekday') === 'Weekday' && (context?.approvedLeaveCodes || []).includes(String(row.employeeCode || '').toUpperCase());
       const expected = context?.settings?.expectedHours || 8;
       return emptyLine({
@@ -145,9 +135,12 @@ export default function Entry({ setPage }) {
         attendanceStatus: onLeave ? 'Approved Leave' : '',
         allocations: onLeave ? [{ projectCode: 'DL1949', projectName: 'IDLE TIME', kind: 'Project', regularHours: expected, ovtHours: 0, comment: 'Approved paid leave' }] : [],
       });
-    })
+    }),
+      ...bookedOffshoreLinesForSheet(lines, location)
+        .filter((line) => !offshoreShown.has(String(line.employeeCode || '').trim().toUpperCase())),
+    ]
     : location
-      ? lines.filter((line) => timesheetCrewMatchesLocation(line.location, location, supervisor?.location) && timesheetCrewMatchesWorkCenter(line.workCenter, workCenter))
+      ? lines.filter((line) => !isMobilizedOffshoreEmployee(line.employeeCode, mobilizedCodes) && timesheetCrewMatchesLocation(line.location, location, supervisor?.location) && timesheetCrewMatchesWorkCenter(line.workCenter, workCenter))
       : []
   ).filter((line) => /^(C|P)\d/i.test(line.employeeCode || ''));
   const employeeNeedle = employeeQuery.trim().toLowerCase();
@@ -194,7 +187,7 @@ export default function Entry({ setPage }) {
       const response = await fetch('/api/timesheet-management/entry', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'save', intent, periodId, workDate, supervisor: supervisor?.name, location, workCenter, shift, lines: lines.map((line) => {
+        body: JSON.stringify({ action: 'save', intent, periodId, workDate, supervisor: supervisor?.name, location, workCenter, shift, lines: lines.filter((line) => keepMobilizedLineOnSheet(line, mobilizedCodes, hostedByThisSupervisor)).map((line) => {
           const next = { ...line, nightSession: weekendLeave(line) ? false : line.nightSession, allocations: weekendLeave(line) ? [] : capAllocations(line.allocations, regularLimit(line)) };
           if (shift !== 'Day') {
             delete next.nightWork;

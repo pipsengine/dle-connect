@@ -1,4 +1,5 @@
 import type { PayrollCalculationRecord } from '@/lib/payroll-calculation-service';
+import { displayEmploymentGrade } from '@/lib/payroll-earnings-engine';
 import { summarizePayrollComponentKey } from '@/lib/payroll-earning-summary';
 
 export const previousPayrollPeriod = (period: string) => {
@@ -19,6 +20,8 @@ type PayrollReviewRecord = Pick<
   | 'fullName'
   | 'department'
   | 'salaryGrade'
+  | 'jobGrade'
+  | 'employmentGrade'
   | 'grossPay'
   | 'netPay'
   | 'deductions'
@@ -163,7 +166,7 @@ export const buildPayrollReviewExportReport = (
       employeeId,
       base?.fullName || '',
       base?.department || '',
-      base?.salaryGrade || '',
+      displayEmploymentGrade(base),
     ];
 
     const emptyRecord: PayrollReviewRecord = {

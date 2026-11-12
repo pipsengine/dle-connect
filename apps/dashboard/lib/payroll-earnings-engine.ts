@@ -156,6 +156,23 @@ const effectivePayrollGrade = (employee: Pick<DleEmployeeDirectoryRow, 'salaryGr
   return salaryGrade.toUpperCase();
 };
 
+/** Real employment grade for payroll printouts. Skips Permanent, Contract, Daily Rate, and other type labels. */
+export const displayEmploymentGrade = (
+  ...sources: Array<{ salaryGrade?: unknown; jobGrade?: unknown; employmentGrade?: unknown } | null | undefined>
+) => {
+  for (const source of sources) {
+    if (!source) continue;
+    const stored = compact(source.employmentGrade);
+    if (stored && !isGenericPayrollGrade(stored)) return stored.toUpperCase();
+    const grade = effectivePayrollGrade({
+      salaryGrade: compact(source.salaryGrade),
+      jobGrade: compact(source.jobGrade),
+    });
+    if (grade && !isGenericPayrollGrade(grade)) return grade;
+  }
+  return '';
+};
+
 const titleCase = (value: string) => value.toLowerCase().replace(/\b\w/g, (letter) => letter.toUpperCase());
 const PERIOD_ADJUSTMENTS_FILE = 'payroll-period-earning-adjustments.json';
 let periodAdjustmentCache: { mtime: number; rows: PayrollPeriodEarningAdjustment[]; path: string } | null = null;

@@ -66,19 +66,54 @@ export const requiresUrgentAuthorization = (external: string, now = new Date()) 
   return hours != null && hours < 24;
 };
 
-export const REMINDER_HOURS = [72, 48, 24] as const;
+/** Reminders run from three days before the deadline, twice a day (09:00 and 15:00 Africa/Lagos). */
+export const REMINDER_LEAD_DAYS = 3;
+export const REMINDER_LAGOS_HOURS = [9, 15] as const;
 
-export const dueReminderSlots = (deadline: string, now = new Date()) => {
-  const parsed = parseDeadline(deadline);
-  if (!parsed) return [] as number[];
-  return REMINDER_HOURS.filter((hours) => {
-    const slot = parsed.getTime() - hours * 60 * 60 * 1000;
-    return now.getTime() >= slot && now.getTime() < parsed.getTime();
-  });
+export type DueReminderSlot = {
+  day: string;
+  period: 'am' | 'pm';
+  hour: number;
+  at: Date;
 };
 
-export const reminderKey = (opportunityId: string, clock: 'internal' | 'external', hours: number) =>
-  `${opportunityId}|${clock}|${hours}`;
+const lagosDayOf = (value: Date) =>
+  new Intl.DateTimeFormat('en-CA', { timeZone: 'Africa/Lagos', year: 'numeric', month: '2-digit', day: '2-digit' }).format(value);
+
+/** Africa/Lagos is permanently UTC+1. */
+const lagosWallTime = (day: string, hour: number) =>
+  new Date(`${day}T${String(hour).padStart(2, '0')}:00:00+01:00`);
+
+/** Slots that have already opened (slot time <= now) and still fall on or before the deadline day. */
+export const dueReminderSlots = (deadline: string, now = new Date()): DueReminderSlot[] => {
+  const text = String(deadline || '').trim();
+  const parsed = parseDeadline(text);
+  if (!parsed) return [];
+  // Date-only deadlines stay open through the Lagos calendar day.
+  const closesAt = /^\d{4}-\d{2}-\d{2}$/.test(text)
+    ? new Date(`${text}T23:59:59.999+01:00`)
+    : parsed;
+  if (now.getTime() >= closesAt.getTime()) return [];
+  const endDay = lagosDayOf(closesAt);
+  const noon = new Date(`${endDay}T12:00:00+01:00`);
+  const slots: DueReminderSlot[] = [];
+  for (let offset = REMINDER_LEAD_DAYS; offset >= 0; offset -= 1) {
+    const cursor = new Date(noon.getTime() - offset * 86_400_000);
+    const day = lagosDayOf(cursor);
+    for (const hour of REMINDER_LAGOS_HOURS) {
+      const at = lagosWallTime(day, hour);
+      if (at.getTime() > now.getTime() || at.getTime() >= closesAt.getTime()) continue;
+      slots.push({ day, period: hour < 12 ? 'am' : 'pm', hour, at });
+    }
+  }
+  return slots;
+};
+
+export const reminderKey = (opportunityId: string, clock: 'internal' | 'external', slot: DueReminderSlot | number | string) => {
+  if (typeof slot === 'number') return `${opportunityId}|${clock}|${slot}`;
+  if (typeof slot === 'string') return `${opportunityId}|${clock}|${slot}`;
+  return `${opportunityId}|${clock}|${slot.day}|${slot.period}`;
+};
 
 type StatusSource = {
   status?: string;
@@ -137,8 +172,10 @@ export const DEPARTMENT_REVIEW_STAGES = [
 
 export const COMMERCIAL_KINDS = ['ITT', 'RFQ', 'EOI'] as const;
 export const COMMERCIAL_REVIEWS = ['Awaiting Review', 'Returned for Correction', 'Reviewed'] as const;
-export const REGISTER_STATUSES = ['Not Started', 'In Progress', 'Submitted', 'Awaiting GM Review', 'Awaiting MD Decision', 'Closed', 'Historical'] as const;
+export const REGISTER_STATUSES = ['Not Started', 'In Progress', 'Submitted', 'Awaiting Proposal Review', 'Awaiting GM Review', 'Awaiting MD Decision', 'Closed', 'Historical'] as const;
 export const PROPOSAL_REGISTER_SOURCE = 'Proposal Register 2026';
+export const PROPOSAL_REVIEW_STAGE = 'Proposal Review';
+export const GM_COMMERCIAL_REVIEW_STAGE = 'GM Commercial Review';
 
 /** Past proposal-register rows kept for records and trends. They are not live approval work. */
 export const isHistoricalRegister = (row: { source?: string; stage?: string; status?: string }) =>
@@ -154,6 +191,7 @@ export type CommercialTab =
   | 'ITT'
   | 'RFQ'
   | 'EOI'
+  | 'Awaiting Proposal Review'
   | 'Awaiting GM Review'
   | 'Awaiting MD Decision'
   | 'Not Started'
@@ -199,6 +237,49 @@ export const mdDecisionOf = (row: { bidDecision?: string }): MdDecision => {
   return 'Pending';
 };
 
+/** Submitted commercial opportunities wait with Proposal (Nkechi) before GM Commercial. */
+export const awaitsProposalReview = (row: {
+  commercialReview?: string;
+  bidDecision?: string;
+  gmBidDecision?: string;
+  status?: string;
+  stage?: string;
+  opportunityType?: string;
+  tenderType?: string;
+  source?: string;
+}) => {
+  if (isHistoricalRegister(row) || isEnquiryRecord(row)) return false;
+  if (bidChoiceOf(row) || gmBidChoiceOf(row)) return false;
+  if (String(row.status || '') === 'Draft') return false;
+  const review = commercialReviewOf(row);
+  if (review === 'Reviewed') return false;
+  const stage = String(row.stage || '').trim().toLowerCase();
+  // Legacy rows already at GM Commercial Review stay with GM.
+  if (stage === GM_COMMERCIAL_REVIEW_STAGE.toLowerCase() || /md final/.test(stage)) return false;
+  if (stage === PROPOSAL_REVIEW_STAGE.toLowerCase()) return true;
+  return review === 'Awaiting Review' || review === 'Returned for Correction';
+};
+
+/** GM Commercial acts only after Proposal has approved the opportunity. */
+export const awaitsGmCommercial = (row: {
+  commercialReview?: string;
+  bidDecision?: string;
+  gmBidDecision?: string;
+  status?: string;
+  stage?: string;
+  opportunityType?: string;
+  tenderType?: string;
+  source?: string;
+}) => {
+  if (isHistoricalRegister(row) || isEnquiryRecord(row)) return false;
+  if (bidChoiceOf(row) || gmBidChoiceOf(row) || awaitsManagingDirector(row)) return false;
+  if (awaitsProposalReview(row)) return false;
+  const review = commercialReviewOf(row);
+  if (review === 'Reviewed') return false;
+  if (row.status === 'Draft' && review !== 'Returned for Correction') return false;
+  return true;
+};
+
 /** The register shows the current operational state. The underlying review, decision and preparation fields stay separate. */
 export const registerStatusOf = (row: StatusSource & {
   commercialReview?: string;
@@ -222,6 +303,7 @@ export const registerStatusOf = (row: StatusSource & {
   if (awaitsManagingDirector(row)) return 'Awaiting MD Decision';
   const review = commercialReviewOf(row);
   if (row.status === 'Draft' && review !== 'Returned for Correction') return 'Not Started';
+  if (awaitsProposalReview(row)) return 'Awaiting Proposal Review';
   return 'Awaiting GM Review';
 };
 
@@ -334,28 +416,39 @@ export type CommercialCopyPerson = {
   department?: string;
   officialEmail?: string;
   email?: string;
+  employeeCode?: string;
+  employeeId?: string;
 };
 
-/** People copied on every completed commercial outcome: Proposal, Sales, MD, GM Operations, CFO, and the two named recipients. */
-export const isCommercialOutcomeRecipient = (person: CommercialCopyPerson) => {
+/** Day-to-day commercial team: Proposal, Sales, GM Commercial, and MD. */
+export const isCommercialTeamRecipient = (person: CommercialCopyPerson) => {
   const title = `${person.jobTitle || ''} ${person.designation || ''}`.toLowerCase();
   const department = `${person.department || ''}`.toLowerCase();
+  if (/\bproposal\b/.test(title) || /\bproposal\b/.test(department)) return true;
+  if (/\bsales\b/.test(title) || /\bsales\b/.test(department)) return true;
+  if (/gm commercial|general manager[, ]+commercial/.test(title)) return true;
+  if (/\bcommercial\b/.test(department) && (/general manager|\bgm\b/.test(title))) return true;
+  if (/managing director/.test(title) || /^(md|md\/ceo)$/.test(title.trim())) return true;
+  return false;
+};
+
+/** People copied on every completed commercial outcome: commercial team plus GM Operations, CFO, and the two named recipients. */
+export const isCommercialOutcomeRecipient = (person: CommercialCopyPerson) => {
+  if (isCommercialTeamRecipient(person)) return true;
+  const title = `${person.jobTitle || ''} ${person.designation || ''}`.toLowerCase();
   const name = `${person.fullName || ''}`.toLowerCase();
   const email = `${person.officialEmail || ''} ${person.email || ''}`.toLowerCase();
   if (email.includes('tap@dormanlongeng.com')) return true;
   if (/oluwatamilayo/.test(name) && /austen/.test(name)) return true;
   if (/\btimi\b/.test(name) && /austen/.test(name)) return true;
-  if (/\bproposal\b/.test(title) || /\bproposal\b/.test(department)) return true;
-  if (/\bsales\b/.test(title) || /\bsales\b/.test(department)) return true;
-  if (/managing director/.test(title) || /^(md|md\/ceo)$/.test(title.trim())) return true;
   if (/gm operations|general manager[, ]+operations/.test(title)) return true;
   if (/\bcfo\b|chief financial officer/.test(title)) return true;
   return false;
 };
 
-export type ApprovalBucket = 'pending' | 'review' | 'completed' | 'enquiry' | 'gm';
+export type ApprovalBucket = 'pending' | 'review' | 'completed' | 'enquiry' | 'gm' | 'proposal';
 
-/** GM is waiting for assignment and the first approval. Pending is MD final approval. Review is a confirmed bid. */
+/** Proposal review is first. GM assigns and records BID/NO BID next. Pending is MD final approval. Review is a confirmed bid. */
 export const tenderApprovalBucket = (row: {
   bidDecision?: string;
   gmBidDecision?: string;
@@ -380,6 +473,7 @@ export const tenderApprovalBucket = (row: {
   const review = commercialReviewOf(row);
   if (!row.status || (row.status === 'Draft' && review !== 'Returned for Correction')) return 'enquiry';
   if (isEnquiryRecord(row) && review !== 'Reviewed' && review !== 'Returned for Correction' && review !== 'Awaiting Review') return 'enquiry';
+  if (awaitsProposalReview(row)) return 'proposal';
   return 'gm';
 };
 

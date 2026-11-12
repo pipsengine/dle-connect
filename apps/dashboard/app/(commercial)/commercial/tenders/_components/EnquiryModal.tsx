@@ -6,8 +6,9 @@ import type { TenderOpportunity } from '@/lib/commercial/tender-types';
 import { tenderGet, tenderPost, tenderUpload } from './tender-api';
 import { ActingEmployee } from './acting-employee';
 
-const SOURCES = ['Client Direct', 'Email', 'Invitation', 'Public Portal', 'Referral', 'Tender Portal', 'Website'];
-const SECTORS = ['Oil & Gas', 'Energy', 'Industrial', 'Infrastructure', 'Fabrication', 'Construction', 'Maintenance', 'IT Services'];
+import { COMMERCIAL_SECTORS, COMMERCIAL_SOURCES } from '@/lib/commercial/tender-lookups';
+const SOURCES = [...COMMERCIAL_SOURCES];
+const SECTORS = [...COMMERCIAL_SECTORS];
 const PRIORITIES = ['High', 'Medium', 'Low'];
 const ENQUIRY_TYPES = ['General', 'Technical', 'Commercial', 'Prequalification', 'Other'];
 const FORMATS = ['Email', 'Portal', 'Hard copy', 'Meeting'];

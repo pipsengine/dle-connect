@@ -37,6 +37,8 @@ export type ProcurementNavItem = {
 
 const view = ['view_procurement', 'procurement.view', 'procurement.*'] as const;
 const vendor = [...view, 'vendor.view', 'vendor.*'] as const;
+/** Line managers / executives approving PRs or SSJs without full procurement ops access. */
+const approverSurface = [...view, 'procurement.approve', 'procurement.reject', 'workflow.approve'] as const;
 
 export const PROCUREMENT_NAV: ProcurementNavItem[] = [
   { id: 'dashboard', label: 'Procurement Command Centre', href: '/procurement', icon: LayoutDashboard, permissionKeys: [...view, 'vendor.view'] },
@@ -46,7 +48,7 @@ export const PROCUREMENT_NAV: ProcurementNavItem[] = [
     label: 'Purchase Requisitions',
     href: '/procurement/purchase-requisitions',
     icon: FileText,
-    permissionKeys: [...view],
+    permissionKeys: [...approverSurface],
     children: [
       {
         id: 'single-sourced-justification',
@@ -69,7 +71,7 @@ export const PROCUREMENT_NAV: ProcurementNavItem[] = [
   { id: 'delivery', label: 'Delivery & Fulfilment', href: '/procurement/delivery', icon: Truck, permissionKeys: [...view] },
   { id: 'costing', label: 'Procurement Finance & Costing', href: '/procurement/costing', icon: BarChart3, permissionKeys: [...view] },
   { id: 'analytics', label: 'Procurement Analytics', href: '/procurement/analytics', icon: FileBarChart2, permissionKeys: [...view, 'procurement.export'] },
-  { id: 'approvals', label: 'Approvals & Work Queue', href: '/procurement/approvals', icon: ClipboardCheck, permissionKeys: [...view] },
+  { id: 'approvals', label: 'Approvals & Work Queue', href: '/procurement/approvals', icon: ClipboardCheck, permissionKeys: [...approverSurface] },
   { id: 'compliance', label: 'Compliance & Audit', href: '/procurement/compliance', icon: ShieldCheck, permissionKeys: [...view] },
   { id: 'documents', label: 'Documents & Correspondence', href: '/procurement/documents', icon: FolderOpen, permissionKeys: [...view] },
   { id: 'configuration', label: 'Procurement Configuration', href: '/procurement/configuration', icon: Settings, permissionKeys: [...view, 'procurement.edit'] },

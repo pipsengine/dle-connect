@@ -20,7 +20,7 @@ import {
   X,
   type LucideIcon,
 } from 'lucide-react';
-import { isBusinessGmCommercial, isBusinessManagingDirector } from '@/lib/access/commercial-access';
+import { canActAsGmCommercial, canActAsManagingDirector } from '@/lib/access/commercial-access';
 import type { TenderAuditEvent, TenderOpportunity, TenderSubmission } from '@/lib/commercial/tender-types';
 import { daysUntil, receivedOn, sectorOf } from '@/lib/commercial/tender-present';
 import {
@@ -41,14 +41,15 @@ import { formatWhen, tenderGet } from './tender-api';
 import { CommercialOpportunityModal } from './CommercialOpportunityModal';
 import { RowMenu } from './record-frame';
 
-type DashTab = 'All Opportunities' | 'ITT' | 'RFQ' | 'EOI' | 'Awaiting GM Review' | 'Awaiting MD Decision' | 'Not Started' | 'In Progress' | 'Submitted' | 'Overdue' | 'Closed';
+type DashTab = 'All Opportunities' | 'ITT' | 'RFQ' | 'EOI' | 'Awaiting Proposal Review' | 'Awaiting GM Review' | 'Awaiting MD Decision' | 'Not Started' | 'In Progress' | 'Submitted' | 'Overdue' | 'Closed';
 type PrepFilter = 'All Types' | CommercialKind;
 type ClientSlice = 'Pending' | 'Suspended' | 'Cancelled' | 'Re-Opened' | 'Awarded (Yes)' | 'Awarded (No)';
 
-const MAIN_TABS: DashTab[] = ['All Opportunities', 'ITT', 'RFQ', 'EOI', 'Awaiting GM Review', 'Awaiting MD Decision', 'Not Started', 'In Progress', 'Submitted'];
+const MAIN_TABS: DashTab[] = ['All Opportunities', 'ITT', 'RFQ', 'EOI', 'Awaiting Proposal Review', 'Awaiting GM Review', 'Awaiting MD Decision', 'Not Started', 'In Progress', 'Submitted'];
 const MORE_TABS: DashTab[] = ['Overdue', 'Closed'];
-const STATUS_ORDER: RegisterStatus[] = ['Awaiting GM Review', 'Awaiting MD Decision', 'Not Started', 'In Progress', 'Submitted', 'Closed'];
+const STATUS_ORDER: RegisterStatus[] = ['Awaiting Proposal Review', 'Awaiting GM Review', 'Awaiting MD Decision', 'Not Started', 'In Progress', 'Submitted', 'Closed'];
 const STATUS_COLOR: Record<RegisterStatus, string> = {
+  'Awaiting Proposal Review': '#8b5cf6',
   'Awaiting GM Review': '#f59e0b',
   'Awaiting MD Decision': '#ef4444',
   'Not Started': '#94a3b8',
@@ -76,6 +77,7 @@ const STATUS_TONE: Record<RegisterStatus, string> = {
   'Not Started': 'bg-slate-100 text-slate-600',
   'In Progress': 'bg-blue-50 text-blue-700',
   Submitted: 'bg-emerald-50 text-emerald-700',
+  'Awaiting Proposal Review': 'bg-violet-50 text-violet-700',
   'Awaiting GM Review': 'bg-orange-50 text-orange-700',
   'Awaiting MD Decision': 'bg-rose-50 text-rose-600',
   Closed: 'bg-slate-100 text-slate-500',
@@ -220,7 +222,11 @@ export function TenderDashboard() {
   const scoped = useMemo(() => {
     const pipeline = rows.filter((row) => !isHistoricalRegister(row));
     if (!viewer) return pipeline;
-    if (viewer.admin || isBusinessManagingDirector(viewer.roles) || isBusinessGmCommercial(viewer.roles)) return pipeline;
+    if (
+      viewer.admin
+      || canActAsManagingDirector({ roles: viewer.roles, employeeCode: viewer.code, isGlobalAdmin: viewer.admin })
+      || canActAsGmCommercial({ roles: viewer.roles, employeeCode: viewer.code, isGlobalAdmin: viewer.admin })
+    ) return pipeline;
     const broad = viewer.roles.some((role) => /engineer|finance|legal|hse|commercial|proposal|sales|cfo|operations/i.test(role));
     if (broad) return pipeline;
     const mine = (value: string) => {
@@ -349,6 +355,7 @@ export function TenderDashboard() {
         <Metric href="/commercial/tenders/opportunities?tab=EOI" icon={FileText} tint="bg-violet-50 text-violet-600" value={countKind('EOI')} label="Expression of Interest (EOI)" loading={!ready} />
       </section>
       <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-6">
+        <Metric href="/commercial/tenders/opportunities?tab=Awaiting%20Proposal%20Review" icon={Users} tint="bg-violet-100 text-violet-600" surface="bg-[#f5f3ff]" value={countStatus('Awaiting Proposal Review')} label="Awaiting Proposal Review" loading={!ready} />
         <Metric href="/commercial/tenders/opportunities?tab=Awaiting%20GM%20Review" icon={Users} tint="bg-orange-100 text-orange-600" surface="bg-[#fff6ec]" value={countStatus('Awaiting GM Review')} label="Awaiting GM Commercial Review" loading={!ready} />
         <Metric href="/commercial/tenders/opportunities?tab=Awaiting%20MD%20Decision" icon={UserRound} tint="bg-rose-100 text-rose-600" surface="bg-[#fff1f2]" value={countStatus('Awaiting MD Decision')} label="Awaiting MD Decision" loading={!ready} />
         <Metric href="/commercial/tenders/opportunities?view=active" icon={Clock3} tint="bg-blue-100 text-blue-600" surface="bg-[#eef6ff]" value={activeRows.length} label="Active Responses" loading={!ready} />
@@ -396,7 +403,7 @@ export function TenderDashboard() {
           <div className="mt-2 flex items-center gap-1 overflow-x-auto border-b border-slate-100 px-3">
             {MAIN_TABS.map((item) => (
               <button key={item} type="button" onClick={() => setTab(item)} className={`whitespace-nowrap border-b-2 px-2.5 py-2 text-[12px] font-semibold ${tab === item ? 'border-[#2563eb] text-[#2563eb]' : 'border-transparent text-slate-500'}`}>
-                {item === 'All Opportunities' ? 'All Opportunities' : item === 'Awaiting GM Review' ? 'Awaiting GM Review' : item === 'Awaiting MD Decision' ? 'Awaiting MD Decision' : item} ({tabCount(item)})
+                {item === 'All Opportunities' ? 'All Opportunities' : item === 'Awaiting Proposal Review' ? 'Awaiting Proposal Review' : item === 'Awaiting GM Review' ? 'Awaiting GM Review' : item === 'Awaiting MD Decision' ? 'Awaiting MD Decision' : item} ({tabCount(item)})
               </button>
             ))}
             <div className="relative">

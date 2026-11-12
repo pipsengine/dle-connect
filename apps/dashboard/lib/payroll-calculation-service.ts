@@ -1,7 +1,7 @@
 import type { DleEmployeeDirectoryRow } from '@/lib/dle-enterprise-db';
 import { applyPayrollEmployeeOptions } from '@/lib/payroll-employee-options-store';
 import { invalidatePayrollEmployeeCache, payrollDataSourceInfo, readDirectoryEmployees, readPayrollEmployees } from '@/lib/payroll-employee-source';
-import { mergeTimesheetDayRateEarnings, calculatePayrollEarnings, resolvePayrollEarningProfile } from '@/lib/payroll-earnings-engine';
+import { mergeTimesheetDayRateEarnings, calculatePayrollEarnings, displayEmploymentGrade, resolvePayrollEarningProfile } from '@/lib/payroll-earnings-engine';
 import { contractEmployeeCode, employeeStartsAfterPayrollPeriod, isEmployeeExcludedFromPayrollRun, isPensionEligibleStaff, isTimesheetWagePayrollEmployee, payrollActiveEmployees, payrollRunPackShortLabel, type PayrollRunExclusionEmployee } from '@/lib/payroll-employee-classification';
 import { registerPayrollAdjustmentsChangeHandler, adjustmentsFileMtime } from '@/lib/payroll-period-earning-adjustments-store';
 import { enterprisePayrollSourceLabel, isEnterprisePayrollPeriod } from '@/lib/payroll-enterprise-source';
@@ -60,6 +60,8 @@ export type PayrollCalculationRecord = {
   employmentStatus: string;
   payrollGroup: string;
   salaryGrade: string;
+  jobGrade?: string;
+  employmentGrade?: string;
   payCurrency: string;
   hasDualCurrencyPayroll?: boolean;
   usdPackageGross?: number | null;
@@ -1232,6 +1234,8 @@ const computePayrollForPeriod = async (requestedPeriod: string): Promise<Payroll
       employmentStatus: employee.status,
       payrollGroup: variant.payrollGroup,
       salaryGrade: dailyRateEmployee ? (rates.ratePerDay > 0 ? 'Daily Rate' : 'Zero Daily Rate') : employee.salaryGrade || employee.jobGrade || 'Unassigned',
+      jobGrade: compact(employee.jobGrade),
+      employmentGrade: displayEmploymentGrade(employee),
       payCurrency: variant.payCurrency,
       hasDualCurrencyPayroll: variant.hasDualCurrencyPayroll,
       usdPackageGross: variant.usdPackageGross,

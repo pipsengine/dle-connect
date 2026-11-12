@@ -352,6 +352,11 @@ export const assertBimonthlyEqualsMonths = (line: CycleEmployeeLine) => {
   }
 };
 
+/** Directory statuses that mean the person must leave the telephone allowance schedule. */
+export const isInactiveDirectoryStatus = (status: string | null | undefined) =>
+  /terminated|resigned|retired|inactive|deceased|exited|separated|suspended|blacklist|contract expired|\bended\b/i
+    .test(String(status || '').trim());
+
 const EDITABLE: TelephoneAllowanceStatus[] = ['DRAFT', 'RETURNED_TO_IT', 'RETURNED_FOR_CORRECTION', 'IT_VALIDATION'];
 const HR_REVIEWABLE: TelephoneAllowanceStatus[] = ['PENDING_HR_REVIEW'];
 

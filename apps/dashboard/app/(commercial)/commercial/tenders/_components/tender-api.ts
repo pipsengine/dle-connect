@@ -21,19 +21,42 @@ export async function tenderPost<T>(body: unknown) {
   return json.data as T;
 }
 
+const fileToBase64 = (file: File) => new Promise<string>((resolve, reject) => {
+  const reader = new FileReader();
+  reader.onerror = () => reject(new Error(`Unable to read ${file.name}.`));
+  reader.onload = () => {
+    const result = String(reader.result || '');
+    const marker = 'base64,';
+    const index = result.indexOf(marker);
+    resolve(index >= 0 ? result.slice(index + marker.length) : result);
+  };
+  reader.readAsDataURL(file);
+});
+
+/** Upload via JSON/base64 so IIS / HttpPlatform does not have to parse multipart FormData. */
 export async function tenderUpload(opportunityId: string, file: File, category: string) {
-  const form = new FormData();
-  form.set('opportunityId', opportunityId);
-  form.set('category', category);
-  form.set('file', file);
-  const response = await fetch('/api/commercial/tenders', {
-    method: 'POST',
-    credentials: 'same-origin',
-    body: form,
-  });
-  const json = await response.json().catch(() => ({}));
-  if (!response.ok || json.status === 'error') throw new Error(json.error || 'Upload failed.');
-  return json.data;
+  if (file.size > 12 * 1024 * 1024) throw new Error(`${file.name} exceeds the 12 MB limit.`);
+  const contentBase64 = await fileToBase64(file);
+  try {
+    return await tenderPost({
+      action: 'upload-document',
+      opportunityId,
+      category,
+      fileName: file.name,
+      contentType: file.type || 'application/octet-stream',
+      contentBase64,
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : '';
+    if (/unterminated string|unexpected end of json|position \d+/i.test(message)) {
+      throw new Error(`${file.name} could not be uploaded (request too large after encoding). Use a file under 12 MB.`);
+    }
+    throw error;
+  }
+}
+
+export async function tenderDeleteDocument(documentId: string) {
+  return tenderPost({ action: 'delete-document', documentId });
 }
 
 export const money = (value: number, currency = 'NGN') => {

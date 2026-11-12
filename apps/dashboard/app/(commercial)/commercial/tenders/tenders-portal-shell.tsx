@@ -56,6 +56,8 @@ export function TendersPortalShell({ children }: Props) {
           roles: Array.isArray(data.roles) ? data.roles : [],
           isGlobalAdmin: Boolean(data.isGlobalAdmin),
           sub: data.sub,
+          employeeCode: data.employeeCode,
+          username: data.username,
         });
         setAllowed(ok);
         if (!ok) router.replace('/access-denied');

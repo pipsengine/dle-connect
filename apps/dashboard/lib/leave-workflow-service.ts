@@ -255,7 +255,7 @@ const readPendingLeaveRequestsFromDb = async (employees: DleEmployeeDirectoryRow
       .filter((item) => PENDING_WORKFLOW_STATUSES.has(item.status) || isPendingLeaveStatus(item.status));
   try {
     const result = await pool.request().query(`
-SELECT [Id],[EmployeeId],[FullName],[LeaveType],[StartDate],[EndDate],[Days],[StatusName],[WorkflowStage],[ManagerName],[ActingOfficer],[CreatedAt],[UpdatedAt],[CommentsJson],[WorkflowJson]
+SELECT [Id],[EmployeeId],[FullName],[LeaveType],[StartDate],[EndDate],[Days],[StatusName],[WorkflowStage],[ManagerName],[ActingOfficer],[CreatedAt],[UpdatedAt],[CommentsJson],[WorkflowJson],[ExceptionsJson]
 FROM [hris].[LeaveApplications]
 WHERE ([StatusName] IN (N'Under Review', N'Submitted', N'Line Manager Review', N'HR Review')
    OR [WorkflowStage] IN (N'Supervisor', N'HR'))
@@ -632,6 +632,9 @@ export const loadWorkflowLeaveRequests = async (options?: {
       startDate: item.startDate || existing.startDate,
       endDate: item.endDate || existing.endDate,
       leaveType: item.leaveType || existing.leaveType,
+      days: item.days || existing.days,
+      selectedDates: item.selectedDates?.length ? item.selectedDates : existing.selectedDates,
+      excludedHolidays: item.excludedHolidays?.length ? item.excludedHolidays : existing.excludedHolidays,
       comments: mergeLeaveComments(existing.comments, item.comments),
       workflow: item.workflow?.length ? item.workflow : existing.workflow,
       attachmentNames: existing.attachmentNames?.length ? existing.attachmentNames : item.attachmentNames,
@@ -2570,6 +2573,22 @@ export const upsertEssLeaveRequestToDb = async (item: EssLeaveRequest, employees
     ...(leaveType === 'Annual Leave' && employee && !isFourteenDayPaidLeaveEmployee(employee) && !isConfirmedPermanent(employee) && !hrSetThisEmployee ? ['Annual Leave locked pending confirmation of appointment'] : []),
   ];
   const blocked = exceptionMessages.some((entry) => entry.includes('not found') || entry.includes('locked'));
+  let selectedDates = item.selectedDates || [];
+  let excludedHolidays = item.excludedHolidays || [];
+  if (!selectedDates.length) {
+    try {
+      const existingSelection = await pool.request()
+        .input('ExistingId', sql.NVarChar(120), item.id)
+        .query(`SELECT [ExceptionsJson] FROM [hris].[LeaveApplications] WHERE [Id]=@ExistingId`);
+      const stored = decodeLeaveExceptionsPayload(existingSelection.recordset?.[0]?.ExceptionsJson);
+      if (stored.selectedDates.length) {
+        selectedDates = stored.selectedDates;
+        if (!excludedHolidays.length) excludedHolidays = stored.excludedHolidays;
+      }
+    } catch {
+      // A missing selection must not block the status update.
+    }
+  }
   const requester = employee || resolveEmployeeReference(employees, item.employeeId);
   const resolvedManager = requester ? resolveLineManagerForEmployee(requester, employees) : null;
   const managerName = compact(item.lineManagerName)
@@ -2600,8 +2619,8 @@ export const upsertEssLeaveRequestToDb = async (item: EssLeaveRequest, employees
     .input('SupportingDocuments', sql.Int, Number(item.attachmentNames?.length || 0))
     .input('ExceptionsJson', sql.NVarChar(sql.MAX), encodeLeaveExceptionsPayload({
       messages: exceptionMessages,
-      selectedDates: item.selectedDates || [],
-      excludedHolidays: item.excludedHolidays || [],
+      selectedDates,
+      excludedHolidays,
     }))
     .input('WorkflowJson', sql.NVarChar(sql.MAX), JSON.stringify(item.workflow || []))
     .input('CommentsJson', sql.NVarChar(sql.MAX), JSON.stringify(item.comments || []))

@@ -1,7 +1,7 @@
 import sql from 'mssql';
 import path from 'node:path';
 import { ensureFinanceDb } from '@/lib/finance-intelligence/store';
-import { convertAmountToNgn, resolveApprovalChain, applyMdLineManagerLastApproverRule, applyGmApprovesOnceBeforeCfo, applyProjectReportingManagerFirst, skipProjectReportingManagerWhenSameAsPm, stripLeadingReportingManager, isProjectChainWithoutReportingManager, bandRequiresMdCeo, isProjectPaymentPath, isGmApprovalStage } from '@/lib/finance-intelligence/approval-matrix-service';
+import { convertAmountToNgn, resolveApprovalChain, applyMdLineManagerLastApproverRule, applyGmApprovesOnceBeforeCfo, applyProjectReportingManagerFirst, skipProjectReportingManagerWhenSameAsPm, stripLeadingReportingManager, isProjectChainWithoutReportingManager, bandRequiresMdCeo, isProjectPaymentPath, isGmApprovalStage, placeDepartmentMdCeoLast } from '@/lib/finance-intelligence/approval-matrix-service';
 import {
   assertReportingManagerRoutable,
   isReportingManagerStage,
@@ -399,6 +399,7 @@ const resolveInitialStage = async (
       requesterCode: context?.requesterCode,
       supervisorName: context?.supervisorName,
       costCentre: context?.costCentre,
+      includeDepartmentMdLast: true,
     });
     if (matched) {
       let stages = applyHrManagerAfterReportingManager(matched.stages, context?.expenseNature);
@@ -412,6 +413,7 @@ const resolveInitialStage = async (
         paymentType,
         costCentre: context?.costCentre,
       });
+      stages = placeDepartmentMdCeoLast(stages, context?.department, matched.amountNgn);
       return {
         stage: stages[0] || matched.currentStage,
         status: 'Pending Approval' as const,
@@ -472,6 +474,8 @@ const resolveInitialStage = async (
     pathType: isProject ? 'Project' : 'Non-project',
     requesterCode: context?.requesterCode,
     supervisorName: context?.supervisorName,
+    department: context?.department,
+    includeDepartmentMdLast: true,
   });
   fallbackStages = await skipProjectReportingManagerWhenSameAsPm({
     stages: fallbackStages,
@@ -492,6 +496,7 @@ const resolveInitialStage = async (
   });
   fallbackStages = applyHrManagerAfterReportingManager(fallbackStages, context?.expenseNature);
   fallbackStages = await withCostCentre(fallbackStages);
+  fallbackStages = placeDepartmentMdCeoLast(fallbackStages, context?.department, amountNgn);
   return {
     stage: fallbackStages[0],
     status: 'Pending Approval' as const,
@@ -4051,8 +4056,17 @@ export const transitionPaymentRequest = async (input: {
       if (!uploads.length) {
         throw new Error('Upload at least one retirement receipt / supporting document.');
       }
-      if ((existing.attachments?.length || 0) + uploads.length > PAYMENT_ATTACHMENT_MAX_FILES) {
-        throw new Error(`You can attach up to ${PAYMENT_ATTACHMENT_MAX_FILES} documents in total.`);
+      // Supporting docs and treasury payment proof do not use the retirement quota.
+      const existingRetirementCount = (existing.attachments || [])
+        .filter((item) => (compact(item.kind) || 'supporting') === 'retirement-evidence')
+        .length;
+      if (existingRetirementCount + uploads.length > PAYMENT_ATTACHMENT_MAX_FILES) {
+        const remaining = Math.max(0, PAYMENT_ATTACHMENT_MAX_FILES - existingRetirementCount);
+        throw new Error(
+          remaining
+            ? `You can attach up to ${PAYMENT_ATTACHMENT_MAX_FILES} retirement receipts. ${existingRetirementCount} already on this request — add at most ${remaining} more.`
+            : `This request already has ${PAYMENT_ATTACHMENT_MAX_FILES} retirement receipts. Ask Treasury to return it after clearing older receipts, or submit fewer files.`,
+        );
       }
       const prepared = uploads.map((item) => normalizePaymentAttachmentUpload({
         ...item,

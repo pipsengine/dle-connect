@@ -1149,3 +1149,109 @@ export const buildExitClearanceFinalReadyEmail = (input: {
   ],
   footerNote: 'Final Payroll remains locked until HR and Finance signatures are recorded.',
 }, input.baseUrl);
+
+export type PurchaseRequisitionEmailEvent =
+  | 'submitted'
+  | 'line-manager-approved'
+  | 'procurement-acknowledged'
+  | 'assigned-buyer'
+  | 'returned'
+  | 'rejected'
+  | 'reminder';
+
+type PurchaseRequisitionEmailPr = {
+  prId: string;
+  title: string;
+  status?: string | null;
+  requesterName?: string | null;
+  department?: string | null;
+  project?: string | null;
+  site?: string | null;
+  location?: string | null;
+  currency?: string | null;
+  estimatedAmount?: number | null;
+  requiredDate?: string | null;
+  currentWith?: string | null;
+  assignedBuyer?: string | null;
+  lineManagerName?: string | null;
+};
+
+const purchaseRequisitionDetails = (pr: PurchaseRequisitionEmailPr) => {
+  const amount = pr.estimatedAmount == null
+    ? null
+    : pr.currency && !/^ngn$/i.test(String(pr.currency))
+      ? `${String(pr.currency).toUpperCase()} ${Number(pr.estimatedAmount).toLocaleString('en-NG', { maximumFractionDigits: 2 })}`
+      : moneyNgn(Number(pr.estimatedAmount));
+  return [
+    { label: 'PR number', value: pr.prId },
+    { label: 'Title', value: pr.title || '—' },
+    ...(pr.requesterName ? [{ label: 'Requester', value: pr.requesterName }] : []),
+    ...(pr.department ? [{ label: 'Department', value: pr.department }] : []),
+    ...(pr.project ? [{ label: 'Project', value: pr.project }] : []),
+    ...(pr.site || pr.location ? [{ label: 'Site / location', value: [pr.site, pr.location].filter(Boolean).join(' · ') }] : []),
+    ...(amount ? [{ label: 'Estimate', value: amount }] : []),
+    ...(pr.requiredDate ? [{ label: 'Required by', value: formatEmailDate(pr.requiredDate) }] : []),
+    ...(pr.assignedBuyer ? [{ label: 'Assigned buyer', value: pr.assignedBuyer }] : []),
+    ...(pr.currentWith ? [{ label: 'Current with', value: pr.currentWith }] : []),
+    ...(pr.lineManagerName ? [{ label: 'Line manager', value: pr.lineManagerName }] : []),
+  ];
+};
+
+export const purchaseRequisitionPortalUrl = (prId: string, baseUrl?: string | null) =>
+  `${String(baseUrl || '').replace(/\/$/, '')}/procurement/purchase-requisitions?prId=${encodeURIComponent(prId)}`;
+
+export const buildPurchaseRequisitionWorkflowEmail = (input: {
+  event: PurchaseRequisitionEmailEvent;
+  pr: PurchaseRequisitionEmailPr;
+  recipientName: string;
+  actorName?: string;
+  intro: string;
+  subject: string;
+  headline: string;
+  statusBadge?: string;
+  note?: string;
+  comment?: string;
+  portalLink: string;
+  baseUrl?: string | null;
+}) => {
+  const toneByEvent: Record<PurchaseRequisitionEmailEvent, 'info' | 'success' | 'warning' | 'danger'> = {
+    submitted: 'warning',
+    'line-manager-approved': 'success',
+    'procurement-acknowledged': 'success',
+    'assigned-buyer': 'info',
+    returned: 'warning',
+    rejected: 'danger',
+    reminder: 'warning',
+  };
+  const actionLabelByEvent: Record<PurchaseRequisitionEmailEvent, string> = {
+    submitted: 'Review purchase requisition',
+    'line-manager-approved': 'Open purchase requisition',
+    'procurement-acknowledged': 'Open purchase requisition',
+    'assigned-buyer': 'Open assigned requisition',
+    returned: 'Revise purchase requisition',
+    rejected: 'Open purchase requisition',
+    reminder: 'Approve purchase requisition',
+  };
+  const tone = toneByEvent[input.event];
+  return withBrand({
+    recipientName: input.recipientName,
+    subject: input.subject,
+    module: 'Procurement',
+    headline: input.headline,
+    intro: input.intro,
+    tone,
+    statusBadge: input.statusBadge || input.pr.status || undefined,
+    details: [
+      ...purchaseRequisitionDetails(input.pr),
+      ...(input.actorName ? [{ label: 'Action by', value: input.actorName }] : []),
+      ...(input.comment ? [{ label: 'Comment', value: input.comment }] : []),
+    ],
+    note: input.note,
+    actions: [{
+      href: input.portalLink,
+      label: actionLabelByEvent[input.event],
+      tone: tone === 'danger' ? 'danger' : tone === 'success' ? 'success' : 'primary',
+    }],
+    footerNote: 'Sign in to DLE Connect to review the full requisition, attachments, and approval history.',
+  }, input.baseUrl);
+};

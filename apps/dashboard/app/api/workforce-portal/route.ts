@@ -1022,6 +1022,7 @@ export async function GET(request: Request) {
           actingOfficer: item.relieverName || 'Not configured',
           supportingDocuments: item.attachmentNames?.length || 0,
           exceptions: [] as string[],
+          selectedDates: item.selectedDates,
           approvalStatus: item.status === 'Line Manager Review' ? 'Awaiting Line Manager' : item.status === 'HR Review' ? 'Awaiting HR' : 'Pending',
         })),
       ...essContext.leave.applications.map((item) => ({
@@ -1039,6 +1040,9 @@ export async function GET(request: Request) {
       actingOfficer: item.actingOfficer,
       supportingDocuments: item.supportingDocuments,
       exceptions: item.exceptions,
+      selectedDates: item.selectedDates?.length
+        ? item.selectedDates
+        : employeeRequests.find((request) => request.id === item.id)?.selectedDates,
       approvalStatus: item.approvalStatus,
     })),
     ];
@@ -1107,7 +1111,7 @@ export async function GET(request: Request) {
       })),
       ...employeeLeaveApplications
         .filter((item) => ['Submitted', 'Under Review', 'Approved', 'Completed', 'Line Manager Review', 'HR Review'].includes(item.status))
-        .map((item) => ({ id: item.id, label: `${item.leaveType} - ${item.fullName}`, from: item.startDate, to: item.endDate, status: item.status, type: item.leaveType, scope: item.department })),
+        .map((item) => ({ id: item.id, label: `${item.leaveType} - ${item.fullName}`, from: item.startDate, to: item.endDate, dates: item.selectedDates, days: item.days, status: item.status, type: item.leaveType, scope: item.department })),
       ...employeeRequests
         .filter((item) => /leave/i.test(item.category) && item.startDate && item.endDate && !employeeLeaveApplications.some((application) => application.id === item.id))
         .filter((item) => ['Submitted', 'Line Manager Review', 'HR Review', 'Approved'].includes(item.status))
@@ -1116,6 +1120,8 @@ export async function GET(request: Request) {
           label: `${item.leaveType || 'Leave'} - ${employee.fullName}`,
           from: item.startDate || '',
           to: item.endDate || '',
+          dates: item.selectedDates,
+          days: item.days,
           status: item.status,
           type: item.leaveType || 'Leave',
           scope: employee.department || 'Unassigned',

@@ -3,6 +3,7 @@ import { effectivePermissionsForUser } from '@/lib/auth/access-control-store';
 import { isSuperActor } from '@/lib/auth/role-delegation';
 import { AUTH_COOKIE, verifySessionToken } from '@/lib/auth/session';
 import {
+  canAccessProcurementWorkflowApis,
   canApproveProcurement,
   canCreateProcurement,
   canEditProcurement,
@@ -59,14 +60,26 @@ const permissionsFrom = async (session: NonNullable<Awaited<ReturnType<typeof se
 const actorFrom = (session: NonNullable<Awaited<ReturnType<typeof sessionFrom>>>) =>
   session.fullName || session.username || 'Procurement User';
 
+const WORKFLOW_GET_RESOURCES = new Set([
+  'purchase-requisitions',
+  'pr-workflow-context',
+  'approvals-queue',
+  'single-source-justifications',
+  'single-source-justification',
+  'lookups',
+]);
+
 export async function GET(request: NextRequest) {
   const session = await sessionFrom(request);
   if (!session) return err(401, 'Unauthorized');
   const permissions = await permissionsFrom(session);
-  if (!canViewProcurement(permissions, session.isGlobalAdmin)) return err(403, 'Forbidden');
-
   const { searchParams } = new URL(request.url);
   const resource = searchParams.get('resource') || 'dashboard';
+  const fullProcurementAccess = canViewProcurement(permissions, session.isGlobalAdmin);
+  const workflowAccess = canAccessProcurementWorkflowApis(permissions, session);
+  if (!fullProcurementAccess && !(workflowAccess && WORKFLOW_GET_RESOURCES.has(resource))) {
+    return err(403, 'Forbidden');
+  }
 
   try {
     switch (resource) {
@@ -90,8 +103,12 @@ export async function GET(request: NextRequest) {
       }
       case 'next-supplier-code':
         return ok({ code: await nextSupplierCode() });
-      case 'purchase-requisitions':
-        return ok(await listPurchaseRequisitions());
+      case 'purchase-requisitions': {
+        const rows = await listPurchaseRequisitions();
+        if (fullProcurementAccess) return ok(rows);
+        const { filterPurchaseRequisitionsForSession } = await import('@/lib/procurement/pr-workflow');
+        return ok(filterPurchaseRequisitionsForSession(rows, session, permissions));
+      }
       case 'pr-workflow-context': {
         const { buildPrWorkflowContext } = await import('@/lib/procurement/pr-workflow');
         return ok(await buildPrWorkflowContext(session, permissions));
@@ -161,9 +178,14 @@ export async function POST(request: NextRequest) {
   const actor = actorFrom(session);
   const body = await request.json().catch(() => ({}));
   const action = String(body.action || '');
-  const workflowAction = action === 'submit-pr' || action === 'action-pr';
+  const workflowAction = action === 'submit-pr'
+    || action === 'action-pr'
+    || action === 'remind-pr'
+    || action === 'upsert-ssj'
+    || action === 'submit-ssj'
+    || action === 'action-ssj';
   if (workflowAction) {
-    if (!canViewProcurement(permissions, session.isGlobalAdmin)) return err(403, 'Forbidden');
+    if (!canAccessProcurementWorkflowApis(permissions, session)) return err(403, 'Forbidden');
   } else if (!canCreateProcurement(permissions, session.isGlobalAdmin) && !canEditProcurement(permissions, session.isGlobalAdmin)) {
     return err(403, 'Forbidden');
   }
@@ -217,6 +239,12 @@ export async function POST(request: NextRequest) {
           assignedBuyer: payload.assignedBuyer ? String(payload.assignedBuyer) : undefined,
           assignedBuyerCode: payload.assignedBuyerCode ? String(payload.assignedBuyerCode) : undefined,
         }, session, permissions));
+      }
+      case 'remind-pr': {
+        const prId = String(body.prId || body.payload?.prId || '');
+        if (!prId) return err(400, 'prId required');
+        const { remindPurchaseRequisition } = await import('@/lib/procurement/pr-workflow');
+        return ok(await remindPurchaseRequisition(prId, session));
       }
       case 'parse-pr-import': {
         const fileName = String(body.fileName || body.payload?.fileName || 'import.xlsx');

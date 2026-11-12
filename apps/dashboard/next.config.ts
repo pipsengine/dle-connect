@@ -4,6 +4,8 @@ const nextConfig: NextConfig = {
   reactStrictMode: true,
   experimental: {
     externalDir: true,
+    // Middleware clones bodies; default 10MB truncates base64 tender uploads (12MB file ≈ 16MB JSON).
+    middlewareClientMaxBodySize: '20mb',
   },
   // Keep SQL/native deps out of the webpack graph (instrumentation + server routes).
   serverExternalPackages: [
@@ -36,6 +38,10 @@ const nextConfig: NextConfig = {
     ],
   },
   output: 'standalone',
+  // Windows returns EPERM when the file tracer readlinks Git pack files.
+  outputFileTracingExcludes: {
+    '*': ['**/.git/**'],
+  },
   transpilePackages: ['motion', 'motion-dom'],
   webpack: (config, {dev}) => {
     // HMR is disabled in AI Studio via DISABLE_HMR env var.

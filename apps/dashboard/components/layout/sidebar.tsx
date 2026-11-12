@@ -134,11 +134,20 @@ export function Sidebar({
   const pathname = usePathname();
   const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>({});
   const [permissions, setPermissions] = useState<string[]>([]);
-  const [sessionContext, setSessionContext] = useState<{ roles: string[]; department: string; unit: string; isGlobalAdmin: boolean }>({
+  const [sessionContext, setSessionContext] = useState<{
+    roles: string[];
+    department: string;
+    unit: string;
+    isGlobalAdmin: boolean;
+    employeeCode: string;
+    username: string;
+  }>({
     roles: [],
     department: '',
     unit: '',
     isGlobalAdmin: false,
+    employeeCode: '',
+    username: '',
   });
 
   useEffect(() => {
@@ -152,6 +161,8 @@ export function Sidebar({
             department: String(json.data.department || ''),
             unit: String(json.data.unit || ''),
             isGlobalAdmin: Boolean(json.data.isGlobalAdmin),
+            employeeCode: String(json.data.employeeCode || ''),
+            username: String(json.data.username || ''),
           });
         }
       })
@@ -165,6 +176,8 @@ export function Sidebar({
       unit: sessionContext.unit,
       permissions,
       isGlobalAdmin: sessionContext.isGlobalAdmin,
+      employeeCode: sessionContext.employeeCode,
+      username: sessionContext.username,
     };
     const platformOnly = sessionContext.roles.length > 0
       && sessionContext.roles

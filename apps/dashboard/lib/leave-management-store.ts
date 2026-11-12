@@ -12,6 +12,7 @@ import {
 } from '@/lib/leave-request-shared';
 import { resolveNigeriaPublicHolidays } from '@/lib/nigeria-public-holidays';
 import { computeLeaveUtilizationPct, normalizeAnnualLeaveBalances } from '@/lib/leave-reports-engine';
+import { decodeLeaveExceptionsPayload, encodeLeaveExceptionsPayload } from '@/lib/leave-day-engine';
 
 export type LeaveRole = 'Leave Administrator' | 'HR Officer' | 'HR Manager' | 'Department Manager' | 'Supervisor' | 'Payroll Officer' | 'Employee' | 'Executive' | 'System Administrator' | 'Super Administrator';
 export type LeaveStatus = 'Draft' | 'Submitted' | 'Under Review' | 'Approved' | 'Rejected' | 'Withdrawn' | 'Cancelled' | 'Terminated' | 'Completed';
@@ -96,6 +97,8 @@ export type LeaveApplicationRecord = {
   actingOfficer: string;
   supportingDocuments: number;
   exceptions: string[];
+  /** Chargeable days the employee selected. Empty on older records that only stored the period. */
+  selectedDates?: string[];
   auditCount: number;
   createdAt: string;
   updatedAt: string;
@@ -922,6 +925,7 @@ type EssLeaveRequest = {
   startDate?: string;
   endDate?: string;
   days?: number;
+  selectedDates?: string[];
   paidLeave?: boolean;
   relieverEmployeeId?: string;
   relieverName?: string;
@@ -963,6 +967,7 @@ const rowToApplication = (row: DbLeaveApplicationRow): LeaveApplicationRecord =>
   actingOfficer: row.ActingOfficer,
   supportingDocuments: Number(row.SupportingDocuments || 0),
   exceptions: parseJsonArray(row.ExceptionsJson),
+  selectedDates: decodeLeaveExceptionsPayload(row.ExceptionsJson).selectedDates,
   auditCount: Number(row.AuditCount || 0),
   createdAt: new Date(row.CreatedAt).toISOString(),
   updatedAt: new Date(row.UpdatedAt).toISOString(),
@@ -1061,6 +1066,15 @@ const upsertEssLeaveRequests = async (pool: sql.ConnectionPool, employees: DleEm
   ].filter(([key]) => Boolean(key)) as Array<[string, DleEmployeeDirectoryRow]>));
   const requests = await readEssLeaveRequests();
   const hrSetAnnualLeave = await readHrSetAnnualLeaveKeys(pool);
+  const storedSelections = new Map<string, ReturnType<typeof decodeLeaveExceptionsPayload>>();
+  try {
+    const existing = await pool.request().query(`SELECT [Id],[ExceptionsJson] FROM [hris].[LeaveApplications]`);
+    for (const row of existing.recordset || []) {
+      storedSelections.set(String(row.Id || ''), decodeLeaveExceptionsPayload(row.ExceptionsJson));
+    }
+  } catch {
+    // Keep syncing requests when the existing-selection read is unavailable.
+  }
   for (const item of requests) {
     const employee = employeeById.get(item.employeeId);
     const rawStatus = item.status;
@@ -1077,6 +1091,8 @@ const upsertEssLeaveRequests = async (pool: sql.ConnectionPool, employees: DleEm
       ...(leaveType === 'Annual Leave' && employee && !isFourteenDayPaidLeaveEmployee(employee) && !isConfirmedPermanent(employee) && ![employee.employeeId, employee.employeeCode, item.employeeId].some((value) => hrSetAnnualLeave.has(String(value || '').trim().toUpperCase())) ? ['Annual Leave locked pending confirmation of appointment'] : []),
     ];
     const blocked = exceptions.some((entry) => entry.includes('not found') || entry.includes('locked'));
+    const priorSelection = storedSelections.get(item.id);
+    const selectedDates = item.selectedDates?.length ? item.selectedDates : priorSelection?.selectedDates || [];
     await pool.request()
       .input('Id', sql.NVarChar(120), item.id)
       .input('SourceSystem', sql.NVarChar(80), 'ESS Leave Request')
@@ -1098,7 +1114,11 @@ const upsertEssLeaveRequests = async (pool: sql.ConnectionPool, employees: DleEm
       .input('AvailableBalance', sql.Decimal(9, 2), 0)
       .input('ActingOfficer', sql.NVarChar(180), clean(item.relieverName) || clean(item.relieverEmployeeId) || 'Not configured')
       .input('SupportingDocuments', sql.Int, 0)
-      .input('ExceptionsJson', sql.NVarChar(sql.MAX), JSON.stringify(exceptions))
+      .input('ExceptionsJson', sql.NVarChar(sql.MAX), encodeLeaveExceptionsPayload({
+        messages: exceptions,
+        selectedDates,
+        excludedHolidays: priorSelection?.excludedHolidays || [],
+      }))
       .query(`
 MERGE [hris].[LeaveApplications] AS target
 USING (SELECT @Id AS [Id]) AS source

@@ -1,9 +1,9 @@
 import sql from 'mssql';
 import { getDleEnterpriseDbPool } from '@/lib/dle-enterprise-db';
-import { extractSupervisorEmployeeCode, supervisorCodeLookupVariants } from '@/lib/timesheet-agege-blasting';
-import { mobilizationBelongsOnSheet } from '@/lib/timesheet-mobilization-sheet';
+import { extractSupervisorEmployeeCode, supervisorCodeLookupVariants, timesheetLocationsMatch } from '@/lib/timesheet-agege-blasting';
+import { bookedOffshoreLinesForSheet, mobilizationBelongsOnSheet } from '@/lib/timesheet-mobilization-sheet';
 import { confirmedRemovalEmployeeCodes, namesMatchSupervisor } from '@/lib/timesheet-crew-store';
-import { listActiveMobilizations } from '@/lib/timesheet-portal-mobilization-store';
+import { listActiveMobilizations, type ActiveMobilization } from '@/lib/timesheet-portal-mobilization-store';
 import { approvalBlocksRevision, openTimesheetApproval } from '@/lib/timesheet-approval-store';
 
 const text = (value: unknown) => String(value ?? '').trim();
@@ -951,23 +951,20 @@ export const resolveTimesheetEntry = async (input: { periodId: string; workDate:
     return { ...line, allocations };
   };
   let crew: Array<Record<string, unknown>> = [];
-  let legacyOffshoreCodes = new Set<string>();
-  const assignedHere = new Set<string>();
+  const legacyOffshore = await connection.request().input('WorkDate', sql.Date, workDate).query(`
+    SELECT [EmployeeCode] FROM [tsmgmt].[Records]
+    WHERE [Area] = N'offshore' AND [Status] = N'Active' AND [WorkDate] <= @WorkDate AND ([EffectiveTo] IS NULL OR [EffectiveTo] >= @WorkDate)
+  `).catch(() => ({ recordset: [] as Record<string, unknown>[] }));
+  const legacyOffshoreCodes = new Set((legacyOffshore.recordset || []).map((row) => text(row.EmployeeCode).toUpperCase()));
   if (!timesheet) {
     const coveringRows = await loadCoveringCrewAssignments(connection, workDate, supervisor, supervisorCode);
-    const offshore = await connection.request().input('WorkDate', sql.Date, workDate).query(`
-      SELECT [EmployeeCode] FROM [tsmgmt].[Records]
-      WHERE [Area] = N'offshore' AND [Status] = N'Active' AND [WorkDate] <= @WorkDate AND ([EffectiveTo] IS NULL OR [EffectiveTo] >= @WorkDate)
-    `).catch(() => ({ recordset: [] as Record<string, unknown>[] }));
-    const offshoreCodes = new Set((offshore.recordset || []).map((row) => text(row.EmployeeCode).toUpperCase()));
-    legacyOffshoreCodes = offshoreCodes;
+    const offshoreCodes = legacyOffshoreCodes;
     const seen = new Set<string>();
     crew = [];
     for (const row of coveringRows) {
       const code = text(row.EmployeeCode);
       if (!isContractEmployee(code) || seen.has(code)) continue;
       seen.add(code);
-      assignedHere.add(code.toUpperCase());
       let operationalStatus = text(row.OperationalStatus) || 'Active on Crew';
       if (leaveCodes.has(code.toUpperCase())) operationalStatus = 'Approved Leave';
       else if (offshoreCodes.has(code.toUpperCase())) operationalStatus = 'Mobilized Offshore';
@@ -1128,7 +1125,22 @@ export const resolveTimesheetEntry = async (input: { periodId: string; workDate:
       else crew.push(person);
     }
   }
-  const offshoreCrew = await listActiveMobilizations(workDate).catch(() => []);
+  const offshoreCrew: ActiveMobilization[] = await listActiveMobilizations(workDate).catch(() => []);
+  const knownOffshore = new Set(offshoreCrew.map((row) => row.employeeCode.toUpperCase()));
+  for (const code of legacyOffshoreCodes) {
+    if (!code || knownOffshore.has(code)) continue;
+    offshoreCrew.push({
+      employeeCode: code,
+      employeeName: '',
+      site: 'OFFSHORE',
+      supervisor: '',
+      projectCode: '',
+      projectName: '',
+      effectiveFrom: '',
+      expectedReturn: '',
+      status: 'Mobilized',
+    });
+  }
   const mobilizedCodes = new Set(offshoreCrew.map((row) => row.employeeCode.toUpperCase()));
   const siteMatches = (site: string) => Boolean(location) && text(site).toLowerCase() === location.toLowerCase();
   const locationIsOffshore = offshoreCrew.some((row) => siteMatches(row.site));
@@ -1187,7 +1199,9 @@ export const resolveTimesheetEntry = async (input: { periodId: string; workDate:
   }
   let message = !dateAllowed ? `Work date ${workDate} is outside ${text(periodRow.Name)} (${start} to ${end}).` : !bookingAllowed ? `${text(periodRow.Name)} is ${periodStatus}. New booking is not open.` : '';
   if (!timesheet && locationIsOffshore) {
-    crew = offshoreForSupervisor.map((row) => ({
+    // Hosted mobilizations plus people this supervisor already books at OFFSHORE
+    // (including foreman-hosted crew carried from earlier days in the period).
+    const hosted = offshoreForSupervisor.map((row) => ({
       employeeCode: row.employeeCode,
       employeeName: row.employeeName,
       location: row.site,
@@ -1196,13 +1210,31 @@ export const resolveTimesheetEntry = async (input: { periodId: string; workDate:
       attendanceStatus: '',
       allocations: [],
     }));
-    if (!message) message = offshoreForSupervisor.length
+    const present = new Set(hosted.map((row) => text(row.employeeCode).toUpperCase()));
+    const carriedOffshore = bookedOffshoreLinesForSheet(crew, location || 'OFFSHORE')
+      .filter((row) => {
+        const code = text(row.employeeCode).toUpperCase();
+        return Boolean(code) && !present.has(code);
+      })
+      .map((row) => ({
+        employeeCode: text(row.employeeCode),
+        employeeName: text(row.employeeName),
+        location: text(row.location) || 'OFFSHORE',
+        workCenter: text(row.workCenter),
+        operationalStatus: 'Mobilized Offshore',
+        attendanceStatus: '',
+        allocations: Array.isArray(row.allocations) ? row.allocations : [],
+      }));
+    crew = [...hosted, ...carriedOffshore];
+    if (!message) message = crew.length
       ? 'These employees are mobilized to this offshore site. Hours stay empty until they are booked on this timesheet.'
       : 'No employees are mobilized to this offshore site for this supervisor on this date.';
   } else if (!timesheet) {
     crew = crew.filter((row) => {
       const code = text(row.employeeCode).toUpperCase();
-      if (assignedHere.has(code)) return true;
+      // Keep people this supervisor already booked at OFFSHORE even when the
+      // mobilization header names a foreman. Yard views still hide them in Entry.
+      if (timesheetLocationsMatch(text(row.location), 'OFFSHORE')) return true;
       return !mobilizedCodes.has(code) && !legacyOffshoreCodes.has(code);
     });
   }
@@ -1215,7 +1247,17 @@ export const resolveTimesheetEntry = async (input: { periodId: string; workDate:
       if (!current || text(row.AssignmentType) === 'Primary') assignmentByCode.set(code, row);
     }
     timesheet.lines = timesheet.lines.map((line) => {
-      const row = assignmentByCode.get(text(line.employeeCode).toUpperCase());
+      const code = text(line.employeeCode).toUpperCase();
+      const offshore = offshoreCrew.find((row) => text(row.employeeCode).toUpperCase() === code);
+      if (offshore || legacyOffshoreCodes.has(code)) {
+        if (!offshore) return line;
+        return {
+          ...line,
+          location: text(offshore.site) || line.location,
+          operationalStatus: line.operationalStatus === 'Approved Leave' ? line.operationalStatus : 'Mobilized Offshore',
+        };
+      }
+      const row = assignmentByCode.get(code);
       if (!row) return line;
       return {
         ...line,
@@ -1227,7 +1269,7 @@ export const resolveTimesheetEntry = async (input: { periodId: string; workDate:
     const present = new Set(timesheet.lines.map((row) => text(row.employeeCode).toUpperCase()));
     for (const row of coveringRows) {
       const code = text(row.EmployeeCode);
-      if (!isBookableCrewCode(code) || present.has(code.toUpperCase()) || removed.has(code.toUpperCase()) || (supervisorCode && code.toUpperCase() === supervisorCode.toUpperCase())) continue;
+      if (!isBookableCrewCode(code) || present.has(code.toUpperCase()) || removed.has(code.toUpperCase()) || mobilizedCodes.has(code.toUpperCase()) || legacyOffshoreCodes.has(code.toUpperCase()) || (supervisorCode && code.toUpperCase() === supervisorCode.toUpperCase())) continue;
       present.add(code.toUpperCase());
       const onLeave = leaveCodes.has(code.toUpperCase());
       timesheet.lines.push({

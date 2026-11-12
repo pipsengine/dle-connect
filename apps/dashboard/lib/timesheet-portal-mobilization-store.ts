@@ -1,6 +1,7 @@
 import sql from 'mssql';
 import { getDleEnterpriseDbPool } from '@/lib/dle-enterprise-db';
 import { namesMatchSupervisor } from '@/lib/timesheet-crew-store';
+import { mobilizationRosterSite } from '@/lib/timesheet-mobilization-sheet';
 import { openMobilizationApproval } from '@/lib/timesheet-approval-store';
 
 const text = (value: unknown) => String(value ?? '').trim();
@@ -15,7 +16,16 @@ const dateOnly = (value: unknown) => {
 const newId = (prefix: string) => `${prefix}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
 const OPEN_STATUSES = ['Planned', 'Mobilized', 'Extended'];
 
-export type MobilizationIssue = { severity: 'block' | 'warn'; code: string; message: string };
+export type MobilizationIssue = {
+  severity: 'block' | 'warn' | 'confirm';
+  code: string;
+  message: string;
+  currentSupervisor?: string;
+  targetSupervisor?: string;
+  mobilizationId?: string;
+  employeeRowId?: string;
+  projectCode?: string;
+};
 export type MobilizationCandidate = {
   code: string;
   name: string;
@@ -234,10 +244,16 @@ const loadPeople = async (connection: sql.ConnectionPool, codes: string[]) => {
   return result.recordset || [];
 };
 
-export const validateMobilizationEmployees = async (input: { employeeCodes: string[]; effectiveFrom: string; expectedReturn: string }) => {
+export const validateMobilizationEmployees = async (input: {
+  employeeCodes: string[];
+  effectiveFrom: string;
+  expectedReturn: string;
+  targetSupervisor?: string;
+}) => {
   const connection = await pool();
   const from = dateOnly(input.effectiveFrom);
   const expected = dateOnly(input.expectedReturn);
+  const targetSupervisor = text(input.targetSupervisor);
   if (!from || !expected) throw new Error('Mobilization date and expected return are required before eligibility can be checked.');
   if (expected < from) throw new Error('Expected return cannot be earlier than the mobilization date.');
   const codes = [...new Set((input.employeeCodes || []).map((code) => text(code).toUpperCase()).filter((code) => /^C\d/.test(code)))];
@@ -247,12 +263,20 @@ export const validateMobilizationEmployees = async (input: { employeeCodes: stri
   codes.forEach((code, index) => request.input(`Code${index}`, sql.NVarChar(80), code));
   const list = codes.map((_, index) => `@Code${index}`).join(', ');
   const open = codes.length ? await request.query(`
-    SELECT [EmployeeCode], [Status] FROM [tsmgmt].[MobilizationEmployees]
-    WHERE [EmployeeCode] IN (${list}) AND [Status] IN (N'Planned', N'Mobilized', N'Extended')
-      AND [EffectiveFrom] <= @To AND ISNULL([RevisedExpectedReturn], [ExpectedReturn]) >= @From
-      AND ([ActualReturn] IS NULL OR [ActualReturn] >= @From)
+    SELECT e.[Id] AS EmployeeRowId, e.[EmployeeCode], e.[Status], e.[MobilizationId],
+      h.[OffshoreSupervisor], h.[ProjectCode], h.[MobilizationNo]
+    FROM [tsmgmt].[MobilizationEmployees] e
+    INNER JOIN [tsmgmt].[Mobilizations] h ON h.[Id] = e.[MobilizationId]
+    WHERE e.[EmployeeCode] IN (${list}) AND e.[Status] IN (N'Planned', N'Mobilized', N'Extended')
+      AND e.[EffectiveFrom] <= @To AND ISNULL(e.[RevisedExpectedReturn], e.[ExpectedReturn]) >= @From
+      AND (e.[ActualReturn] IS NULL OR e.[ActualReturn] >= @From)
+    ORDER BY e.[EffectiveFrom] DESC
   `) : { recordset: [] as Record<string, unknown>[] };
-  const openCodes = new Set((open.recordset || []).map((row) => text(row.EmployeeCode).toUpperCase()));
+  const openByCode = new Map<string, Record<string, unknown>>();
+  for (const row of open.recordset || []) {
+    const code = text(row.EmployeeCode).toUpperCase();
+    if (!openByCode.has(code)) openByCode.set(code, row);
+  }
   let leaveCodes = new Set<string>();
   try {
     const leave = await connection.request().input('From', sql.Date, from).input('To', sql.Date, expected).query(`
@@ -288,7 +312,35 @@ export const validateMobilizationEmployees = async (input: { employeeCodes: stri
     else if (/terminated|inactive|resigned|retired|deceased/i.test(employment)) issues.push({ severity: 'block', code: 'inactive', message: `Employment status is ${employment}.` });
     else if (joined && joined > from) issues.push({ severity: 'block', code: 'not-started', message: `Employment starts ${joined}, after this mobilization date.` });
     if (row && !primaryCodes.has(code)) issues.push({ severity: 'warn', code: 'crew', message: 'No active primary crew assignment covers this date. Mobilization does not create one.' });
-    if (openCodes.has(code)) issues.push({ severity: 'block', code: 'mobilized', message: 'Already mobilized in an overlapping period.' });
+    const openRow = openByCode.get(code);
+    if (openRow) {
+      const currentSupervisor = text(openRow.OffshoreSupervisor) || 'another supervisor';
+      const sameSupervisor = Boolean(targetSupervisor) && namesMatchSupervisor(currentSupervisor, targetSupervisor);
+      if (sameSupervisor) {
+        issues.push({
+          severity: 'block',
+          code: 'mobilized',
+          message: `Already mobilized under ${currentSupervisor} in an overlapping period.`,
+          currentSupervisor,
+          targetSupervisor,
+          mobilizationId: text(openRow.MobilizationId),
+          employeeRowId: text(openRow.EmployeeRowId),
+          projectCode: text(openRow.ProjectCode),
+        });
+      } else {
+        const targetLabel = targetSupervisor || 'the selected offshore supervisor';
+        issues.push({
+          severity: 'confirm',
+          code: 'mobilized',
+          message: `This employee is already assigned to ${currentSupervisor}. Do you want to re-assign to ${targetLabel}?`,
+          currentSupervisor,
+          targetSupervisor: targetSupervisor || undefined,
+          mobilizationId: text(openRow.MobilizationId),
+          employeeRowId: text(openRow.EmployeeRowId),
+          projectCode: text(openRow.ProjectCode),
+        });
+      }
+    }
     if (leaveCodes.has(code)) issues.push({ severity: 'block', code: 'leave', message: 'Approved leave overlaps this mobilization.' });
     if (temporaryCodes.has(code)) issues.push({ severity: 'warn', code: 'deployment', message: 'A temporary deployment overlaps this mobilization.' });
     return {
@@ -300,15 +352,17 @@ export const validateMobilizationEmployees = async (input: { employeeCodes: stri
       supervisor: text(row?.supervisor),
       location: text(row?.location),
       employmentStatus: employment || 'Unknown',
-      operationalStatus: openCodes.has(code) ? 'Mobilized Offshore' : 'Active on Crew',
+      operationalStatus: openByCode.has(code) ? 'Mobilized Offshore' : 'Active on Crew',
       issues,
     };
   });
   const blocks = employees.filter((item) => item.issues.some((issue) => issue.severity === 'block'));
+  const confirms = employees.filter((item) => item.issues.some((issue) => issue.severity === 'confirm'));
   return {
     employees,
-    eligible: employees.length - blocks.length,
+    eligible: employees.length - blocks.length - confirms.length,
     blocked: blocks.length,
+    needsReassignConfirm: confirms.length,
     alreadyMobilized: employees.filter((item) => item.issues.some((issue) => issue.code === 'mobilized')).length,
     onLeave: employees.filter((item) => item.issues.some((issue) => issue.code === 'leave')).length,
     conflicts: employees.filter((item) => item.issues.some((issue) => issue.code === 'deployment')).length,
@@ -328,6 +382,7 @@ export const createMobilization = async (input: {
   transport?: string;
   notes?: string;
   employeeCodes: string[];
+  confirmReassignCodes?: string[];
   actor: string;
   role?: string;
 }) => {
@@ -337,6 +392,7 @@ export const createMobilization = async (input: {
   const site = text(input.site);
   const supervisor = text(input.supervisor);
   const reason = text(input.reason);
+  const confirmReassign = new Set((input.confirmReassignCodes || []).map((code) => text(code).toUpperCase()).filter(Boolean));
   const missing = [
     !projectCode && 'Offshore project',
     !site && 'Offshore location / site',
@@ -346,19 +402,62 @@ export const createMobilization = async (input: {
     !reason && 'Reason',
   ].filter(Boolean);
   if (missing.length) throw new Error(`${missing.join(', ')} ${missing.length === 1 ? 'is' : 'are'} required.`);
-  const validation = await validateMobilizationEmployees({ employeeCodes: input.employeeCodes, effectiveFrom: from, expectedReturn: expected });
+  const validation = await validateMobilizationEmployees({
+    employeeCodes: input.employeeCodes,
+    effectiveFrom: from,
+    expectedReturn: expected,
+    targetSupervisor: supervisor,
+  });
   const blocked = validation.employees.filter((item) => item.issues.some((issue) => issue.severity === 'block'));
+  const unconfirmed = validation.employees.filter((item) =>
+    item.issues.some((issue) => issue.severity === 'confirm' && issue.code === 'mobilized' && !confirmReassign.has(item.code)),
+  );
   if (!validation.employees.length) throw new Error('Select at least one employee.');
   if (blocked.length) throw new Error(`${blocked.length} selected employee${blocked.length === 1 ? '' : 's'} still have a blocking conflict. Remove them before creating the mobilization.`);
+  if (unconfirmed.length) throw new Error(`${unconfirmed.length} selected employee${unconfirmed.length === 1 ? '' : 's'} need a Yes/No re-assign confirmation before mobilizing.`);
   const connection = await pool();
   const today = new Date().toISOString().slice(0, 10);
   const status = from > today ? 'Planned' : 'Mobilized';
   const id = newId('mob');
   const count = await connection.request().query(`SELECT COUNT(1) AS total FROM [tsmgmt].[Mobilizations]`);
   const mobilizationNo = `MOB-${from.slice(0, 4)}-${String(Number(count.recordset?.[0]?.total || 0) + 1).padStart(4, '0')}`;
+  const reassigned: { code: string; fromSupervisor: string; mobilizationId: string; employeeRowId: string }[] = [];
+  for (const employee of validation.employees) {
+    if (!confirmReassign.has(employee.code)) continue;
+    const issue = employee.issues.find((item) => item.severity === 'confirm' && item.code === 'mobilized');
+    if (!issue?.employeeRowId || !issue.mobilizationId) continue;
+    reassigned.push({
+      code: employee.code,
+      fromSupervisor: text(issue.currentSupervisor) || 'previous supervisor',
+      mobilizationId: issue.mobilizationId,
+      employeeRowId: issue.employeeRowId,
+    });
+  }
   const transaction = new sql.Transaction(connection);
   await transaction.begin();
   try {
+    for (const item of reassigned) {
+      await new sql.Request(transaction)
+        .input('Id', sql.NVarChar(40), item.employeeRowId)
+        .input('Effective', sql.Date, from)
+        .query(`UPDATE [tsmgmt].[MobilizationEmployees]
+          SET [Status]=N'Transferred',
+              [ActualDemobilization]=ISNULL([ActualDemobilization], @Effective),
+              [ActualReturn]=ISNULL([ActualReturn], @Effective)
+          WHERE [Id]=@Id AND [Status] IN (N'Planned', N'Mobilized', N'Extended')`);
+      await new sql.Request(transaction)
+        .input('Id', sql.NVarChar(40), newId('mba'))
+        .input('MobilizationId', sql.NVarChar(40), item.mobilizationId)
+        .input('EmployeeCode', sql.NVarChar(80), item.code)
+        .input('Action', sql.NVarChar(80), 'Transferred')
+        .input('PreviousValue', sql.NVarChar(500), item.fromSupervisor)
+        .input('NewValue', sql.NVarChar(500), `Reassigned to ${supervisor}`)
+        .input('Reason', sql.NVarChar(500), `Re-assigned offshore supervisor from ${item.fromSupervisor} to ${supervisor}`)
+        .input('Actor', sql.NVarChar(120), input.actor)
+        .input('ActorRole', sql.NVarChar(120), text(input.role))
+        .query(`INSERT INTO [tsmgmt].[MobilizationAudit] ([Id],[MobilizationId],[EmployeeCode],[Action],[PreviousValue],[NewValue],[Reason],[Actor],[ActorRole])
+          VALUES (@Id,@MobilizationId,@EmployeeCode,@Action,@PreviousValue,@NewValue,@Reason,@Actor,@ActorRole)`);
+    }
     await new sql.Request(transaction)
       .input('Id', sql.NVarChar(40), id)
       .input('No', sql.NVarChar(40), mobilizationNo)
@@ -378,6 +477,7 @@ export const createMobilization = async (input: {
       .query(`INSERT INTO [tsmgmt].[Mobilizations] ([Id],[MobilizationNo],[PeriodId],[ProjectCode],[ProjectName],[OffshoreSite],[EffectiveFrom],[ExpectedReturn],[OffshoreSupervisor],[AuthorizationRef],[Reason],[Transport],[Notes],[Status],[CreatedBy])
         VALUES (@Id,@No,@PeriodId,@ProjectCode,@ProjectName,@Site,@From,@Expected,@Supervisor,@Auth,@Reason,@Transport,@Notes,@Status,@Actor)`);
     for (const employee of validation.employees) {
+      const wasReassigned = confirmReassign.has(employee.code);
       await new sql.Request(transaction)
         .input('Id', sql.NVarChar(40), newId('mbe'))
         .input('MobilizationId', sql.NVarChar(40), id)
@@ -391,7 +491,9 @@ export const createMobilization = async (input: {
         .input('From', sql.Date, from)
         .input('Expected', sql.Date, expected)
         .input('Status', sql.NVarChar(40), status)
-        .input('Exception', sql.NVarChar(120), employee.issues.some((issue) => issue.severity === 'warn') ? 'Temporary deployment overlap' : '')
+        .input('Exception', sql.NVarChar(120), wasReassigned
+          ? 'Reassigned from previous offshore supervisor'
+          : employee.issues.some((issue) => issue.severity === 'warn') ? 'Temporary deployment overlap' : '')
         .query(`INSERT INTO [tsmgmt].[MobilizationEmployees] ([Id],[MobilizationId],[EmployeeCode],[EmployeeName],[PersonId],[HomeSupervisor],[HomeLocation],[HomeWorkCenter],[Department],[EffectiveFrom],[ExpectedReturn],[Status],[ExceptionStatus])
           VALUES (@Id,@MobilizationId,@Code,@Name,@PersonId,@HomeSupervisor,@HomeLocation,@HomeWorkCenter,@Department,@From,@Expected,@Status,@Exception)`);
     }
@@ -400,9 +502,16 @@ export const createMobilization = async (input: {
     await transaction.rollback();
     throw error;
   }
-  await audit(connection, { mobilizationId: id, action: 'Mobilization created', newValue: `${mobilizationNo} · ${validation.employees.length} employees · ${projectCode} · ${site}`, reason, actor: input.actor, role: input.role });
-  await openMobilizationApproval({ id, mobilizationNo, periodId: text(input.periodId), projectCode, projectName: text(input.projectName) || projectCode, site, supervisor, effectiveFrom: from, employees: validation.employees.length, exceptions: validation.employees.filter((item) => item.issues.some((issue) => issue.severity === 'warn')).length, actor: input.actor }).catch(() => undefined);
-  return { id, mobilizationNo, employees: validation.employees.length, status };
+  await audit(connection, {
+    mobilizationId: id,
+    action: 'Mobilization created',
+    newValue: `${mobilizationNo} · ${validation.employees.length} employees · ${projectCode} · ${site}${reassigned.length ? ` · ${reassigned.length} reassigned` : ''}`,
+    reason,
+    actor: input.actor,
+    role: input.role,
+  });
+  await openMobilizationApproval({ id, mobilizationNo, periodId: text(input.periodId), projectCode, projectName: text(input.projectName) || projectCode, site, supervisor, effectiveFrom: from, employees: validation.employees.length, exceptions: validation.employees.filter((item) => item.issues.some((issue) => issue.severity === 'warn') || confirmReassign.has(item.code)).length, actor: input.actor }).catch(() => undefined);
+  return { id, mobilizationNo, employees: validation.employees.length, status, reassigned: reassigned.length };
 };
 
 const employeeRows = async (connection: sql.ConnectionPool, ids: string[]) => {
@@ -758,7 +867,7 @@ export const listActiveMobilizations = async (workDate: string): Promise<ActiveM
   return (result.recordset || []).map((row) => ({
     employeeCode: text(row.EmployeeCode),
     employeeName: text(row.EmployeeName),
-    site: text(row.OffshoreSite),
+    site: mobilizationRosterSite(text(row.OffshoreSite)),
     supervisor: text(row.OffshoreSupervisor),
     projectCode: text(row.ProjectCode),
     projectName: text(row.ProjectName),

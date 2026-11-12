@@ -1,4 +1,5 @@
 import type { TenderOpportunity } from '@/lib/commercial/tender-types';
+import { COMMERCIAL_SECTORS } from '@/lib/commercial/tender-lookups';
 
 export const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
@@ -102,19 +103,27 @@ export const SOURCE_BUCKETS = ['Email', 'Tender Portal', 'Client Meeting', 'Webs
 
 export const sourceBucket = (source: string) => {
   const text = source.toLowerCase();
-  if (text.includes('email')) return 'Email';
+  if (text.includes('email') || text.includes('mail')) return 'Email';
+  if (text.includes('walk') || text.includes('telephone') || text.includes('phone') || text.includes('newspaper') || text.includes('publication') || text.includes('direct') || text.includes('client')) return 'Client Meeting';
   if (text.includes('portal') || text.includes('public') || text.includes('invit')) return 'Tender Portal';
-  if (text.includes('meeting') || text.includes('direct') || text.includes('client')) return 'Client Meeting';
   if (text.includes('web')) return 'Website';
   if (text.includes('refer')) return 'Referral';
   return 'Others';
 };
 
-export const SECTORS = ['Oil & Gas', 'Infrastructure', 'Fabrication', 'Energy', 'Maintenance', 'IT Services'] as const;
+export const SECTORS = COMMERCIAL_SECTORS;
 
 export const sectorOf = (row: TenderOpportunity) => {
+  const category = String(row.category || '').trim();
+  if (/^oil\s*(and|&)\s*gas$/i.test(category)) return 'Oil & Gas';
+  if (/^non[\s-]*oil/i.test(category)) return 'Non Oil and Gas';
+  if (/^unspecified$/i.test(category)) return 'Unspecified';
+  if (/^telecom/i.test(category)) return 'Telecom';
+  if (/^galvaniz/i.test(category)) return 'Galvanizing';
   const text = `${row.category} ${row.subCategory} ${row.tenderType} ${row.title}`.toLowerCase();
   if (/oil|gas|lng|petroleum|upstream/.test(text)) return 'Oil & Gas';
+  if (/galvaniz/.test(text)) return 'Galvanizing';
+  if (/telecom|tower|antenna/.test(text)) return 'Telecom';
   if (/fabricat/.test(text)) return 'Fabrication';
   if (/energy|power/.test(text)) return 'Energy';
   if (/maintain/.test(text)) return 'Maintenance';

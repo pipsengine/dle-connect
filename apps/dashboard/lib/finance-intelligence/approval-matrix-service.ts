@@ -1035,10 +1035,53 @@ export const bandRequiresMdCeo = (pathType: ApprovalPathType | string | null | u
   return normalizePathType(pathType) === 'Project' ? amount > 5000000 : amount > 1000000;
 };
 
+const paymentDepartmentKey = (department?: string | null) =>
+  compact(department)
+    .toLowerCase()
+    .replace(/&/g, ' and ')
+    .replace(/[/.]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+/** Quality Control/Assurance and Health and Safety, including the labels already used on payment forms. */
+export const isQaOrHsePaymentDepartment = (department?: string | null) => {
+  const key = paymentDepartmentKey(department);
+  return key === 'health and safety'
+    || key === 'hse'
+    || key === 'quality assurance control'
+    || key === 'quality control assurance'
+    || key === 'quality assurance'
+    || key === 'quality control'
+    || key === 'qa qc';
+};
+
+/**
+ * Quality Control/Assurance and Health and Safety payments above ₦100,000
+ * end with MD/CEO. ₦100,000 exactly stays on the normal chain.
+ */
+export const departmentRequiresMdCeoLast = (department: string | null | undefined, amountNgn: number) =>
+  isQaOrHsePaymentDepartment(department) && moneyRound2(amountNgn) > 100000;
+
+/** Move MD/CEO to the end when a QA/HSE payment is above ₦100,000. Other chains are unchanged. */
+export const placeDepartmentMdCeoLast = (
+  stages: string[],
+  department: string | null | undefined,
+  amountNgn: number,
+) => {
+  const next = [...(stages || [])].map((stage) => compact(stage)).filter(Boolean);
+  if (!departmentRequiresMdCeoLast(department, amountNgn)) return next;
+  const withoutMd = stripAutomaticMdStages(next);
+  if (!withoutMd.length) withoutMd.push('Finance Manager');
+  withoutMd.push('MD/CEO');
+  return withoutMd;
+};
+
 /**
  * High bands always keep MD/CEO last (never stripped).
  * Lower bands: MD/CEO is added only when MD is the requester's line/reporting manager,
  * including ≤ ₦200k — skip Reporting Manager and put MD/CEO last (never first).
+ * Submit and resubmit also put MD/CEO last for QA/HSE payments above ₦100,000.
+ * In-flight repairs leave that flag off so an open chain is not rewritten.
  */
 export const applyMdLineManagerLastApproverRule = async (input: {
   stages: string[];
@@ -1046,10 +1089,14 @@ export const applyMdLineManagerLastApproverRule = async (input: {
   pathType?: ApprovalPathType | string | null;
   requesterCode?: string | null;
   supervisorName?: string | null;
+  department?: string | null;
+  includeDepartmentMdLast?: boolean;
 }): Promise<string[]> => {
   let stages = [...(input.stages || [])].map((stage) => compact(stage)).filter(Boolean);
   const pathType = normalizePathType(input.pathType);
   const mdRequiredByBand = bandRequiresMdCeo(pathType, input.amountNgn);
+  const mdRequiredByDepartment = input.includeDepartmentMdLast === true
+    && departmentRequiresMdCeoLast(input.department, input.amountNgn);
 
   let mdIsLineManager = false;
   try {
@@ -1076,7 +1123,7 @@ export const applyMdLineManagerLastApproverRule = async (input: {
   if (mdIsLineManager) {
     stages = stages.filter((stage) => !isLineManagerStage(stage));
   }
-  if (mdRequiredByBand || mdIsLineManager) {
+  if (mdRequiredByBand || mdIsLineManager || mdRequiredByDepartment) {
     stages = stripAutomaticMdStages(stages);
     if (!stages.length) stages.push('Finance Manager');
     stages.push('MD/CEO');
@@ -1097,6 +1144,8 @@ export const resolveApprovalChain = async (input: {
   costCentre?: string | null;
   /** When true (default), seed standard bands if the matrix table is empty. */
   autoSeed?: boolean;
+  /** Submit, resubmit, and matrix preview. Repairs must omit this. */
+  includeDepartmentMdLast?: boolean;
 }): Promise<ApprovalChainResolution | null> => {
   const pathType: ApprovalPathType = isProjectPaymentPath(input) ? 'Project' : 'Non-project';
   const converted = await convertAmountToNgn(input.amount, input.currencyCode);
@@ -1126,6 +1175,8 @@ export const resolveApprovalChain = async (input: {
     pathType,
     requesterCode: input.requesterCode,
     supervisorName: input.supervisorName,
+    department: input.department,
+    includeDepartmentMdLast: input.includeDepartmentMdLast,
   });
   stages = await skipProjectReportingManagerWhenSameAsPm({
     stages,

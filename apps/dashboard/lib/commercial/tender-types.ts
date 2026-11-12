@@ -162,6 +162,18 @@ export type TenderLookups = {
   businessUnits: string[];
 };
 
+export type TenderClient = {
+  id: string;
+  name: string;
+  contactPerson: string;
+  email: string;
+  phone: string;
+  address: string;
+  sector: string;
+  notes: string;
+  updatedAt: string;
+};
+
 export type TenderPipelineStage = {
   label: string;
   count: number;

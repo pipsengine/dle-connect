@@ -1,11 +1,19 @@
 import assert from 'node:assert/strict';
 import {
   assertTransition,
+  isInactiveDirectoryStatus,
   TELEPHONE_EXPENSE_APPROVAL_STAGES,
   type TelephoneCycle,
 } from './telephone-allowance-cycle.ts';
 import { buildTelephoneAllowanceSchedulePdf } from './telephone-allowance-schedule-pdf.ts';
 import { buildTelephoneAllowanceScheduleWorkbook } from './telephone-allowance-schedule-workbook.ts';
+
+assert.equal(isInactiveDirectoryStatus('Inactive'), true);
+assert.equal(isInactiveDirectoryStatus('Suspended'), true);
+assert.equal(isInactiveDirectoryStatus('Contract Expired'), true);
+assert.equal(isInactiveDirectoryStatus('Active'), false);
+assert.equal(isInactiveDirectoryStatus('On Leave'), false);
+assert.equal(isInactiveDirectoryStatus('Confirmed'), false);
 
 assert.deepEqual(
   [...TELEPHONE_EXPENSE_APPROVAL_STAGES],

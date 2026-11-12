@@ -39,6 +39,7 @@ import {
   type CycleChange,
   type CycleEmployeeLine,
   type CycleVersion,
+  isInactiveDirectoryStatus,
   TELEPHONE_EXPENSE_APPROVAL_STAGES,
   type TelephoneAllowanceStatus,
   type TelephoneAudit,
@@ -1241,9 +1242,6 @@ type DirectoryHit = {
   status?: string;
 };
 
-const isInactiveDirectoryStatus = (status: string | null | undefined) =>
-  /terminated|resigned|retired|inactive|deceased|exited|separated/i.test(String(status || '').trim());
-
 const buildEmployeesForNewCycle = (
   year: number,
   pair: BimonthlyPair,
@@ -1308,14 +1306,59 @@ const buildEmployeesForNewCycle = (
   return employees.sort((a, b) => a.employeeName.localeCompare(b.employeeName) || a.employeeCode.localeCompare(b.employeeCode));
 };
 
-export const getCycle = async (idOrCode: string): Promise<TelephoneCycle | null> => {
+const suspendInactiveDirectoryEntitlements = async (
+  directory: Awaited<ReturnType<typeof directoryIndex>>,
+) => {
   const mode = await resolveMode();
-  return loadCycle(mode, idOrCode);
+  const entitlements = await listEntitlements();
+  const suspended: string[] = [];
+  for (const entitlement of entitlements) {
+    if (entitlement.status !== 'Active') continue;
+    const dir = lookupDirectory(directory, entitlement.employeeCode);
+    if (!dir || !isInactiveDirectoryStatus(dir.status)) continue;
+    const row: TelephoneEntitlement = {
+      ...entitlement,
+      status: 'Suspended',
+      effectiveTo: entitlement.effectiveTo || nowIso().slice(0, 10),
+      updatedAt: nowIso(),
+    };
+    if (mode.kind === 'json') {
+      const store = await readJsonStore();
+      const idx = store.entitlements.findIndex((item) => item.id === row.id);
+      if (idx >= 0) store.entitlements[idx] = row;
+      await writeJsonStore(store);
+    } else {
+      await persistEntitlementSql(mode.pool, row);
+    }
+    suspended.push(`${entitlement.employeeCode} ${entitlement.employeeName}`.trim());
+  }
+  if (suspended.length) {
+    await appendAudit(mode, {
+      user: 'Employee Directory',
+      role: 'System',
+      action: 'SUSPEND_INACTIVE_ENTITLEMENT',
+      newValue: suspended.join(', '),
+      reason: 'Inactive in Employee Directory',
+    });
+  }
+  return suspended;
 };
 
-const removeInactiveDirectoryEmployees = async (cycle: TelephoneCycle): Promise<TelephoneCycle> => {
-  if (cycle.locked || (!canEditSchedule(cycle.status, cycle.locked) && !canHrReviewEdit(cycle.status))) return cycle;
+export const getCycle = async (idOrCode: string): Promise<TelephoneCycle | null> => {
+  const mode = await resolveMode();
+  const cycle = await loadCycle(mode, idOrCode);
+  if (!cycle) return null;
   const directory = await directoryIndex();
+  await suspendInactiveDirectoryEntitlements(directory);
+  return removeInactiveDirectoryEmployees(cycle, directory);
+};
+
+const removeInactiveDirectoryEmployees = async (
+  cycle: TelephoneCycle,
+  directory?: Awaited<ReturnType<typeof directoryIndex>>,
+): Promise<TelephoneCycle> => {
+  if (cycle.locked || (!canEditSchedule(cycle.status, cycle.locked) && !canHrReviewEdit(cycle.status))) return cycle;
+  directory = directory || await directoryIndex();
   const inactive = cycle.employees.filter((line) => {
     if (line.changeBadge === 'REMOVED') return false;
     const dir = lookupDirectory(directory, line.employeeCode);
@@ -1393,13 +1436,51 @@ const removeInactiveDirectoryEmployees = async (cycle: TelephoneCycle): Promise<
   return next;
 };
 
+const cycleCanDropInactiveEmployees = (cycle: TelephoneCycle) =>
+  !cycle.locked && (canEditSchedule(cycle.status, cycle.locked) || canHrReviewEdit(cycle.status));
+
+/** Drop directory-inactive employees from every schedule that is still being prepared. */
+export const syncEditableTelephoneCyclesWithDirectory = async () => {
+  const cycles = await listCycles();
+  const directory = await directoryIndex();
+  const suspendedEntitlements = await suspendInactiveDirectoryEntitlements(directory);
+  const updated = [];
+  for (const cycle of cycles) {
+    if (!cycleCanDropInactiveEmployees(cycle)) continue;
+    const beforeCodes = new Set(cycle.employees.filter((line) => line.changeBadge !== 'REMOVED').map((line) => upperCode(line.employeeCode)));
+    const next = await removeInactiveDirectoryEmployees(cycle, directory);
+    const afterCodes = new Set(next.employees.filter((line) => line.changeBadge !== 'REMOVED').map((line) => upperCode(line.employeeCode)));
+    const removed = [...beforeCodes].filter((code) => !afterCodes.has(code));
+    if (!removed.length && next.rowVersion === cycle.rowVersion) continue;
+    updated.push({
+      cycleCode: next.cycleCode,
+      status: next.status,
+      previousBeneficiaries: cycle.beneficiaryCount,
+      beneficiaries: next.beneficiaryCount,
+      bimonthlyTotal: next.bimonthlyTotal,
+      removed,
+    });
+  }
+  return { cycles: updated, suspendedEntitlements };
+};
+
 export const getCurrentCycle = async (): Promise<TelephoneCycle | null> => {
   const cycles = await listCycles();
   if (!cycles.length) return null;
+  const editable = cycles.filter(cycleCanDropInactiveEmployees);
+  const synced = new Map<string, TelephoneCycle>();
+  if (editable.length) {
+    const directory = await directoryIndex();
+    await suspendInactiveDirectoryEntitlements(directory);
+    for (const cycle of editable) {
+      synced.set(cycle.id, await removeInactiveDirectoryEmployees(cycle, directory));
+    }
+  }
   const open = cycles.find((c) => !['PAID', 'COMPLETED'].includes(c.status));
-  if (open) return removeInactiveDirectoryEmployees(open);
+  if (open) return synced.get(open.id) || open;
   const { year, pair } = currentOpenPair();
-  return cycles.find((c) => c.year === year && c.pairCode === pair.code) || cycles[0] || null;
+  const match = cycles.find((c) => c.year === year && c.pairCode === pair.code) || cycles[0] || null;
+  return match ? synced.get(match.id) || match : null;
 };
 
 export const createNextCycle = async (
@@ -1548,6 +1629,7 @@ export const populateDraftFromPrevious = async (
   cycle.originalBeneficiaryCount = cycle.beneficiaryCount;
   cycle.originalBimonthlyTotal = cycle.bimonthlyTotal;
   cycle = await saveCycle(mode, cycle);
+  cycle = await removeInactiveDirectoryEmployees(cycle);
   await syncExceptionsForCycle(mode, cycle, actor);
   await appendAudit(mode, {
     cycleId: cycle.id,
@@ -1588,6 +1670,7 @@ export const saveCycleDraft = async (
   };
   next = bumpRowVersion(applyTotals(next));
   next = await saveCycle(mode, next);
+  next = await removeInactiveDirectoryEmployees(next);
   await syncExceptionsForCycle(mode, next, actor);
   await appendAudit(mode, {
     cycleId: next.id,
@@ -1612,6 +1695,7 @@ export const sendToHrReview = async (
   if (cycle.status === 'PENDING_HR_REVIEW') return cycle;
   assertRowVersion(cycle, rowVersion);
   assertTransition(cycle.status, 'PENDING_HR_REVIEW');
+  cycle = await removeInactiveDirectoryEmployees(cycle);
 
   const hasItOriginal = cycle.versions.some((v) => v.label === 'IT Original');
   if (!hasItOriginal) {
@@ -1649,12 +1733,13 @@ export const sendToHrReview = async (
 };
 
 const requireHrReviewCycle = async (mode: SqlMode, cycleId: string, rowVersion: number) => {
-  const cycle = await loadCycle(mode, cycleId);
+  let cycle = await loadCycle(mode, cycleId);
   if (!cycle) throw new Error('Cycle not found.');
   assertRowVersion(cycle, rowVersion);
   if (!canHrReviewEdit(cycle.status)) {
     throw new Error('HR edits are only allowed while the cycle is in PENDING_HR_REVIEW.');
   }
+  cycle = await removeInactiveDirectoryEmployees(cycle);
   return cycle;
 };
 
@@ -1673,7 +1758,10 @@ export const hrAddEmployee = async (
   }
 
   const directory = await directoryIndex();
-  const dir = directory.get(code);
+  const dir = lookupDirectory(directory, code);
+  if (dir && isInactiveDirectoryStatus(dir.status)) {
+    throw new Error(`${dir.employeeName || code} is ${dir.status} in the Employee Directory and cannot be added to telephone allowance.`);
+  }
   const month1Eligible = input.month1Eligible !== false;
   const month2Eligible = input.month2Eligible !== false;
   const rate = roundMoney(Number(input.monthlyRate));
@@ -1896,6 +1984,7 @@ export const completeHrReview = async (
   if (!cycle) throw new Error('Cycle not found.');
   assertRowVersion(cycle, rowVersion);
   assertTransition(cycle.status, 'RETURNED_TO_IT');
+  cycle = await removeInactiveDirectoryEmployees(cycle);
 
   cycle = applyTotals({
     ...cycle,
@@ -1938,6 +2027,7 @@ export const initiateApproval = async (
   if (cycle.status === 'PENDING_HR_APPROVAL' && cycle.locked) return cycle;
   assertRowVersion(cycle, rowVersion);
   assertTransition(cycle.status, 'PENDING_HR_APPROVAL');
+  cycle = await removeInactiveDirectoryEmployees(cycle);
 
   const validation = validateCycleForApproval(cycle);
   if (!validation.ok) {
@@ -3424,6 +3514,7 @@ export const searchDirectoryEmployees = async (query: string) => {
   const source = await readPayrollEmployees();
   const directory = await directoryIndex();
   const employees = source.employees
+    .filter((emp) => !isInactiveDirectoryStatus(emp.status))
     .filter((emp) => {
       if (!q) return true;
       const hay = [emp.employeeCode, emp.employeeId, emp.fullName, emp.department, emp.jobTitle]

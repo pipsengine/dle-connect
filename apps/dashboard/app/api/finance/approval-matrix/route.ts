@@ -103,6 +103,7 @@ export async function POST(request: Request) {
         department: body.department ? String(body.department) : null,
         projectCode: body.projectCode ? String(body.projectCode) : null,
         projectDepartment: Boolean(body.projectDepartment),
+        includeDepartmentMdLast: true,
       });
       if (!chain) {
         return jsonErr(404, 'No active approval limit matches this amount/path. Load standard limits or adjust bands.');

@@ -115,7 +115,12 @@ export function EnquiriesBoard() {
   useEffect(() => {
     fetch('/api/auth/me', { cache: 'no-store', credentials: 'same-origin' })
       .then((response) => (response.ok ? response.json() : null))
-      .then((json) => setGm(isGmCommercial(json?.data?.roles || [], Boolean(json?.data?.isGlobalAdmin))))
+      .then((json) => setGm(isGmCommercial({
+        roles: Array.isArray(json?.data?.roles) ? json.data.roles : [],
+        isGlobalAdmin: Boolean(json?.data?.isGlobalAdmin),
+        employeeCode: json?.data?.employeeCode,
+        username: json?.data?.username,
+      })))
       .catch(() => setGm(false));
   }, []);
   useEffect(() => {

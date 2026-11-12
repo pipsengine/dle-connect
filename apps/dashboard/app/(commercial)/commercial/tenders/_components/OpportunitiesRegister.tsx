@@ -4,7 +4,7 @@ import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 import { useEffect, useMemo, useState } from 'react';
 import { BarChart3, Briefcase, ChevronDown, Plus, Search, X } from 'lucide-react';
-import { isBusinessGmCommercial } from '@/lib/access/commercial-access';
+import { canActAsGmCommercial } from '@/lib/access/commercial-access';
 import type { TenderAuditEvent, TenderDocument, TenderOpportunity } from '@/lib/commercial/tender-types';
 import { daysUntil, receivedOn, sectorOf } from '@/lib/commercial/tender-present';
 import {
@@ -26,7 +26,7 @@ import { formatWhen, tenderGet, tenderPost } from './tender-api';
 import { CommercialOpportunityModal } from './CommercialOpportunityModal';
 import { RowMenu } from './record-frame';
 
-type Tab = 'All Opportunities' | 'ITT' | 'RFQ' | 'EOI' | 'Awaiting GM Review' | 'Awaiting MD Decision' | RegisterStatus | 'Overdue';
+type Tab = 'All Opportunities' | 'ITT' | 'RFQ' | 'EOI' | 'Awaiting Proposal Review' | 'Awaiting GM Review' | 'Awaiting MD Decision' | RegisterStatus | 'Overdue';
 type SortKey = 'reference' | 'client' | 'title' | 'type' | 'sector' | 'received' | 'internal' | 'external' | 'priority' | 'officer' | 'status';
 
 const TABS: Array<{ id: Tab; label: string }> = [
@@ -34,6 +34,7 @@ const TABS: Array<{ id: Tab; label: string }> = [
   { id: 'ITT', label: 'Invitation to Tender' },
   { id: 'RFQ', label: 'Request for Quotation' },
   { id: 'EOI', label: 'Expression of Interest' },
+  { id: 'Awaiting Proposal Review', label: 'Awaiting Proposal Review' },
   { id: 'Awaiting GM Review', label: 'Awaiting GM Review' },
   { id: 'Awaiting MD Decision', label: 'Awaiting MD Decision' },
   { id: 'Not Started', label: 'Not Started' },
@@ -44,7 +45,7 @@ const TABS: Array<{ id: Tab; label: string }> = [
   { id: 'Historical', label: 'Proposal Register' },
 ];
 
-const STATUSES: RegisterStatus[] = ['Not Started', 'In Progress', 'Submitted', 'Awaiting GM Review', 'Awaiting MD Decision', 'Closed', 'Historical'];
+const STATUSES: RegisterStatus[] = ['Not Started', 'In Progress', 'Submitted', 'Awaiting Proposal Review', 'Awaiting GM Review', 'Awaiting MD Decision', 'Closed', 'Historical'];
 const PRIORITIES = ['High', 'Medium', 'Low'];
 const KIND_LABEL: Record<CommercialKind, string> = { ITT: 'ITT', RFQ: 'RFQ', EOI: 'EOI' };
 
@@ -57,6 +58,7 @@ const statusTone: Record<RegisterStatus, string> = {
   'Not Started': 'bg-slate-100 text-slate-600',
   'In Progress': 'bg-blue-50 text-blue-700',
   Submitted: 'bg-emerald-50 text-emerald-700',
+  'Awaiting Proposal Review': 'bg-violet-50 text-violet-700',
   'Awaiting GM Review': 'bg-orange-50 text-orange-700',
   'Awaiting MD Decision': 'bg-amber-50 text-amber-700',
   Closed: 'bg-slate-100 text-slate-500',
@@ -83,7 +85,7 @@ const within = (value: string, from: string, to: string) => {
 
 const overdue = (row: TenderOpportunity) => {
   const state = registerStatusOf(row);
-  if (state === 'Closed' || state === 'Submitted') return false;
+  if (state === 'Closed' || state === 'Submitted' || state === 'Historical') return false;
   const internal = daysUntil(internalDeadlineOf(row));
   const external = daysUntil(externalDeadlineOf(row));
   return (internal != null && internal < 0) || (external != null && external < 0);
@@ -149,7 +151,13 @@ export function OpportunitiesRegister() {
   useEffect(() => {
     fetch('/api/auth/me', { cache: 'no-store', credentials: 'same-origin' })
       .then((response) => (response.ok ? response.json() : null))
-      .then((json) => setGm(isBusinessGmCommercial(json?.data?.roles || [])))
+      .then((json) => setGm(canActAsGmCommercial({
+        roles: Array.isArray(json?.data?.roles) ? json.data.roles : [],
+        employeeCode: json?.data?.employeeCode,
+        username: json?.data?.username,
+        isGlobalAdmin: Boolean(json?.data?.isGlobalAdmin),
+        sub: json?.data?.sub,
+      })))
       .catch(() => setGm(false));
   }, []);
   useEffect(() => {
@@ -399,7 +407,7 @@ export function OpportunitiesRegister() {
                     <td className="px-3 py-3 text-slate-600">{sectorOf(row)}</td>
                     <td className="px-3 py-3 text-slate-600">{formatWhen(receivedOn(row))}</td>
                     <td className="px-3 py-3"><span className={state === 'Historical' ? 'text-slate-600' : dateTone(internal)}>{internal ? formatWhen(internal) : '—'}</span></td>
-                    <td className="px-3 py-3 text-slate-700">{external ? formatWhen(external) : '—'}</td>
+                    <td className={`px-3 py-3 ${state === 'Historical' ? 'text-slate-600' : 'text-slate-700'}`}>{external ? formatWhen(external) : '—'}</td>
                     <td className="px-3 py-3"><span className={`rounded-md px-2 py-0.5 text-[11px] font-bold ${priorityTone(row.priority)}`}>{row.priority || '—'}</span></td>
                     <td className="px-3 py-3 text-slate-700">{row.ownerName || '—'}</td>
                     <td className="px-3 py-3"><span className={`rounded-md px-2 py-0.5 text-[11px] font-bold ${statusTone[state]}`}>{state}</span></td>

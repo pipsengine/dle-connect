@@ -310,6 +310,18 @@ export default function PaymentApprovalDetailClient({ returnTo = '' }: { returnT
       setMessage('Upload at least one retirement receipt / supporting document.');
       return;
     }
+    const existingRetirementCount = (detail.request.attachments || [])
+      .filter((file) => (String(file.kind || 'supporting').trim() || 'supporting') === 'retirement-evidence')
+      .length;
+    const remainingRetirementSlots = Math.max(0, 8 - existingRetirementCount);
+    if (retirementFiles.length > remainingRetirementSlots) {
+      setMessage(
+        remainingRetirementSlots
+          ? `You can add at most ${remainingRetirementSlots} more retirement receipt(s). This request already has ${existingRetirementCount}.`
+          : 'This request already has 8 retirement receipts. Remove some files from your selection.',
+      );
+      return;
+    }
     setBusy(true);
     setMessage('');
     try {
@@ -399,6 +411,7 @@ export default function PaymentApprovalDetailClient({ returnTo = '' }: { returnT
   const canDoNotPay = Boolean(detail.viewer?.canDoNotPay);
   const retirementNoteExisting = String(request.retirement?.note || '');
   const retirementEvidence = (request.attachments || []).filter((file) => file.kind === 'retirement-evidence');
+  const remainingRetirementSlots = Math.max(0, 8 - retirementEvidence.length);
   const supportingDocs = (request.attachments || []).filter((file) => file.kind !== 'payment-evidence' && file.kind !== 'retirement-evidence');
   const showActionBar = canApprove;
   const showRetirementBar = canSubmitRetirement;
@@ -746,6 +759,11 @@ export default function PaymentApprovalDetailClient({ returnTo = '' }: { returnT
             placeholder="Describe how the advance was used (required, min 10 characters)"
             className="w-full rounded-xl border border-amber-200 bg-white px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-amber-200"
           />
+          <p className="text-xs text-amber-800">
+            {retirementEvidence.length
+              ? `${retirementEvidence.length} retirement receipt(s) already on this request. You can add up to ${remainingRetirementSlots} more (8 max).`
+              : 'You can attach up to 8 retirement receipts. Request and payment documents do not count against this limit.'}
+          </p>
           <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
             <label className="inline-flex cursor-pointer items-center gap-2 rounded-xl border border-dashed border-amber-300 bg-white px-3 py-2 text-xs font-semibold text-amber-900">
               <FileUp className="h-4 w-4" />
@@ -755,7 +773,16 @@ export default function PaymentApprovalDetailClient({ returnTo = '' }: { returnT
                 multiple
                 accept=".pdf,.png,.jpg,.jpeg,.gif,.webp,.doc,.docx,.xls,.xlsx,.csv,.txt,application/pdf,image/*"
                 className="hidden"
-                onChange={(e) => setRetirementFiles(Array.from(e.target.files || []))}
+                onChange={(e) => {
+                  const selected = Array.from(e.target.files || []);
+                  if (selected.length > remainingRetirementSlots) {
+                    setRetirementFiles(selected.slice(0, remainingRetirementSlots));
+                    setMessage(`Only ${remainingRetirementSlots} more retirement receipt(s) can be added. Extra files were not selected.`);
+                    return;
+                  }
+                  setRetirementFiles(selected);
+                  setMessage('');
+                }}
               />
             </label>
             <button

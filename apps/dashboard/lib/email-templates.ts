@@ -19,7 +19,9 @@ export type DleEmailModule =
   | 'Security'
   | 'Finance Approvals'
   | 'Telephone Allowance'
-  | 'Corporate Office';
+  | 'Corporate Office'
+  | 'Procurement'
+  | 'Commercial';
 
 export type DleEmailTone = 'info' | 'success' | 'warning' | 'danger' | 'neutral';
 

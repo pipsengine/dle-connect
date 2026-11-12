@@ -15,6 +15,8 @@ import { formatPayrollMoney, resolvePayCurrency } from '@/lib/payroll-currency';
 import { formatPayrollRunFxCaption, payrollAmountForDisplay, payrollLinesForDisplay } from '@/lib/payroll-fx-display';
 import { LOCKED_PAYROLL_NAIRA_CAPTION, lockedNgnForUsdAmount, payrollLinesForLockedNgn } from '@/lib/locked-payroll-package';
 import { splitDraftEarningLinesByScope, type FlexiblePayrollLineDraft } from '@/lib/payroll-package-lines';
+import { downloadExcelWorkbook } from '@/lib/excel-export';
+import { buildEmployeePayrollExcelWorkbook, employeePayrollExcelFileName } from '@/lib/employee-payroll-excel-export';
 import { getNigeriaLgas, getNigeriaStates } from '@/lib/nigeria-locations';
 import { humanizeHttpErrorBody } from '@/lib/http-client-error';
 import { hrisEmployeeProfileHref, hrisEmployeeResourceUrl } from '@/lib/hris-employee-route';
@@ -41,6 +43,7 @@ import {
   ClipboardList,
   Download,
   Eye,
+  FileSpreadsheet,
   FileText,
   Fingerprint,
   HeartPulse,
@@ -1840,6 +1843,135 @@ export default function EmployeeProfileClient({
       ? payrollLinesForLockedNgn(lines || [], lockedPayrollPackage, payrollFx?.rate)
       : payrollLinesForDisplay(lines || [], payrollPackageCurrency, payrollCurrency, payrollFx?.rate)
   );
+  const exportEmployeePayrollExcel = () => {
+    if (!profileData || !perms.canViewPayroll) return;
+    const summary = profileData.payrollSummary;
+    const isDailyRate = Boolean(profileData.payrollClassification?.isDailyRate || /daily rate|day rate/i.test(profileData.employmentType || ''));
+    const period = summary.activePayrollPeriod || '';
+    const scoped = splitDraftEarningLinesByScope(summary.earningLines || [], period);
+    const toNumber = (n: number | null | undefined): number | '' => {
+      if (typeof n !== 'number' || !Number.isFinite(n)) return '';
+      if (nairaEquivalentActive && lockedPayrollPackage) {
+        const lockedNgn = lockedNgnForUsdAmount(lockedPayrollPackage, n);
+        if (lockedNgn != null) return lockedNgn;
+      }
+      const amount = payrollAmountForDisplay(n, payrollPackageCurrency, payrollCurrency, payrollFx?.rate);
+      return typeof amount === 'number' && Number.isFinite(amount) ? amount : n;
+    };
+    const text = (value: unknown) => (typeof value === 'string' && value.trim() ? value.trim() : '');
+    const lastProcessed = summary.payrollRunPeriodLabel
+      || (!isDailyRate && summary.lastPayrollProcessed ? formatDateUtc(summary.lastPayrollProcessed) : '');
+    const currencyNote = nairaEquivalentActive && lockedPayrollPackage
+      ? LOCKED_PAYROLL_NAIRA_CAPTION
+      : nairaEquivalentActive && payrollFx
+        ? formatPayrollRunFxCaption(payrollFx)
+        : `Amounts in ${payrollCurrency}. Saved pay currency is ${payrollPackageCurrency}.`;
+    const summaryRows: Array<[string, string | number]> = [
+      ['Employee', profileData.fullName],
+      ['Employee ID', profileData.employeeId],
+      ['Department', text(profileData.department)],
+      ['Job Title', text(profileData.jobTitle)],
+      ['Employment Type', text(profileData.employmentType)],
+      ['Business Unit', text(profileData.businessUnit)],
+      ['Location', text(profileData.location)],
+      ['Payroll Status', summary.payrollStatus],
+      ['Salary Grade', text(summary.salaryGrade)],
+    ];
+    if (isDailyRate) {
+      summaryRows.push(
+        ['Daily Rate', toNumber(summary.ratePerDay)],
+        ['Rate Per Hour', toNumber(summary.ratePerHour)],
+        ['Hours Per Day', summary.hoursPerDay != null ? summary.hoursPerDay : ''],
+        ['Last Payroll Gross', toNumber(summary.payrollRunGrossPay)],
+        ['Last Payroll Net', toNumber(summary.payrollRunNetPay)],
+      );
+    } else {
+      summaryRows.push(
+        ['Monthly Package Gross', toNumber(summary.monthlyPackageGross ?? summary.basicSalary)],
+        ['Basic Salary', toNumber(summary.basicSalary)],
+        ['Allowances', toNumber(summary.allowances)],
+      );
+    }
+    summaryRows.push(
+      ['Deductions', toNumber(summary.deductions)],
+      ['Display Currency', payrollCurrency],
+      ['Saved Pay Currency', payrollPackageCurrency],
+      ['Bank Name', text(summary.bankName)],
+      ['Account Number', text(summary.accountNumberMasked)],
+      ['Account Name', text(summary.accountName)],
+      ['Pension Provider', text(summary.pensionProvider)],
+      ['Tax ID', text(summary.taxId)],
+      ['Payroll Group', text(summary.payrollGroup)],
+      ['Active Payroll Period', period],
+      ['Last Payroll Processed', lastProcessed],
+    );
+    const sections = [
+      {
+        title: 'Standing monthly package',
+        sheetName: 'Standing Package',
+        description: 'Fixed amounts that repeat until changed.',
+        lineKind: 'earning' as const,
+        lines: shownPayrollLines(scoped.standing),
+      },
+      {
+        title: `This period only${period ? ` — ${period}` : ''}`,
+        sheetName: 'This Period',
+        description: 'Variable pay captured for this payroll period only.',
+        lineKind: 'earning' as const,
+        lines: shownPayrollLines(scoped.thisPeriod),
+      },
+      {
+        title: 'Stopped leftover variable earnings',
+        sheetName: 'Leftover Earnings',
+        description: 'Left on the package from a previous month. Not paid until assigned to the current period.',
+        lineKind: 'earning' as const,
+        lines: shownPayrollLines(scoped.leftover),
+      },
+      {
+        title: `Last payroll run — earning lines${summary.payrollRunPeriodLabel ? ` — ${summary.payrollRunPeriodLabel}` : ''}`,
+        sheetName: 'Last Run Earnings',
+        description: 'Amounts paid in the last payroll run.',
+        lineKind: 'earning' as const,
+        lines: shownPayrollLines(summary.payrollRunEarningLines),
+      },
+      {
+        title: `Last payroll run — deduction lines${summary.payrollRunPeriodLabel ? ` — ${summary.payrollRunPeriodLabel}` : ''}`,
+        sheetName: 'Last Run Deductions',
+        description: 'Deductions from the last payroll run.',
+        lineKind: 'deduction' as const,
+        lines: shownPayrollLines(summary.payrollRunDeductionLines),
+      },
+      {
+        title: isDailyRate ? 'Standing deduction lines' : 'Deduction Lines',
+        sheetName: 'Deductions',
+        description: 'Recurring deductions on this employee.',
+        lineKind: 'deduction' as const,
+        lines: shownPayrollLines(summary.deductionLines),
+      },
+    ];
+    if (!isDailyRate) {
+      sections.push({
+        title: 'Legacy Imported Lines (not used for payroll)',
+        sheetName: 'Legacy Lines',
+        description: 'Historical Sage payslip snapshot — kept for reference only.',
+        lineKind: 'earning',
+        lines: shownPayrollLines(summary.legacyEarningLines),
+      });
+    }
+    const built = buildEmployeePayrollExcelWorkbook({
+      employeeCode: profileData.employeeId,
+      fullName: profileData.fullName,
+      currency: payrollCurrency,
+      subtitle: currencyNote,
+      summaryRows,
+      sections,
+    });
+    downloadExcelWorkbook({
+      fileName: employeePayrollExcelFileName(profileData.employeeId, profileData.fullName),
+      worksheets: built.worksheets,
+    });
+    setToast({ title: 'Exported', detail: 'Payroll details downloaded as a preformatted Excel workbook.', tone: 'ok' });
+  };
 
   if (loading && (profile.status !== 'ready' || !profileData)) {
     return (
@@ -3035,6 +3167,16 @@ export default function EmployeeProfileClient({
                       actions={
                         <div className="flex items-center gap-2">
                           {!perms.canViewPayroll && <LockBadge />}
+                          {!payrollEdit && perms.canViewPayroll && (
+                            <button
+                              type="button"
+                              onClick={exportEmployeePayrollExcel}
+                              className="inline-flex items-center gap-2 px-3 py-2 rounded-xl border border-emerald-200 bg-emerald-50 text-xs font-extrabold text-emerald-800 hover:bg-emerald-100 transition-colors"
+                            >
+                              <FileSpreadsheet className="w-4 h-4" />
+                              Export Excel
+                            </button>
+                          )}
                           {!payrollEdit && perms.canEditPayroll && (
                             <button
                               type="button"

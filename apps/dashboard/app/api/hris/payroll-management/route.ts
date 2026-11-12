@@ -29,6 +29,7 @@ import {
 } from '@/lib/dayrate-schedule-template-export';
 import { isDleUsdPayrollEmployee } from '@/lib/payroll-bank-schedule-packs';
 import { isPensionEligibleStaff } from '@/lib/payroll-employee-classification';
+import { displayEmploymentGrade } from '@/lib/payroll-earnings-engine';
 import { readPayrollEmployees } from '@/lib/payroll-employee-source';
 import { readPayrollSnapshotsByPeriods } from '@/lib/payroll-run-store';
 import { normalizePayrollCompany, resolvePayrollCompany } from '@/lib/payroll-schedule-scope';
@@ -84,10 +85,32 @@ const emptyPayload = async (request: Request, error: unknown) => {
   };
 };
 
-const payrollExportColumns = ['Employee ID', 'Name', 'Department', 'Type', 'Status', 'Payroll Group', 'Salary Structure', 'Daily Rate', 'Hourly Rate', 'Currency', 'Gross Pay', 'Deductions', 'Net Pay', 'Payroll Status', 'Exceptions'];
+const payrollExportColumns = ['Employee ID', 'Name', 'Department', 'Employment Grade', 'Type', 'Status', 'Payroll Group', 'Salary Structure', 'Daily Rate', 'Hourly Rate', 'Currency', 'Gross Pay', 'Deductions', 'Net Pay', 'Payroll Status', 'Exceptions'];
 const payrollExportRows = (records: any[]) => records.map((r) => [
-  r.employeeId, r.fullName, r.department, r.employmentType, r.employmentStatus, r.payrollGroup, r.salaryStructure || r.salaryGrade, r.ratePerDay ?? '', r.ratePerHour ?? '', r.payCurrency, r.grossPay, r.deductions, r.netPay, r.payrollStatus, (r.exceptions || []).join('; '),
+  r.employeeId, r.fullName, r.department, r.employmentGrade || displayEmploymentGrade(r), r.employmentType, r.employmentStatus, r.payrollGroup, r.salaryStructure || r.salaryGrade, r.ratePerDay ?? '', r.ratePerHour ?? '', r.payCurrency, r.grossPay, r.deductions, r.netPay, r.payrollStatus, (r.exceptions || []).join('; '),
 ]);
+
+const stampEmploymentGrades = <T extends { employeeId?: string; employeeCode?: string; fullName?: string; salaryGrade?: unknown; jobGrade?: unknown; employmentGrade?: string }>(
+  records: T[],
+  employees: Array<{ employeeCode?: string | null; employeeId?: string | null; fullName?: string | null; salaryGrade?: string | null; jobGrade?: string | null }>,
+) => {
+  const grades = new Map<string, { salaryGrade?: string | null; jobGrade?: string | null }>();
+  for (const employee of employees) {
+    for (const key of [employee.employeeCode, employee.employeeId, employee.fullName]) {
+      const token = compact(key).toUpperCase();
+      if (token) grades.set(token, employee);
+    }
+  }
+  return records.map((record) => {
+    const directory = grades.get(compact(record.employeeCode).toUpperCase())
+      || grades.get(compact(record.employeeId).toUpperCase())
+      || grades.get(compact(record.fullName).toUpperCase());
+    return {
+      ...record,
+      employmentGrade: displayEmploymentGrade(record, directory),
+    };
+  });
+};
 
 const reportTitle = (report: string) => ({
   'payroll-summary': 'Payroll Summary Report',
@@ -280,7 +303,7 @@ const reportExport = (records: any[], report: string) => {
     return { columns: ['Employee Code', 'Employee Name', 'Bank', 'Account No', 'Sort Code', 'NET Salary', 'Location'], rows: records.map((r) => [r.employeeId, r.fullName, r.bankName || '', r.accountNo || '', r.sortCode || r.branchCode || r.bankCode || '', r.netPay ?? 0, r.location || '']) };
   }
   if (report === 'salary-analysis') {
-    return { columns: ['Employee ID', 'Name', 'Department', 'Employment Type', 'Salary Structure', 'Base Pay', 'Allowances', 'Gross Pay', 'Net Pay', 'Payroll Status'], rows: records.map((r) => [r.employeeId, r.fullName, r.department, r.employmentType, r.salaryStructure || r.salaryGrade, r.basePay ?? 0, r.allowances ?? 0, r.grossPay ?? 0, r.netPay ?? 0, r.payrollStatus]) };
+    return { columns: ['Employee ID', 'Name', 'Department', 'Employment Grade', 'Employment Type', 'Salary Structure', 'Base Pay', 'Allowances', 'Gross Pay', 'Net Pay', 'Payroll Status'], rows: records.map((r) => [r.employeeId, r.fullName, r.department, r.employmentGrade || displayEmploymentGrade(r), r.employmentType, r.salaryStructure || r.salaryGrade, r.basePay ?? 0, r.allowances ?? 0, r.grossPay ?? 0, r.netPay ?? 0, r.payrollStatus]) };
   }
   if (report === 'salary-setup') {
     return buildSalarySetupExportReport(records);
@@ -441,13 +464,18 @@ export async function GET(request: Request) {
     const exportCompany = requestedCompany || payload.company || null;
     const exportRecords = filterExportRecords(payload.records, url.searchParams.get('status'), payload.pack, currencyScope, exportCompany);
     if (url.searchParams.get('audit') === '1') return jsonOk({ auditTrail: payload.auditTrail });
-    let reportData = reportExport(exportRecords, report);
+    const wantsEmploymentGrade = format === 'csv' || format === 'html' || format === 'pdf' || url.searchParams.get('spool') === '1';
+    const gradeDirectory = wantsEmploymentGrade
+      ? (await readPayrollEmployees().catch(() => ({ employees: [] as Awaited<ReturnType<typeof readPayrollEmployees>>['employees'] }))).employees
+      : [];
+    const gradedExportRecords = wantsEmploymentGrade ? stampEmploymentGrades(exportRecords, gradeDirectory) : exportRecords;
+    let reportData = reportExport(gradedExportRecords, report);
     const previousPeriod = previousPayrollPeriod(payload.period);
     if (report === 'payroll-review') {
       const previousRecords = previousPeriod ? await loadReviewRecordsForPeriod(previousPeriod) : [];
       reportData = buildPayrollReviewExportReport(
-        exportRecords,
-        previousRecords,
+        gradedExportRecords,
+        wantsEmploymentGrade ? stampEmploymentGrades(previousRecords, gradeDirectory) : previousRecords,
         payload.periodLabel,
         previousPeriod || 'Previous Month',
       );
@@ -689,15 +717,19 @@ export async function GET(request: Request) {
         }
       }
 
+      const gradeDirectory = (await readPayrollEmployees().catch(() => ({ employees: [] as Awaited<ReturnType<typeof readPayrollEmployees>>['employees'] }))).employees;
       const worksheets = await Promise.all(packPayloads.map(async (packPayload) => {
-        const packRecords = filterExportRecords(packPayload.records, url.searchParams.get('status'), packPayload.pack, packPayload.pack === 'daily-rate' ? 'all' : currencyScope, packPayload.company || exportCompany);
+        const packRecords = stampEmploymentGrades(
+          filterExportRecords(packPayload.records, url.searchParams.get('status'), packPayload.pack, packPayload.pack === 'daily-rate' ? 'all' : currencyScope, packPayload.company || exportCompany),
+          gradeDirectory,
+        );
         let packReportData = reportExport(packRecords, report);
         if (report === 'payroll-review') {
           const packPreviousPeriod = previousPayrollPeriod(packPayload.period);
           const previousRecords = packPreviousPeriod ? await loadReviewRecordsForPeriod(packPreviousPeriod) : [];
           packReportData = buildPayrollReviewExportReport(
             packRecords,
-            previousRecords,
+            stampEmploymentGrades(previousRecords, gradeDirectory),
             packPayload.periodLabel,
             packPreviousPeriod || 'Previous Month',
           );

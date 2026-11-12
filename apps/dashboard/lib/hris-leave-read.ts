@@ -169,11 +169,12 @@ ORDER BY [StartDate] DESC, [UpdatedAt] DESC;`);
   for (const row of mergedRowsByLeaveType.values()) {
     const leaveType = normalizeLeaveTypeName(row.LeaveType);
     if (!leaveType) continue;
-    const available = round2(Number(row.CurrentBalance || 0));
     const entitlement = round2(Number(row.AccruedBalance || 0));
     const used = round2(Number(row.UsedBalance || 0));
     const pending = round2(Number(row.PendingBalance || 0));
     const carryForward = round2(Number(row.CarryForwardBalance || 0));
+    // CurrentBalance is the balance after approved leave. Pending reservations still reduce what can be booked.
+    const available = round2(Math.max(0, Number(row.CurrentBalance || 0) - pending));
     if (available <= 0 && entitlement <= 0 && used <= 0 && pending <= 0 && carryForward <= 0) continue;
 
     balances[leaveType] = available;

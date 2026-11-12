@@ -2,12 +2,14 @@
 
 import Link from 'next/link';
 import { useEffect, useMemo, useState } from 'react';
-import { CheckCircle2, ClipboardCheck, Filter, History, Search, X, XCircle } from 'lucide-react';
-import { isBusinessGmCommercial, isBusinessManagingDirector } from '@/lib/access/commercial-access';
+import { CheckCircle2, ClipboardCheck, Filter, Search, XCircle } from 'lucide-react';
+import { canActAsGmCommercial, canActAsManagingDirector, canActAsProposalReviewer } from '@/lib/access/commercial-access';
 import { daysUntil, fileSize } from '@/lib/commercial/tender-present';
 import {
   DEPARTMENT_REVIEW_STAGES,
+  awaitsGmCommercial,
   awaitsManagingDirector,
+  awaitsProposalReview,
   bidChoiceOf,
   commercialKindOf,
   gmBidChoiceOf,
@@ -52,6 +54,7 @@ export function ApprovalBoard() {
   const [pageSize, setPageSize] = useState(5);
   const [md, setMd] = useState(false);
   const [gm, setGm] = useState(false);
+  const [proposal, setProposal] = useState(false);
   const [department, setDepartment] = useState('');
   const [roles, setRoles] = useState<string[]>([]);
   const [directory, setDirectory] = useState<DirectoryEmployee[]>([]);
@@ -60,36 +63,58 @@ export function ApprovalBoard() {
   const [officer, setOfficer] = useState('');
   const [officerCode, setOfficerCode] = useState('');
   const [internal, setInternal] = useState('');
+  const [reviewPriority, setReviewPriority] = useState('Medium');
   const [busy, setBusy] = useState(false);
   const [confirming, setConfirming] = useState<'decision' | 'return' | ''>('');
-  const [decisionOpen, setDecisionOpen] = useState(false);
-  const [historyOpen, setHistoryOpen] = useState(false);
 
   useEffect(() => {
     tenderGet<DirectoryEmployee[]>('directory').then(setDirectory).catch(() => setDirectory([]));
-    fetch('/api/auth/me', { cache: 'no-store', credentials: 'same-origin' })
-      .then((response) => (response.ok ? response.json() : null))
-      .then((json) => {
-        const data = json?.data || {};
-        const nextRoles = Array.isArray(data.roles) ? data.roles : [];
-        setRoles(nextRoles);
-        setDepartment(String(data.department || data.unit || ''));
-        setMd(isBusinessManagingDirector(nextRoles));
-        setGm(isBusinessGmCommercial(nextRoles));
+    // Server authority uses live job title + roles (cookie session alone often omits title).
+    tenderGet<{ proposal: boolean; gm: boolean; md: boolean; roles?: string[]; department?: string }>('authority')
+      .then((authority) => {
+        setRoles(Array.isArray(authority.roles) ? authority.roles : []);
+        setDepartment(String(authority.department || ''));
+        setProposal(Boolean(authority.proposal));
+        setGm(Boolean(authority.gm));
+        setMd(Boolean(authority.md));
       })
-      .catch(() => { setMd(false); setGm(false); });
+      .catch(() => {
+        fetch('/api/auth/me', { cache: 'no-store', credentials: 'same-origin' })
+          .then((response) => (response.ok ? response.json() : null))
+          .then((json) => {
+            const data = json?.data || {};
+            const nextRoles = Array.isArray(data.roles) ? data.roles : [];
+            const actor = {
+              roles: nextRoles,
+              employeeCode: data.employeeCode,
+              username: data.username,
+              isGlobalAdmin: Boolean(data.isGlobalAdmin),
+              sub: data.sub,
+              jobTitle: data.jobTitle,
+              department: data.department,
+              unit: data.unit,
+            };
+            setRoles(nextRoles);
+            setDepartment(String(data.department || data.unit || ''));
+            setMd(canActAsManagingDirector(actor));
+            setGm(canActAsGmCommercial(actor));
+            setProposal(canActAsProposalReviewer(actor));
+          })
+          .catch(() => { setMd(false); setGm(false); setProposal(false); });
+      });
   }, []);
 
   const tenders = useMemo(() => record.rows.filter((row) => tenderApprovalBucket(row) !== 'enquiry'), [record.rows]);
   const pendingMine = useMemo(() => tenders.filter((row) => {
     const bucket = tenderApprovalBucket(row);
+    if (proposal && bucket === 'proposal') return true;
     if (gm && bucket === 'gm') return true;
     if (md && bucket === 'pending') return true;
     return bucket === 'review' && DEPARTMENT_REVIEW_STAGES.some((stage) => stageMatchesActor(stage, department, roles));
-  }), [department, gm, md, roles, tenders]);
+  }), [department, gm, md, proposal, roles, tenders]);
   const openApprovals = useMemo(() => tenders.filter((row) => {
     const bucket = tenderApprovalBucket(row);
-    return bucket === 'pending' || bucket === 'review';
+    return bucket === 'proposal' || bucket === 'gm' || bucket === 'pending' || bucket === 'review';
   }), [tenders]);
   const completed = useMemo(() => tenders.filter((row) => tenderApprovalBucket(row) === 'completed'), [tenders]);
   const queue = tab === 'mine' ? pendingMine : tab === 'completed' ? completed : openApprovals;
@@ -112,8 +137,11 @@ export function ApprovalBoard() {
   const decided = opportunity ? bidChoiceOf(opportunity) : '';
   const gmChoice = opportunity ? gmBidChoiceOf(opportunity) : '';
   const kind = opportunity ? commercialKindOf(opportunity) : '';
+  const proposalWaiting = opportunity ? awaitsProposalReview(opportunity) : false;
   const mdWaiting = opportunity ? awaitsManagingDirector(opportunity) : false;
-  const gmTurn = Boolean(opportunity && gm && !decided && !mdWaiting);
+  const gmWaiting = opportunity ? awaitsGmCommercial(opportunity) : false;
+  const proposalTurn = Boolean(opportunity && proposal && proposalWaiting);
+  const gmTurn = Boolean(opportunity && gm && gmWaiting);
   const mdTurn = Boolean(opportunity && md && mdWaiting);
   const external = opportunity ? externalDeadlineOf(opportunity) : '';
   const storedInternal = opportunity ? internalDeadlineOf(opportunity) : '';
@@ -131,18 +159,6 @@ export function ApprovalBoard() {
   }, [filtered, selectedId, setSelectedId]);
 
   useEffect(() => {
-    if (!decisionOpen) return;
-    const onKey = (event: KeyboardEvent) => {
-      if (event.key !== 'Escape' || busy) return;
-      setDecisionOpen(false);
-      setHistoryOpen(false);
-      setConfirming('');
-    };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [busy, decisionOpen]);
-
-  useEffect(() => {
     if (!opportunity) return;
     const draft = approvals.find((item) => item.decision.toUpperCase() === 'DRAFT');
     const draftChoice: Choice = draft?.comments.startsWith('BID:') ? 'Bid' : draft?.comments.startsWith('NO BID:') ? 'No Bid' : '';
@@ -151,6 +167,7 @@ export function ApprovalBoard() {
     setOfficer(opportunity.ownerName || '');
     setOfficerCode(opportunity.ownerEmployeeCode || '');
     setInternal((storedInternal || (external ? internalDeadlineFromExternal(external) : '')).slice(0, 10));
+    setReviewPriority(opportunity.priority || 'Medium');
     setConfirming('');
     setDetailTab('details');
   }, [opportunity?.id, opportunity?.updatedAt]);
@@ -160,8 +177,16 @@ export function ApprovalBoard() {
     setBusy(true);
     record.setError('');
     try {
-      const gmTurn = gm && !bidChoiceOf(opportunity) && !awaitsManagingDirector(opportunity);
-      if (gmTurn && decision !== 'Return') {
+      if (proposalTurn) {
+        await tenderPost({
+          action: 'proposal-review',
+          id: opportunity.id,
+          decision: decision === 'Return' ? 'Return' : 'Approve',
+          comments,
+          priority: reviewPriority,
+        });
+        record.setNotice(decision === 'Return' ? 'Returned for correction.' : 'Priority set. Sent to GM Commercial.');
+      } else if (gmTurn && decision !== 'Return') {
         await tenderPost({
           action: 'gm-decision',
           id: opportunity.id,
@@ -171,6 +196,11 @@ export function ApprovalBoard() {
           employeeCode: officerCode,
           internalDeadline: internal,
         });
+        const kind = commercialKindOf(opportunity);
+        const stopped = choice === 'No Bid' || kind === 'EOI';
+        record.setNotice(stopped
+          ? (choice === 'No Bid' ? 'NO BID recorded. The assigned employee and commercial team have been notified.' : 'EOI approved by GM Commercial. The assigned employee and commercial team have been notified.')
+          : 'BID approved and sent to the MD for final approval.');
       } else {
         await tenderPost({
           action: 'bid-decision',
@@ -178,15 +208,9 @@ export function ApprovalBoard() {
           decision: decision === 'Return' ? 'Return' : 'Approve',
           comments,
         });
+        record.setNotice(decision === 'Return' ? 'Returned to GM Commercial.' : 'MD final approval recorded. The assigned employee and commercial team have been notified.');
       }
-      const kind = commercialKindOf(opportunity);
-      const stopped = gmTurn && (choice === 'No Bid' || kind === 'EOI');
-      record.setNotice(decision === 'Return' ? 'Returned to GM Commercial.' : stopped ? (choice === 'No Bid' ? 'NO BID recorded. The assigned employee and commercial team have been notified.' : 'EOI approved by GM Commercial. The assigned employee and commercial team have been notified.') : gmTurn ? 'BID approved and sent to the MD for final approval.' : 'MD final approval recorded. The assigned employee and commercial team have been notified.');
       setConfirming('');
-      if (decision !== 'Draft') {
-        setDecisionOpen(false);
-        setHistoryOpen(false);
-      }
       await record.reload();
     } catch (reason) {
       record.setError(reason instanceof Error ? reason.message : 'The decision was not saved.');
@@ -215,15 +239,8 @@ export function ApprovalBoard() {
     }
   };
 
-  const closeDecision = () => {
-    if (busy) return;
-    setDecisionOpen(false);
-    setHistoryOpen(false);
-    setConfirming('');
-  };
-
   const currentReview = DEPARTMENT_REVIEW_STAGES.find((stage) => !approvals.some((item) => item.stage === stage && item.decision.toUpperCase() === 'APPROVE'));
-  const canReview = Boolean(opportunity && departmentalReviewAllowed(opportunity) && currentReview && (md || stageMatchesActor(currentReview, department, roles)));
+  const canReview = Boolean(opportunity && departmentalReviewAllowed(opportunity) && currentReview && (md || gm || stageMatchesActor(currentReview, department, roles)));
 
   return (
     <div className="space-y-4">
@@ -232,7 +249,7 @@ export function ApprovalBoard() {
           <span className="inline-flex h-11 w-11 items-center justify-center rounded-xl bg-[#2563eb] text-white"><ClipboardCheck className="h-5 w-5" /></span>
           <div>
             <h1 className="text-[22px] font-black tracking-tight text-slate-950">Approvals</h1>
-            <p className="text-[13px] text-slate-500">GM Commercial assigns the employee, records BID or NO BID, and approves first. ITT and RFQ bids then go to the MD. EOI and NO BID stay with GM Commercial.</p>
+            <p className="text-[13px] text-slate-500">Submitted opportunities go to Proposal first (priority, review, approve), then GM Commercial (assign, BID / NO BID), then the MD for ITT and RFQ bids.</p>
           </div>
         </div>
         <div className="flex flex-wrap gap-2">
@@ -250,10 +267,10 @@ export function ApprovalBoard() {
       {record.error ? <p className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">{record.error}</p> : null}
       {record.notice ? <p className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">{record.notice}</p> : null}
 
-      <div className="grid items-start gap-4 xl:grid-cols-[380px_minmax(0,1fr)]">
-        <section className="rounded-2xl border border-slate-200 bg-white shadow-sm">
+      <div className="grid items-start gap-4 xl:grid-cols-[minmax(280px,380px)_minmax(0,1fr)]">
+        <section className="min-w-0 rounded-2xl border border-slate-200 bg-white shadow-sm">
           <div className="flex items-center justify-between gap-2 border-b border-slate-100 px-4 py-3">
-            <h2 className="text-[15px] font-black text-slate-950">{tab === 'completed' ? 'Completed Decisions' : tab === 'all' ? 'Open Approvals' : gm && !md ? 'Awaiting GM Commercial' : md && !gm ? 'Awaiting MD Final Approval' : 'Pending My Action'}</h2>
+            <h2 className="text-[15px] font-black text-slate-950">{tab === 'completed' ? 'Completed Decisions' : tab === 'all' ? 'Open Approvals' : proposal && !gm && !md ? 'Awaiting Proposal Review' : gm && !md ? 'Awaiting GM Commercial' : md && !gm ? 'Awaiting MD Final Approval' : 'Pending My Action'}</h2>
             <span className="inline-flex h-6 min-w-6 items-center justify-center rounded-full bg-slate-100 px-2 text-[12px] font-bold text-slate-600">{filtered.length}</span>
           </div>
           <div className="flex gap-2 px-4 py-3">
@@ -279,7 +296,10 @@ export function ApprovalBoard() {
               const left = due ? daysUntil(due) : null;
               const bucket = tenderApprovalBucket(row);
               return (
-                <button key={row.id} type="button" onClick={() => { record.setSelectedId(row.id); setHistoryOpen(false); setDecisionOpen(true); }} className={`w-full rounded-xl border p-3 text-left ${selected ? 'border-[#2563eb] bg-blue-50/40 shadow-sm' : 'border-slate-200 bg-white hover:border-slate-300'}`}>
+                <button key={row.id} type="button" onClick={() => {
+                  record.setSelectedId(row.id);
+                  setConfirming('');
+                }} className={`w-full rounded-xl border p-3 text-left ${selected ? 'border-[#2563eb] bg-blue-50/40 shadow-sm' : 'border-slate-200 bg-white hover:border-slate-300'}`}>
                   <div className="flex items-start justify-between gap-2">
                     <div className="min-w-0">
                       <div className="text-[12px] font-bold text-[#2563eb]">{row.referenceNo || '—'}</div>
@@ -293,8 +313,8 @@ export function ApprovalBoard() {
                   <div className="mt-2 text-[12px] text-slate-500">Client: {row.clientName || '—'} · Sector: {row.category || '—'}</div>
                   <div className="mt-2 flex items-center justify-between gap-2">
                     <span className={`rounded-md px-2 py-0.5 text-[11px] font-bold ${priorityTone[row.priority] || 'bg-slate-100 text-slate-600'}`}>{row.priority || '—'}</span>
-                    <span className={`rounded-md px-2 py-0.5 text-[10px] font-bold ${bucket === 'completed' ? 'bg-emerald-50 text-emerald-700' : bucket === 'review' ? 'bg-blue-50 text-blue-700' : bucket === 'gm' ? 'bg-orange-50 text-orange-700' : 'bg-amber-50 text-amber-700'}`}>
-                      {bucket === 'completed' ? (bidChoiceOf(row) === 'No Bid' ? 'No Bid' : 'Completed') : bucket === 'review' ? 'Bid Review' : bucket === 'gm' ? 'GM Commercial' : 'MD Final Approval'}
+                    <span className={`rounded-md px-2 py-0.5 text-[10px] font-bold ${bucket === 'completed' ? 'bg-emerald-50 text-emerald-700' : bucket === 'review' ? 'bg-blue-50 text-blue-700' : bucket === 'proposal' ? 'bg-violet-50 text-violet-700' : bucket === 'gm' ? 'bg-orange-50 text-orange-700' : 'bg-amber-50 text-amber-700'}`}>
+                      {bucket === 'completed' ? (bidChoiceOf(row) === 'No Bid' ? 'No Bid' : 'Completed') : bucket === 'review' ? 'Bid Review' : bucket === 'proposal' ? 'Proposal Review' : bucket === 'gm' ? 'GM Commercial' : 'MD Final Approval'}
                     </span>
                   </div>
                 </button>
@@ -322,16 +342,17 @@ export function ApprovalBoard() {
                   <div className="min-w-0">
                     <div className="flex flex-wrap items-center gap-2">
                       <h2 className="text-[18px] font-black text-slate-950">{opportunity.title}</h2>
-                      <span className="rounded-full bg-amber-50 px-2 py-0.5 text-[11px] font-bold text-amber-700">{decided === 'Bid' ? 'Bid approved' : decided === 'No Bid' ? 'No Bid' : mdWaiting ? 'Awaiting MD final approval' : 'Awaiting GM Commercial'}</span>
+                      <span className="rounded-full bg-amber-50 px-2 py-0.5 text-[11px] font-bold text-amber-700">{decided === 'Bid' ? 'Bid approved' : decided === 'No Bid' ? 'No Bid' : proposalWaiting ? 'Awaiting Proposal review' : mdWaiting ? 'Awaiting MD final approval' : 'Awaiting GM Commercial'}</span>
                     </div>
                     <p className="text-[12px] font-semibold text-slate-500">{opportunity.referenceNo}</p>
                   </div>
                   <Link href={`/commercial/tenders/workspace?id=${opportunity.id}`} target="_blank" className="text-[12px] font-bold text-[#2563eb]">Open in New Tab</Link>
                 </div>
-                <ol className="mt-4 grid gap-2 sm:grid-cols-4 xl:grid-cols-5">
-                  {['Assign employee', 'GM Bid / No Bid', kind === 'EOI' || gmChoice === 'No Bid' ? 'Stops with GM' : 'MD final approval', ...DEPARTMENT_REVIEW_STAGES].map((stage, index) => {
-                    const approved = index === 0 ? Boolean(opportunity.ownerName) : index === 1 ? Boolean(gmChoice || decided) : index === 2 ? Boolean(decided) || gmChoice === 'No Bid' || (kind === 'EOI' && Boolean(gmChoice)) : approvals.some((item) => item.stage === stage && item.decision.toUpperCase() === 'APPROVE');
-                    const current = !approved && (index === 0 ? gmTurn && !opportunity.ownerName : index === 1 ? gmTurn : index === 2 ? mdWaiting : decided === 'Bid' && Boolean(opportunity.ownerName) && currentReview === stage);
+                <ol className="mt-4 grid gap-2 sm:grid-cols-4 xl:grid-cols-6">
+                  {['Proposal review', 'Assign employee', 'GM Bid / No Bid', kind === 'EOI' || gmChoice === 'No Bid' ? 'Stops with GM' : 'MD final approval', ...DEPARTMENT_REVIEW_STAGES].map((stage, index) => {
+                    const proposalDone = approvals.some((item) => item.stage === 'Proposal Review' && item.decision.toUpperCase() === 'APPROVE') || gmWaiting || Boolean(gmChoice || decided) || mdWaiting;
+                    const approved = index === 0 ? proposalDone : index === 1 ? Boolean(opportunity.ownerName) : index === 2 ? Boolean(gmChoice || decided) : index === 3 ? Boolean(decided) || gmChoice === 'No Bid' || (kind === 'EOI' && Boolean(gmChoice)) : approvals.some((item) => item.stage === stage && item.decision.toUpperCase() === 'APPROVE');
+                    const current = !approved && (index === 0 ? proposalWaiting : index === 1 ? gmTurn && !opportunity.ownerName : index === 2 ? gmTurn : index === 3 ? mdWaiting : decided === 'Bid' && Boolean(opportunity.ownerName) && currentReview === stage);
                     return (
                       <li key={stage} className="min-w-0">
                         <div className={`mx-auto flex h-7 w-7 items-center justify-center rounded-full text-[12px] font-bold ${approved ? 'bg-emerald-500 text-white' : current ? 'bg-[#2563eb] text-white' : 'bg-slate-100 text-slate-400'}`}>{index + 1}</div>
@@ -342,6 +363,162 @@ export function ApprovalBoard() {
                   })}
                 </ol>
               </div>
+
+              {proposalTurn ? (
+                <article className="rounded-2xl border border-[#2563eb]/30 bg-gradient-to-br from-[#eff6ff] to-white p-4 shadow-sm">
+                  <div className="mb-3 flex flex-wrap items-start justify-between gap-3">
+                    <div>
+                      <div className="text-[11px] font-bold uppercase tracking-[0.08em] text-[#2563eb]">Your action required</div>
+                      <h3 className="text-[16px] font-black text-slate-950">Proposal Review</h3>
+                      <p className="mt-1 text-[12px] text-slate-600">Set the priority, add review notes, then send to GM Commercial or return for correction.</p>
+                    </div>
+                    <span className={`rounded-full px-2.5 py-1 text-[11px] font-bold ${priorityTone[reviewPriority] || 'bg-slate-100 text-slate-600'}`}>Priority · {reviewPriority}</span>
+                  </div>
+                  <div className="grid gap-3 md:grid-cols-[200px_minmax(0,1fr)]">
+                    <label className="block text-[12px] font-semibold text-slate-600">
+                      Priority <span className="text-rose-500">*</span>
+                      <select value={reviewPriority} onChange={(event) => setReviewPriority(event.target.value)} disabled={busy} className="mt-1 h-11 w-full rounded-xl border border-slate-200 bg-white px-3 text-[13px] font-semibold text-slate-800 outline-none focus:border-blue-500">
+                        {['High', 'Medium', 'Low'].map((item) => <option key={item} value={item}>{item}</option>)}
+                      </select>
+                    </label>
+                    <label className="block text-[12px] font-semibold text-slate-600">
+                      Review comments
+                      <textarea maxLength={1000} value={comments} onChange={(event) => setComments(event.target.value)} disabled={busy} placeholder="Notes for GM Commercial, or the reason if returning for correction..." className="mt-1 min-h-24 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-[13px] font-normal text-slate-800 outline-none focus:border-blue-500" />
+                      <span className="mt-1 block text-right text-[11px] font-normal text-slate-400">{comments.length}/1000</span>
+                    </label>
+                  </div>
+                  <div className="mt-4 flex flex-wrap items-center justify-between gap-2 border-t border-blue-100 pt-3">
+                    <button type="button" disabled={busy || !comments.trim()} onClick={() => setConfirming('return')} className="h-10 rounded-xl border border-slate-200 bg-white px-4 text-[13px] font-bold text-slate-700 disabled:opacity-40">Return for correction</button>
+                    <button type="button" disabled={busy || !reviewPriority} onClick={() => setConfirming('decision')} className="h-10 rounded-xl bg-[#2563eb] px-4 text-[13px] font-bold text-white disabled:opacity-40">Send to GM Commercial</button>
+                  </div>
+                  {confirming ? (
+                    <div className="mt-3 rounded-xl border border-slate-200 bg-white p-3 text-[13px]">
+                      <p className="font-semibold text-slate-800">{confirming === 'return' ? 'Return this opportunity for correction?' : `Send to GM Commercial with priority ${reviewPriority}?`}</p>
+                      <div className="mt-2 flex gap-2">
+                        <button type="button" disabled={busy} onClick={() => setConfirming('')} className="h-9 rounded-lg border border-slate-200 bg-white px-3 font-bold text-slate-700">Cancel</button>
+                        <button type="button" disabled={busy} onClick={() => run(confirming === 'return' ? 'Return' : 'Approve')} className="h-9 rounded-lg bg-[#2563eb] px-3 font-bold text-white">{busy ? 'Saving…' : 'Confirm'}</button>
+                      </div>
+                    </div>
+                  ) : null}
+                </article>
+              ) : null}
+
+              {gmTurn && !proposalTurn ? (
+                <article className="rounded-2xl border border-orange-200/80 bg-gradient-to-br from-orange-50/80 to-white p-4 shadow-sm">
+                  <div className="mb-3">
+                    <div className="text-[11px] font-bold uppercase tracking-[0.08em] text-orange-700">Your action required</div>
+                    <h3 className="text-[16px] font-black text-slate-950">GM Commercial Approval</h3>
+                    <p className="mt-1 text-[12px] text-slate-600">Assign the employee, choose BID or NO BID, then confirm.</p>
+                  </div>
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    <DecisionCard
+                      selected={choice === 'Bid'}
+                      disabled={busy}
+                      tone="emerald"
+                      title="BID"
+                      hint={kind === 'EOI' ? 'Stops with GM Commercial' : 'Goes to the MD next'}
+                      onSelect={() => setChoice('Bid')}
+                    />
+                    <DecisionCard
+                      selected={choice === 'No Bid'}
+                      disabled={busy}
+                      tone="rose"
+                      title="NO BID"
+                      hint="Stops here · reason required"
+                      onSelect={() => setChoice('No Bid')}
+                    />
+                  </div>
+                  {choice === 'Bid' ? (
+                    <p className="mt-3 text-[12px] font-semibold text-slate-600">
+                      {kind === 'EOI'
+                        ? 'Assign the employee. This EOI stops with GM Commercial and does not go to the MD.'
+                        : 'Assign the employee. This ITT/RFQ BID goes to the MD for final approval.'}
+                    </p>
+                  ) : null}
+                  {choice === 'No Bid' ? (
+                    <p className="mt-3 text-[12px] font-semibold text-rose-700">Stops here. A reason is required in comments.</p>
+                  ) : null}
+                  <div className="mt-3 grid gap-3 md:grid-cols-2">
+                    <div>
+                      <div className="mb-1 text-[12px] font-semibold text-slate-600">Assigned employee <span className="text-rose-500">*</span></div>
+                      <OfficerSearch employees={directory} employeeId={officerCode} name={officer} disabled={busy} onSelect={(employee) => { setOfficer(employee?.fullName || ''); setOfficerCode(employee?.employeeId || ''); }} />
+                    </div>
+                    {choice !== 'No Bid' ? (
+                      <label className="block text-[12px] font-semibold text-slate-600">Internal submission deadline
+                        <input type="date" value={internal} onChange={(event) => setInternal(event.target.value)} disabled={busy} className="mt-1 h-10 w-full rounded-lg border border-slate-200 bg-white px-3 text-[13px]" />
+                      </label>
+                    ) : (
+                      <label className="block text-[12px] font-semibold text-slate-600">
+                        Reason <span className="text-rose-500">*</span>
+                        <textarea maxLength={1000} value={comments} onChange={(event) => setComments(event.target.value)} disabled={busy} placeholder="Reason for NO BID..." className="mt-1 min-h-10 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-[13px] outline-none focus:border-blue-500" />
+                      </label>
+                    )}
+                  </div>
+                  {choice !== 'No Bid' ? (
+                    <label className="mt-3 block text-[12px] font-semibold text-slate-600">
+                      Comments
+                      <textarea maxLength={1000} value={comments} onChange={(event) => setComments(event.target.value)} disabled={busy} placeholder="Decision notes or instructions..." className="mt-1 min-h-20 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-[13px] outline-none focus:border-blue-500" />
+                    </label>
+                  ) : null}
+                  <div className="mt-4 flex flex-wrap items-center justify-end gap-2 border-t border-orange-100 pt-3">
+                    <button
+                      type="button"
+                      disabled={busy || !choice || !officer || (choice === 'No Bid' && !comments.trim())}
+                      onClick={() => setConfirming('decision')}
+                      className="h-10 rounded-xl bg-[#2563eb] px-4 text-[13px] font-bold text-white disabled:opacity-40"
+                    >
+                      {choice === 'No Bid' ? 'Record NO BID' : 'Approve'}
+                    </button>
+                  </div>
+                  {confirming === 'decision' ? (
+                    <div className="mt-3 rounded-xl border border-slate-200 bg-white p-3 text-[13px]">
+                      <p className="font-semibold text-slate-800">{choice === 'No Bid' ? 'Record NO BID and notify the assigned employee and commercial team?' : kind === 'EOI' ? 'Approve this EOI with GM Commercial? It will not go to the MD.' : 'Approve this BID and send it to the MD for final approval?'}</p>
+                      <div className="mt-2 flex gap-2">
+                        <button type="button" disabled={busy} onClick={() => setConfirming('')} className="h-9 rounded-lg border border-slate-200 bg-white px-3 font-bold text-slate-700">Cancel</button>
+                        <button type="button" disabled={busy} onClick={() => run('Approve')} className="h-9 rounded-lg bg-[#2563eb] px-3 font-bold text-white">{busy ? 'Saving…' : 'Confirm'}</button>
+                      </div>
+                    </div>
+                  ) : null}
+                </article>
+              ) : null}
+
+              {mdTurn && !proposalTurn ? (
+                <article className="rounded-2xl border border-[#2563eb]/30 bg-gradient-to-br from-[#eff6ff] to-white p-4 shadow-sm">
+                  <div className="mb-3">
+                    <div className="text-[11px] font-bold uppercase tracking-[0.08em] text-[#2563eb]">Your action required</div>
+                    <h3 className="text-[16px] font-black text-slate-950">MD Final Approval</h3>
+                    <p className="mt-1 text-[12px] text-slate-600">GM Commercial approved a BID. Give final approval or return it.</p>
+                    <p className="mt-2 text-[12px] font-semibold text-slate-700">Assigned employee: {opportunity.ownerName || '—'}</p>
+                  </div>
+                  <label className="block text-[12px] font-semibold text-slate-600">
+                    Comments <span className="text-rose-500">*</span>
+                    <textarea maxLength={1000} value={comments} onChange={(event) => setComments(event.target.value)} disabled={busy} placeholder="Final approval notes, or the reason for return..." className="mt-1 min-h-24 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-[13px] outline-none focus:border-blue-500" />
+                  </label>
+                  <div className="mt-4 flex flex-wrap items-center justify-between gap-2 border-t border-blue-100 pt-3">
+                    <button type="button" disabled={busy || !comments.trim()} onClick={() => setConfirming('return')} className="h-10 rounded-xl border border-slate-200 bg-white px-4 text-[13px] font-bold text-slate-700 disabled:opacity-40">Return to GM Commercial</button>
+                    <button type="button" disabled={busy || !comments.trim()} onClick={() => setConfirming('decision')} className="h-10 rounded-xl bg-[#2563eb] px-4 text-[13px] font-bold text-white disabled:opacity-40">Give final approval</button>
+                  </div>
+                  {confirming ? (
+                    <div className="mt-3 rounded-xl border border-slate-200 bg-white p-3 text-[13px]">
+                      <p className="font-semibold text-slate-800">{confirming === 'return' ? 'Return this opportunity to GM Commercial?' : 'Give MD final approval and notify the assigned employee and commercial team?'}</p>
+                      <div className="mt-2 flex gap-2">
+                        <button type="button" disabled={busy} onClick={() => setConfirming('')} className="h-9 rounded-lg border border-slate-200 bg-white px-3 font-bold text-slate-700">Cancel</button>
+                        <button type="button" disabled={busy} onClick={() => run(confirming === 'return' ? 'Return' : 'Approve')} className="h-9 rounded-lg bg-[#2563eb] px-3 font-bold text-white">{busy ? 'Saving…' : 'Confirm'}</button>
+                      </div>
+                    </div>
+                  ) : null}
+                </article>
+              ) : null}
+
+              {canReview && currentReview ? (
+                <div className="flex flex-wrap items-center justify-between gap-2 rounded-2xl border border-blue-100 bg-blue-50/50 px-4 py-3">
+                  <span className="text-[12px] font-semibold text-slate-700">{currentReview} can start because the bid is approved and an officer is assigned.</span>
+                  <span className="flex gap-2">
+                    <button type="button" disabled={busy} onClick={() => review(currentReview, 'RETURN')} className="h-9 rounded-lg border border-slate-200 bg-white px-3 text-[12px] font-bold text-slate-700">Return</button>
+                    <button type="button" disabled={busy} onClick={() => review(currentReview, 'APPROVE')} className="h-9 rounded-lg bg-[#2563eb] px-3 text-[12px] font-bold text-white">Approve stage</button>
+                  </span>
+                </div>
+              ) : null}
 
               <div className="flex gap-1 overflow-x-auto rounded-2xl border border-slate-200 bg-white px-2">
                 {([
@@ -359,26 +536,26 @@ export function ApprovalBoard() {
               </div>
 
               {detailTab === 'details' ? (
-                <div className="grid gap-3 lg:grid-cols-2">
-                  <article className="rounded-2xl border border-slate-200 bg-white p-4">
+                <div className="grid min-w-0 gap-3 lg:grid-cols-2">
+                  <article className="min-w-0 rounded-2xl border border-slate-200 bg-white p-4">
                     <h3 className="mb-3 text-[14px] font-black text-slate-900">Key Information</h3>
                     <dl className="space-y-2 text-[13px]">
                       <Info label="Project Title" value={opportunity.title} />
                       <Info label="Client" value={opportunity.clientName} />
                       <Info label="Sector" value={opportunity.category} />
                       <Info label="Tender Type" value={opportunity.tenderType || opportunity.contractType} />
-                      <div>
+                      <div className="min-w-0">
                         <dt className="text-slate-400">Project Scope</dt>
-                        <dd className="text-slate-800">{opportunity.description || '—'}</dd>
+                        <dd className="break-words text-slate-800">{opportunity.description || '—'}</dd>
                       </div>
-                      <div>
+                      <div className="min-w-0">
                         <dt className="text-slate-400">Key Requirements</dt>
-                        <dd>{requirements.length ? <ul className="list-disc pl-4 text-slate-800">{requirements.map((line) => <li key={line}>{line}</li>)}</ul> : <span className="text-slate-500">No key requirements have been recorded.</span>}</dd>
+                        <dd>{requirements.length ? <ul className="list-disc pl-4 text-slate-800">{requirements.map((line) => <li key={line} className="break-words">{line}</li>)}</ul> : <span className="text-slate-500">No key requirements have been recorded.</span>}</dd>
                       </div>
                     </dl>
                     <span className={`mt-3 inline-flex rounded-md px-2 py-0.5 text-[11px] font-bold ${priorityTone[opportunity.priority] || 'bg-slate-100 text-slate-600'}`}>{opportunity.priority || '—'}</span>
                   </article>
-                  <div className="space-y-3">
+                  <div className="min-w-0 space-y-3">
                     <article className="rounded-2xl border border-slate-200 bg-white p-4">
                       <h3 className="mb-3 text-[14px] font-black text-slate-900">Deadlines</h3>
                       <Deadline label="External Submission Date" value={external ? formatWhen(external) : '—'} days={externalDays} />
@@ -441,108 +618,17 @@ export function ApprovalBoard() {
           )}
         </section>
       </div>
-
-      {decisionOpen ? (
-        <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-slate-900/40 p-4" onMouseDown={(event) => { if (event.target === event.currentTarget) closeDecision(); }}>
-          <div role="dialog" aria-modal="true" aria-labelledby="md-bid-title" className="my-4 w-full max-w-5xl rounded-2xl border border-slate-200 bg-white p-4 shadow-xl" onMouseDown={(event) => event.stopPropagation()}>
-            {!opportunity ? <p className="py-8 text-center text-sm text-slate-500">{record.loading ? 'Loading opportunity…' : 'This opportunity could not be opened.'}</p> : (
-              <>
-                <div className="mb-3 flex items-start gap-2">
-                  <span className="inline-flex h-8 w-8 items-center justify-center rounded-lg bg-blue-50 text-[#2563eb]"><ClipboardCheck className="h-4 w-4" /></span>
-                  <div className="min-w-0 flex-1">
-                    <h3 id="md-bid-title" className="text-[15px] font-black text-slate-950">{mdTurn ? 'MD Final Approval' : 'GM Commercial Approval'}</h3>
-                    <p className="text-[12px] text-slate-500">{mdTurn ? 'GM Commercial has assigned the employee and approved a BID. Give final approval or return it to GM Commercial.' : 'Assign the employee who will handle this opportunity, record BID or NO BID, then approve. EOI and NO BID stop here. An ITT or RFQ BID goes to the MD.'}</p>
-                    <p className="mt-1 truncate text-[12px] font-semibold text-slate-700">{opportunity.referenceNo} · {opportunity.title}</p>
-                  </div>
-                  <button type="button" onClick={closeDecision} className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-slate-400 hover:bg-slate-100 hover:text-slate-700" aria-label="Close decision"><X className="h-4 w-4" /></button>
-                </div>
-                <div className="grid gap-3 lg:grid-cols-[1fr_1fr_280px]">
-                  <DecisionCard
-                    selected={choice === 'Bid'}
-                    disabled={!gmTurn || busy}
-                    tone="emerald"
-                    title="BID"
-                    points={['GM Commercial approves the bid first.', 'An ITT or RFQ then goes to the MD.', 'An EOI stays with GM Commercial.', 'Assign the employee who will handle it.', 'Notify the employee and commercial team when the outcome is final.']}
-                    onSelect={() => setChoice('Bid')}
-                  />
-                  <DecisionCard
-                    selected={choice === 'No Bid'}
-                    disabled={!gmTurn || busy}
-                    tone="rose"
-                    title="NO BID"
-                    points={['GM Commercial records NO BID.', 'The opportunity stops here.', 'It does not go to the MD.', 'A reason is required.', 'The assigned employee and commercial team are notified.']}
-                    onSelect={() => setChoice('No Bid')}
-                  />
-                  <label className="block text-[12px] font-semibold text-slate-500">
-                    Comments {choice === 'No Bid' || mdTurn ? <span className="text-rose-500">*</span> : null}
-                    <textarea maxLength={1000} value={comments} onChange={(event) => setComments(event.target.value)} disabled={(!gmTurn && !mdTurn) || busy} placeholder="Enter the decision comments, reasons or instructions..." className="mt-1 min-h-36 w-full rounded-xl border border-slate-200 px-3 py-2 text-[13px] font-normal text-slate-800 outline-none focus:border-blue-500" />
-                    <span className="mt-1 block text-right text-[11px] font-normal text-slate-400">{comments.length}/1000</span>
-                  </label>
-                </div>
-                {gmTurn ? (
-                  <div className="mt-3 grid gap-3 rounded-xl border border-emerald-100 bg-emerald-50/40 p-3 md:grid-cols-2">
-                    <div>
-                      <div className="mb-1 text-[12px] font-semibold text-slate-600">Assigned employee</div>
-                      <OfficerSearch employees={directory} employeeId={officerCode} name={officer} disabled={busy} onSelect={(employee) => { setOfficer(employee?.fullName || ''); setOfficerCode(employee?.employeeId || ''); }} />
-                    </div>
-                    {choice !== 'No Bid' ? (
-                      <label className="block text-[12px] font-semibold text-slate-600">Internal submission deadline
-                        <input type="date" value={internal} onChange={(event) => setInternal(event.target.value)} disabled={busy} className="mt-1 h-10 w-full rounded-lg border border-slate-200 bg-white px-3 text-[13px]" />
-                      </label>
-                    ) : null}
-                  </div>
-                ) : null}
-                {mdTurn ? <p className="mt-3 text-[12px] font-semibold text-slate-600">GM Commercial decision: BID. Assigned employee: {opportunity.ownerName || '—'}.</p> : null}
-                {decided ? <p className="mt-3 text-[12px] font-semibold text-slate-600">{decided === 'Bid' ? `Bid approved. Assigned employee: ${opportunity.ownerName || '—'}.` : 'NO BID was recorded by GM Commercial. This opportunity is closed to bid preparation.'}</p> : null}
-                {!gmTurn && !mdTurn && !decided ? <p className="mt-3 text-[12px] text-slate-500">GM Commercial assigns the employee and records the first decision. The MD gives final approval only for an ITT or RFQ BID.</p> : null}
-                {canReview && currentReview ? (
-                  <div className="mt-3 flex flex-wrap items-center justify-between gap-2 rounded-xl border border-blue-100 bg-blue-50/50 px-3 py-2">
-                    <span className="text-[12px] font-semibold text-slate-700">{currentReview} can start because the bid is approved and an officer is assigned.</span>
-                    <span className="flex gap-2">
-                      <button type="button" disabled={busy} onClick={() => review(currentReview, 'RETURN')} className="h-9 rounded-lg border border-slate-200 bg-white px-3 text-[12px] font-bold text-slate-700">Return</button>
-                      <button type="button" disabled={busy} onClick={() => review(currentReview, 'APPROVE')} className="h-9 rounded-lg bg-[#2563eb] px-3 text-[12px] font-bold text-white">Approve stage</button>
-                    </span>
-                  </div>
-                ) : null}
-                <div className="mt-4 flex flex-wrap items-center justify-between gap-2">
-                  <div className="flex gap-3 text-[12px] font-bold">
-                    <button type="button" disabled={!mdTurn || busy || !comments.trim()} onClick={() => setConfirming('return')} className="text-slate-600 disabled:opacity-40">Return to GM Commercial</button>
-                    <button type="button" onClick={() => setHistoryOpen((open) => !open)} className="inline-flex items-center gap-1 text-[#2563eb]"><History className="h-3.5 w-3.5" /> View History</button>
-                  </div>
-                  <div className="flex gap-2">
-                    {mdTurn ? <button type="button" disabled={busy || !comments.trim()} onClick={() => setConfirming('return')} className="h-10 rounded-xl border border-slate-200 px-4 text-[13px] font-bold text-slate-700 disabled:opacity-40">Return to GM</button> : null}
-                    <button type="button" disabled={(!gmTurn && !mdTurn) || busy || (gmTurn && (!choice || !officer)) || (gmTurn && choice === 'No Bid' && !comments.trim())} onClick={() => setConfirming('decision')} className="h-10 rounded-xl bg-[#2563eb] px-4 text-[13px] font-bold text-white disabled:opacity-40">{mdTurn ? 'Give final approval' : choice === 'No Bid' ? 'Record NO BID' : 'Approve'}</button>
-                  </div>
-                </div>
-                {historyOpen ? (
-                  <div className="mt-3 rounded-xl border border-slate-100 p-3">
-                    {audit.length === 0 ? <p className="text-sm text-slate-500">No history has been recorded.</p> : (
-                      <ol className="space-y-2">{audit.map((event) => (
-                        <li key={event.id} className="rounded-xl border border-slate-100 px-3 py-2 text-[13px]"><span className="font-bold text-slate-800">{event.action}</span> <span className="text-slate-500">{event.actor} · {formatWhen(event.createdAt)}</span><div className="text-slate-600">{event.details}</div></li>
-                      ))}</ol>
-                    )}
-                  </div>
-                ) : null}
-                {confirming ? (
-                  <div className="mt-3 rounded-xl border border-slate-200 bg-slate-50 p-3 text-[13px]">
-                    <p className="font-semibold text-slate-800">{confirming === 'return' ? 'Return this opportunity to GM Commercial?' : mdTurn ? 'Give MD final approval and notify the assigned employee and commercial team?' : choice === 'No Bid' ? 'Record NO BID, stop it with GM Commercial, and send the notification?' : kind === 'EOI' ? 'Approve this EOI with GM Commercial and send the notification? It will not go to the MD.' : 'Approve this BID and send it to the MD for final approval?'}</p>
-                    <div className="mt-2 flex gap-2">
-                      <button type="button" disabled={busy} onClick={() => setConfirming('')} className="h-9 rounded-lg border border-slate-200 bg-white px-3 font-bold text-slate-700">Cancel</button>
-                      <button type="button" disabled={busy} onClick={() => run(confirming === 'return' ? 'Return' : 'Approve')} className="h-9 rounded-lg bg-[#2563eb] px-3 font-bold text-white">{busy ? 'Saving…' : 'Confirm'}</button>
-                    </div>
-                  </div>
-                ) : null}
-              </>
-            )}
-          </div>
-        </div>
-      ) : null}
     </div>
   );
 }
 
 function Info({ label, value }: { label: string; value?: string }) {
-  return <div className="flex justify-between gap-3"><dt className="text-slate-400">{label}</dt><dd className="text-right font-semibold text-slate-800">{value || '—'}</dd></div>;
+  return (
+    <div className="flex min-w-0 justify-between gap-3">
+      <dt className="shrink-0 text-slate-400">{label}</dt>
+      <dd className="min-w-0 break-words text-right font-semibold text-slate-800">{value || '—'}</dd>
+    </div>
+  );
 }
 
 function Deadline({ label, value, days }: { label: string; value: string; days: number | null }) {
@@ -554,14 +640,14 @@ function Deadline({ label, value, days }: { label: string; value: string; days: 
   );
 }
 
-function DecisionCard({ selected, disabled, tone, title, points, onSelect }: { selected: boolean; disabled: boolean; tone: 'emerald' | 'rose'; title: string; points: string[]; onSelect: () => void }) {
+function DecisionCard({ selected, disabled, tone, title, hint, onSelect }: { selected: boolean; disabled: boolean; tone: 'emerald' | 'rose'; title: string; hint: string; onSelect: () => void }) {
   const active = tone === 'emerald' ? 'border-emerald-300 bg-emerald-50' : 'border-rose-300 bg-rose-50';
   return (
-    <button type="button" disabled={disabled} onClick={onSelect} className={`rounded-2xl border p-3 text-left ${selected ? active : 'border-slate-200 bg-white'} disabled:cursor-default`}>
-      <div className={`mb-2 inline-flex items-center gap-2 text-[13px] font-black ${tone === 'emerald' ? 'text-emerald-700' : 'text-rose-600'}`}>
-        {tone === 'emerald' ? <CheckCircle2 className="h-4 w-4" /> : <XCircle className="h-4 w-4" />} {title}
+    <button type="button" disabled={disabled} onClick={onSelect} className={`rounded-2xl border px-4 py-5 text-left transition ${selected ? active : 'border-slate-200 bg-white hover:border-slate-300'} disabled:cursor-default`}>
+      <div className={`inline-flex items-center gap-2 text-[15px] font-black ${tone === 'emerald' ? 'text-emerald-700' : 'text-rose-600'}`}>
+        {tone === 'emerald' ? <CheckCircle2 className="h-5 w-5" /> : <XCircle className="h-5 w-5" />} {title}
       </div>
-      <ul className="space-y-1 text-[12px] text-slate-600">{points.map((point) => <li key={point}>{point}</li>)}</ul>
+      <p className="mt-2 text-[12px] font-semibold text-slate-500">{hint}</p>
     </button>
   );
 }

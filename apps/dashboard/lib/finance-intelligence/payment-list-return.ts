@@ -4,7 +4,7 @@
  */
 
 export type PaymentListHeaderFilter = {
-  selected?: string[];
+  selected?: string[] | null;
   min?: string;
   max?: string;
 };

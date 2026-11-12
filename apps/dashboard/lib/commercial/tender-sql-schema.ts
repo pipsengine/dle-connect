@@ -434,4 +434,25 @@ CREATE TABLE [commercial].[TenderReminderLog] (
   [Detail] NVARCHAR(500) NULL,
   [CreatedAt] DATETIME2(0) NOT NULL CONSTRAINT [DF_TenderReminder_CreatedAt] DEFAULT SYSUTCDATETIME()
 );
+
+IF OBJECT_ID(N'[commercial].[TenderClients]', N'U') IS NULL
+CREATE TABLE [commercial].[TenderClients] (
+  [ClientId] NVARCHAR(40) NOT NULL CONSTRAINT [PK_TenderClients] PRIMARY KEY,
+  [ClientName] NVARCHAR(220) NOT NULL,
+  [ContactPerson] NVARCHAR(180) NULL,
+  [Email] NVARCHAR(200) NULL,
+  [Phone] NVARCHAR(80) NULL,
+  [AddressLine] NVARCHAR(500) NULL,
+  [Sector] NVARCHAR(80) NULL,
+  [Notes] NVARCHAR(MAX) NULL,
+  [CreatedAt] DATETIME2(0) NOT NULL CONSTRAINT [DF_TenderClients_CreatedAt] DEFAULT SYSUTCDATETIME(),
+  [UpdatedAt] DATETIME2(0) NOT NULL CONSTRAINT [DF_TenderClients_UpdatedAt] DEFAULT SYSUTCDATETIME(),
+  [CreatedBy] NVARCHAR(120) NULL,
+  [UpdatedBy] NVARCHAR(120) NULL
+);
+
+IF NOT EXISTS (
+  SELECT 1 FROM sys.indexes WHERE name = N'UX_TenderClients_Name' AND object_id = OBJECT_ID(N'[commercial].[TenderClients]')
+)
+  CREATE UNIQUE INDEX [UX_TenderClients_Name] ON [commercial].[TenderClients]([ClientName]);
 `;

@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { effectivePermissionsForUser } from '@/lib/auth/access-control-store';
+import { readUsers } from '@/lib/auth/auth-store';
 import { withCorrespondenceParticipantPermission } from '@/lib/corporate-office/front-desk-access';
 import { resolveAccessPermissions } from '@/lib/auth/resolve-access-session';
 import { isSuperActor } from '@/lib/auth/role-delegation';
@@ -53,7 +54,19 @@ export async function GET(request: Request) {
   }
 
   const permissions = await withCorrespondenceParticipantPermission(await resolvePermissionsWithBudget(session), session.employeeCode);
-  const data = { ...session, permissions, lastActivityAt: Math.floor(Date.now() / 1000) };
+  let jobTitle = '';
+  try {
+    const users = await readUsers();
+    const live = users.find((user) =>
+      user.id === session.sub
+      || (session.employeeCode && [user.employeeCode, user.employeeId, user.username].map((value) => String(value || '').trim().toUpperCase()).includes(String(session.employeeCode).trim().toUpperCase()))
+      || (session.username && String(user.username || '').trim().toLowerCase() === String(session.username).trim().toLowerCase()),
+    );
+    jobTitle = String(live?.jobTitle || '').trim();
+  } catch (error) {
+    console.warn('[api/auth/me] job title lookup failed', error);
+  }
+  const data = { ...session, permissions, jobTitle, lastActivityAt: Math.floor(Date.now() / 1000) };
   const response = NextResponse.json({ status: 'success', data });
   response.cookies.set(
     AUTH_COOKIE,

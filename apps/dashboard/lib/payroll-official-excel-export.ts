@@ -26,6 +26,7 @@ import { NIGHT_INCONVENIENCE_ALLOWANCE_AMOUNT } from '@/lib/timesheet-entry-shar
 import { resolvePayrollCompany, type PayrollCompany } from '@/lib/payroll-schedule-scope';
 import { ngnSalaryScheduleCostSummary } from '@/lib/salary-schedule-overlay';
 import { isPensionEligibleStaff } from '@/lib/payroll-employee-classification';
+import { displayEmploymentGrade } from '@/lib/payroll-earnings-engine';
 
 const roundMoney = (value: number) => Math.round((Number.isFinite(value) ? value : 0) * 100) / 100;
 const compact = (value: unknown) => String(value || '').trim();
@@ -223,6 +224,7 @@ const enrich = (record: PayrollCalculationRecord, dir?: DirectoryEnrichment | nu
   });
   const computedAge = ageFromDob(dir?.dateOfBirth);
   const ageValue = Number(dir?.age || 0) || (typeof computedAge === 'number' ? computedAge : Number(computedAge) || 0);
+  const employmentGrade = displayEmploymentGrade(record, dir);
   return {
     ...record,
     _firstName: names.firstName,
@@ -241,7 +243,8 @@ const enrich = (record: PayrollCalculationRecord, dir?: DirectoryEnrichment | nu
     _employeeTypeHa: haLabel(compact(record.employmentType || dir?.employmentType), record.employmentType || dir?.employmentType),
     _locationHa: haLabel(compact(record.location || dir?.location).split(/\s*-\s*/)[0] || record.location, record.location || dir?.location),
     _pensionHa: isPensionEligibleStaff(record) ? haLabel(compact(dir?.pensionProvider), dir?.pensionProvider) : '',
-    _profileHa: haLabel(compact(record.salaryGrade || dir?.salaryGrade || dir?.jobGrade), record.salaryGrade || dir?.salaryGrade || dir?.jobGrade),
+    _profileHa: haLabel(employmentGrade, employmentGrade),
+    employmentGrade,
     _supervisorHa: compact(dir?.reportingManager || dir?.managerName),
     _jobTitle: compact(record.jobTitle || dir?.jobTitle),
     _location: compact(record.location || dir?.location),
@@ -801,8 +804,8 @@ const buildSalariedSheet = (
   const earningLabels = [...baseEarnings, ...extraEarnings];
   const deductionColumns = isPerm ? PERM_DEDUCTION_COLUMNS : CONT_DEDUCTION_COLUMNS;
   const identity = isPerm
-    ? ['Employee Code', 'EmployeeSurname', 'EmployeeFirstName', 'Age', 'Date of Birth', 'Gender', 'Date Joined Group', 'Job Title Long Description', 'Days Worked']
-    : ['Employee Code', 'Cont Type', 'EmployeeSurname', 'EmployeeFirstName', 'Age', 'Date of Birth', 'Gender', 'Date Joined Group', 'Job Title Long Description', 'Days Worked'];
+    ? ['Employee Code', 'EmployeeSurname', 'EmployeeFirstName', 'Age', 'Date of Birth', 'Gender', 'Date Joined Group', 'Job Title Long Description', 'Employment Grade', 'Days Worked']
+    : ['Employee Code', 'Cont Type', 'EmployeeSurname', 'EmployeeFirstName', 'Age', 'Date of Birth', 'Gender', 'Date Joined Group', 'Job Title Long Description', 'Employment Grade', 'Days Worked'];
   const columns = [
     ...identity,
     ...earningLabels,
@@ -833,6 +836,7 @@ const buildSalariedSheet = (
           record._gender,
           record._dateJoined,
           record._jobTitle,
+          record.employmentGrade,
           Number(record.timesheetDaysWorked ?? record.timesheetTotalDaysWorked ?? 0),
         ]
       : [
@@ -845,6 +849,7 @@ const buildSalariedSheet = (
           record._gender,
           record._dateJoined,
           record._jobTitle,
+          record.employmentGrade,
           Number(record.timesheetDaysWorked ?? record.timesheetTotalDaysWorked ?? 0),
         ];
 
@@ -920,6 +925,7 @@ const buildUsdSalaryRegisterSheet = (records: PayrollCalculationRecord[], period
     'Employee Code',
     'Employee Name',
     'Department',
+    'Employment Grade',
     'USD Gross',
     'USD Deductions',
     'USD Net',
@@ -936,6 +942,7 @@ const buildUsdSalaryRegisterSheet = (records: PayrollCalculationRecord[], period
     usdSalaryRegisterCode(record),
     compact(record.fullName),
     compact(record.department),
+    compact(record.employmentGrade),
     roundMoney(Number(record.grossPay || 0)),
     roundMoney(Number(record.totalDeductions || record.deductions || 0)),
     roundMoney(Number(record.netPay || 0)),
@@ -966,6 +973,7 @@ const buildUsdSalaryRegisterSheet = (records: PayrollCalculationRecord[], period
       section.rows.length,
       '',
       '',
+      '',
       roundMoney(totals.usdGross),
       roundMoney(totals.usdDeductions),
       roundMoney(totals.usdNet),
@@ -991,6 +999,7 @@ const buildUsdSalaryRegisterSheet = (records: PayrollCalculationRecord[], period
   dataRows.push([
     'DLE USD total',
     records.length,
+    '',
     '',
     '',
     roundMoney(grand.usdGross),
@@ -1023,6 +1032,7 @@ const buildUsdReportSheet = (records: Enriched[], periodLabel: string): ExcelWor
     'Gender',
     'Date Joined Group',
     'Job Title Long Description',
+    'Employment Grade',
     ...earningLabels,
     'Earning Total',
     'PAYE Tax (Deduction)',
@@ -1066,6 +1076,7 @@ const buildUsdReportSheet = (records: Enriched[], periodLabel: string): ExcelWor
         record._gender,
         record._dateJoined,
         record._jobTitle,
+        record.employmentGrade,
         ...earningCells,
         earningTotal,
         lineAmount(record.deductionLines, /^PAYE$/i) || roundMoney(Number(record.paye || 0)),

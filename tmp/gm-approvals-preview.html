@@ -1,0 +1,240 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Approvals · GM Commercial · Laptop preview</title>
+  <style>
+    * { box-sizing: border-box; }
+    body { margin: 0; font-family: Segoe UI, system-ui, sans-serif; background: #0f172a; color: #0f172a; }
+    .laptop {
+      max-width: 1280px; margin: 24px auto; background: #1e293b; border-radius: 18px;
+      padding: 14px 14px 28px; box-shadow: 0 30px 80px rgba(0,0,0,.45);
+    }
+    .bezel { background: #f4f7fb; border-radius: 10px; overflow: hidden; min-height: 720px; display: grid; grid-template-columns: 252px 1fr; }
+    .side { background: #071427; color: #d5deea; padding: 16px 12px; }
+    .brand { display: flex; gap: 10px; align-items: center; padding: 4px 8px 18px; }
+    .logo { width: 34px; height: 34px; border-radius: 6px; background: #fff; display:grid; place-items:center; font-weight:900; color:#071427; font-size:11px; }
+    .brand strong { display:block; color:#fff; font-size:13px; letter-spacing:.02em; }
+    .brand span { display:block; color:#7dd3fc; font-size:9px; letter-spacing:.18em; text-transform:uppercase; font-weight:700; }
+    .nav { display:flex; flex-direction:column; gap:4px; padding-left:8px; }
+    .nav .sec { color:#fff; font-size:13px; font-weight:700; padding:10px 12px; }
+    .nav a { display:block; border-radius:8px; padding:8px 12px; font-size:13px; font-weight:600; color:#d5deea; text-decoration:none; }
+    .nav a.active { background:#2563eb; color:#fff; }
+    .main { min-width:0; }
+    .top { height:64px; background:#fff; border-bottom:1px solid #e2e8f0; display:flex; align-items:center; gap:12px; padding:0 20px; }
+    .search { flex:1; max-width:420px; height:40px; border:1px solid #e2e8f0; border-radius:12px; background:#f8fafc; padding:0 14px; color:#94a3b8; font-size:13px; display:flex; align-items:center; }
+    .chip { margin-left:auto; display:flex; gap:8px; align-items:center; font-size:13px; font-weight:600; color:#334155; }
+    .avatar { width:34px; height:34px; border-radius:999px; background:#cbd5e1; display:grid; place-items:center; font-weight:800; font-size:12px; }
+    .body { padding:20px 22px; }
+    .head { display:flex; justify-content:space-between; gap:16px; align-items:flex-start; margin-bottom:16px; }
+    .head h1 { margin:0; font-size:22px; font-weight:900; }
+    .head p { margin:4px 0 0; font-size:13px; color:#64748b; }
+    .tabs { display:flex; gap:8px; }
+    .tab { height:40px; border-radius:12px; padding:0 16px; border:1px solid #e2e8f0; background:#fff; font-size:13px; font-weight:700; color:#475569; display:grid; place-items:center; }
+    .tab.on { background:#2563eb; border-color:#2563eb; color:#fff; }
+    .grid { display:grid; grid-template-columns:340px minmax(0,1fr); gap:16px; align-items:start; }
+    .panel { background:#fff; border:1px solid #e2e8f0; border-radius:16px; box-shadow:0 1px 2px rgba(15,23,42,.04); }
+    .panel h2 { margin:0; padding:12px 14px; font-size:15px; font-weight:900; border-bottom:1px solid #f1f5f9; display:flex; justify-content:space-between; }
+    .badge { background:#f1f5f9; border-radius:999px; padding:2px 8px; font-size:12px; font-weight:700; color:#475569; }
+    .list { padding:10px; display:flex; flex-direction:column; gap:8px; }
+    .card { border:1px solid #e2e8f0; border-radius:12px; padding:12px; background:#fff; }
+    .card.sel { border-color:#2563eb; background:#eff6ff66; box-shadow:0 1px 2px rgba(37,99,235,.12); }
+    .card .ref { color:#2563eb; font-size:12px; font-weight:700; }
+    .card .title { font-size:13px; font-weight:900; margin-top:2px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+    .card .meta { margin-top:8px; font-size:12px; color:#64748b; }
+    .row { display:flex; justify-content:space-between; gap:8px; margin-top:8px; align-items:center; }
+    .pill { border-radius:6px; padding:2px 8px; font-size:11px; font-weight:700; }
+    .med { background:#fffbeb; color:#b45309; }
+    .hi { background:#fff1f2; color:#e11d48; }
+    .gm { background:#fff7ed; color:#c2410c; font-size:10px; }
+    .detail { display:flex; flex-direction:column; gap:12px; min-width:0; }
+    .hero { padding:16px; }
+    .hero-top { display:flex; justify-content:space-between; gap:12px; align-items:flex-start; }
+    .hero h3 { margin:0; font-size:18px; font-weight:900; display:inline; }
+    .status { display:inline-block; margin-left:8px; background:#fffbeb; color:#b45309; border-radius:999px; padding:2px 8px; font-size:11px; font-weight:700; vertical-align:middle; }
+    .hero .ref { margin:4px 0 0; font-size:12px; font-weight:600; color:#64748b; }
+    .link { color:#2563eb; font-size:12px; font-weight:700; text-decoration:none; }
+    .steps { margin-top:14px; display:grid; grid-template-columns:repeat(6,minmax(0,1fr)); gap:8px; }
+    .step { text-align:center; min-width:0; }
+    .dot { width:28px; height:28px; border-radius:999px; margin:0 auto; display:grid; place-items:center; font-size:12px; font-weight:800; background:#f1f5f9; color:#94a3b8; }
+    .dot.done { background:#10b981; color:#fff; }
+    .dot.cur { background:#2563eb; color:#fff; }
+    .step label { display:block; margin-top:4px; font-size:10px; font-weight:600; color:#475569; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+    .step small { display:block; font-size:10px; color:#94a3b8; }
+    .step small.done { color:#059669; }
+    .step small.cur { color:#2563eb; }
+    .action { border:1px solid #fdba74; background:linear-gradient(180deg,#fff7ed, #fff); border-radius:16px; padding:16px; box-shadow:0 1px 2px rgba(15,23,42,.04); }
+    .eyebrow { font-size:11px; font-weight:800; letter-spacing:.08em; text-transform:uppercase; color:#c2410c; }
+    .action h4 { margin:4px 0 0; font-size:16px; font-weight:900; }
+    .action > p { margin:6px 0 0; font-size:12px; color:#64748b; }
+    .choices { margin-top:12px; display:grid; grid-template-columns:1fr 1fr; gap:12px; }
+    .choice { border:1px solid #e2e8f0; border-radius:16px; padding:18px 16px; background:#fff; }
+    .choice.bid { border-color:#6ee7b7; background:#ecfdf5; }
+    .choice .t { font-size:15px; font-weight:900; color:#047857; display:flex; gap:8px; align-items:center; }
+    .choice .h { margin-top:8px; font-size:12px; font-weight:600; color:#64748b; }
+    .choice.nb .t { color:#e11d48; }
+    .note { margin-top:12px; font-size:12px; font-weight:600; color:#475569; }
+    .fields { margin-top:12px; display:grid; grid-template-columns:1fr 1fr; gap:12px; }
+    .field label { display:block; font-size:12px; font-weight:600; color:#475569; margin-bottom:4px; }
+    .field .box { height:40px; border:1px solid #e2e8f0; border-radius:10px; background:#fff; padding:0 12px; display:flex; align-items:center; font-size:13px; color:#334155; }
+    .comments { margin-top:12px; }
+    .comments textarea { width:100%; min-height:72px; border:1px solid #e2e8f0; border-radius:12px; padding:10px 12px; font:inherit; font-size:13px; resize:none; }
+    .footer { margin-top:14px; padding-top:12px; border-top:1px solid #ffedd5; display:flex; justify-content:flex-end; }
+    .btn { height:40px; border:0; border-radius:12px; background:#2563eb; color:#fff; font-size:13px; font-weight:800; padding:0 18px; }
+    .tabs2 { display:flex; gap:4px; background:#fff; border:1px solid #e2e8f0; border-radius:16px; padding:0 8px; overflow:auto; }
+    .tabs2 span { white-space:nowrap; padding:12px 12px; font-size:13px; font-weight:600; color:#64748b; border-bottom:2px solid transparent; }
+    .tabs2 span.on { color:#2563eb; border-bottom-color:#2563eb; }
+    .info { display:grid; grid-template-columns:1fr 1fr; gap:12px; }
+    .boxcard { background:#fff; border:1px solid #e2e8f0; border-radius:16px; padding:14px; }
+    .boxcard h5 { margin:0 0 10px; font-size:14px; font-weight:900; }
+    .kv { display:flex; justify-content:space-between; gap:12px; font-size:13px; margin:6px 0; }
+    .kv span { color:#94a3b8; }
+    .kv b { color:#1e293b; text-align:right; }
+    .caption { text-align:center; color:#94a3b8; font-size:12px; margin-top:10px; }
+  </style>
+</head>
+<body>
+  <div class="laptop">
+    <div class="bezel">
+      <aside class="side">
+        <div class="brand">
+          <div class="logo">DLE</div>
+          <div><strong>DLE CONNECT</strong><span>Enterprise</span></div>
+        </div>
+        <div class="nav">
+          <div class="sec">Tender Management</div>
+          <a href="#">Dashboard</a>
+          <a href="#">Commercial Opportunities</a>
+          <a class="active" href="#">Approvals</a>
+          <a href="#">Tender Workspace</a>
+          <a href="#">Bid Preparation</a>
+          <a href="#">Reports &amp; Intelligence</a>
+        </div>
+      </aside>
+      <div class="main">
+        <header class="top">
+          <div class="search">Search opportunities, clients, reference no…</div>
+          <div class="chip">
+            <span>Enterprise Home</span>
+            <span>🔔 2</span>
+            <span>English</span>
+            <div class="avatar">MC</div>
+          </div>
+        </header>
+        <div class="body">
+          <div class="head">
+            <div>
+              <h1>Approvals</h1>
+              <p>Proposal first, then GM Commercial (assign, BID / NO BID), then MD where required.</p>
+            </div>
+            <div class="tabs">
+              <div class="tab on">Pending My Action (6)</div>
+              <div class="tab">All Approvals (6)</div>
+              <div class="tab">Completed (0)</div>
+            </div>
+          </div>
+          <div class="grid">
+            <section class="panel">
+              <h2>Pending My Action <span class="badge">6</span></h2>
+              <div class="list">
+                <div class="card sel">
+                  <div class="ref">DLE-T-2026-102</div>
+                  <div class="title">ANGLE STEEL BAR</div>
+                  <div class="meta">Client: Bella White · Sector: Fabrication</div>
+                  <div class="row"><span class="pill med">Medium</span><span class="pill gm">GM Commercial</span></div>
+                </div>
+                <div class="card">
+                  <div class="ref">DLE-T-2026-099</div>
+                  <div class="title">Request for quotation DP-BLD-01 · Structural…</div>
+                  <div class="meta">Client: CMEC Nigeria Development Limited</div>
+                  <div class="row"><span class="pill hi">High</span><span class="pill gm">GM Commercial</span></div>
+                </div>
+                <div class="card">
+                  <div class="ref">DLE-T-2026-101</div>
+                  <div class="title">Inquiry for Fabrication of Crane Girder</div>
+                  <div class="meta">Client: Kresta Laurel Limited</div>
+                  <div class="row"><span class="pill hi">High</span><span class="pill gm">GM Commercial</span></div>
+                </div>
+              </div>
+            </section>
+            <section class="detail">
+              <div class="panel hero">
+                <div class="hero-top">
+                  <div>
+                    <h3>ANGLE STEEL BAR</h3><span class="status">Awaiting GM Commercial</span>
+                    <p class="ref">DLE-T-2026-102</p>
+                  </div>
+                  <a class="link" href="#">Open in New Tab</a>
+                </div>
+                <div class="steps">
+                  <div class="step"><div class="dot done">1</div><label>Proposal review</label><small class="done">Complete</small></div>
+                  <div class="step"><div class="dot cur">2</div><label>Assign employee</label><small class="cur">Current Stage</small></div>
+                  <div class="step"><div class="dot cur">3</div><label>GM Bid / No Bid</label><small class="cur">Current Stage</small></div>
+                  <div class="step"><div class="dot">4</div><label>MD final approval</label><small>Pending</small></div>
+                  <div class="step"><div class="dot">5</div><label>Engineering Review</label><small>Pending</small></div>
+                  <div class="step"><div class="dot">6</div><label>Commercial Review</label><small>Pending</small></div>
+                </div>
+              </div>
+
+              <div class="action">
+                <div class="eyebrow">Your action required</div>
+                <h4>GM Commercial Approval</h4>
+                <p>Assign the employee, choose BID or NO BID, then confirm.</p>
+                <div class="choices">
+                  <div class="choice bid">
+                    <div class="t">✓ BID</div>
+                    <div class="h">Goes to the MD next</div>
+                  </div>
+                  <div class="choice nb">
+                    <div class="t">✕ NO BID</div>
+                    <div class="h">Stops here · reason required</div>
+                  </div>
+                </div>
+                <div class="note">Assign the employee. This ITT/RFQ BID goes to the MD for final approval.</div>
+                <div class="fields">
+                  <div class="field">
+                    <label>Assigned employee *</label>
+                    <div class="box">Search employee…</div>
+                  </div>
+                  <div class="field">
+                    <label>Internal submission deadline</label>
+                    <div class="box">17 Nov 2026</div>
+                  </div>
+                </div>
+                <div class="comments field">
+                  <label>Comments</label>
+                  <textarea placeholder="Decision notes or instructions…"></textarea>
+                </div>
+                <div class="footer"><button class="btn" type="button">Approve</button></div>
+              </div>
+
+              <div class="tabs2">
+                <span class="on">Opportunity Details</span>
+                <span>Client Documents (0)</span>
+                <span>Bid / No Bid Assessment</span>
+                <span>Comments (0)</span>
+              </div>
+              <div class="info">
+                <div class="boxcard">
+                  <h5>Key Information</h5>
+                  <div class="kv"><span>Project Title</span><b>ANGLE STEEL BAR</b></div>
+                  <div class="kv"><span>Client</span><b>Bella White</b></div>
+                  <div class="kv"><span>Sector</span><b>Fabrication</b></div>
+                  <div class="kv"><span>Tender Type</span><b>RFQ</b></div>
+                </div>
+                <div class="boxcard">
+                  <h5>Deadlines</h5>
+                  <div class="kv"><span>External Submission</span><b>18 Nov 2026</b></div>
+                  <div class="kv"><span>Internal Submission</span><b>17 Nov 2026</b></div>
+                </div>
+              </div>
+            </section>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="caption">Laptop preview · Approvals for GM Commercial — inline action panel, no overlay</div>
+  </div>
+</body>
+</html>

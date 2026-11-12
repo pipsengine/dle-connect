@@ -3,12 +3,13 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import { ArrowLeft, FileText, Plus, Save, X } from 'lucide-react';
 import type { TenderDocument, TenderOpportunity } from '@/lib/commercial/tender-types';
+import { COMMERCIAL_SECTORS, COMMERCIAL_SOURCES } from '@/lib/commercial/tender-lookups';
 import { formatWhen, tenderGet, tenderPost, tenderUpload } from './tender-api';
 
 const TYPES = ['EPC', 'Supply', 'Service', 'Consultancy', 'Framework', 'Other'];
 const METHODS = ['Open Tender', 'Selective Tender', 'Single Source', 'Framework', 'Request for Quotation'];
-const SECTORS = ['Oil & Gas', 'Energy', 'Industrial', 'Infrastructure', 'Fabrication', 'Construction', 'Maintenance', 'IT Services'];
-const SOURCES = ['Client Direct', 'Email', 'Invitation', 'Public Portal', 'Referral', 'Tender Portal', 'Website'];
+const SECTORS = [...COMMERCIAL_SECTORS];
+const SOURCES = [...COMMERCIAL_SOURCES];
 const FORMATS = ['Hard copy', 'Email', 'Portal', 'Two-envelope'];
 const EFFORT = ['Low', 'Medium', 'High'];
 

@@ -50,7 +50,7 @@ const sheets = buildOfficialSalariedDetailWorksheets([
     line('SNMTRANSPTAX', 'SENIOR MANAGER TRANSPORT', 617121.69),
     line('SNMOTHALLTAX', 'SENIOR MANAGEMENT OTHER ALLOWANCE_T', 3394169.31),
     line('PENSION_REFUND', 'PENSION REFUND', 222163.81),
-  ]),
+  ], { salaryGrade: 'Permanent', jobGrade: 'SS5' }),
   record('P0457', 'Permanent', [
     line('BASIC', 'BASIC SALARY', 640455.73),
     line('HOUSING', 'HOUSING', 512364.59),
@@ -158,12 +158,31 @@ const sheets = buildOfficialSalariedDetailWorksheets([
   periodLabel: 'October 2026',
   currencyScope: 'all',
   includeBankSheets: false,
+  directoryEmployees: [{
+    employeeCode: 'P0457',
+    employeeId: 'P0457',
+    fullName: 'P0457',
+    salaryGrade: 'Permanent',
+    jobGrade: 'MGT3',
+  }] as never,
 });
 
 const perm = sheets.find((sheet) => sheet.sheetName === 'PERM.STAFF');
 const cont = sheets.find((sheet) => sheet.sheetName === 'CONT. STAFF');
 const usd = sheets.find((sheet) => sheet.sheetName === 'USD REPORT' && sheet.columns.includes('Gross Earnings'));
 assert(perm && cont && usd, 'salary schedule includes PERM, CONT, and the USD detail sheet');
+for (const sheet of [perm, cont, usd]) {
+  const titleIndex = sheet.columns.indexOf('Job Title Long Description');
+  assert.equal(sheet.columns[titleIndex + 1], 'Employment Grade');
+}
+const gradeOf = (sheet: { columns: string[]; rows: unknown[][] }, code: string) => {
+  const row = sheet.rows.find((cells) => String(cells[0] ?? '') === code);
+  assert(row, `missing grade row ${code}`);
+  return String(row[sheet.columns.indexOf('Employment Grade')] ?? '');
+};
+assert.equal(gradeOf(perm, displayedCode('P0442')), 'SS5');
+assert.equal(gradeOf(perm, displayedCode('P0457')), 'MGT3');
+assert.equal(String(perm.rows.find((cells) => String(cells[0] ?? '') === displayedCode('P0442'))?.[perm.columns.indexOf('Profile (HA)')] ?? ''), 'SS5');
 
 const amount = (sheet: { columns: string[]; rows: unknown[][] }, code: string, label: string) => {
   const row = sheet.rows.find((cells) => String(cells[0] ?? '') === code);

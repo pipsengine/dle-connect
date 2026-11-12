@@ -37,6 +37,8 @@ export const enterpriseRoles = [
   'CFO',
   'Executive Director',
   'Executive Management',
+  'GM Commercial',
+  'GM Operations',
   'Accountant',
   'Accounts Payable Officer',
   'Accounts Receivable Officer',
@@ -218,9 +220,9 @@ export const roleDefinitions: RoleDefinition[] = [
   role('Security Administrator', 'Global / System', ['security.*', 'admin.users.view', 'admin.users.edit', 'audit.view', 'page.admin.user-sessions.view', 'button.admin.user-sessions.disconnect', 'button.admin.user-sessions.remove', 'it.account-recovery.view', 'it.account-recovery.edit', 'page.it-support.account-recovery.view'], 'Identity, session, lockout, MFA, and access control operations.'),
   role('Audit Administrator', 'Global / System', ['audit.*', 'admin.roles.view', 'admin.users.view'], 'Security and compliance audit administration.'),
   role('Integration Administrator', 'Global / System', ['integration.*', 'admin.roles.view', 'audit.view'], 'ERP, AD, SSO, API, and service integration administration.'),
-  role('Executive User', 'General Enterprise', ['enterprise.view', 'dashboard.view', 'reports.view', 'reports.export', 'hris.view', 'operations.view', 'operations.dashboard.view', 'operations.reports.view', ...payrollMdReviewPerms, ...telephoneAllowanceMdPerms], 'Executive dashboard, reports, and MD/CEO payroll salary review.'),
+  role('Executive User', 'General Enterprise', ['enterprise.view', 'dashboard.view', 'reports.view', 'reports.export', 'hris.view', 'operations.view', 'operations.dashboard.view', 'operations.reports.view', 'workflow.approve', 'procurement.view', 'procurement.approve', 'procurement.reject', ...payrollMdReviewPerms, ...telephoneAllowanceMdPerms], 'Executive dashboard, reports, MD/CEO payroll salary review, and purchase requisition / SSJ approval.'),
   role('Department Head', 'General Enterprise', ['hris.view', 'employees.view', 'workflow.approve', 'reports.view', 'operations.view', 'operations.allocation.view', 'operations.dashboard.view', 'finance.payments.self', 'offboarding.clearance.approve', 'page.hris.time-and-logs.timesheet-approval.view', 'page.hris.time-and-logs.timesheet-entry.view', 'timesheet.approve', 'operations.timesheets.approve'], 'Department-level visibility and approvals.'),
-  role('Manager', 'General Enterprise', ['hris.view', 'employees.view', 'workflow.approve', 'leave.approve', 'timesheet.approve', 'timesheet.supervisor.approve', 'page.hris.time-and-logs.timesheet-approval.view', 'page.hris.time-and-logs.timesheet-entry.view', 'operations.view', 'operations.timesheets.approve', 'operations.timesheets.submit', 'operations.allocation.view', 'finance.payments.self', 'offboarding.clearance.approve'], 'Team management and approvals.'),
+  role('Manager', 'General Enterprise', ['hris.view', 'employees.view', 'workflow.approve', 'leave.approve', 'timesheet.approve', 'timesheet.supervisor.approve', 'page.hris.time-and-logs.timesheet-approval.view', 'page.hris.time-and-logs.timesheet-entry.view', 'operations.view', 'operations.timesheets.approve', 'operations.timesheets.submit', 'operations.allocation.view', 'finance.payments.self', 'offboarding.clearance.approve'], 'Team management and approvals, including purchase requisitions waiting on the line manager.'),
   role('Supervisor', 'General Enterprise', ['hris.view', 'employees.view', 'timesheet.submit', 'timesheet.approve', 'timesheet.supervisor.approve', 'timesheet.supervisor.reject', 'timesheet.supervisor.return', 'page.hris.time-and-logs.timesheet-approval.view', 'page.hris.time-and-logs.timesheet-entry.view', 'attendance.view', 'operations.view', 'operations.timesheets.submit', 'operations.timesheets.approve', 'operations.daily-reports.create', 'finance.payments.self', 'offboarding.clearance.approve'], 'Supervisor timesheet and attendance review.'),
   role('Employee', 'General Enterprise', ['ess.view', 'profile.view', 'leave.submit', 'payroll.payslip.view', 'finance.payments.self'], 'Employee self-service access including own payment requests.'),
   role('Auditor', 'General Enterprise', ['audit.view', 'reports.view', 'reports.export', ...telephoneAllowanceViewPerms], 'Read-oriented compliance review.'),
@@ -243,8 +245,10 @@ export const roleDefinitions: RoleDefinition[] = [
   role('Finance Controller', 'Finance', [...financeBankFinancePerms, ...payrollFinanceReviewPerms, 'finance.view', 'finance.approve', 'finance.posting.operate', 'view_finance_intelligence', 'reports.view'], 'Finance controller payroll approval and salary review.'),
   role('Finance Administrator', 'Finance', ['finance.*', 'view_finance_intelligence', 'view_finance_accounting', 'finance.posting.operate', 'finance.treasury.operate', ...financeBankFinancePerms, ...payrollFinanceReviewPerms], 'Finance Intelligence administration with payroll salary review.'),
   role('CFO', 'Finance', [...payrollCfoReviewPerms, 'finance.view', 'finance.approve', 'view_finance_intelligence', 'reports.view', 'reports.export', ...telephoneAllowanceCfoPerms], 'CFO payroll approval and salary review.'),
-  role('Executive Director', 'General Enterprise', [...payrollMdReviewPerms, 'enterprise.view', 'dashboard.view', 'reports.view', 'reports.export', ...telephoneAllowanceMdPerms], 'Executive director payroll MD/CEO approval and salary review.'),
-  role('Executive Management', 'General Enterprise', [...payrollMdReviewPerms, 'enterprise.view', 'dashboard.view', 'reports.view', 'reports.export', ...telephoneAllowanceMdPerms], 'Executive management payroll MD/CEO approval and salary review.'),
+  role('Executive Director', 'General Enterprise', [...payrollMdReviewPerms, 'enterprise.view', 'dashboard.view', 'reports.view', 'reports.export', 'workflow.approve', 'procurement.view', 'procurement.approve', 'procurement.reject', 'commercial.view', 'view_sales_crm', ...telephoneAllowanceMdPerms], 'Executive director payroll MD/CEO approval, salary review, purchase requisition / SSJ approval, and commercial tender management.'),
+  role('Executive Management', 'General Enterprise', [...payrollMdReviewPerms, 'enterprise.view', 'dashboard.view', 'reports.view', 'reports.export', 'workflow.approve', 'procurement.view', 'procurement.approve', 'procurement.reject', 'commercial.view', 'view_sales_crm', ...telephoneAllowanceMdPerms], 'Executive management payroll MD/CEO approval, salary review, purchase requisition / SSJ approval, and commercial tender management.'),
+  role('GM Commercial', 'Commercial', ['enterprise.view', 'dashboard.view', 'reports.view', 'workflow.approve', 'commercial.view', 'commercial.edit', 'commercial.create', 'view_sales_crm'], 'GM Commercial tender review, assignment, and first approval authority.'),
+  role('GM Operations', 'Operations', ['enterprise.view', 'dashboard.view', 'reports.view', 'workflow.approve', 'operations.view', 'commercial.view', 'view_sales_crm'], 'GM Operations visibility including commercial outcome notifications.'),
   role('Accountant', 'Finance', [...financeBankFinancePerms, 'finance.create', 'finance.edit', 'finance.posting.operate'], 'Accounting transactions and bank-and-finance payroll outputs.'),
   role('Accounts Payable Officer', 'Finance', ['finance.ap.view', 'finance.ap.create', 'finance.ap.edit'], 'Accounts payable operations.'),
   role('Accounts Receivable Officer', 'Finance', ['finance.ar.view', 'finance.ar.create', 'finance.ar.edit'], 'Accounts receivable operations.'),
@@ -318,7 +322,9 @@ export const defaultRoleForEmployee = (
   const code = String(options?.employeeCode || '').trim().toUpperCase();
   if (/^IT\d+/.test(code) || /industrial train|it student|intern|trainee|nysc/i.test(text)) return 'Employee';
   if (/\bcfo\b|chief financial officer/i.test(text)) return 'CFO';
-  if (/\bmd\b|\bceo\b|managing director|chief executive/i.test(text)) return 'Executive Director';
+  if (/managing director|chief executive|md\s*\/\s*ceo|\bmd\/ceo\b/i.test(text) || code === 'P0413') return 'Executive Director';
+  if (/gm\s*commercial|general\s*manager[, ]+commercial/i.test(text)) return 'GM Commercial';
+  if (/gm\s*operations|general\s*manager[, ]+operations/i.test(text)) return 'GM Operations';
   if (text.includes('payroll')) return 'Payroll Officer';
   if (/\bhr\b|human\s*resources/i.test(text)) return 'HR Officer';
   if (text.includes('finance') || text.includes('account')) return 'Accountant';

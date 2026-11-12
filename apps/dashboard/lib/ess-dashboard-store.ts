@@ -9,6 +9,7 @@ import type { SessionPayload } from '@/lib/auth/session';
 import { resolveActivePayrollPeriod } from '@/lib/payroll-period-store';
 import type { EmployeeLeaveSummary } from '@/lib/hris-leave-read';
 import { ensureEmployeeLeaveFromHris } from '@/lib/hris-leave-read';
+import { decodeLeaveExceptionsPayload } from '@/lib/leave-day-engine';
 import type { PayslipEmployeeIdentity } from '@/lib/payroll-payslip-identity-store';
 import { employeeCodeFromReference, resolveReportingManagerDisplay } from '@/lib/reporting-manager-match';
 import { listTodaysCelebrationMoments } from '@/lib/celebration-moments';
@@ -74,7 +75,9 @@ SELECT a.[Id],a.[EmployeeId],a.[FullName],a.[Department],a.[ManagerName],a.[Loca
 FROM [hris].[LeaveApplications] a
 WHERE a.[EmployeeId] IN (${keySql})
 ORDER BY a.[StartDate] DESC, a.[UpdatedAt] DESC;`);
-    return (result.recordset || []).map((row: any) => ({
+    return (result.recordset || []).map((row: any) => {
+      const exceptionPayload = decodeLeaveExceptionsPayload(row.ExceptionsJson);
+      return {
       id: row.Id,
       sourceSystem: row.SourceSystem,
       employeeId: row.EmployeeId,
@@ -95,11 +98,13 @@ ORDER BY a.[StartDate] DESC, a.[UpdatedAt] DESC;`);
       availableBalance: Number(row.AvailableBalance || 0),
       actingOfficer: row.ActingOfficer,
       supportingDocuments: Number(row.SupportingDocuments || 0),
-      exceptions: parseJsonArray(row.ExceptionsJson),
+      exceptions: exceptionPayload.messages.length ? exceptionPayload.messages : parseJsonArray(row.ExceptionsJson),
+      selectedDates: exceptionPayload.selectedDates,
       auditCount: Number(row.AuditCount || 0),
       createdAt: new Date(row.CreatedAt).toISOString(),
       updatedAt: new Date(row.UpdatedAt).toISOString(),
-    }));
+    };
+    });
   } catch {
     return [];
   }
