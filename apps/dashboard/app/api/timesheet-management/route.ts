@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { canCreateProjects } from '@/lib/access/projects-engineering-access';
+import { canManageTimesheetProjectRegistry } from '@/lib/access/timesheet-project-registry-access';
 import { hasPermission } from '@/lib/auth/permission-match';
 import { canViewProjectLabourReport } from '@/lib/project-labour-cost';
 import { resolveAccessContext } from '@/lib/hris-access';
@@ -15,7 +15,8 @@ import {
 const ok = <T,>(data: T, status = 200) => NextResponse.json({ status: 'success', data }, { status });
 const err = (status: number, error: string) => NextResponse.json({ status: 'error', error }, { status });
 
-const canUse = (request: Request) => {
+const canUse = async (request: Request) => {
+  if (await canManageTimesheetProjectRegistry(request)) return true;
   const permissions = (request.headers.get('x-auth-permissions') || '').split(',').map((item) => item.trim()).filter(Boolean);
   return hasPermission(permissions, 'view_timesheet_management') || request.headers.get('x-auth-global-admin') === '1';
 };
@@ -39,11 +40,12 @@ const removalActor = (request: Request) => {
 const snapshotFor = async (request: Request) => {
   const approver = await readCrewRemovalApprover().catch(() => ({ code: 'L2782', name: 'L2782', label: 'L2782' }));
   const actor = removalActor(request);
+  const canManageProjects = await canManageTimesheetProjectRegistry(request);
   return {
     ...(await readTimesheetManagementSnapshot()),
     viewer: {
       roles: request.headers.get('x-auth-roles') || '',
-      canManagePeriods: canManageTimesheetPeriods(request),
+      canManagePeriods: canManageTimesheetPeriods(request) || canManageProjects,
       canDecideCrewRemoval: canDecideCrewRemoval(actor),
       crewRemovalApprover: approver.label,
       canViewProjectLabour: canViewProjectLabourReport({
@@ -52,22 +54,13 @@ const snapshotFor = async (request: Request) => {
         department: request.headers.get('x-auth-department') || '',
         unit: request.headers.get('x-auth-unit') || '',
       }),
-      canManageProjects: canCreateProjects({
-        username: request.headers.get('x-auth-user') || undefined,
-        fullName: request.headers.get('x-hris-actor') || undefined,
-        employeeCode: request.headers.get('x-auth-employee-code') || undefined,
-        employeeId: request.headers.get('x-auth-employee-id') || undefined,
-        department: request.headers.get('x-auth-department') || undefined,
-        roles: (request.headers.get('x-auth-roles') || '').split(',').map((item) => item.trim()).filter(Boolean),
-        permissions: (request.headers.get('x-auth-permissions') || '').split(',').map((item) => item.trim()).filter(Boolean),
-        isGlobalAdmin: request.headers.get('x-auth-global-admin') === '1',
-      }),
+      canManageProjects,
     },
   };
 };
 
 export async function GET(request: Request) {
-  if (!canUse(request)) return err(403, 'You do not have permission to open Timesheet Management.');
+  if (!(await canUse(request))) return err(403, 'You do not have permission to open Timesheet Management.');
   try {
     const signals = new URL(request.url).searchParams.get('signals');
     if (signals) return ok(await readCrewSignals(signals));
@@ -79,7 +72,7 @@ export async function GET(request: Request) {
 }
 
 export async function POST(request: Request) {
-  if (!canUse(request)) return err(403, 'You do not have permission to update Timesheet Management.');
+  if (!(await canUse(request))) return err(403, 'You do not have permission to update Timesheet Management.');
   const access = resolveAccessContext(request);
   try {
     const body = await request.json() as Record<string, unknown>;

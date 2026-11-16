@@ -15,7 +15,7 @@ export const isSuperActor = (input?: SuperActorInput | null) => {
   if (!input) return false;
   if (input.isGlobalAdmin || input.sub === 'global-admin') return true;
   if (isProtectedGlobalSuperAdminIdentity(input)) return true;
-  if ((input.roles || []).includes('Super Administrator')) return true;
+  if ((input.roles || []).some((role) => /^(global\s+)?super\s+administrator$/i.test(String(role || '').trim()))) return true;
   if ((input.permissions || []).includes('*')) return true;
   return false;
 };

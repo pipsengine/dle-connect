@@ -128,7 +128,7 @@ export default function ProjectRegistry() {
     return (
       <div className="panel" style={{ padding: 24 }}>
         <h1>Project Registry</h1>
-        <p>Only IT Department employees can register or update timesheet projects.</p>
+        <p>Only IT Department employees or Global Super Administrator can register or update timesheet projects.</p>
       </div>
     );
   }

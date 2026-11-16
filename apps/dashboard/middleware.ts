@@ -3,6 +3,7 @@ import { AUTH_COOKIE, clearAuthCookieOptions, isPublicPath, verifySessionToken }
 import { canAccessRoute } from '@/lib/access/route-access';
 import { deriveHrisRole } from '@/lib/hris-access';
 import { resolveAccessPermissions } from '@/lib/auth/resolve-access-session';
+import { isSuperActor } from '@/lib/auth/role-delegation';
 import {
   isWorkforcePortalExceptionPath,
   isWorkforcePortalPath,
@@ -99,10 +100,11 @@ export async function middleware(request: NextRequest) {
     }
 
     const requestHeaders = new Headers(request.headers);
+    requestHeaders.set('x-auth-sub', session.sub || '');
     requestHeaders.set('x-auth-user', session.username || '');
     requestHeaders.set('x-auth-roles', roles.join(','));
     requestHeaders.set('x-auth-permissions', permissions.join(','));
-    requestHeaders.set('x-auth-global-admin', session.isGlobalAdmin ? '1' : '0');
+    requestHeaders.set('x-auth-global-admin', session.isGlobalAdmin || isSuperActor(session) ? '1' : '0');
     requestHeaders.set('x-auth-employee-code', session.employeeCode || '');
     requestHeaders.set('x-auth-employee-id', session.employeeId || '');
     requestHeaders.set('x-auth-department', session.department || '');

@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
-import { canCreateProjects } from '@/lib/access/projects-engineering-access';
+import { canManageTimesheetProjectRegistry, resolveTimesheetProjectRegistryIdentity } from '@/lib/access/timesheet-project-registry-access';
 import { hasPermission } from '@/lib/auth/permission-match';
+import { isSuperActor } from '@/lib/auth/role-delegation';
 import { dedupeTimesheetLocationLabels, normalizeTimesheetLocationLabel } from '@/lib/timesheet-agege-blasting';
 import { getDleEnterpriseDbPool } from '@/lib/dle-enterprise-db';
 import { readProjects, readSystemTimesheetLocations, upsertProject } from '@/lib/timesheet-entry-store';
@@ -11,26 +12,17 @@ const err = (status: number, error: string) => NextResponse.json({ status: 'erro
 
 const text = (value: unknown) => String(value ?? '').trim();
 
-const canUsePortal = (request: Request) => {
+const canUsePortal = async (request: Request) => {
+  const identity = await resolveTimesheetProjectRegistryIdentity(request);
+  if (identity && (identity.isGlobalAdmin || isSuperActor(identity))) return true;
   const permissions = (request.headers.get('x-auth-permissions') || '').split(',').map((item) => item.trim()).filter(Boolean);
   return hasPermission(permissions, 'view_timesheet_management') || request.headers.get('x-auth-global-admin') === '1';
 };
 
-const sessionIdentityFrom = (request: Request) => ({
-  username: request.headers.get('x-auth-user') || undefined,
-  fullName: request.headers.get('x-hris-actor') || undefined,
-  employeeCode: request.headers.get('x-auth-employee-code') || undefined,
-  employeeId: request.headers.get('x-auth-employee-id') || undefined,
-  department: request.headers.get('x-auth-department') || undefined,
-  roles: (request.headers.get('x-auth-roles') || '').split(',').map((item) => item.trim()).filter(Boolean),
-  permissions: (request.headers.get('x-auth-permissions') || '').split(',').map((item) => item.trim()).filter(Boolean),
-  isGlobalAdmin: request.headers.get('x-auth-global-admin') === '1',
-});
-
-const assertCanManageProjects = (request: Request) => {
-  if (!canUsePortal(request)) return 'You do not have permission to open Timesheet Management.';
-  if (!canCreateProjects(sessionIdentityFrom(request))) {
-    return 'Only IT Department employees can register or update projects.';
+const assertCanManageProjects = async (request: Request) => {
+  if (!(await canUsePortal(request))) return 'You do not have permission to open Timesheet Management.';
+  if (!(await canManageTimesheetProjectRegistry(request))) {
+    return 'Only IT Department employees or Global Super Administrator can register or update projects.';
   }
   return null;
 };
@@ -91,7 +83,7 @@ const searchManagers = async (query: string) => {
 };
 
 export async function GET(request: Request) {
-  const denied = assertCanManageProjects(request);
+  const denied = await assertCanManageProjects(request);
   if (denied) return err(403, denied);
 
   const url = new URL(request.url);
@@ -121,7 +113,7 @@ export async function GET(request: Request) {
 }
 
 export async function POST(request: Request) {
-  const denied = assertCanManageProjects(request);
+  const denied = await assertCanManageProjects(request);
   if (denied) return err(403, denied);
 
   try {
