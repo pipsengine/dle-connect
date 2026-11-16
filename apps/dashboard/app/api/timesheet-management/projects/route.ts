@@ -43,6 +43,7 @@ const readProjectSites = async () => {
 
 const searchManagers = async (query: string) => {
   const pool = await getDleEnterpriseDbPool();
+  if (!pool) throw new Error('DLE Enterprise database is unavailable.');
   const q = text(query);
   const result = await pool.request().input('q', sql.NVarChar(80), `%${q}%`).query(`
     SELECT TOP 40
