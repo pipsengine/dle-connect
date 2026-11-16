@@ -85,6 +85,9 @@ const PERMISSION_ALIASES: Record<string, string[]> = {
     'operations.timesheets.submit',
     'operations.timesheets.approve',
     'timesheet.view',
+    'page.timesheet.management.periods.view',
+    'timesheet.period.view',
+    'timesheet.period.manage',
   ],
   'recruitment.view': [
     'page.hris.recruitment.view',
@@ -272,6 +275,7 @@ export const expandPublishedPermissions = (permissions: string[]) => {
     out.add('page.it-support.asset-management.view');
     out.add('page.admin.user-sessions.view');
     out.add('page.timesheet.management.periods.view');
+    out.add('view_timesheet_management');
     out.add('timesheet.period.view');
     out.add('timesheet.period.manage');
   }

@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import { canCreateProjects } from '@/lib/access/projects-engineering-access';
 import { hasPermission } from '@/lib/auth/permission-match';
 import { canViewProjectLabourReport } from '@/lib/project-labour-cost';
 import { resolveAccessContext } from '@/lib/hris-access';
@@ -50,6 +51,16 @@ const snapshotFor = async (request: Request) => {
         roles: request.headers.get('x-auth-roles') || '',
         department: request.headers.get('x-auth-department') || '',
         unit: request.headers.get('x-auth-unit') || '',
+      }),
+      canManageProjects: canCreateProjects({
+        username: request.headers.get('x-auth-user') || undefined,
+        fullName: request.headers.get('x-hris-actor') || undefined,
+        employeeCode: request.headers.get('x-auth-employee-code') || undefined,
+        employeeId: request.headers.get('x-auth-employee-id') || undefined,
+        department: request.headers.get('x-auth-department') || undefined,
+        roles: (request.headers.get('x-auth-roles') || '').split(',').map((item) => item.trim()).filter(Boolean),
+        permissions: (request.headers.get('x-auth-permissions') || '').split(',').map((item) => item.trim()).filter(Boolean),
+        isGlobalAdmin: request.headers.get('x-auth-global-admin') === '1',
       }),
     },
   };

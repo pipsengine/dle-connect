@@ -197,9 +197,6 @@ export function ProjectChipBar({
   onAddProject,
   onAutoDistribute,
   onClearAll,
-  onOpenSettings,
-  canCreateProject = false,
-  onCreateProject,
   onMoveColumn,
   onRemoveColumn,
   onSelectColumnProject,
@@ -210,9 +207,6 @@ export function ProjectChipBar({
   onAddProject: () => void;
   onAutoDistribute: () => void;
   onClearAll: () => void;
-  onOpenSettings: () => void;
-  canCreateProject?: boolean;
-  onCreateProject?: () => void;
   onMoveColumn: (index: number, direction: -1 | 1) => void;
   onRemoveColumn: (index: number) => void;
   onSelectColumnProject: (index: number, code: string) => void;
@@ -304,24 +298,6 @@ export function ProjectChipBar({
         >
           Clear All
         </button>
-        {canCreateProject && onCreateProject ? (
-          <button
-            type="button"
-            onClick={onCreateProject}
-            className="h-9 rounded-xl bg-[#2563EB] px-3 text-xs font-semibold text-white hover:bg-[#1D4ED8]"
-            title="Register a new project in the company registry"
-          >
-            Create Project
-          </button>
-        ) : (
-          <button
-            type="button"
-            onClick={onOpenSettings}
-            className="h-9 rounded-xl border border-[#E5E7EB] px-3 text-xs font-semibold text-[#475569] hover:bg-[#F8FAFC]"
-          >
-            Project Registry
-          </button>
-        )}
       </div>
     </div>
   );

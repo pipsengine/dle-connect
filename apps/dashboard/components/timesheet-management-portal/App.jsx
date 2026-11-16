@@ -16,6 +16,7 @@ import Approvals from './pages/Approvals';
 import CorrectionsAdjustments from './pages/CorrectionsAdjustments';
 import Configuration from './pages/Configuration';
 import LabourCost from './pages/LabourCost';
+import ProjectRegistry from './pages/ProjectRegistry';
 
 const pages = {
   Dashboard,
@@ -30,6 +31,7 @@ const pages = {
   'Corrections & Adjustments': CorrectionsAdjustments,
   Reports,
   'Project Man-Hours & Labour Cost': LabourCost,
+  'Project Registry': ProjectRegistry,
   Configuration,
 };
 
@@ -46,6 +48,7 @@ const pageSlugs = {
   'Corrections & Adjustments': 'corrections',
   Reports: 'reports',
   'Project Man-Hours & Labour Cost': 'labour',
+  'Project Registry': 'projects',
   Configuration: 'configuration',
 };
 
@@ -86,6 +89,7 @@ function PortalShell() {
   useEffect(() => {
     if (snapshot?.viewer && page === 'Timesheet Periods' && !snapshot.viewer.canManagePeriods) setPage('Dashboard');
     if (snapshot?.viewer && page === 'Project Man-Hours & Labour Cost' && !snapshot.viewer.canViewProjectLabour) setPage('Dashboard');
+    if (snapshot?.viewer && page === 'Project Registry' && !snapshot.viewer.canManageProjects) setPage('Dashboard');
   }, [snapshot, page]);
   const Current = pages[page] || Dashboard;
   return (

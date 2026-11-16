@@ -55,6 +55,7 @@ import {
 import { readBiometricDevices, type BiometricDeviceRecord } from '@/lib/biometric-attendance-store';
 import { readPayrollEmployees, type PayrollEmployeeSource } from '@/lib/payroll-employee-source';
 import type { StructureInsight } from '@/lib/organization-data';
+import { canCreateProjects } from '@/lib/access/projects-engineering-access';
 import { assertTimesheetEntryAndApprovalAccess } from '@/lib/access/timesheet-access';
 import { AUTH_COOKIE, verifySessionToken } from '@/lib/auth/session';
 import { assignmentMatchesSupervisor, assignmentSupervisorCode, readSupervisorAssignments } from '@/lib/supervisor-assignment-store';
@@ -1911,6 +1912,9 @@ export async function PATCH(request: Request) {
     const isSupervisorMode = mode === 'supervisor';
 
     if (action === 'CREATE_PROJECT' || action === 'UPSERT_PROJECT') {
+      if (!canCreateProjects(session || undefined)) {
+        return err(403, 'Project registration moved to Timesheet Management. Only IT Department employees can register projects.');
+      }
       if (!payload.project) return err(400, 'Project details are required.');
       const projectCode = payload.project.code?.trim().toUpperCase();
       if (!projectCode) return err(400, 'Project code is required.');

@@ -493,16 +493,6 @@ export default function TimesheetEntryClient({ variant = 'admin' }: { variant?: 
   const [bulkProject, setBulkProject] = useState('');
   const [bulkHours, setBulkHours] = useState(8);
 
-  const [showProjectModal, setShowProjectModal] = useState(false);
-  const [editingProjectId, setEditingProjectId] = useState<string | null>(null);
-  const [newProjectCode, setNewProjectCode] = useState('');
-  const [newProjectName, setNewProjectName] = useState('');
-  const [newProjectClientName, setNewProjectClientName] = useState('');
-  const [newProjectSite, setNewProjectSite] = useState('');
-  const [newProjectManager, setNewProjectManager] = useState('');
-  const [databaseProjectSites, setDatabaseProjectSites] = useState<string[]>([]);
-  const [projectSiteLoading, setProjectSiteLoading] = useState(false);
-  const [projectSiteError, setProjectSiteError] = useState<string | null>(null);
   const [showWorkCenterManager, setShowWorkCenterManager] = useState(false);
   const [workCenters, setWorkCenters] = useState<Payload['workCenters']>([]);
   const [workCenterDraft, setWorkCenterDraft] = useState('');
@@ -626,29 +616,6 @@ export default function TimesheetEntryClient({ variant = 'admin' }: { variant?: 
       }
     }
   }, [isWorkforceSupervisor, matrixColumns.length, selectedLocation, selectedSupervisor]);
-
-  const loadProjectSites = useCallback(async () => {
-    setProjectSiteLoading(true);
-    setProjectSiteError(null);
-    try {
-      const res = await fetch('/api/hris/time-and-logs/project-sites', { cache: 'no-store' });
-      const json = await readApiJson(res);
-      if (!res.ok || json?.status !== 'success') throw new Error(json?.error || 'Unable to load project sites');
-      const sites = Array.from(new Set((json.data?.projectSites ?? []).map((site: unknown) => String(site ?? '').trim()).filter(Boolean))) as string[];
-      setDatabaseProjectSites(sites.sort((a, b) => a.localeCompare(b)));
-    } catch (error) {
-      setProjectSiteError(error instanceof Error ? error.message : 'Unable to load project sites');
-      setDatabaseProjectSites([]);
-    } finally {
-      setProjectSiteLoading(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    if (showProjectModal) {
-      void loadProjectSites();
-    }
-  }, [loadProjectSites, showProjectModal]);
 
   useEffect(() => {
     if (headerIdParam) {
@@ -1209,80 +1176,6 @@ export default function TimesheetEntryClient({ variant = 'admin' }: { variant?: 
     }
   };
 
-  const resetProjectForm = () => {
-    setEditingProjectId(null);
-    setNewProjectCode('');
-    setNewProjectName('');
-    setNewProjectClientName('');
-    setNewProjectSite('');
-    setNewProjectManager('');
-  };
-
-  const openCreateProjectModal = () => {
-    resetProjectForm();
-    setShowProjectModal(true);
-  };
-
-  const openEditProjectModal = (project: Project) => {
-    setEditingProjectId(project.id);
-    setNewProjectCode(project.code);
-    setNewProjectName(project.name);
-    setNewProjectClientName(project.clientName || '');
-    setNewProjectSite(project.site);
-    setNewProjectManager(project.projectManager);
-    setShowProjectModal(true);
-  };
-
-  const closeProjectModal = () => {
-    setShowProjectModal(false);
-    resetProjectForm();
-  };
-
-  const handleSaveProject = async () => {
-    const projectCode = newProjectCode.trim();
-    const projectName = newProjectName.trim();
-    const clientName = newProjectClientName.trim();
-    const projectManager = newProjectManager.trim();
-    const projectManagerExists = (payload?.projectManagers ?? []).some((employee) => `${employee.employeeCode} - ${employee.fullName}`.toLowerCase() === projectManager.toLowerCase());
-    if (!projectCode || !projectName || !clientName || !newProjectSite || !projectManager) return;
-    if (!projectManagerExists) {
-      setError('Select a Project Manager from the employee directory.');
-      return;
-    }
-    setSubmitting(true);
-    try {
-      const res = await fetch('/api/hris/time-and-logs/timesheet-entry', {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          action: editingProjectId ? 'UPSERT_PROJECT' : 'CREATE_PROJECT',
-          mode: isWorkforceSupervisor ? 'supervisor' : undefined,
-          date: selectedDate,
-          supervisorId: selectedSupervisor,
-          locationName: selectedLocation,
-          workCenterName: selectedWorkCenter,
-          project: {
-            id: editingProjectId || undefined,
-            code: projectCode,
-            name: projectName,
-            clientName,
-            site: newProjectSite,
-            projectManager,
-            status: 'Active',
-          },
-        }),
-      });
-      const json = await readApiJson(res);
-      if (!res.ok || json?.status !== 'success') throw new Error(json?.error || 'Failed to save project');
-      setPayload(json.data);
-      closeProjectModal();
-    } catch (e) {
-      setError(e instanceof Error ? e.message : 'Failed to save project');
-    } finally {
-      setSubmitting(false);
-    }
-  };
-
   const addProjectColumn = () => {
     const newColCode = `NEW-${Date.now()}`;
     setMatrixColumns([...matrixColumns, { code: newColCode, label: 'Select Project', kind: 'project' }]);
@@ -1578,11 +1471,6 @@ export default function TimesheetEntryClient({ variant = 'admin' }: { variant?: 
 
   const workCenterOptions = workCenterNamesForLocation(workCenters, selectedLocation);
   const locationOptions = Array.from(new Set(withOffshoreLocationName(payload?.filterOptions.locations ?? []).filter(Boolean))).sort((a, b) => a.localeCompare(b));
-  const siteLocationOptions = (databaseProjectSites.length ? databaseProjectSites : payload?.filterOptions.projectSites ?? [])
-    .filter((location) => location && location !== 'Unassigned Location')
-    .sort((a, b) => a.localeCompare(b));
-  const projectManagerOptions = payload?.projectManagers ?? [];
-  const projectManagerIsSelected = projectManagerOptions.some((employee) => `${employee.employeeCode} - ${employee.fullName}`.toLowerCase() === newProjectManager.trim().toLowerCase());
   const workflowStages = payload?.workflowStages ?? [];
   const currentStageIdx = Math.max(0, workflowStages.findIndex(s => s.id === payload?.header?.status));
   const workflowProgressPct = workflowStages.length > 1 ? (currentStageIdx / (workflowStages.length - 1)) * 100 : 0;
@@ -1688,7 +1576,6 @@ export default function TimesheetEntryClient({ variant = 'admin' }: { variant?: 
   const canOpenSubmitReview = canEditTimesheet && reviewLineCount > 0 && reviewErrorCount === 0;
   const canConfirmSubmit = canOpenSubmitReview && uniqueSubmittableCount > 0 && !reviewMissingProjectHours && (!reviewRequiresMiscellaneousConfirm || confirmMiscellaneousProject);
   const canManageTimesheetSetup = Boolean(payload?.permissions.canManagePeriod);
-  const canCreateProject = canManageTimesheetSetup || canEditTimesheet;
   const pageTitle = isWorkforceSupervisor ? 'Workforce Timesheet Entry' : 'Timesheet Entry';
   const pageDescription = isWorkforceSupervisor
     ? 'Record daily crew work hours for your assigned employees.'
@@ -1828,8 +1715,6 @@ export default function TimesheetEntryClient({ variant = 'admin' }: { variant?: 
           }}
           shiftHint={resolveTimesheetShift(selectedShift).description}
           canManagePeriod={canManageTimesheetSetup}
-          canCreateProject={canCreateProject}
-          onCreateProject={openCreateProjectModal}
           canEditTimesheet={canEditTimesheet}
           canBookOvertime={canBookOvertime}
           showCaptureMatrix={showCaptureMatrix}
@@ -1874,7 +1759,6 @@ export default function TimesheetEntryClient({ variant = 'admin' }: { variant?: 
           onAddNightCrew={handleAddNightCrew}
           supervisorEmployees={payload?.supervisorEmployees ?? []}
           onClearAllProjects={handleClearAllProjects}
-          onOpenProjectSettings={openCreateProjectModal}
           onSyncAttendance={() => handleSyncAttendance('manual')}
           hideAttendanceSync={isOffshoreSheet}
           onCopyPrevious={handleCopyPrevious}
@@ -1921,7 +1805,6 @@ export default function TimesheetEntryClient({ variant = 'admin' }: { variant?: 
       description={pageDescription}
       breadcrumbs={pageBreadcrumbs}
       primaryAction={primaryPageAction}
-      secondaryAction={canCreateProject ? { label: 'Create Project', onClick: openCreateProjectModal, icon: Plus } : undefined}
     >
       <div className="space-y-8">
         {payload?.mobilizedCrew?.message ? (
@@ -2859,82 +2742,6 @@ export default function TimesheetEntryClient({ variant = 'admin' }: { variant?: 
                   {submitting ? 'Submitting...' : 'Submit Timesheet'}
                 </button>
               </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Project Modal */}
-      {canCreateProject && showProjectModal && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/60 backdrop-blur-md p-4">
-          <div className="max-h-[92vh] w-full max-w-3xl overflow-y-auto rounded-3xl bg-white p-8 shadow-2xl animate-in zoom-in-95 duration-200">
-            <div className="mb-8 flex items-center justify-between"><div className="space-y-1"><h3 className="text-2xl font-black text-slate-900 uppercase tracking-tight">{editingProjectId ? 'Edit Project' : 'Register Project'}</h3><p className="text-sm font-medium text-slate-500">{editingProjectId ? 'Update project details in the company registry.' : 'Add a new project code to the company registry.'}</p></div><button onClick={closeProjectModal} className="rounded-full p-2 text-slate-400 hover:bg-slate-50 hover:text-slate-600 transition-colors"><XCircle className="h-8 w-8" /></button></div>
-            <div className="space-y-6">
-              {(payload?.projects?.length ?? 0) > 0 && (
-                <div>
-                  <div className="mb-2 flex items-center justify-between">
-                    <label className="block text-[10px] font-black uppercase tracking-widest text-slate-400">Project Registry</label>
-                    {editingProjectId && <button onClick={resetProjectForm} className="text-[10px] font-black uppercase tracking-widest text-indigo-600 hover:text-indigo-800">New Project</button>}
-                  </div>
-                  <div className="max-h-44 overflow-y-auto rounded-xl border border-slate-200">
-                    {payload?.projects.map((project) => (
-                      <div key={project.id} className="flex items-center justify-between gap-3 border-b border-slate-100 px-4 py-3 last:border-b-0">
-                        <button onClick={() => openEditProjectModal(project)} className="min-w-0 flex-1 text-left">
-                          <div className="truncate text-sm font-black text-slate-900">{project.code} - {project.name}</div>
-                          <div className="truncate text-[11px] font-bold text-slate-500">{project.clientName || 'No client'} | {project.site || 'No site'} | {project.projectManager || 'No manager'}</div>
-                        </button>
-                        <button onClick={() => openEditProjectModal(project)} className="rounded-lg p-2 text-slate-400 transition-colors hover:bg-indigo-50 hover:text-indigo-600" title="Edit project">
-                          <Edit3 className="h-4 w-4" />
-                        </button>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                <div><label className="block text-[10px] font-black uppercase tracking-widest text-slate-400 mb-1.5">Project Code</label><input type="text" placeholder="e.g. DL26005" value={newProjectCode} onChange={(e) => setNewProjectCode(e.target.value.toUpperCase())} disabled={!!editingProjectId} className="w-full rounded-xl border-2 border-slate-200 px-4 py-3 text-sm font-black text-slate-900 placeholder:text-slate-300 focus:border-indigo-500 focus:outline-none transition-all disabled:cursor-not-allowed disabled:bg-slate-50 disabled:text-slate-500" /></div>
-                <div>
-                  <label className="block text-[10px] font-black uppercase tracking-widest text-slate-400 mb-1.5">Site Location</label>
-                  <select
-                    value={newProjectSite}
-                    onChange={(e) => setNewProjectSite(e.target.value)}
-                    disabled={projectSiteLoading || !!projectSiteError || siteLocationOptions.length === 0}
-                    className="w-full rounded-xl border-2 border-slate-200 px-4 py-3 text-sm font-black text-slate-900 transition-all focus:border-indigo-500 focus:outline-none disabled:cursor-not-allowed disabled:bg-slate-50 disabled:text-slate-400"
-                  >
-                    <option value="">{projectSiteLoading ? 'Loading sites...' : projectSiteError ? 'Unable to load sites' : 'Select Site...'}</option>
-                    {siteLocationOptions.map((site) => <option key={site} value={site}>{site}</option>)}
-                  </select>
-                  {projectSiteError && (
-                    <p className="mt-1 text-[10px] font-bold text-rose-500">Site locations could not be read from DLE Enterprise.</p>
-                  )}
-                </div>
-              </div>
-              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                <div><label className="block text-[10px] font-black uppercase tracking-widest text-slate-400 mb-1.5">Project Name</label><input type="text" placeholder="e.g. NLNG Train 7 - Piping Works" value={newProjectName} onChange={(e) => setNewProjectName(e.target.value)} className="w-full rounded-xl border-2 border-slate-200 px-4 py-3 text-sm font-black text-slate-900 placeholder:text-slate-300 focus:border-indigo-500 focus:outline-none transition-all" /></div>
-                <div><label className="block text-[10px] font-black uppercase tracking-widest text-slate-400 mb-1.5">Client Name</label><input type="text" placeholder="e.g. NLNG" value={newProjectClientName} onChange={(e) => setNewProjectClientName(e.target.value)} className="w-full rounded-xl border-2 border-slate-200 px-4 py-3 text-sm font-black text-slate-900 placeholder:text-slate-300 focus:border-indigo-500 focus:outline-none transition-all" /></div>
-              </div>
-              <div>
-                <label className="block text-[10px] font-black uppercase tracking-widest text-slate-400 mb-1.5">Project Manager</label>
-                <input
-                  type="text"
-                  list="project-manager-directory-options"
-                  placeholder="Search employee directory..."
-                  value={newProjectManager}
-                  onChange={(e) => setNewProjectManager(e.target.value)}
-                  className="w-full rounded-xl border-2 border-slate-200 px-4 py-3 text-sm font-black text-slate-900 placeholder:text-slate-300 focus:border-indigo-500 focus:outline-none transition-all"
-                />
-                <datalist id="project-manager-directory-options">
-                  {projectManagerOptions.map((employee) => {
-                    const label = `${employee.employeeCode} - ${employee.fullName}`;
-                    return (
-                      <option key={employee.employeeId || employee.employeeCode} value={label}>
-                        {employee.jobTitle ? `${employee.jobTitle} | ${employee.department || 'No department'}` : employee.department || employee.status}
-                      </option>
-                    );
-                  })}
-                </datalist>
-              </div>
-              <div className="pt-4 flex gap-3"><button onClick={closeProjectModal} className="flex-1 rounded-2xl border-2 border-slate-100 py-4 text-xs font-black text-slate-400 hover:bg-slate-50 transition-all uppercase tracking-widest">Cancel</button><button onClick={handleSaveProject} disabled={submitting || projectSiteLoading || !!projectSiteError || !newProjectCode.trim() || !newProjectName.trim() || !newProjectClientName.trim() || !newProjectSite || !projectManagerIsSelected} className="flex-[2] rounded-2xl bg-indigo-600 py-4 text-xs font-black text-white hover:bg-indigo-700 disabled:opacity-50 shadow-xl shadow-indigo-100 transition-all uppercase tracking-widest">{submitting ? 'Saving...' : editingProjectId ? 'Update Project' : 'Register Project'}</button></div>
             </div>
           </div>
         </div>

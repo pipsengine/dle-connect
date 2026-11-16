@@ -82,8 +82,6 @@ export type TimesheetEnterpriseViewProps = {
   onDateChange: (value: string) => void;
   onShiftChange: (value: string) => void;
   canManagePeriod: boolean;
-  canCreateProject?: boolean;
-  onCreateProject?: () => void;
   canEditTimesheet: boolean;
   canBookOvertime: boolean;
   showCaptureMatrix: boolean;
@@ -117,7 +115,6 @@ export type TimesheetEnterpriseViewProps = {
   onAddNightCrew?: (employeeCode: string) => void;
   supervisorEmployees?: Array<{ employeeId: string; employeeCode: string; fullName: string }>;
   onClearAllProjects: () => void;
-  onOpenProjectSettings: () => void;
   onSyncAttendance: () => void;
   onCopyPrevious: () => void;
   onSaveDraft: () => void;
@@ -424,15 +421,6 @@ export function TimesheetEntryEnterpriseView(props: TimesheetEnterpriseViewProps
                   }
                 />
               ) : null}
-              {props.canCreateProject && props.onCreateProject ? (
-                <button
-                  type="button"
-                  onClick={props.onCreateProject}
-                  className="h-10 rounded-xl bg-[#2563EB] px-3 text-xs font-semibold text-white hover:bg-[#1D4ED8]"
-                >
-                  Create Project
-                </button>
-              ) : null}
               {props.canManagePeriod ? (
                 <Link
                   href="/hris/time-and-logs/timesheet-period"
@@ -451,12 +439,9 @@ export function TimesheetEntryEnterpriseView(props: TimesheetEnterpriseViewProps
           columns={props.matrixColumns}
           projects={props.payloadProjects}
           canEdit={props.canEditTimesheet}
-          canCreateProject={props.canCreateProject}
           onAddProject={props.onAddProjectColumn}
           onAutoDistribute={props.onAutoDistribute}
           onClearAll={props.onClearAllProjects}
-          onOpenSettings={props.onOpenProjectSettings}
-          onCreateProject={props.onCreateProject}
           onMoveColumn={props.onMoveProjectColumn}
           onRemoveColumn={props.onRemoveProjectColumn}
           onSelectColumnProject={props.onSelectColumnProject}
