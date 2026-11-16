@@ -335,7 +335,9 @@ const readDirectory = async (connection: sql.ConnectionPool): Promise<TimesheetM
   let workCenters: string[] = [];
   try {
     const projectResult = await connection.request().query(`
-      SELECT [Code], [Name] FROM [hris].[TimesheetProjects] WHERE [Status] = N'Active' ORDER BY [Code]
+      SELECT [Code], [Name] FROM [hris].[TimesheetProjects]
+      WHERE LTRIM(RTRIM(ISNULL([Status], N''))) IN (N'Active', N'Approved', N'Open')
+      ORDER BY [UpdatedAt] DESC, [Code]
     `);
     projects = (projectResult.recordset || []).map((row) => ({ code: text(row.Code), name: text(row.Name) }));
   } catch {

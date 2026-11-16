@@ -453,13 +453,26 @@ function Combo({ label, placeholder, selected, onSelect, search, labelOf }) {
 function SearchModal({ title, kind, onClose, onPick }) {
   const [items, setItems] = useState([]);
   const [query, setQuery] = useState('');
+  const [pending, setPending] = useState(false);
   useEffect(() => {
     const handle = setTimeout(() => {
-      fetch(`/api/timesheet-management/entry?mode=search&kind=${kind}&q=${encodeURIComponent(query)}`).then((response) => response.json()).then((body) => setItems(body.data || []));
+      setPending(true);
+      fetch(`/api/timesheet-management/entry?mode=search&kind=${kind}&q=${encodeURIComponent(query)}`, { cache: 'no-store' })
+        .then((response) => response.json())
+        .then((body) => setItems(body.data || []))
+        .catch(() => setItems([]))
+        .finally(() => setPending(false));
     }, 250);
     return () => clearTimeout(handle);
   }, [query, kind]);
-  return <Modal title={title} onClose={onClose} footer={<Button kind="secondary" onClick={onClose}>Close</Button>}><Field label="Search"><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Code, name, client" /></Field><div className="pickerList">{items.map((item) => <button key={item.code} type="button" onClick={() => onPick(item)}><b>{item.code}</b><span>{item.name}{item.client ? ` · ${item.client}` : ''}</span></button>)}{!items.length && <span>No matches</span>}</div></Modal>;
+  return <Modal title={title} onClose={onClose} footer={<Button kind="secondary" onClick={onClose}>Close</Button>}>
+    <Field label="Search"><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Code, name, client — type the new project code" autoFocus /></Field>
+    <div className="pickerList">
+      {items.map((item) => <button key={item.code} type="button" onClick={() => onPick(item)}><b>{item.code}</b><span>{item.name}{item.client ? ` · ${item.client}` : ''}</span></button>)}
+      {pending && <span>Searching…</span>}
+      {!pending && !items.length && <span>No matches. Newly registered projects appear when you search by code or name.</span>}
+    </div>
+  </Modal>;
 }
 
 function ExceptionModal({ onClose, onAdd }) {

@@ -1364,7 +1364,7 @@ export async function readProjects(): Promise<Project[]> {
       clientName: row.ClientName || '',
       site: row.Site,
       projectManager: row.ProjectManager || '',
-      status: row.Status,
+      status: String(row.Status || '').trim() || 'Active',
       tasks: tasksByProject.get(row.Id) || [],
     }));
     try {

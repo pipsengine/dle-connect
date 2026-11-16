@@ -327,7 +327,7 @@ async function handleBulkApply(request: Request, payload: UpdatePayload) {
   const approvedOvertimeAuthorizations = await loadOvertimeAuthorizationsForBooking(
     header,
     currentLines,
-    projects.filter((project) => ['Active', 'Approved', 'Open'].includes(project.status)),
+    projects.filter((project) => /^(active|approved|open)$/i.test(String(project.status || '').trim())),
     overtimeBooking,
   );
   const holidayDates = await readPublicHolidayDates();
@@ -1284,7 +1284,7 @@ const buildPayload = async (
   if (isOffshoreSheet) targetShiftForSheet = DEFAULT_TIMESHEET_SHIFT_LABEL;
   dayContext = dayContextFor(targetDate, holidayDates, targetShiftForSheet, isOffshoreSheet ? OFFSHORE_LOCATION_NAME : targetLocation);
   const overtimeBooking = resolveOvertimeBookingOptions();
-  const activeProjects = projects.filter((project) => ['Active', 'Approved', 'Open'].includes(project.status));
+  const activeProjects = projects.filter((project) => /^(active|approved|open)$/i.test(String(project.status || '').trim()));
   const bookableProjects = activeProjects.filter((project) => !isIdleTimeProjectCode(project.code));
   let approvedOvertimeAuthorizations: OvertimeAuthorizationRequest[] = [];
   const attendanceWorkCenters = scopedWorkCenters.map((workCenter) => ({
@@ -2059,7 +2059,7 @@ export async function PATCH(request: Request) {
       const authorizations = await loadOvertimeAuthorizationsForBooking(
         header,
         currentLines,
-        projects.filter((project) => ['Active', 'Approved', 'Open'].includes(project.status)),
+        projects.filter((project) => /^(active|approved|open)$/i.test(String(project.status || '').trim())),
         overtimeBooking,
       );
       const auth =
@@ -2080,7 +2080,7 @@ export async function PATCH(request: Request) {
       }
       const saveProjects = await readProjects();
       const primaryProjectCode = resolvePrimaryProjectCode(
-        saveProjects.filter((project) => ['Active', 'Approved', 'Open'].includes(project.status)).map((project) => project.code),
+        saveProjects.filter((project) => /^(active|approved|open)$/i.test(String(project.status || '').trim())).map((project) => project.code),
       );
 
       let nextLines = [...currentLines];
@@ -2260,7 +2260,7 @@ export async function PATCH(request: Request) {
         ? await loadOvertimeAuthorizationsForBooking(
             header,
             linesForSave,
-            saveProjects.filter((project) => ['Active', 'Approved', 'Open'].includes(project.status)),
+            saveProjects.filter((project) => /^(active|approved|open)$/i.test(String(project.status || '').trim())),
             overtimeBooking,
           )
         : [];

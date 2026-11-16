@@ -422,11 +422,25 @@ export const searchTimesheetEntry = async (kind: string, query: string, workDate
   const connection = await pool();
   const q = text(query);
   if (kind === 'project') {
-    const result = await connection.request().input('q', sql.NVarChar(80), `%${q}%`).query(`
-      SELECT TOP 20 [Code],[Name], ISNULL([ClientName], N'') AS ClientName, ISNULL([ProjectManager], N'') AS ProjectManager
+    const result = await connection.request()
+      .input('q', sql.NVarChar(80), `%${q}%`)
+      .input('exact', sql.NVarChar(80), q)
+      .query(`
+      SELECT TOP 100 [Code],[Name], ISNULL([ClientName], N'') AS ClientName, ISNULL([ProjectManager], N'') AS ProjectManager
       FROM [hris].[TimesheetProjects]
-      WHERE [Status] = N'Active' AND (@q = N'%%' OR [Code] LIKE @q OR [Name] LIKE @q OR ISNULL([ClientName], N'') LIKE @q)
-      ORDER BY [Code]
+      WHERE LTRIM(RTRIM(ISNULL([Status], N''))) IN (N'Active', N'Approved', N'Open')
+        AND (
+          @q = N'%%'
+          OR [Code] LIKE @q
+          OR [Name] LIKE @q
+          OR ISNULL([ClientName], N'') LIKE @q
+          OR ISNULL([ProjectManager], N'') LIKE @q
+        )
+      ORDER BY
+        CASE WHEN @exact <> N'' AND UPPER([Code]) = UPPER(@exact) THEN 0 ELSE 1 END,
+        CASE WHEN @exact <> N'' AND [Code] LIKE @exact + N'%' THEN 0 ELSE 1 END,
+        [UpdatedAt] DESC,
+        [Code]
     `);
     return (result.recordset || []).map((row) => ({ code: text(row.Code), name: text(row.Name), client: text(row.ClientName), manager: text(row.ProjectManager), kind: 'Project' }));
   }
