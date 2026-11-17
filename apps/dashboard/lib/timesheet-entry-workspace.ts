@@ -5,6 +5,7 @@ import { bookedOffshoreLinesForSheet, mobilizationBelongsOnSheet } from '@/lib/t
 import { confirmedRemovalEmployeeCodes, namesMatchSupervisor } from '@/lib/timesheet-crew-store';
 import { listActiveMobilizations, type ActiveMobilization } from '@/lib/timesheet-portal-mobilization-store';
 import { approvalBlocksRevision, openTimesheetApproval } from '@/lib/timesheet-approval-store';
+import { isInactiveTimesheetEmployeeStatus } from '@/lib/timesheet-entry-shared';
 
 const text = (value: unknown) => String(value ?? '').trim();
 const isContractEmployee = (code: unknown) => /^C\d/i.test(text(code));
@@ -35,6 +36,34 @@ const approvedLeaveCodesForDate = async (connection: sql.ConnectionPool, workDat
     return new Set<string>();
   }
 };
+
+/** Codes that must not appear on timesheet entry once employment is inactive/exited. */
+const inactiveEmployeeCodes = async (connection: sql.ConnectionPool, codes: string[]) => {
+  const unique = [...new Set(codes.map((code) => text(code).toUpperCase()).filter(Boolean))];
+  if (!unique.length) return new Set<string>();
+  const request = connection.request();
+  unique.forEach((code, index) => request.input(`InactiveCode${index}`, sql.NVarChar(80), code));
+  const result = await request.query(`
+    SELECT [employee_code], [employment_status]
+    FROM [hris].[EmployeeMasterView]
+    WHERE [employee_code] IN (${unique.map((_, index) => `@InactiveCode${index}`).join(', ')})
+  `).catch(() => ({ recordset: [] as Record<string, unknown>[] }));
+  const inactive = new Set<string>();
+  for (const row of result.recordset || []) {
+    if (isInactiveTimesheetEmployeeStatus(row.employment_status)) inactive.add(text(row.employee_code).toUpperCase());
+  }
+  return inactive;
+};
+
+const ACTIVE_EMPLOYMENT_SQL = `
+  ISNULL(v.employment_status, N'') NOT LIKE N'%terminated%'
+  AND ISNULL(v.employment_status, N'') NOT LIKE N'%inactive%'
+  AND ISNULL(v.employment_status, N'') NOT LIKE N'%resigned%'
+  AND ISNULL(v.employment_status, N'') NOT LIKE N'%retired%'
+  AND ISNULL(v.employment_status, N'') NOT LIKE N'%exited%'
+  AND ISNULL(v.employment_status, N'') NOT LIKE N'%suspended%'
+  AND ISNULL(v.employment_status, N'') NOT LIKE N'%deceased%'
+`;
 const newId = (prefix: string) => `${prefix}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
 
 type CrewHourLine = {
@@ -428,7 +457,7 @@ export const searchTimesheetEntry = async (kind: string, query: string, workDate
       .query(`
       SELECT TOP 100 [Code],[Name], ISNULL([ClientName], N'') AS ClientName, ISNULL([ProjectManager], N'') AS ProjectManager
       FROM [hris].[TimesheetProjects]
-      WHERE LTRIM(RTRIM(ISNULL([Status], N''))) IN (N'Active', N'Approved', N'Open')
+      WHERE LTRIM(RTRIM(ISNULL([Status], N''))) IN (N'Active', N'Approved', N'Open', N'Engineering')
         AND (
           @q = N'%%'
           OR [Code] LIKE @q
@@ -894,10 +923,12 @@ const loadCoveringCrewAssignments = async (
   const result = await request.query(`
     SELECT a.[EmployeeCode], a.[EmployeeName], a.[AssignmentType], a.[SupervisorName], a.[LocationName], a.[WorkCenterName], a.[OperationalStatus]
     FROM [tsmgmt].[CrewAssignments] a
+    LEFT JOIN [hris].[EmployeeMasterView] v ON v.employee_code = a.[EmployeeCode]
     WHERE a.[Status] = N'Active'
       AND a.[EffectiveFrom] <= @WorkDate
       AND (a.[EffectiveTo] IS NULL OR a.[EffectiveTo] >= @WorkDate)
       AND a.[OperationalStatus] <> N'Assignment Ended'
+      AND (v.employee_id IS NULL OR (${ACTIVE_EMPLOYMENT_SQL}))
       AND ${match}
   `);
   const rows = (result.recordset || []).filter((row) => namesMatchSupervisor(text(row.SupervisorName), supervisor) || namesMatchSupervisor(text(row.SupervisorName), supervisorCode || ''));
@@ -1101,7 +1132,7 @@ export const resolveTimesheetEntry = async (input: { periodId: string; workDate:
       .input('Supervisor', sql.NVarChar(180), supervisor)
       .input('WorkDate', sql.Date, workDate)
       .query(`
-        SELECT [EmployeeCode], [EmployeeName], [LocationName], [WorkCenterName]
+        SELECT ranked.[EmployeeCode], ranked.[EmployeeName], ranked.[LocationName], ranked.[WorkCenterName]
         FROM (
           SELECT l.[EmployeeCode], l.[EmployeeName], l.[LocationName], l.[WorkCenterName],
             ROW_NUMBER() OVER (PARTITION BY l.[EmployeeCode] ORDER BY t.[WorkDate] DESC) AS [rn]
@@ -1111,7 +1142,9 @@ export const resolveTimesheetEntry = async (input: { periodId: string; workDate:
             AND t.[SupervisorName] = @Supervisor
             AND t.[WorkDate] <> @WorkDate
         ) ranked
+        LEFT JOIN [hris].[EmployeeMasterView] v ON v.employee_code = ranked.[EmployeeCode]
         WHERE ranked.[rn] = 1
+          AND (v.employee_id IS NULL OR (${ACTIVE_EMPLOYMENT_SQL}))
       `);
     for (const row of periodCrew.recordset || []) {
       const code = text(row.EmployeeCode);
@@ -1340,6 +1373,18 @@ export const resolveTimesheetEntry = async (input: { periodId: string; workDate:
     };
     if (timesheet) timesheet.lines = timesheet.lines.filter((line) => !onNonWorkingLeave(line));
     crew = crew.filter((row) => !onNonWorkingLeave(row));
+  }
+  {
+    const sheetCodes = [
+      ...(timesheet?.lines || []).map((line) => text(line.employeeCode)),
+      ...crew.map((row) => text(row.employeeCode)),
+      ...offshoreCrew.map((row) => text(row.employeeCode)),
+    ];
+    const inactiveCodes = await inactiveEmployeeCodes(connection, sheetCodes);
+    if (inactiveCodes.size) {
+      if (timesheet) timesheet.lines = timesheet.lines.filter((line) => !inactiveCodes.has(text(line.employeeCode).toUpperCase()));
+      crew = crew.filter((row) => !inactiveCodes.has(text(row.employeeCode).toUpperCase()));
+    }
   }
   return {
     period: { id: periodId, name: text(periodRow.Name), startDate: start, endDate: end, status: periodStatus },
@@ -1600,6 +1645,9 @@ export const saveTimesheetEntry = async (input: {
   const classification = resolved.timesheet?.frozen
     ? { dayKind: resolved.timesheet.dayKind, holidayName: resolved.timesheet.holidayName }
     : resolved.classification;
+  const inactiveOnSave = await inactiveEmployeeCodes(connection, (input.lines || []).map((line) => text(line.employeeCode)));
+  const saveLines = (input.lines || []).filter((line) => !inactiveOnSave.has(text(line.employeeCode).toUpperCase()));
+  const saveInput = { ...input, lines: saveLines };
   return withDeadlockRetry(async () => {
   const transaction = new sql.Transaction(connection);
   await transaction.begin();
@@ -1640,7 +1688,7 @@ export const saveTimesheetEntry = async (input: {
         DELETE FROM [tsmgmt].[Bookings] WHERE [PeriodId]=(SELECT [PeriodId] FROM [tsmgmt].[Timesheets] WHERE [Id]=@Id) AND [WorkDate]=(SELECT [WorkDate] FROM [tsmgmt].[Timesheets] WHERE [Id]=@Id) AND [SupervisorName]=(SELECT [SupervisorName] FROM [tsmgmt].[Timesheets] WHERE [Id]=@Id) AND [ShiftLabel]=(SELECT [ShiftLabel] FROM [tsmgmt].[Timesheets] WHERE [Id]=@Id);
       `);
     }
-    for (const line of input.lines || []) {
+    for (const line of saveInput.lines || []) {
       const code = text(line.employeeCode);
       const name = text(line.employeeName);
       if (!isBookableCrewCode(code) || !name) continue;
@@ -1713,12 +1761,12 @@ export const saveTimesheetEntry = async (input: {
       if (regular + ovt + nightHours <= 0 && operationalStatus !== 'Approved Leave') continue;
       await new sql.Request(transaction)
         .input('Id', sql.NVarChar(40), newId('bk'))
-        .input('PeriodId', sql.NVarChar(40), input.periodId)
-        .input('WorkDate', sql.Date, input.workDate)
-        .input('Supervisor', sql.NVarChar(180), input.supervisor)
+        .input('PeriodId', sql.NVarChar(40), saveInput.periodId)
+        .input('WorkDate', sql.Date, saveInput.workDate)
+        .input('Supervisor', sql.NVarChar(180), saveInput.supervisor)
         .input('Location', sql.NVarChar(180), text(line.location))
         .input('WorkCenter', sql.NVarChar(180), text(line.workCenter))
-        .input('Shift', sql.NVarChar(80), text(input.shift) || 'Day')
+        .input('Shift', sql.NVarChar(80), text(saveInput.shift) || 'Day')
         .input('EmployeeCode', sql.NVarChar(80), code)
         .input('EmployeeName', sql.NVarChar(220), name)
         .input('ProjectHours', sql.NVarChar(sql.MAX), JSON.stringify(projectHours))
@@ -1739,12 +1787,12 @@ export const saveTimesheetEntry = async (input: {
           VALUES (@Id,@PeriodId,@WorkDate,@Supervisor,@Location,@WorkCenter,@Shift,@EmployeeCode,@EmployeeName,@ProjectHours,@RegularHours,@OvtHours,@NightHours,@AttendanceStatus,N'Draft',@Actor,@Actor);
         `);
     }
-    if (nightDirty) await syncNightBand(transaction, input, resolved, classification, actor);
-    const nightBooked = nightDirty ? (input.lines || []).filter((line) => line.nightWork && nightAllocationHours(line.nightAllocations) > 0).length : 0;
+    if (nightDirty) await syncNightBand(transaction, saveInput, resolved, classification, actor);
+    const nightBooked = nightDirty ? (saveInput.lines || []).filter((line) => line.nightWork && nightAllocationHours(line.nightAllocations) > 0).length : 0;
     await new sql.Request(transaction)
       .input('TimesheetId', sql.NVarChar(40), timesheetId)
-      .input('Action', sql.NVarChar(80), input.action === 'review' ? 'Review requested' : 'Draft saved')
-      .input('Detail', sql.NVarChar(1000), `${(input.lines || []).length} employees, version ${version}${nightBooked ? `; night band ${nightBooked}` : ''}${(input.lines || []).some((line) => line.exceptional) ? `; exceptional: ${(input.lines || []).filter((line) => line.exceptional).map((line) => line.employeeCode).join(', ')}` : ''}`)
+      .input('Action', sql.NVarChar(80), saveInput.action === 'review' ? 'Review requested' : 'Draft saved')
+      .input('Detail', sql.NVarChar(1000), `${(saveInput.lines || []).length} employees, version ${version}${nightBooked ? `; night band ${nightBooked}` : ''}${(saveInput.lines || []).some((line) => line.exceptional) ? `; exceptional: ${(saveInput.lines || []).filter((line) => line.exceptional).map((line) => line.employeeCode).join(', ')}` : ''}`)
       .input('Actor', sql.NVarChar(120), actor)
       .query(`INSERT INTO [tsmgmt].[TimesheetEntryAudit] ([TimesheetId],[Action],[Detail],[Actor]) VALUES (@TimesheetId,@Action,@Detail,@Actor)`);
     await transaction.commit();

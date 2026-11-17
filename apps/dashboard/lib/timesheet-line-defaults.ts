@@ -35,7 +35,7 @@ export const AUTO_BOOKED_ATTENDANCE_REMARK = 'Auto-booked from biometric attenda
 const bookableProjects = (projects: TimesheetBookableProject[]) =>
   projects.map(withCanonicalProjectManager).filter((project) => {
     const status = String(project.status || 'Active');
-    if (!['Active', 'Approved', 'Open'].includes(status)) return false;
+    if (!['Active', 'Approved', 'Open', 'Engineering'].includes(status)) return false;
     if (isIdleTimeProjectCode(project.code)) return false;
     if (!String(project.code || '').trim()) return false;
     return Boolean(String(project.projectManager || '').trim());

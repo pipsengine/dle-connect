@@ -220,6 +220,7 @@
 .ts-portal.ts-standalone{height:100vh;min-height:0;overflow:hidden}
 .ts-portal.ts-standalone .shell{height:100%;min-height:0;overflow:hidden}
 .ts-portal.ts-standalone aside{position:relative;inset:auto;flex:0 0 250px;width:250px;height:100%;overflow:hidden}
+.ts-portal aside nav{flex:1 1 auto;min-height:0;overflow:auto;-webkit-overflow-scrolling:touch}
 .ts-portal.ts-standalone aside nav{flex:1 1 auto;min-height:0}
 .ts-portal.ts-standalone .shell.collapsed aside{flex-basis:76px;width:76px}
 .ts-portal.ts-standalone main,.ts-portal.ts-standalone .shell.collapsed main{margin-left:0;height:100%;min-height:0;display:flex;flex-direction:column;overflow:hidden}

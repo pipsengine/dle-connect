@@ -22,7 +22,7 @@ const canUsePortal = async (request: Request) => {
 const assertCanManageProjects = async (request: Request) => {
   if (!(await canUsePortal(request))) return 'You do not have permission to open Timesheet Management.';
   if (!(await canManageTimesheetProjectRegistry(request))) {
-    return 'Only IT Department employees or Global Super Administrator can register or update projects.';
+    return 'Only Timesheet Administrators, IT, HR administrators, or Global Super Administrator can register or update projects.';
   }
   return null;
 };

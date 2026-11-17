@@ -2,8 +2,13 @@ import { canCreateProjects, type ProjectsSessionIdentity } from '@/lib/access/pr
 import { AUTH_COOKIE, verifySessionToken } from '@/lib/auth/session';
 import { withResolvedAccess } from '@/lib/auth/resolve-access-session';
 import { isSuperActor } from '@/lib/auth/role-delegation';
+import { hasPermission } from '@/lib/auth/permission-match';
 
 const compact = (value: unknown) => String(value ?? '').trim();
+
+/** Roles that may maintain the timesheet Project Registry (not only IT create-project). */
+const TIMESHEET_PROJECT_REGISTRY_ROLES =
+  /super administrator|global super administrator|timesheet administrator|hr administrator|hr manager|hr director|hr officer|human resource|it administrator|it support|service desk|infrastructure officer|application support|\bict\b/i;
 
 const identityFromHeaders = (request: Request): ProjectsSessionIdentity => ({
   sub: compact(request.headers.get('x-auth-sub')) || undefined,
@@ -53,7 +58,17 @@ export const resolveTimesheetProjectRegistryIdentity = async (
   };
 };
 
+const isTimesheetProjectRegistryAdmin = (identity: ProjectsSessionIdentity | null) => {
+  if (!identity) return false;
+  if (identity.isGlobalAdmin || isSuperActor(identity)) return true;
+  const roles = (identity.roles || []).join(' ');
+  if (TIMESHEET_PROJECT_REGISTRY_ROLES.test(roles)) return true;
+  return hasPermission(identity.permissions || [], 'view_timesheet_management')
+    && /timesheet|hr |human resource|it |ict/i.test(roles);
+};
+
 export const canManageTimesheetProjectRegistry = async (request: Request) => {
   const identity = await resolveTimesheetProjectRegistryIdentity(request);
-  return canCreateProjects(identity);
+  if (canCreateProjects(identity)) return true;
+  return isTimesheetProjectRegistryAdmin(identity);
 };
