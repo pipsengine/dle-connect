@@ -263,3 +263,6 @@
 
 
 
+.ts-portal .labourAlert.notice{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;background:#fffbeb;color:#7c4a03;border-color:#fde68a}
+.ts-portal .labourAlert.notice b{color:#5c3702}
+.ts-portal .labourAlert.notice .btn{flex:none}

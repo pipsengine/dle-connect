@@ -8,6 +8,7 @@ import { buildLabourReport, type LabourRateCard, type LabourSourceLine } from '.
 import { buildSimpleWorkbook } from './project-labour-export';
 import {
   PAYROLL_MULTIPLIERS,
+  employerOnCostPercent,
   isManualRateNote,
   isPayrollSeedNote,
   parseRateSheet,
@@ -37,6 +38,29 @@ assert.equal(loaded.amount, 1537.5);
 assert.equal(loaded.rateVersion, 'payroll-2026-11-17-oc20');
 assert.equal(sameRate(seeded, loaded), false);
 assert.equal(sameRate(seeded, { ...seeded, rateVersion: 'other', notes: 'other' }), true);
+
+// Actual employer on-cost from payroll contribution lines (P0080-style: pension + ITF + NSITF).
+const p0080Lines = JSON.stringify([
+  { code: 'ITF', name: 'ITF Levy', amount: 5545.13 },
+  { code: 'ITF', name: 'NSITF - Nigeria Social Insurance Tr', amount: 5545.13 },
+  { code: 'PENSION_ER', name: 'Pension Employer', amount: 28000 },
+]);
+assert.equal(employerOnCostPercent(p0080Lines, 510216.01), 7.66);
+assert.equal(employerOnCostPercent('[]', 320812.51), 0);
+assert.equal(employerOnCostPercent(null, 320812.51), 0);
+assert.equal(employerOnCostPercent('not json', 320812.51), 0);
+assert.equal(employerOnCostPercent(p0080Lines, 0), 0);
+assert.equal(employerOnCostPercent(JSON.stringify([{ amount: -50 }, { amount: 'x' }]), 1000), 0);
+// USD salary with naira contribution lines (P0442 in live data) must not produce a 100% load.
+assert.equal(employerOnCostPercent(JSON.stringify([{ code: 'PENSION_ER', amount: 288039.54 }]), 4631.42, 'USD'), 0);
+assert.equal(employerOnCostPercent(p0080Lines, 510216.01, 'ngn'), 7.66);
+const actualPermanent = payrollSeedRate({ employeeCode: 'P0080', ratePerDay: 26090.5914, currency: 'NGN' }, { ...options, onCostBasis: 'actual', onCostPercent: 7.66 })!;
+assert.equal(actualPermanent.amount, Math.round((26090.5914 / 8) * 1.0766 * 10000) / 10000);
+assert.equal(actualPermanent.rateVersion, 'payroll-2026-11-17-er');
+assert.match(actualPermanent.notes, /7\.66% employer contributions \(payroll actual\)/);
+const actualDayRate = payrollSeedRate({ employeeCode: 'C1979', ratePerDay: 10250, currency: 'NGN' }, { ...options, onCostBasis: 'actual', onCostPercent: 0 })!;
+assert.equal(actualDayRate.amount, 1281.25);
+assert.equal(sameRate(actualDayRate, seeded), true);
 
 // No usable payroll rate → no seed row.
 assert.equal(payrollSeedRate({ employeeCode: 'C1', ratePerDay: 0, currency: 'NGN' }, options), null);

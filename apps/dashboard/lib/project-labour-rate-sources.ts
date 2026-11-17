@@ -3,7 +3,8 @@
  *
  * 1. Payroll seed — every employee's day rate from [hris].[EmployeePayrollSetup], priced the way the
  *    day-rate payroll schedule pays it (hourly = daily ÷ 8; weekday OVT ×1.5, Saturday ×1.5,
- *    Sunday ×2, public holiday ×2). An optional on-cost % loads the rate for employer costs.
+ *    Sunday ×2, public holiday ×2). On-cost is either each employee's actual employer contributions
+ *    from payroll (default) or one flat % for everyone.
  * 2. Rate sheet — Finance downloads the sheet, edits rows, and uploads it. Uploaded rows are
  *    marked MANUAL and are never overwritten by a later payroll seed.
  */
@@ -58,17 +59,45 @@ const text = (value: unknown) => String(value ?? '').replace(/ /g, ' ').trim();
 export const isManualRateNote = (notes: unknown) => text(notes).toUpperCase().startsWith(MANUAL_RATE_MARKER);
 export const isPayrollSeedNote = (notes: unknown) => text(notes).toUpperCase().startsWith(PAYROLL_SEED_MARKER);
 
+export type OnCostBasis = 'actual' | 'flat';
+
+/**
+ * Employer on-cost actually paid for one employee, as a % of their period salary: the sum of the
+ * employer contribution lines payroll holds for them (employer pension, ITF levy, NSITF).
+ * Day-rate staff carry no contribution lines, so their on-cost is 0%. Returns 0 when it cannot be read.
+ * Non-NGN pay returns 0: payroll holds those contributions in naira against a foreign-currency salary,
+ * so the ratio is meaningless. Those employees are costed through the rate sheet with an exchange rate.
+ */
+export const employerOnCostPercent = (contributionLinesJson: unknown, periodSalary: unknown, payCurrency: unknown = 'NGN') => {
+  if ((text(payCurrency).toUpperCase() || 'NGN') !== 'NGN') return 0;
+  const salary = Number(periodSalary);
+  if (!Number.isFinite(salary) || salary <= 0) return 0;
+  let lines: unknown;
+  try { lines = JSON.parse(text(contributionLinesJson) || '[]'); } catch { return 0; }
+  if (!Array.isArray(lines)) return 0;
+  const total = lines.reduce((sum: number, line) => {
+    const amount = Number((line as { amount?: unknown })?.amount);
+    return sum + (Number.isFinite(amount) && amount > 0 ? amount : 0);
+  }, 0);
+  if (total <= 0) return 0;
+  return Math.min(100, Math.round((total / salary) * 10000) / 100);
+};
+
 /** Payroll day rate → hourly project rate, with the payroll multipliers and an optional on-cost load. */
 export const payrollSeedRate = (
   source: PayrollRateSource,
-  options: { effectiveFrom: string; onCostPercent?: number; seededOn: string },
+  options: { effectiveFrom: string; onCostPercent?: number; onCostBasis?: OnCostBasis; seededOn: string },
 ): LabourRateInput | null => {
   const daily = Number(source.ratePerDay);
   if (!Number.isFinite(daily) || daily <= 0) return null;
   const onCost = Math.max(0, Number(options.onCostPercent) || 0);
+  const actual = options.onCostBasis === 'actual';
   const hourly = round4((daily / PAYROLL_HOURS_PER_DAY) * (1 + onCost / 100));
   const currency = text(source.currency).toUpperCase() || 'NGN';
-  const version = `payroll-${options.seededOn}${onCost ? `-oc${onCost}` : ''}`.slice(0, 40);
+  const version = `payroll-${options.seededOn}${actual ? '-er' : onCost ? `-oc${onCost}` : ''}`.slice(0, 40);
+  const onCostNote = actual
+    ? ` + ${onCost}% employer contributions (payroll actual)`
+    : onCost ? ` + ${onCost}% on-cost` : '';
   return {
     employeeCode: text(source.employeeCode).toUpperCase(),
     method: 'hourly',
@@ -80,7 +109,7 @@ export const payrollSeedRate = (
     standardHours: PAYROLL_HOURS_PER_DAY,
     ...PAYROLL_MULTIPLIERS,
     rateVersion: version,
-    notes: `${PAYROLL_SEED_MARKER} | EmployeePayrollSetup day rate ${daily} ${currency} / ${PAYROLL_HOURS_PER_DAY}h${onCost ? ` + ${onCost}% on-cost` : ''}`.slice(0, 400),
+    notes: `${PAYROLL_SEED_MARKER} | EmployeePayrollSetup day rate ${daily} ${currency} / ${PAYROLL_HOURS_PER_DAY}h${onCostNote}`.slice(0, 400),
   };
 };
 

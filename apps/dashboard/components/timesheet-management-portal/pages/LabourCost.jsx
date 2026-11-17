@@ -166,9 +166,7 @@ export default function LabourCost() {
     {notice && <div className="success">{notice}</div>}
     <FilterBar draft={draft} setField={setField} options={data?.options || {}} periods={data?.periods || []} onApply={apply} onReset={reset} />
     {loading && !data ? <div className="panel feature"><h3>Loading project labour</h3><p>Reading timesheet allocations for the selected period.</p></div> : null}
-    {data && data.access?.canSeeCosts && data.overview.totalHours > 0 && data.overview.approvedCost == null && data.overview.provisionalCost == null && <div className="labourAlert">
-      Labour cost cannot be calculated for this selection: no project labour cost rate is configured for the employees booked here. Hours are complete. Add rates under Reports &amp; Export → Project labour cost rate to populate cost, budget variance and the cost rankings.
-    </div>}
+    {data && <RateCoverageNotice overview={data.overview} access={data.access} onSetUp={() => setTab('Reports & Export')} />}
     {data && <>
       <div className="kpis compact">
         <Card label="Total Man-Hours" value={hours(data.overview.totalHours)} sub={`${hours(data.overview.approvedHours)} approved · ${hours(data.overview.provisionalHours)} provisional`} onClick={() => setDetail(projectDetail(data, 'Total man-hours', (row) => row.uniqueHours > 0, ['Project', 'Name', 'Hours', 'Employees'], (row) => [row.projectCode, row.projectName, hours(row.uniqueHours), row.employees]))} />
@@ -195,6 +193,26 @@ export default function LabourCost() {
     {selected && <ProjectDrawer project={selected} lines={(data?.employeeProjects || []).filter((line) => line.projectCode === selected.projectCode)} onClose={() => setSelected(null)} onLines={() => { const next = { ...draft, project: selected.projectCode, groupBy: 'employee-project' }; setDraft(next); setFilters(next); setTab('Employee Cost Breakdown'); setLinePage(1); load(next, 1); setSelected(null); }} />}
     {detail && <DetailModal title={detail.title} note={detail.note} headers={detail.headers} rows={detail.rows} onClose={() => setDetail(null)} />}
   </>;
+}
+
+/** Explains why cost figures are blank or partial, and where to fix it. Hours are never affected. */
+function RateCoverageNotice({ overview, access, onSetUp }) {
+  const missing = Number(overview.missingRateEmployees || 0);
+  if (!access?.canSeeCosts || !overview.totalHours || !missing) return null;
+  const total = missing + Number(overview.costedEmployees || 0);
+  const none = missing === total;
+  const sample = (overview.missingRateSample || []).join(', ');
+  return <div className="labourAlert notice" role="status">
+    <span>
+      <b>{none ? 'Labour cost is not set up yet.' : 'Labour cost is incomplete.'}</b>{' '}
+      {none
+        ? `None of the ${total} employees in this selection has a project labour cost rate, so cost, budget variance and cost rankings show "Not Available".`
+        : `${missing} of ${total} employees (${hours(overview.unpricedHours)} h) have no usable project labour cost rate${sample ? ` (${sample}${missing > 8 ? ', …' : ''})` : ''}. Totals stay "Not Available" until every employee is costed.`}
+      {' '}Man-hours are complete and unaffected.
+      {!access.canManageRates && ' Ask Finance or HR to set up project labour cost rates.'}
+    </span>
+    {access.canManageRates && <Button kind="secondary" onClick={onSetUp}>{none ? 'Set up rates' : 'Fix missing rates'}</Button>}
+  </div>;
 }
 
 const projectDetail = (data, title, include, headers, cells) => ({
@@ -300,7 +318,7 @@ const readFileBase64 = (file) => new Promise((resolve, reject) => {
 });
 
 function RateSources({ data, onSave, onRateSheet }) {
-  const [seed, setSeed] = useState({ effectiveFrom: '', onCostPercent: '0' });
+  const [seed, setSeed] = useState({ effectiveFrom: '', onCostBasis: 'actual', onCostPercent: '0' });
   const [busy, setBusy] = useState('');
   const [outcome, setOutcome] = useState(null);
   const [problem, setProblem] = useState(null);
@@ -313,7 +331,7 @@ function RateSources({ data, onSave, onRateSheet }) {
     catch (failure) { setProblem({ message: failure.message, rows: failure.result?.errors || [] }); }
     finally { setBusy(''); }
   };
-  const seedNow = () => run('seed', () => onSave({ action: 'seed-payroll-rates', effectiveFrom: seed.effectiveFrom, onCostPercent: Number(seed.onCostPercent || 0) }));
+  const seedNow = () => run('seed', () => onSave({ action: 'seed-payroll-rates', effectiveFrom: seed.effectiveFrom, onCostBasis: seed.onCostBasis, onCostPercent: seed.onCostBasis === 'flat' ? Number(seed.onCostPercent || 0) : 0 }));
   const upload = () => run('import', async () => {
     if (!file) throw new Error('Choose the edited rate sheet first.');
     return onSave({ action: 'import-rates', fileName: file.name, contentBase64: await readFileBase64(file) });
@@ -323,10 +341,14 @@ function RateSources({ data, onSave, onRateSheet }) {
     <section className="panel"><div className="panelHead"><div><h3>Rates from payroll</h3><p>Sets every employee's project rate from their payroll day rate (Employee Payroll Setup): hourly = day rate ÷ 8, weekday OVT ×1.5, Saturday ×1.5, Sunday ×2, PH ×2. Manual overrides are kept. Run again after a pay change.</p></div></div>
       <form className="labourForm" onSubmit={(event) => { event.preventDefault(); seedNow(); }}>
         <Field label="Effective from"><input type="date" value={seed.effectiveFrom} placeholder={periodStart} onChange={(event) => setSeed({ ...seed, effectiveFrom: event.target.value })} /></Field>
-        <Field label="Employer on-cost %"><input type="number" min="0" max="200" step="0.01" value={seed.onCostPercent} onChange={(event) => setSeed({ ...seed, onCostPercent: event.target.value })} /></Field>
+        <Field label="Employer on-cost"><select value={seed.onCostBasis} onChange={(event) => setSeed({ ...seed, onCostBasis: event.target.value })}>
+          <option value="actual">Each employee's actual contributions (payroll)</option>
+          <option value="flat">One flat % for everyone</option>
+        </select></Field>
+        {seed.onCostBasis === 'flat' && <Field label="Flat on-cost %"><input type="number" min="0" max="200" step="0.01" value={seed.onCostPercent} onChange={(event) => setSeed({ ...seed, onCostPercent: event.target.value })} required /></Field>}
         <Button disabled={!!busy} onClick={submitForm}>{busy === 'seed' ? 'Seeding…' : 'Seed rates from payroll'}</Button>
       </form>
-      <p className="labourEmpty">Blank effective date uses the earliest timesheet period{periodStart ? ` (${periodStart})` : ''}. On-cost 0% gives direct pay cost; add pension, NSITF, ITF and HMO as a percentage for loaded cost.</p>
+      <p className="labourEmpty">Blank effective date uses the earliest timesheet period{periodStart ? ` (${periodStart})` : ''}. "Actual contributions" adds each employee's own employer pension, ITF and NSITF from payroll: day-rate staff have none (0%), permanent staff about 7–8%. HMO and overheads are not in payroll.</p>
     </section>
     <section className="panel"><div className="panelHead"><div><h3>Rate sheet (override)</h3><p>Download every employee's current rate, change the rows you need (for example expatriate or lumpsum staff), and upload it. Uploaded rows are saved as Manual. If any row has an error, nothing is saved.</p></div></div>
       <div className="labourForm">
@@ -337,7 +359,7 @@ function RateSources({ data, onSave, onRateSheet }) {
     </section>
     {outcome?.result && <div className="success labourWide">
       {outcome.kind === 'seed'
-        ? `Payroll seed from ${outcome.result.effectiveFrom}${outcome.result.onCostPercent ? ` with ${outcome.result.onCostPercent}% on-cost` : ''}: ${outcome.result.written} rates written, ${outcome.result.unchanged} already current, ${outcome.result.manualKept} manual overrides kept, ${outcome.result.noPayrollRate} employees have no payroll day rate.${outcome.result.nonNgn?.length ? ` ${outcome.result.nonNgn.length} non-NGN employees need an exchange rate via the rate sheet: ${outcome.result.nonNgn.slice(0, 10).join(', ')}.` : ''}`
+        ? `Payroll seed from ${outcome.result.effectiveFrom}${outcome.result.onCostBasis === 'actual' ? ` with each employee's actual employer contributions (${outcome.result.withEmployerContributions} employees have contributions; the rest 0%)` : outcome.result.onCostPercent ? ` with ${outcome.result.onCostPercent}% flat on-cost` : ''}: ${outcome.result.written} rates written, ${outcome.result.unchanged} already current, ${outcome.result.manualKept} manual overrides kept, ${outcome.result.noPayrollRate} employees have no payroll day rate.${outcome.result.nonNgn?.length ? ` ${outcome.result.nonNgn.length} non-NGN employees need an exchange rate via the rate sheet: ${outcome.result.nonNgn.slice(0, 10).join(', ')}.` : ''}`
         : `Rate sheet imported: ${outcome.result.written} rates written, ${outcome.result.unchanged} unchanged, ${outcome.result.blankRows} rows without an Amount skipped.`}
     </div>}
     {problem && <div className="labourAlert bad labourWide">

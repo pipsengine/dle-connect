@@ -4,7 +4,9 @@ import { getDleEnterpriseDbPool } from '@/lib/dle-enterprise-db';
 import { buildSimpleWorkbook } from '@/lib/project-labour-export';
 import {
   MANUAL_RATE_MARKER,
+  employerOnCostPercent,
   isManualRateNote,
+  type OnCostBasis,
   parseRateSheet,
   payrollSeedRate,
   rateSheetRows,
@@ -627,6 +629,26 @@ const moneyLine = (line: LabourReport['lines'][number], canSeeCosts: boolean, ca
   exceptions: line.exceptions,
 });
 
+/** How many employees in the selection can be costed. No amounts, so it is safe for every viewer. */
+const rateCoverage = (lines: LabourReport['lines']) => {
+  const all = new Set<string>();
+  const missing = new Set<string>();
+  let unpricedHours = 0;
+  for (const line of lines) {
+    all.add(line.employeeCode);
+    if (line.totalCostKobo == null) {
+      missing.add(line.employeeCode);
+      unpricedHours += line.uniqueHours;
+    }
+  }
+  return {
+    costedEmployees: all.size - missing.size,
+    missingRateEmployees: missing.size,
+    unpricedHours: Math.round(unpricedHours * 100) / 100,
+    missingRateSample: [...missing].sort().slice(0, 8),
+  };
+};
+
 const present = (
   report: LabourReport,
   context: {
@@ -707,6 +729,7 @@ const present = (
       plannedHours: report.overview.plannedHours,
       nightSessions: report.overview.nightSessions,
       nightAllowance: costs ? naira(report.overview.nightAllowanceKobo) : null,
+      ...rateCoverage(report.lines),
     },
     trend: report.trend.map((point) => ({
       date: point.date,
@@ -930,31 +953,43 @@ const earliestPeriodStart = async (connection: sql.ConnectionPool) => {
   return dateOnly(result.recordset?.[0]?.StartDate) || new Date().toISOString().slice(0, 10);
 };
 
-/** Latest payroll day rate per employee code (one row per code). */
+/** Latest payroll day rate, salary and employer contribution lines per employee code (one row per code). */
 const readPayrollDayRates = async (connection: sql.ConnectionPool) => {
   const result = await connection.request().query(`
-    SELECT code, rate_per_day, pay_currency FROM (
-      SELECT UPPER(LTRIM(RTRIM(v.employee_code))) AS code, p.rate_per_day, p.pay_currency,
+    SELECT code, rate_per_day, pay_currency, period_salary, contributions FROM (
+      SELECT UPPER(LTRIM(RTRIM(v.employee_code))) AS code, p.rate_per_day, p.pay_currency, p.period_salary,
+        COALESCE(NULLIF(LTRIM(RTRIM(p.sage_contribution_lines_json)), N'[]'), p.sage_local_contribution_lines_json) AS contributions,
         ROW_NUMBER() OVER (PARTITION BY UPPER(LTRIM(RTRIM(v.employee_code))) ORDER BY p.modified_at DESC, p.created_at DESC) AS rn
       FROM [hris].[EmployeePayrollSetup] p
       INNER JOIN (SELECT DISTINCT employee_id, employee_code FROM [hris].[EmployeeMasterView]) v ON v.employee_id = p.employee_id
       WHERE ISNULL(v.employee_code, N'') <> N''
     ) ranked WHERE rn = 1
   `);
-  return new Map((result.recordset || []).map((row) => [text(row.code), { ratePerDay: row.rate_per_day == null ? null : num(row.rate_per_day), currency: text(row.pay_currency) || 'NGN' }]));
+  return new Map((result.recordset || []).map((row) => [text(row.code), {
+    ratePerDay: row.rate_per_day == null ? null : num(row.rate_per_day),
+    currency: text(row.pay_currency) || 'NGN',
+    employerOnCostPercent: employerOnCostPercent(row.contributions, row.period_salary, row.pay_currency),
+  }]));
 };
 
 export type PayrollSeedResult = RateWriteSummary & {
   effectiveFrom: string;
+  onCostBasis: OnCostBasis;
   onCostPercent: number;
+  withEmployerContributions: number;
   noPayrollRate: number;
   nonNgn: string[];
 };
 
-/** Seeds project labour rates from each employee's payroll day rate. Manual overrides are kept. */
+/**
+ * Seeds project labour rates from each employee's payroll day rate. Manual overrides are kept.
+ * On-cost basis 'actual' (default) loads each rate by that employee's own employer contributions in
+ * payroll; 'flat' applies one % to everyone.
+ */
 export const seedLabourRatesFromPayroll = async (input: Record<string, unknown>, viewer: LabourViewer): Promise<PayrollSeedResult> => {
   if (!labourAccess(viewer).canManageRates) throw new Error('You do not have permission to maintain project labour cost rates.');
-  const onCostPercent = num(input.onCostPercent);
+  const onCostBasis: OnCostBasis = text(input.onCostBasis) === 'flat' ? 'flat' : 'actual';
+  const onCostPercent = onCostBasis === 'flat' ? num(input.onCostPercent) : 0;
   if (onCostPercent < 0 || onCostPercent > 200) throw new Error('On-cost must be between 0% and 200%.');
   const connection = await pool();
   const effectiveFrom = dateOnly(input.effectiveFrom) || await earliestPeriodStart(connection);
@@ -962,10 +997,16 @@ export const seedLabourRatesFromPayroll = async (input: Record<string, unknown>,
   const payroll = await readPayrollDayRates(connection);
   const rates: LabourRateInput[] = [];
   let noPayrollRate = 0;
+  let withEmployerContributions = 0;
   const nonNgn: string[] = [];
   for (const [code, source] of payroll) {
-    const rate = payrollSeedRate({ employeeCode: code, ratePerDay: source.ratePerDay, currency: source.currency }, { effectiveFrom, onCostPercent, seededOn });
+    const percent = onCostBasis === 'actual' ? source.employerOnCostPercent : onCostPercent;
+    const rate = payrollSeedRate(
+      { employeeCode: code, ratePerDay: source.ratePerDay, currency: source.currency },
+      { effectiveFrom, onCostPercent: percent, onCostBasis, seededOn },
+    );
     if (!rate) { noPayrollRate += 1; continue; }
+    if (onCostBasis === 'actual' && percent > 0) withEmployerContributions += 1;
     if (rate.currency !== 'NGN') nonNgn.push(code);
     rates.push(rate);
   }
@@ -974,7 +1015,7 @@ export const seedLabourRatesFromPayroll = async (input: Record<string, unknown>,
   try {
     const summary = await writeRates(transaction, rates, viewer.actor || 'Timesheet User', { protectManual: true });
     await transaction.commit();
-    return { ...summary, effectiveFrom, onCostPercent, noPayrollRate, nonNgn };
+    return { ...summary, effectiveFrom, onCostBasis, onCostPercent, withEmployerContributions, noPayrollRate, nonNgn };
   } catch (error) {
     await transaction.rollback().catch(() => undefined);
     throw error;

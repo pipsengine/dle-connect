@@ -85,6 +85,9 @@ const zipFiles = (files: Array<{ name: string; data: Buffer }>) => {
   return Buffer.concat([...parts, directory, end]);
 };
 
+/** A cost component is blank (not 0) while any line on the project has no rate — 0 would read as "costs nothing". */
+const projectMoney = (project: ProjectLabourRow, kobo: number | null | undefined) => (project.costIncomplete ? null : naira(kobo));
+
 const projectRow = (project: ProjectLabourRow): Array<string | number | null> => [
   project.projectCode,
   project.projectName,
@@ -102,11 +105,11 @@ const projectRow = (project: ProjectLabourRow): Array<string | number | null> =>
   project.uniqueHours,
   project.plannedHours,
   project.utilization,
-  naira(project.regularCostKobo),
-  naira(project.ovtCostKobo),
-  naira(project.nightLabourKobo),
-  naira(project.nightAllowanceKobo),
-  naira(project.otherAllowanceKobo),
+  projectMoney(project, project.regularCostKobo),
+  projectMoney(project, project.ovtCostKobo),
+  projectMoney(project, project.nightLabourKobo),
+  projectMoney(project, project.nightAllowanceKobo),
+  projectMoney(project, project.otherAllowanceKobo),
   naira(project.approvedCostKobo),
   naira(project.provisionalCostKobo),
   naira(project.labourBudgetKobo),
@@ -127,12 +130,12 @@ const projectCostRow = (project: ProjectLabourRow): Array<string | number | null
   roundTo2(project.weekdayOvt + project.saturdayOvt + project.sundayOvt + project.phOvt),
   project.nightHours,
   project.uniqueHours,
-  naira(project.regularCostKobo),
-  naira(project.ovtCostKobo),
-  naira(project.nightLabourKobo),
-  naira(project.nightAllowanceKobo),
-  naira(project.otherAllowanceKobo),
-  naira(project.adjustmentKobo),
+  projectMoney(project, project.regularCostKobo),
+  projectMoney(project, project.ovtCostKobo),
+  projectMoney(project, project.nightLabourKobo),
+  projectMoney(project, project.nightAllowanceKobo),
+  projectMoney(project, project.otherAllowanceKobo),
+  projectMoney(project, project.adjustmentKobo),
   naira(project.approvedCostKobo),
   naira(project.provisionalCostKobo),
   naira(project.labourBudgetKobo),
