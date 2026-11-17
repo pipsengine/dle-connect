@@ -1,5 +1,17 @@
 import sql from 'mssql';
+import { readDelimitedRows, readFirstSheetRows } from '@/lib/crew-mobilization-upload';
 import { getDleEnterpriseDbPool } from '@/lib/dle-enterprise-db';
+import { buildSimpleWorkbook } from '@/lib/project-labour-export';
+import {
+  MANUAL_RATE_MARKER,
+  isManualRateNote,
+  parseRateSheet,
+  payrollSeedRate,
+  rateSheetRows,
+  sameRate,
+  type LabourRateInput,
+  type RateSheetEmployee,
+} from '@/lib/project-labour-rate-sources';
 import {
   approvalLabelFor,
   buildLabourReport,
@@ -469,7 +481,9 @@ const workforceCapacity = async (connection: sql.ConnectionPool, from: string, t
 };
 
 const lockFinalized = async (connection: sql.ConnectionPool, report: LabourReport) => {
-  const rows = report.lines.filter((line) => line.finalized && !line.locked).map((line) => ({
+  // Only freeze lines that were actually costed. Locking a line with no rate would pin it at
+  // "Not Available" permanently, even after a cost rate is added later.
+  const rows = report.lines.filter((line) => line.finalized && !line.locked && line.totalCostKobo != null).map((line) => ({
     allocationId: line.allocationId,
     timesheetId: line.timesheetId,
     employeeCode: line.employeeCode,
@@ -749,7 +763,7 @@ export const saveLabourRate = async (input: Record<string, unknown>, viewer: Lab
     .input('Night', sql.Decimal(9, 4), input.night == null || input.night === '' ? null : num(input.night))
     .input('NightAllowance', sql.Decimal(19, 2), input.nightAllowance == null || input.nightAllowance === '' ? null : num(input.nightAllowance))
     .input('Offshore', sql.Decimal(19, 2), input.offshoreAllowance == null || input.offshoreAllowance === '' ? null : num(input.offshoreAllowance))
-    .input('Notes', sql.NVarChar(400), text(input.notes))
+    .input('Notes', sql.NVarChar(400), `${MANUAL_RATE_MARKER} | form${text(input.notes) ? ` | ${text(input.notes)}` : ''}`.slice(0, 400))
     .input('Actor', sql.NVarChar(120), viewer.actor)
     .query(`INSERT INTO [tsmgmt].[LabourCostRates]
       ([Id],[EmployeeCode],[Method],[Currency],[Amount],[ExchangeRate],[ExchangeRateVersion],[RateVersion],[EffectiveFrom],[WorkingDays],[StandardHours],[WeekdayOvtMultiplier],[SaturdayMultiplier],[SaturdayOvtMultiplier],[SundayMultiplier],[SundayOvtMultiplier],[PhMultiplier],[PhOvtMultiplier],[NightMultiplier],[NightAllowance],[OffshoreAllowance],[Notes],[CreatedBy])
@@ -794,4 +808,262 @@ export const saveLabourBudget = async (input: Record<string, unknown>, viewer: L
       WHEN MATCHED THEN UPDATE SET [LabourBudget] = @Budget, [Notes] = @Notes, [UpdatedBy] = @Actor, [UpdatedAt] = SYSUTCDATETIME()
       WHEN NOT MATCHED THEN INSERT ([ProjectCode],[LabourBudget],[Notes],[UpdatedBy]) VALUES (@ProjectCode,@Budget,@Notes,@Actor);
     `);
+};
+
+/* ------------------------------------------------------------------ rate sources */
+
+type StoredRate = LabourRateInput & { id: string; effectiveTo: string };
+
+const storedRateFrom = (row: Record<string, unknown>): StoredRate => {
+  const optional = (value: unknown) => (value == null ? null : num(value));
+  return {
+    id: text(row.Id),
+    employeeCode: text(row.EmployeeCode).toUpperCase(),
+    method: text(row.Method).toLowerCase() as LabourRateInput['method'],
+    amount: num(row.Amount),
+    currency: text(row.Currency) || 'NGN',
+    exchangeRate: optional(row.ExchangeRate),
+    effectiveFrom: dateOnly(row.EffectiveFrom),
+    effectiveTo: dateOnly(row.EffectiveTo),
+    workingDays: optional(row.WorkingDays),
+    standardHours: num(row.StandardHours) || 8,
+    weekdayOvt: optional(row.WeekdayOvtMultiplier),
+    saturday: optional(row.SaturdayMultiplier),
+    saturdayOvt: optional(row.SaturdayOvtMultiplier),
+    sunday: optional(row.SundayMultiplier),
+    sundayOvt: optional(row.SundayOvtMultiplier),
+    publicHoliday: optional(row.PhMultiplier),
+    publicHolidayOvt: optional(row.PhOvtMultiplier),
+    rateVersion: text(row.RateVersion),
+    notes: text(row.Notes),
+  };
+};
+
+const dayBefore = (iso: string) => {
+  const date = new Date(`${iso}T12:00:00Z`);
+  date.setUTCDate(date.getUTCDate() - 1);
+  return date.toISOString().slice(0, 10);
+};
+
+/** The rate in force on a date: latest effective-from that covers it. */
+const rateInForce = (rates: StoredRate[], on: string) => rates
+  .filter((rate) => rate.effectiveFrom <= on && (!rate.effectiveTo || rate.effectiveTo >= on))
+  .sort((left, right) => right.effectiveFrom.localeCompare(left.effectiveFrom))[0] || null;
+
+export type RateWriteSummary = { written: number; unchanged: number; manualKept: number };
+
+/**
+ * Writes rates with effective-dated history: the rate in force before the new start is closed the day
+ * before, a rate starting the same day is replaced, and a later-dated rate bounds the new one.
+ * With `protectManual`, an employee whose rate in force is a MANUAL override is left untouched.
+ */
+const writeRates = async (
+  transaction: sql.Transaction,
+  incoming: LabourRateInput[],
+  actor: string,
+  options: { protectManual: boolean },
+): Promise<RateWriteSummary> => {
+  const existing = await new sql.Request(transaction).query(`SELECT * FROM [tsmgmt].[LabourCostRates] WITH (UPDLOCK, HOLDLOCK)`);
+  const byEmployee = new Map<string, StoredRate[]>();
+  for (const row of existing.recordset || []) {
+    const rate = storedRateFrom(row);
+    byEmployee.set(rate.employeeCode, [...(byEmployee.get(rate.employeeCode) || []), rate]);
+  }
+  const summary: RateWriteSummary = { written: 0, unchanged: 0, manualKept: 0 };
+  for (const rate of incoming) {
+    const code = rate.employeeCode.toUpperCase();
+    const history = byEmployee.get(code) || [];
+    const current = rateInForce(history, rate.effectiveFrom)
+      || [...history].filter((item) => !item.effectiveTo).sort((a, b) => b.effectiveFrom.localeCompare(a.effectiveFrom))[0]
+      || null;
+    if (options.protectManual && history.some((item) => !item.effectiveTo && isManualRateNote(item.notes))) { summary.manualKept += 1; continue; }
+    if (current && current.effectiveFrom <= rate.effectiveFrom && sameRate(current, rate)) { summary.unchanged += 1; continue; }
+
+    for (const item of history.filter((entry) => entry.effectiveFrom === rate.effectiveFrom)) {
+      await new sql.Request(transaction).input('Id', sql.NVarChar(40), item.id).query(`DELETE FROM [tsmgmt].[LabourCostRates] WHERE [Id] = @Id`);
+    }
+    const remaining = history.filter((item) => item.effectiveFrom !== rate.effectiveFrom);
+    for (const item of remaining) {
+      if (item.effectiveFrom < rate.effectiveFrom && (!item.effectiveTo || item.effectiveTo >= rate.effectiveFrom)) {
+        item.effectiveTo = dayBefore(rate.effectiveFrom);
+        await new sql.Request(transaction)
+          .input('Id', sql.NVarChar(40), item.id)
+          .input('To', sql.Date, item.effectiveTo)
+          .query(`UPDATE [tsmgmt].[LabourCostRates] SET [EffectiveTo] = @To WHERE [Id] = @Id`);
+      }
+    }
+    const nextStart = remaining.filter((item) => item.effectiveFrom > rate.effectiveFrom).map((item) => item.effectiveFrom).sort()[0];
+    const effectiveTo = nextStart ? dayBefore(nextStart) : null;
+    const id = newId();
+    await new sql.Request(transaction)
+      .input('Id', sql.NVarChar(40), id)
+      .input('Code', sql.NVarChar(80), code)
+      .input('Method', sql.NVarChar(20), rate.method)
+      .input('Currency', sql.NVarChar(8), rate.currency || 'NGN')
+      .input('Amount', sql.Decimal(19, 4), rate.amount)
+      .input('Exchange', sql.Decimal(18, 8), rate.exchangeRate)
+      .input('Version', sql.NVarChar(40), rate.rateVersion)
+      .input('From', sql.Date, rate.effectiveFrom)
+      .input('To', sql.Date, effectiveTo)
+      .input('WorkingDays', sql.Decimal(9, 2), rate.workingDays)
+      .input('Standard', sql.Decimal(9, 2), rate.standardHours || 8)
+      .input('WeekdayOvt', sql.Decimal(9, 4), rate.weekdayOvt)
+      .input('Saturday', sql.Decimal(9, 4), rate.saturday)
+      .input('SaturdayOvt', sql.Decimal(9, 4), rate.saturdayOvt)
+      .input('Sunday', sql.Decimal(9, 4), rate.sunday)
+      .input('SundayOvt', sql.Decimal(9, 4), rate.sundayOvt)
+      .input('Ph', sql.Decimal(9, 4), rate.publicHoliday)
+      .input('PhOvt', sql.Decimal(9, 4), rate.publicHolidayOvt)
+      .input('Notes', sql.NVarChar(400), rate.notes)
+      .input('Actor', sql.NVarChar(120), actor)
+      .query(`INSERT INTO [tsmgmt].[LabourCostRates]
+        ([Id],[EmployeeCode],[Method],[Currency],[Amount],[ExchangeRate],[RateVersion],[EffectiveFrom],[EffectiveTo],[WorkingDays],[StandardHours],[WeekdayOvtMultiplier],[SaturdayMultiplier],[SaturdayOvtMultiplier],[SundayMultiplier],[SundayOvtMultiplier],[PhMultiplier],[PhOvtMultiplier],[Notes],[CreatedBy])
+        VALUES (@Id,@Code,@Method,@Currency,@Amount,@Exchange,@Version,@From,@To,@WorkingDays,@Standard,@WeekdayOvt,@Saturday,@SaturdayOvt,@Sunday,@SundayOvt,@Ph,@PhOvt,@Notes,@Actor)`);
+    byEmployee.set(code, [...remaining, { ...rate, id, effectiveTo: effectiveTo || '' }]);
+    summary.written += 1;
+  }
+  return summary;
+};
+
+const earliestPeriodStart = async (connection: sql.ConnectionPool) => {
+  const result = await connection.request().query(`SELECT MIN([StartDate]) AS StartDate FROM [tsmgmt].[Periods]`);
+  return dateOnly(result.recordset?.[0]?.StartDate) || new Date().toISOString().slice(0, 10);
+};
+
+/** Latest payroll day rate per employee code (one row per code). */
+const readPayrollDayRates = async (connection: sql.ConnectionPool) => {
+  const result = await connection.request().query(`
+    SELECT code, rate_per_day, pay_currency FROM (
+      SELECT UPPER(LTRIM(RTRIM(v.employee_code))) AS code, p.rate_per_day, p.pay_currency,
+        ROW_NUMBER() OVER (PARTITION BY UPPER(LTRIM(RTRIM(v.employee_code))) ORDER BY p.modified_at DESC, p.created_at DESC) AS rn
+      FROM [hris].[EmployeePayrollSetup] p
+      INNER JOIN (SELECT DISTINCT employee_id, employee_code FROM [hris].[EmployeeMasterView]) v ON v.employee_id = p.employee_id
+      WHERE ISNULL(v.employee_code, N'') <> N''
+    ) ranked WHERE rn = 1
+  `);
+  return new Map((result.recordset || []).map((row) => [text(row.code), { ratePerDay: row.rate_per_day == null ? null : num(row.rate_per_day), currency: text(row.pay_currency) || 'NGN' }]));
+};
+
+export type PayrollSeedResult = RateWriteSummary & {
+  effectiveFrom: string;
+  onCostPercent: number;
+  noPayrollRate: number;
+  nonNgn: string[];
+};
+
+/** Seeds project labour rates from each employee's payroll day rate. Manual overrides are kept. */
+export const seedLabourRatesFromPayroll = async (input: Record<string, unknown>, viewer: LabourViewer): Promise<PayrollSeedResult> => {
+  if (!labourAccess(viewer).canManageRates) throw new Error('You do not have permission to maintain project labour cost rates.');
+  const onCostPercent = num(input.onCostPercent);
+  if (onCostPercent < 0 || onCostPercent > 200) throw new Error('On-cost must be between 0% and 200%.');
+  const connection = await pool();
+  const effectiveFrom = dateOnly(input.effectiveFrom) || await earliestPeriodStart(connection);
+  const seededOn = new Date().toISOString().slice(0, 10);
+  const payroll = await readPayrollDayRates(connection);
+  const rates: LabourRateInput[] = [];
+  let noPayrollRate = 0;
+  const nonNgn: string[] = [];
+  for (const [code, source] of payroll) {
+    const rate = payrollSeedRate({ employeeCode: code, ratePerDay: source.ratePerDay, currency: source.currency }, { effectiveFrom, onCostPercent, seededOn });
+    if (!rate) { noPayrollRate += 1; continue; }
+    if (rate.currency !== 'NGN') nonNgn.push(code);
+    rates.push(rate);
+  }
+  const transaction = new sql.Transaction(connection);
+  await transaction.begin();
+  try {
+    const summary = await writeRates(transaction, rates, viewer.actor || 'Timesheet User', { protectManual: true });
+    await transaction.commit();
+    return { ...summary, effectiveFrom, onCostPercent, noPayrollRate, nonNgn };
+  } catch (error) {
+    await transaction.rollback().catch(() => undefined);
+    throw error;
+  }
+};
+
+/** Rate sheet for Finance: every employee with a booking or a rate, prefilled with the rate in force. */
+export const buildLabourRateSheet = async (viewer: LabourViewer) => {
+  if (!labourAccess(viewer).canManageRates) throw new Error('You do not have permission to maintain project labour cost rates.');
+  const connection = await pool();
+  const [people, rateRows, payroll] = await Promise.all([
+    connection.request().query(`
+      SELECT UPPER(LTRIM(RTRIM(l.[EmployeeCode]))) AS code, MAX(l.[EmployeeName]) AS name
+      FROM [tsmgmt].[TimesheetEntryLines] l
+      WHERE ISNULL(l.[EmployeeCode], N'') <> N''
+      GROUP BY UPPER(LTRIM(RTRIM(l.[EmployeeCode])))
+    `),
+    connection.request().query(`SELECT * FROM [tsmgmt].[LabourCostRates]`),
+    readPayrollDayRates(connection),
+  ]);
+  const today = new Date().toISOString().slice(0, 10);
+  const rates = new Map<string, StoredRate[]>();
+  for (const row of rateRows.recordset || []) {
+    const rate = storedRateFrom(row);
+    rates.set(rate.employeeCode, [...(rates.get(rate.employeeCode) || []), rate]);
+  }
+  const names = new Map((people.recordset || []).map((row) => [text(row.code), text(row.name)]));
+  for (const code of rates.keys()) if (!names.has(code)) names.set(code, '');
+  const employees: RateSheetEmployee[] = [...names.entries()]
+    .sort((left, right) => left[0].localeCompare(right[0]))
+    .map(([code, name]) => {
+      const history = rates.get(code) || [];
+      const current = rateInForce(history, today) || [...history].sort((a, b) => b.effectiveFrom.localeCompare(a.effectiveFrom))[0] || null;
+      return { employeeCode: code, employeeName: name, payrollDayRate: payroll.get(code)?.ratePerDay ?? null, current };
+    });
+  const guide: Array<Array<string | number | null>> = [
+    ['How to use this sheet'],
+    ['1. Change Method, Amount or multipliers only for employees you want to override. Leave other rows as they are.'],
+    ['2. Clear the Amount cell on any row you do not want to import. Rows without an Amount are skipped.'],
+    ['3. Method: hourly (Amount per hour), daily (per day), monthly (per month, needs Working Days), lumpsum, expatriate.'],
+    ['4. Effective From: YYYY-MM-DD or DD/MM/YYYY. Blank uses the earliest timesheet period start.'],
+    ['   To change a rate from a given date, set Effective From to that date. Keeping the existing date corrects the rate for its whole period.'],
+    ['5. A non-NGN currency needs an Exchange Rate to NGN.'],
+    ['6. Blank multipliers default to payroll: weekday OVT 1.5, Saturday 1.5, Sunday 2, PH 2.'],
+    ['7. Uploaded rows are saved as Manual and are not replaced by a later payroll seed.'],
+    [],
+    ['Payroll Day Rate is for reference only (from Employee Payroll Setup) and is not imported.'],
+  ];
+  return buildSimpleWorkbook([{ name: 'Rates', rows: rateSheetRows(employees) }, { name: 'Guide', rows: guide }]);
+};
+
+export type RateImportResult = RateWriteSummary & {
+  rows: number;
+  blankRows: number;
+  errors: Array<{ row: number; employeeCode: string; message: string }>;
+};
+
+/** Imports an edited rate sheet (.xlsx or .csv). Nothing is saved if any row has an error. */
+export const importLabourRates = async (input: Record<string, unknown>, viewer: LabourViewer): Promise<RateImportResult> => {
+  if (!labourAccess(viewer).canManageRates) throw new Error('You do not have permission to maintain project labour cost rates.');
+  const fileName = text(input.fileName).toLowerCase();
+  const content = Buffer.from(text(input.contentBase64), 'base64');
+  if (!content.length) throw new Error('Choose a rate sheet to upload.');
+  if (content.length > 5 * 1024 * 1024) throw new Error('The rate sheet is larger than 5 MB.');
+  const isZip = content.subarray(0, 2).toString() === 'PK';
+  if (!isZip && /\.xlsx?$/.test(fileName)) throw new Error('This Excel file could not be read. Save it as .xlsx (Excel Workbook) or .csv and try again.');
+  const rows = isZip ? readFirstSheetRows(content) : readDelimitedRows(content.toString('utf8'));
+  const connection = await pool();
+  const today = new Date().toISOString().slice(0, 10);
+  const parsed = parseRateSheet(rows, { defaultEffectiveFrom: await earliestPeriodStart(connection), importedOn: today });
+
+  const known = await connection.request().query(`SELECT DISTINCT UPPER(LTRIM(RTRIM(employee_code))) AS code FROM [hris].[EmployeeMasterView] WHERE ISNULL(employee_code, N'') <> N''`);
+  const codes = new Set((known.recordset || []).map((row) => text(row.code)));
+  const errors = [...parsed.errors];
+  for (const rate of parsed.rates) {
+    if (!codes.has(rate.employeeCode)) errors.push({ row: 0, employeeCode: rate.employeeCode, message: 'Employee code is not in the employee directory' });
+  }
+  const empty: RateWriteSummary = { written: 0, unchanged: 0, manualKept: 0 };
+  if (errors.length) return { ...empty, rows: parsed.rates.length, blankRows: parsed.blankRows, errors };
+  if (!parsed.rates.length) throw new Error('No rows with an Amount were found in the rate sheet.');
+
+  const transaction = new sql.Transaction(connection);
+  await transaction.begin();
+  try {
+    const summary = await writeRates(transaction, parsed.rates, viewer.actor || 'Timesheet User', { protectManual: false });
+    await transaction.commit();
+    return { ...summary, rows: parsed.rates.length, blankRows: parsed.blankRows, errors: [] };
+  } catch (error) {
+    await transaction.rollback().catch(() => undefined);
+    throw error;
+  }
 };

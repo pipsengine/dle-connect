@@ -468,12 +468,15 @@ export const buildLabourReport = (input: LabourBuildInput): LabourReport => {
     }
   }
 
-  const rateFor = (employeeCode: string, workDate: string) => rates.find((rate) => {
-    if (rate.employeeCode.toUpperCase() !== employeeCode.toUpperCase()) return false;
-    const from = String(rate.effectiveFrom || '').slice(0, 10);
-    const to = String(rate.effectiveTo || '').slice(0, 10);
-    return (!from || from <= workDate) && (!to || to >= workDate);
-  });
+  // When rate rows overlap (e.g. a manual override on top of a payroll seed), the latest effective date wins.
+  const rateFor = (employeeCode: string, workDate: string) => rates
+    .filter((rate) => {
+      if (rate.employeeCode.toUpperCase() !== employeeCode.toUpperCase()) return false;
+      const from = String(rate.effectiveFrom || '').slice(0, 10);
+      const to = String(rate.effectiveTo || '').slice(0, 10);
+      return (!from || from <= workDate) && (!to || to >= workDate);
+    })
+    .sort((left, right) => String(right.effectiveFrom || '').localeCompare(String(left.effectiveFrom || '')))[0];
 
   for (const [key, rows] of byDay) {
     const sample = rows[0].valued;
@@ -759,12 +762,15 @@ const priceHourly = (
   } else if (kind === 'saturday') {
     row.valued.regularCostKobo = price(row.regular, 'saturday');
     row.valued.ovtCostKobo = price(row.ovt, 'saturdayOvt');
+    row.valued.nightLabourKobo = 0;
   } else if (kind === 'sunday') {
     row.valued.regularCostKobo = price(row.regular, 'sunday');
     row.valued.ovtCostKobo = price(row.ovt, 'sundayOvt');
+    row.valued.nightLabourKobo = 0;
   } else {
     row.valued.regularCostKobo = price(row.regular, 'publicHoliday');
     row.valued.ovtCostKobo = price(row.ovt, 'publicHolidayOvt');
+    row.valued.nightLabourKobo = 0;
   }
   if (issues.length) row.valued.exceptions.push(...issues);
 };

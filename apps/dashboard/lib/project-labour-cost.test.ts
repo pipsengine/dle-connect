@@ -201,6 +201,25 @@ assert.equal(sundayNight.lines[0].nightAllowanceKobo, kobo(1500));
 assert.equal(sundayNight.lines[0].nightLabourKobo, kobo(16000));
 assert.equal(sundayNight.lines[0].ovtCostKobo, kobo(4000));
 
+// Export must stay complete when no cost rate exists: weekday OVT still reaches the special-work sheet,
+// every line reaches the detail sheet, and employee totals match line hours.
+const unpriced = buildLabourReport({
+  lines: [
+    line({ allocationId: 'u1', employeeCode: 'C1979', regularHours: 8, ovtHours: 2 }),
+    line({ allocationId: 'u2', employeeCode: 'C0293', regularHours: 8 }),
+    line({ allocationId: 'u3', employeeCode: 'C0293', workDate: '2026-10-21', regularHours: 8 }),
+  ],
+  rates: [],
+});
+const unpricedRows = labourWorkbookRows(unpriced, { title: 'Labour', period: 'October 2026', from: '2026-09-16', to: '2026-10-15', filters: 'none', generatedAt: '2026-10-19T00:00:00Z', generatedBy: 'test' });
+assert.equal(unpricedRows.lines.length - 1, unpriced.lines.length);
+assert.equal(unpricedRows.special.length - 1, 1);
+assert.equal(unpricedRows.special[1][1], 'C1979');
+assert.equal(unpricedRows.employees.length - 1, 2);
+const employeeHours = unpricedRows.employees.slice(1).reduce((total, row) => total + Number(row[12] || 0), 0);
+assert.equal(employeeHours, unpriced.overview.totalHours);
+assert.notDeepEqual(unpricedRows.projectCosts[0], unpricedRows.projects[0]);
+
 const missing = buildLabourReport({ lines: [line({ regularHours: 8 })], rates: [] });
 assert.equal(missing.lines[0].totalCostKobo, null);
 assert.equal(missing.lines[0].exceptions.includes('Missing Cost Rate'), true);

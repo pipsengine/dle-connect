@@ -114,19 +114,66 @@ const projectRow = (project: ProjectLabourRow): Array<string | number | null> =>
   project.status,
 ];
 
+const projectCostHeader = [
+  'Project', 'Name', 'Project Manager', 'Employees', 'REG Hours', 'OVT Hours', 'Night Hours', 'Unique Hours', 'REG Cost', 'OVT Cost', 'Night Labour', 'Night Allowance', 'Other Allowances', 'Adjustments', 'Approved Cost', 'Provisional Cost', 'Budget', 'Variance', 'Cost Complete', 'Status',
+];
+
+const projectCostRow = (project: ProjectLabourRow): Array<string | number | null> => [
+  project.projectCode,
+  project.projectName,
+  project.projectManager,
+  project.employees,
+  roundTo2(project.weekdayRegular + project.saturdayHours + project.sundayHours + project.phHours),
+  roundTo2(project.weekdayOvt + project.saturdayOvt + project.sundayOvt + project.phOvt),
+  project.nightHours,
+  project.uniqueHours,
+  naira(project.regularCostKobo),
+  naira(project.ovtCostKobo),
+  naira(project.nightLabourKobo),
+  naira(project.nightAllowanceKobo),
+  naira(project.otherAllowanceKobo),
+  naira(project.adjustmentKobo),
+  naira(project.approvedCostKobo),
+  naira(project.provisionalCostKobo),
+  naira(project.labourBudgetKobo),
+  naira(project.varianceKobo),
+  project.costIncomplete ? 'No - missing cost rate' : 'Yes',
+  project.status,
+];
+
+const roundTo2 = (value: number) => Math.round(value * 100) / 100;
+
+const lineHeader = [
+  'Timesheet Ref', 'Employee Code', 'Employee Name', 'Type', 'Department', 'Supervisor', 'Location', 'Work Centre', 'Shift', 'Project', 'Project Name', 'Project Manager', 'Activity', 'Work Date', 'Day Type',
+  'Weekday REG', 'Weekday OVT', 'Saturday', 'Saturday OVT', 'Sunday', 'Sunday OVT', 'PH', 'PH OVT', 'Night Hours', 'Night Sessions', 'Unique Hours',
+  'Method', 'Rate Version', 'Applied Rate', 'REG Cost', 'OVT Cost', 'Night Labour', 'Night Allowance', 'Other Allowances', 'Adjustment', 'Total Cost',
+  'Approval', 'Cost Basis', 'Lock', 'Exceptions',
+];
+
 const lineRow = (line: ValuedLabourLine): Array<string | number | null> => [
+  line.reference,
   line.employeeCode,
   line.employeeName,
   line.employeeType,
   line.department,
   line.supervisor,
+  line.location,
+  line.workCenter,
+  line.shift,
   line.projectCode,
+  line.projectName,
+  line.projectManager,
+  line.activity,
   line.workDate,
+  line.dayKind,
   line.weekdayRegular,
   line.weekdayOvt,
   line.saturdayHours,
+  line.saturdayOvt,
   line.sundayHours,
+  line.sundayOvt,
   line.phHours,
+  line.phOvt,
   line.nightHours,
   line.nightSessionShare > 0 ? 1 : 0,
   line.uniqueHours,
@@ -135,6 +182,7 @@ const lineRow = (line: ValuedLabourLine): Array<string | number | null> => [
   line.appliedRateKobo == null ? null : line.appliedRateKobo / 100,
   naira(line.regularCostKobo),
   naira(line.ovtCostKobo),
+  naira(line.nightLabourKobo),
   naira(line.nightAllowanceKobo),
   naira(line.otherAllowanceKobo),
   naira(line.adjustmentKobo),
@@ -142,7 +190,42 @@ const lineRow = (line: ValuedLabourLine): Array<string | number | null> => [
   line.approval,
   line.provisional ? 'Provisional' : 'Approved actual',
   line.locked ? 'Locked' : '',
+  [...new Set(line.exceptions)].join('; '),
 ];
+
+const isSpecialWork = (line: ValuedLabourLine) =>
+  line.weekdayOvt + line.saturdayHours + line.saturdayOvt + line.sundayHours + line.sundayOvt + line.phHours + line.phOvt + line.nightHours > 0
+  || line.nightSessionShare > 0;
+
+/** One row per employee per project — the same grouping as the on-screen Employee Cost Breakdown. */
+const employeeSummaryRows = (lines: ValuedLabourLine[]) => {
+  type Acc = { first: ValuedLabourLine; dates: Set<string>; reg: number; ovt: number; night: number; unique: number; sessions: number; cost: Array<number | null>; approvals: Set<string>; provisional: boolean };
+  const grouped = new Map<string, Acc>();
+  for (const line of lines) {
+    const key = `${line.employeeCode}|${line.projectCode}`;
+    const acc = grouped.get(key) || { first: line, dates: new Set<string>(), reg: 0, ovt: 0, night: 0, unique: 0, sessions: 0, cost: [0, 0, 0, 0, 0, 0], approvals: new Set<string>(), provisional: false };
+    acc.dates.add(line.workDate);
+    acc.reg += line.weekdayRegular + line.saturdayHours + line.sundayHours + line.phHours;
+    acc.ovt += line.weekdayOvt + line.saturdayOvt + line.sundayOvt + line.phOvt;
+    acc.night += line.nightHours;
+    acc.unique += line.uniqueHours;
+    acc.sessions += line.nightSessionShare > 0 ? 1 : 0;
+    const parts = [line.regularCostKobo, line.ovtCostKobo, line.nightLabourKobo, line.nightAllowanceKobo, line.otherAllowanceKobo, line.totalCostKobo];
+    acc.cost = acc.cost.map((total, index) => (total == null || parts[index] == null ? null : total + (parts[index] as number)));
+    acc.approvals.add(line.approval);
+    if (line.provisional) acc.provisional = true;
+    grouped.set(key, acc);
+  }
+  return [...grouped.values()]
+    .sort((left, right) => left.first.employeeCode.localeCompare(right.first.employeeCode) || left.first.projectCode.localeCompare(right.first.projectCode))
+    .map((acc) => [
+      acc.first.employeeCode, acc.first.employeeName, acc.first.employeeType, acc.first.department, acc.first.supervisor, acc.first.projectCode, acc.first.projectName,
+      acc.dates.size, roundTo2(acc.reg), roundTo2(acc.ovt), roundTo2(acc.night), acc.sessions, roundTo2(acc.unique),
+      ...acc.cost.map((value) => naira(value)),
+      acc.approvals.size > 1 ? 'Mixed' : [...acc.approvals][0] || '',
+      acc.provisional ? 'Provisional' : 'Approved actual',
+    ] as Array<string | number | null>);
+};
 
 export const labourWorkbookRows = (report: LabourReport, meta: LabourExportMeta) => {
   const summary: Array<Array<string | number | null>> = [
@@ -163,6 +246,8 @@ export const labourWorkbookRows = (report: LabourReport, meta: LabourExportMeta)
     ['Active projects', report.overview.projects],
     ['Approved labour cost', naira(report.overview.approvedCostKobo)],
     ['Provisional labour cost', naira(report.overview.provisionalCostKobo)],
+    ['Approved hours', report.overview.approvedHours],
+    ['Provisional hours', report.overview.provisionalHours],
     ['Labour budget', naira(report.overview.labourBudgetKobo)],
     ['Budget variance', naira(report.overview.budgetVarianceKobo)],
     ['Project utilization %', report.overview.projectUtilization],
@@ -171,10 +256,14 @@ export const labourWorkbookRows = (report: LabourReport, meta: LabourExportMeta)
   const projects: Array<Array<string | number | null>> = [[
     'Project', 'Name', 'Project Manager', 'Employees', 'Weekday REG', 'Weekday OVT', 'Saturday', 'Saturday OVT', 'Sunday', 'Sunday OVT', 'PH', 'PH OVT', 'Night Hours', 'Unique Hours', 'Planned Hours', 'Utilization %', 'REG Cost', 'OVT Cost', 'Night Labour', 'Night Allowance', 'Other Allowances', 'Approved Cost', 'Provisional Cost', 'Budget', 'Variance', 'Status',
   ], ...report.projects.map(projectRow)];
-  const lines: Array<Array<string | number | null>> = [[
-    'Employee Code', 'Employee Name', 'Type', 'Department', 'Supervisor', 'Project', 'Work Date', 'Weekday REG', 'Weekday OVT', 'Saturday', 'Sunday', 'PH', 'Night Hours', 'Night Sessions', 'Unique Hours', 'Method', 'Rate Version', 'Applied Rate', 'REG Cost', 'OVT Cost', 'Night Allowance', 'Other Allowances', 'Adjustment', 'Total Cost', 'Approval', 'Cost Basis', 'Lock',
-  ], ...report.lines.map(lineRow)];
-  const special = lines.filter((row, index) => index === 0 || Number(report.lines[index - 1]?.saturdayHours || 0) + Number(report.lines[index - 1]?.sundayHours || 0) + Number(report.lines[index - 1]?.phHours || 0) + Number(report.lines[index - 1]?.ovtCostKobo || 0) > 0);
+  const projectCosts: Array<Array<string | number | null>> = [projectCostHeader, ...report.projects.map(projectCostRow)];
+  const employees: Array<Array<string | number | null>> = [[
+    'Employee Code', 'Employee Name', 'Type', 'Department', 'Supervisor', 'Project', 'Project Name', 'Days', 'REG Hours', 'OVT Hours', 'Night Hours', 'Night Sessions', 'Unique Hours',
+    'REG Cost', 'OVT Cost', 'Night Labour', 'Night Allowance', 'Other Allowances', 'Total Cost', 'Approval', 'Cost Basis',
+  ], ...employeeSummaryRows(report.lines)];
+  const lines: Array<Array<string | number | null>> = [lineHeader, ...report.lines.map(lineRow)];
+  // Weekday OVT, weekend, PH and night work — selected by hours so rows still appear when no cost rate exists.
+  const special: Array<Array<string | number | null>> = [lineHeader, ...report.lines.filter(isSpecialWork).map(lineRow)];
   const budget: Array<Array<string | number | null>> = [[
     'Project', 'Labour Budget', 'Planned Hours', 'Actual Hours', 'Actual Cost', 'Remaining', 'Variance', 'Budget Utilization %', 'Forecast', 'Forecast Method', 'Status',
   ], ...report.projects.map((project) => [
@@ -192,15 +281,23 @@ export const labourWorkbookRows = (report: LabourReport, meta: LabourExportMeta)
     ['Filters', meta.filters],
     ['Approved cost', naira(report.overview.approvedCostKobo)],
     ['Line count', report.lines.length],
+    ['Total man-hours (lines)', roundTo2(report.lines.reduce((total, line) => total + line.uniqueHours, 0))],
     ['Source', 'Timesheet Management allocation lines. Source bookings were not changed.'],
   ];
-  return { summary, projects, lines, special, budget, exceptions, audit };
+  return { summary, projects, projectCosts, employees, lines, special, budget, exceptions, audit };
 };
 
 export const buildLabourWorkbook = (report: LabourReport, meta: LabourExportMeta) => {
   const sheets = labourWorkbookRows(report, meta);
-  const names = ['Executive Summary', 'Project Man-Hours', 'Project Labour Costs', 'Employee Cost Breakdown', 'OVT and Special Work', 'Budget vs Actual', 'Exceptions', 'Audit'];
-  const tables = [sheets.summary, sheets.projects, sheets.projects, sheets.lines, sheets.special, sheets.budget, sheets.exceptions, sheets.audit];
+  const names = ['Executive Summary', 'Project Man-Hours', 'Project Labour Costs', 'Employee Cost Breakdown', 'Employee Daily Detail', 'OVT and Special Work', 'Budget vs Actual', 'Exceptions', 'Audit'];
+  const tables = [sheets.summary, sheets.projects, sheets.projectCosts, sheets.employees, sheets.lines, sheets.special, sheets.budget, sheets.exceptions, sheets.audit];
+  return buildSimpleWorkbook(names.map((name, index) => ({ name, rows: tables[index] })));
+};
+
+/** Minimal .xlsx with one worksheet per entry (names must be unique and at most 31 characters). */
+export const buildSimpleWorkbook = (sheets: Array<{ name: string; rows: Array<Array<string | number | null>> }>) => {
+  const names = sheets.map((sheet) => sheet.name);
+  const tables = sheets.map((sheet) => sheet.rows);
   const files = [
     { name: '[Content_Types].xml', data: Buffer.from(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">

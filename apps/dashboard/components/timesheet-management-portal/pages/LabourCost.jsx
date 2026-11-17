@@ -116,9 +116,29 @@ export default function LabourCost() {
       body: JSON.stringify({ ...payload, filters }),
     });
     const body = await response.json().catch(() => ({}));
-    if (!response.ok || body.status === 'error') throw new Error(body.error || 'Save failed.');
+    if (!response.ok || body.status === 'error') {
+      const failure = new Error(body.error || 'Save failed.');
+      failure.result = body.result || null;
+      throw failure;
+    }
     setData(body.data);
     setNotice('Saved. The report is using the updated costing record.');
+    return body.result || null;
+  };
+
+  const downloadRateSheet = async () => {
+    setError('');
+    const response = await fetch('/api/timesheet-management/labour-cost?format=rate-sheet');
+    if (!response.ok) {
+      const body = await response.json().catch(() => ({}));
+      throw new Error(body.error || 'The rate sheet could not be downloaded.');
+    }
+    const url = URL.createObjectURL(await response.blob());
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = 'DLE_Project_Labour_Rates.xlsx';
+    link.click();
+    URL.revokeObjectURL(url);
   };
 
   const projects = data?.projects || [];
@@ -126,7 +146,7 @@ export default function LabourCost() {
   const projectPages = Math.max(1, Math.ceil(projects.length / 25));
   const linePages = Math.max(1, Math.ceil((data?.lineTotal || 0) / (data?.pageSize || 25)));
   const topHours = useMemo(() => [...projects].sort((left, right) => right.uniqueHours - left.uniqueHours).slice(0, 10), [projects]);
-  const topCost = useMemo(() => [...projects].filter((project) => project.approvedCost != null).sort((left, right) => right.approvedCost - left.approvedCost).slice(0, 10), [projects]);
+  const topCost = useMemo(() => [...projects].filter((project) => project.approvedCost != null && project.approvedCost > 0).sort((left, right) => right.approvedCost - left.approvedCost).slice(0, 10), [projects]);
   const maxHours = topHours[0]?.uniqueHours || 1;
   const maxCost = topCost[0]?.approvedCost || 1;
 
@@ -146,6 +166,9 @@ export default function LabourCost() {
     {notice && <div className="success">{notice}</div>}
     <FilterBar draft={draft} setField={setField} options={data?.options || {}} periods={data?.periods || []} onApply={apply} onReset={reset} />
     {loading && !data ? <div className="panel feature"><h3>Loading project labour</h3><p>Reading timesheet allocations for the selected period.</p></div> : null}
+    {data && data.access?.canSeeCosts && data.overview.totalHours > 0 && data.overview.approvedCost == null && data.overview.provisionalCost == null && <div className="labourAlert">
+      Labour cost cannot be calculated for this selection: no project labour cost rate is configured for the employees booked here. Hours are complete. Add rates under Reports &amp; Export → Project labour cost rate to populate cost, budget variance and the cost rankings.
+    </div>}
     {data && <>
       <div className="kpis compact">
         <Card label="Total Man-Hours" value={hours(data.overview.totalHours)} sub={`${hours(data.overview.approvedHours)} approved · ${hours(data.overview.provisionalHours)} provisional`} onClick={() => setDetail(projectDetail(data, 'Total man-hours', (row) => row.uniqueHours > 0, ['Project', 'Name', 'Hours', 'Employees'], (row) => [row.projectCode, row.projectName, hours(row.uniqueHours), row.employees]))} />
@@ -162,12 +185,12 @@ export default function LabourCost() {
         <Card label="Workforce Utilization" value={percent(data.overview.workforceUtilization)} sub={data.overview.capacityHours ? `${hours(data.overview.capacityHours)} available hours` : 'Capacity not available'} onClick={() => setDetail({ title: 'Workforce utilization', note: 'Available hours are active employees in the selection, multiplied by weekdays in the window and the 8-hour day.', headers: ['Measure', 'Value'], rows: [['Actual project hours', hours(data.overview.totalHours)], ['Available hours', data.overview.capacityHours == null ? 'Not Available' : hours(data.overview.capacityHours)], ['Utilization', percent(data.overview.workforceUtilization)]] })} />
       </div>
       <Tabs items={TABS} active={tab} setActive={setTab} />
-      {tab === 'Overview' && <Overview data={data} topHours={topHours} topCost={topCost} maxHours={maxHours} maxCost={maxCost} onProject={(project) => { setSelected(project); }} />}
+      {tab === 'Overview' && <Overview data={data} topHours={topHours} topCost={topCost} maxHours={maxHours} maxCost={maxCost} onProject={(project) => { setSelected(project); }} onAllExceptions={() => setDetail({ title: 'Exceptions', note: data.exceptionTotal > (data.exceptions || []).length ? `Showing the first ${(data.exceptions || []).length} of ${data.exceptionTotal}. Export Excel for the full list.` : `${data.exceptionTotal} exceptions.`, headers: ['Exception', 'Employee', 'Project', 'Date'], rows: (data.exceptions || []).map((item) => [item.message, item.employeeCode, item.projectCode, item.workDate]) })} />}
       {tab === 'Man-Hour Utilization' && <ProjectTable rows={projectSlice} mode="hours" page={projectPage} pages={projectPages} total={projects.length} onPage={setProjectPage} onOpen={setSelected} />}
       {tab === 'Project Labour Cost' && <ProjectTable rows={projectSlice} mode="cost" page={projectPage} pages={projectPages} total={projects.length} onPage={setProjectPage} onOpen={setSelected} />}
       {tab === 'Employee Cost Breakdown' && <EmployeeTable data={data} filters={filters} draft={draft} setField={setField} onApply={apply} page={linePage} pages={linePages} onPage={changePage} onOpen={setSelected} />}
       {tab === 'Budget vs Actual' && <BudgetTable rows={projectSlice} page={projectPage} pages={projectPages} total={projects.length} onPage={setProjectPage} trend={data.trend} />}
-      {tab === 'Reports & Export' && <ReportTools data={data} filters={filters} onExport={download} exporting={exporting} onSave={saveAction} />}
+      {tab === 'Reports & Export' && <ReportTools data={data} filters={filters} onExport={download} exporting={exporting} onSave={saveAction} onRateSheet={downloadRateSheet} />}
     </>}
     {selected && <ProjectDrawer project={selected} lines={(data?.employeeProjects || []).filter((line) => line.projectCode === selected.projectCode)} onClose={() => setSelected(null)} onLines={() => { const next = { ...draft, project: selected.projectCode, groupBy: 'employee-project' }; setDraft(next); setFilters(next); setTab('Employee Cost Breakdown'); setLinePage(1); load(next, 1); setSelected(null); }} />}
     {detail && <DetailModal title={detail.title} note={detail.note} headers={detail.headers} rows={detail.rows} onClose={() => setDetail(null)} />}
@@ -205,7 +228,7 @@ function FilterBar({ draft, setField, options, periods, onApply, onReset }) {
   </div>;
 }
 
-function Overview({ data, topHours, topCost, maxHours, maxCost, onProject }) {
+function Overview({ data, topHours, topCost, maxHours, maxCost, onProject, onAllExceptions }) {
   const budgetRows = data.projects.filter((project) => project.labourBudget != null);
   return <div className="labourGrid">
     <section className="panel"><div className="panelHead"><div><h3>Man-hours by day</h3><p>Booked project hours in the selected window.</p></div></div><Trend points={data.trend} /></section>
@@ -214,7 +237,7 @@ function Overview({ data, topHours, topCost, maxHours, maxCost, onProject }) {
     <section className="panel"><div className="panelHead"><div><h3>Budget position</h3><p>Projects without a labour budget are omitted here.</p></div></div>
       {budgetRows.length ? <Table headers={['Project', 'Budget', 'Approved', 'Variance', 'Status']} rows={budgetRows.slice(0, 8).map((project) => [project.projectCode, money(project.labourBudget, 'Budget Not Configured'), money(project.approvedCost), money(project.variance), <Badge tone={toneFor(project.status)}>{project.status}</Badge>])} /> : <p className="labourEmpty">Budget Not Configured for the projects in this selection.</p>}
     </section>
-    <section className="panel labourWide"><div className="panelHead"><div><h3>Exceptions</h3><p>{data.exceptionTotal} checks. These do not change the source timesheets.</p></div></div>
+    <section className="panel labourWide"><div className="panelHead"><div><h3>Exceptions</h3><p>{data.exceptionTotal} checks. These do not change the source timesheets.</p></div>{data.exceptionTotal > 12 && <Button kind="secondary" onClick={onAllExceptions}>View all</Button>}</div>
       <Table headers={['Exception', 'Employee', 'Project', 'Date']} rows={(data.exceptions || []).slice(0, 12).map((item) => [item.message, item.employeeCode, item.projectCode, item.workDate])} empty="No exceptions in this selection." />
     </section>
   </div>;
@@ -266,7 +289,65 @@ function BudgetTable({ rows, page, pages, total, onPage, trend }) {
   </div>;
 }
 
-function ReportTools({ data, filters, onExport, exporting, onSave }) {
+/** The shared Button is type="button"; this submits its form so required fields are validated. */
+const submitForm = (event) => event.currentTarget.form?.requestSubmit();
+
+const readFileBase64 = (file) => new Promise((resolve, reject) => {
+  const reader = new FileReader();
+  reader.onload = () => resolve(String(reader.result || '').replace(/^data:[^,]*,/, ''));
+  reader.onerror = () => reject(new Error('The file could not be read.'));
+  reader.readAsDataURL(file);
+});
+
+function RateSources({ data, onSave, onRateSheet }) {
+  const [seed, setSeed] = useState({ effectiveFrom: '', onCostPercent: '0' });
+  const [busy, setBusy] = useState('');
+  const [outcome, setOutcome] = useState(null);
+  const [problem, setProblem] = useState(null);
+  const [file, setFile] = useState(null);
+  const run = async (kind, work) => {
+    setBusy(kind);
+    setOutcome(null);
+    setProblem(null);
+    try { setOutcome({ kind, result: await work() }); }
+    catch (failure) { setProblem({ message: failure.message, rows: failure.result?.errors || [] }); }
+    finally { setBusy(''); }
+  };
+  const seedNow = () => run('seed', () => onSave({ action: 'seed-payroll-rates', effectiveFrom: seed.effectiveFrom, onCostPercent: Number(seed.onCostPercent || 0) }));
+  const upload = () => run('import', async () => {
+    if (!file) throw new Error('Choose the edited rate sheet first.');
+    return onSave({ action: 'import-rates', fileName: file.name, contentBase64: await readFileBase64(file) });
+  });
+  const periodStart = [...(data.periods || [])].sort((a, b) => a.startDate.localeCompare(b.startDate))[0]?.startDate || '';
+  return <>
+    <section className="panel"><div className="panelHead"><div><h3>Rates from payroll</h3><p>Sets every employee's project rate from their payroll day rate (Employee Payroll Setup): hourly = day rate ÷ 8, weekday OVT ×1.5, Saturday ×1.5, Sunday ×2, PH ×2. Manual overrides are kept. Run again after a pay change.</p></div></div>
+      <form className="labourForm" onSubmit={(event) => { event.preventDefault(); seedNow(); }}>
+        <Field label="Effective from"><input type="date" value={seed.effectiveFrom} placeholder={periodStart} onChange={(event) => setSeed({ ...seed, effectiveFrom: event.target.value })} /></Field>
+        <Field label="Employer on-cost %"><input type="number" min="0" max="200" step="0.01" value={seed.onCostPercent} onChange={(event) => setSeed({ ...seed, onCostPercent: event.target.value })} /></Field>
+        <Button disabled={!!busy} onClick={submitForm}>{busy === 'seed' ? 'Seeding…' : 'Seed rates from payroll'}</Button>
+      </form>
+      <p className="labourEmpty">Blank effective date uses the earliest timesheet period{periodStart ? ` (${periodStart})` : ''}. On-cost 0% gives direct pay cost; add pension, NSITF, ITF and HMO as a percentage for loaded cost.</p>
+    </section>
+    <section className="panel"><div className="panelHead"><div><h3>Rate sheet (override)</h3><p>Download every employee's current rate, change the rows you need (for example expatriate or lumpsum staff), and upload it. Uploaded rows are saved as Manual. If any row has an error, nothing is saved.</p></div></div>
+      <div className="labourForm">
+        <Button kind="secondary" disabled={!!busy} onClick={() => run('sheet', async () => { await onRateSheet(); return null; })}>Download rate sheet</Button>
+        <Field label="Edited sheet (.xlsx or .csv)"><input type="file" accept=".xlsx,.csv,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" onChange={(event) => setFile(event.target.files?.[0] || null)} /></Field>
+        <Button disabled={!!busy || !file} onClick={upload}>{busy === 'import' ? 'Importing…' : 'Upload rate sheet'}</Button>
+      </div>
+    </section>
+    {outcome?.result && <div className="success labourWide">
+      {outcome.kind === 'seed'
+        ? `Payroll seed from ${outcome.result.effectiveFrom}${outcome.result.onCostPercent ? ` with ${outcome.result.onCostPercent}% on-cost` : ''}: ${outcome.result.written} rates written, ${outcome.result.unchanged} already current, ${outcome.result.manualKept} manual overrides kept, ${outcome.result.noPayrollRate} employees have no payroll day rate.${outcome.result.nonNgn?.length ? ` ${outcome.result.nonNgn.length} non-NGN employees need an exchange rate via the rate sheet: ${outcome.result.nonNgn.slice(0, 10).join(', ')}.` : ''}`
+        : `Rate sheet imported: ${outcome.result.written} rates written, ${outcome.result.unchanged} unchanged, ${outcome.result.blankRows} rows without an Amount skipped.`}
+    </div>}
+    {problem && <div className="labourAlert bad labourWide">
+      {problem.message}
+      {problem.rows.length > 0 && <Table headers={['Row', 'Employee', 'Problem']} rows={problem.rows.slice(0, 50).map((item) => [item.row || '—', item.employeeCode || '—', item.message])} />}
+    </div>}
+  </>;
+}
+
+function ReportTools({ data, filters, onExport, exporting, onSave, onRateSheet }) {
   const [rate, setRate] = useState({ employeeCode: '', method: 'hourly', amount: '', currency: 'NGN', effectiveFrom: data.from || '', weekdayOvt: '1.5', saturday: '2', saturdayOvt: '2', sunday: '2', sundayOvt: '2', publicHoliday: '2', publicHolidayOvt: '2' });
   const [budget, setBudget] = useState({ projectCode: '', labourBudget: '' });
   const [adjustment, setAdjustment] = useState({ allocationId: '', projectCode: '', employeeCode: '', workDate: '', originalAmount: '', correctedAmount: '', reason: '' });
@@ -285,7 +366,8 @@ function ReportTools({ data, filters, onExport, exporting, onSave }) {
       <ul className="labourNotes">{(data.assumptions || []).map((item) => <li key={item}>{item}</li>)}</ul>
     </section>
     {formError && <div className="labourAlert bad labourWide">{formError}</div>}
-    {data.access?.canManageRates && <section className="panel"><div className="panelHead"><div><h3>Project labour cost rate</h3><p>This is the internal project rate, not the payroll salary.</p></div></div>
+    {data.access?.canManageRates && <RateSources data={data} onSave={onSave} onRateSheet={onRateSheet} />}
+    {data.access?.canManageRates && <section className="panel"><div className="panelHead"><div><h3>Project labour cost rate (single employee)</h3><p>One-off manual rate. It is kept when payroll rates are re-seeded.</p></div></div>
       <form className="labourForm" onSubmit={(event) => { event.preventDefault(); submit('save-rate', rate); }}>
         <Field label="Employee code"><input value={rate.employeeCode} onChange={(event) => setRate({ ...rate, employeeCode: event.target.value })} required /></Field>
         <Field label="Method"><select value={rate.method} onChange={(event) => setRate({ ...rate, method: event.target.value })}><option value="hourly">Hourly</option><option value="daily">Daily rate</option><option value="monthly">Monthly cost</option><option value="lumpsum">Lumpsum</option><option value="expatriate">Expatriate</option></select></Field>
@@ -293,14 +375,14 @@ function ReportTools({ data, filters, onExport, exporting, onSave }) {
         <Field label="Currency"><input value={rate.currency} onChange={(event) => setRate({ ...rate, currency: event.target.value })} /></Field>
         <Field label="Effective from"><input type="date" value={rate.effectiveFrom} onChange={(event) => setRate({ ...rate, effectiveFrom: event.target.value })} required /></Field>
         <Field label="Weekday OVT multiplier"><input value={rate.weekdayOvt} onChange={(event) => setRate({ ...rate, weekdayOvt: event.target.value })} /></Field>
-        <Button>Save rate</Button>
+        <Button onClick={submitForm}>Save rate</Button>
       </form>
     </section>}
     {data.access?.canSetBudget && <section className="panel"><div className="panelHead"><div><h3>Labour reporting budget</h3><p>Stored for this report only. Project and finance budgets stay unchanged.</p></div></div>
       <form className="labourForm" onSubmit={(event) => { event.preventDefault(); submit('save-budget', budget); }}>
         <Field label="Project code"><input value={budget.projectCode} onChange={(event) => setBudget({ ...budget, projectCode: event.target.value })} required /></Field>
         <Field label="Labour budget (NGN)"><input type="number" min="0" step="0.01" value={budget.labourBudget} onChange={(event) => setBudget({ ...budget, labourBudget: event.target.value })} required /></Field>
-        <Button>Save budget</Button>
+        <Button onClick={submitForm}>Save budget</Button>
       </form>
     </section>}
     {data.access?.canAdjust && <section className="panel"><div className="panelHead"><div><h3>Locked cost adjustment</h3><p>Original and corrected amounts are both kept. The timesheet booking is not edited.</p></div></div>
@@ -312,7 +394,7 @@ function ReportTools({ data, filters, onExport, exporting, onSave }) {
         <Field label="Original"><input type="number" step="0.01" value={adjustment.originalAmount} onChange={(event) => setAdjustment({ ...adjustment, originalAmount: event.target.value })} required /></Field>
         <Field label="Corrected"><input type="number" step="0.01" value={adjustment.correctedAmount} onChange={(event) => setAdjustment({ ...adjustment, correctedAmount: event.target.value })} required /></Field>
         <Field label="Reason"><input value={adjustment.reason} onChange={(event) => setAdjustment({ ...adjustment, reason: event.target.value })} required /></Field>
-        <Button>Save adjustment</Button>
+        <Button onClick={submitForm}>Save adjustment</Button>
       </form>
     </section>}
   </div>;
