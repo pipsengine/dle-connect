@@ -48,4 +48,25 @@ assert.equal(holiday.totalCostKobo, 2050000);
 // The rate applies to any work date (no effective-date gap).
 assert.equal(price({ workDate: '2025-01-06', ovtHours: 0 }).totalCostKobo, 1025000);
 
+// Job costing: a project whose timesheets all await PM approval still shows its full labour cost.
+const pendingOnly = buildLabourReport({
+  lines: [line({}), line({ allocationId: 'a2', workDate: '2026-10-21', ovtHours: 0 })],
+  rates: [yusuf],
+});
+const project = pendingOnly.projects[0];
+assert.equal(project.approvedCostKobo, 0);
+assert.equal(project.provisionalCostKobo, 1409375 + 1025000);
+assert.equal(project.totalCostKobo, 1409375 + 1025000);
+assert.equal(project.regularCostKobo, 2050000);
+assert.equal(project.ovtCostKobo, 384375);
+// Mixed: approved + pending add up to the total, and components cover both.
+const mixed = buildLabourReport({
+  lines: [line({}), line({ allocationId: 'a2', workDate: '2026-10-21', ovtHours: 0, timesheetStatus: 'Payroll Posted' })],
+  rates: [yusuf],
+}).projects[0];
+assert.equal(mixed.approvedCostKobo, 1025000);
+assert.equal(mixed.provisionalCostKobo, 1409375);
+assert.equal(mixed.totalCostKobo, 2434375);
+assert.equal((mixed.regularCostKobo || 0) + (mixed.ovtCostKobo || 0) + (mixed.nightLabourKobo || 0) + (mixed.nightAllowanceKobo || 0) + (mixed.otherAllowanceKobo || 0), mixed.totalCostKobo);
+
 console.log('project-labour-rate-sources.test.ts: ok');

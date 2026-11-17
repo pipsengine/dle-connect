@@ -126,9 +126,9 @@ export default function LabourCost() {
   const projectPages = Math.max(1, Math.ceil(projects.length / 25));
   const linePages = Math.max(1, Math.ceil((data?.lineTotal || 0) / (data?.pageSize || 25)));
   const topHours = useMemo(() => [...projects].sort((left, right) => right.uniqueHours - left.uniqueHours).slice(0, 10), [projects]);
-  const topCost = useMemo(() => [...projects].filter((project) => project.approvedCost != null).sort((left, right) => right.approvedCost - left.approvedCost).slice(0, 10), [projects]);
+  const topCost = useMemo(() => [...projects].filter((project) => project.totalCost != null).sort((left, right) => right.totalCost - left.totalCost).slice(0, 10), [projects]);
   const maxHours = topHours[0]?.uniqueHours || 1;
-  const maxCost = topCost[0]?.approvedCost || 1;
+  const maxCost = topCost[0]?.totalCost || 1;
 
   return <>
     <div className="pageTitle">
@@ -210,7 +210,7 @@ function Overview({ data, topHours, topCost, maxHours, maxCost, onProject }) {
   return <div className="labourGrid">
     <section className="panel"><div className="panelHead"><div><h3>Man-hours by day</h3><p>Booked project hours in the selected window.</p></div></div><Trend points={data.trend} /></section>
     <section className="panel"><div className="panelHead"><div><h3>Top projects by hours</h3><p>Click a project to see its cost position.</p></div></div><BarList rows={topHours} max={maxHours} value={(row) => row.uniqueHours} label={(row) => `${row.uniqueHours} h`} onOpen={onProject} /></section>
-    <section className="panel"><div className="panelHead"><div><h3>Top projects by approved cost</h3><p>Provisional cost is excluded from this ranking.</p></div></div>{topCost.length ? <BarList rows={topCost} max={maxCost} value={(row) => row.approvedCost} label={(row) => money(row.approvedCost)} onOpen={onProject} /> : <p className="labourEmpty">No approved labour cost for this selection.</p>}</section>
+    <section className="panel"><div className="panelHead"><div><h3>Top projects by labour cost</h3><p>Total labour cost: approved plus awaiting approval.</p></div></div>{topCost.length ? <BarList rows={topCost} max={maxCost} value={(row) => row.totalCost} label={(row) => money(row.totalCost)} onOpen={onProject} /> : <p className="labourEmpty">No labour cost for this selection.</p>}</section>
     <section className="panel"><div className="panelHead"><div><h3>Budget position</h3><p>Projects without a labour budget are omitted here.</p></div></div>
       {budgetRows.length ? <Table headers={['Project', 'Budget', 'Approved', 'Variance', 'Status']} rows={budgetRows.slice(0, 8).map((project) => [project.projectCode, money(project.labourBudget, 'Budget Not Configured'), money(project.approvedCost), money(project.variance), <Badge tone={toneFor(project.status)}>{project.status}</Badge>])} /> : <p className="labourEmpty">Budget Not Configured for the projects in this selection.</p>}
     </section>
@@ -234,11 +234,11 @@ function BarList({ rows, max, value, label, onOpen }) {
 function ProjectTable({ rows, mode, page, pages, total, onPage, onOpen }) {
   const headers = mode === 'hours'
     ? ['Project', 'Name', 'Manager', 'Employees', 'Weekday REG', 'Weekday OVT', 'Sat', 'Sat OVT', 'Sun', 'Sun OVT', 'PH', 'PH OVT', 'Night', 'Unique Hours', 'Planned', 'Utilization', 'Variance', 'Status']
-    : ['Project', 'Manager', 'Employees', 'REG Hours', 'OVT Hours', 'Unique Hours', 'REG Cost', 'OVT Cost', 'Night Allowance', 'Other Allowances', 'Approved Cost', 'Budget', 'Variance', 'Status'];
+    : ['Project', 'Manager', 'Employees', 'REG Hours', 'OVT Hours', 'Unique Hours', 'REG Cost', 'OVT Cost', 'Night Work', 'Other Allowances', 'Approved Cost', 'Pending Cost', 'Total Labour Cost', 'Budget', 'Variance', 'Status'];
   const body = mode === 'hours'
     ? rows.map((row) => [<button type="button" className="link" onClick={() => onOpen(row)}>{row.projectCode}</button>, row.projectName, row.projectManager || '—', row.employees, hours(row.weekdayRegular), hours(row.weekdayOvt), hours(row.saturdayHours), hours(row.saturdayOvt), hours(row.sundayHours), hours(row.sundayOvt), hours(row.phHours), hours(row.phOvt), hours(row.nightHours), hours(row.uniqueHours), row.plannedHours == null ? 'Not Available' : hours(row.plannedHours), percent(row.utilization), row.hourVariance == null ? 'Not Available' : hours(row.hourVariance), <Badge tone={toneFor(row.status)}>{row.status}</Badge>])
-    : rows.map((row) => [<button type="button" className="link" onClick={() => onOpen(row)}>{row.projectCode}</button>, row.projectManager || '—', row.employees, hours(row.weekdayRegular + row.saturdayHours + row.sundayHours + row.phHours), hours(row.weekdayOvt + row.saturdayOvt + row.sundayOvt + row.phOvt), hours(row.uniqueHours), money(row.regularCost), money(row.ovtCost), money(row.nightAllowance), money(row.otherAllowance), money(row.approvedCost), row.labourBudget == null ? 'Budget Not Configured' : money(row.labourBudget), money(row.variance), <Badge tone={toneFor(row.status)}>{row.status}</Badge>]);
-  return <div className="panel reportSheet"><div className="panelHead"><div><h3>{mode === 'hours' ? 'Project man-hours' : 'Project labour cost'}</h3><p>Provisional cost is not included in approved cost.</p></div></div>
+    : rows.map((row) => [<button type="button" className="link" onClick={() => onOpen(row)}>{row.projectCode}</button>, row.projectManager || '—', row.employees, hours(row.weekdayRegular + row.saturdayHours + row.sundayHours + row.phHours), hours(row.weekdayOvt + row.saturdayOvt + row.sundayOvt + row.phOvt), hours(row.uniqueHours), money(row.regularCost), money(row.ovtCost), money(row.nightLabour == null || row.nightAllowance == null ? null : Number(row.nightLabour) + Number(row.nightAllowance)), money(row.otherAllowance), money(row.approvedCost), money(row.provisionalCost), <b>{money(row.totalCost)}</b>, row.labourBudget == null ? 'Budget Not Configured' : money(row.labourBudget), money(row.variance), <Badge tone={toneFor(row.status)}>{row.status}</Badge>]);
+  return <div className="panel reportSheet"><div className="panelHead"><div><h3>{mode === 'hours' ? 'Project man-hours' : 'Project labour cost'}</h3><p>{mode === 'hours' ? 'Provisional cost is not included in approved cost.' : 'Cost covers every booked hour. Approved Cost is PM-approved; Pending Cost is awaiting approval; Total Labour Cost is both.'}</p></div></div>
     <Table headers={headers} rows={body} empty="No project allocations match these filters." />
     <Pager page={page} pages={pages} total={total} onPage={onPage} />
   </div>;

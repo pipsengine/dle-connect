@@ -112,13 +112,14 @@ const projectRow = (project: ProjectLabourRow): Array<string | number | null> =>
   projectMoney(project, project.otherAllowanceKobo),
   naira(project.approvedCostKobo),
   naira(project.provisionalCostKobo),
+  naira(project.totalCostKobo),
   naira(project.labourBudgetKobo),
   naira(project.varianceKobo),
   project.status,
 ];
 
 const projectCostHeader = [
-  'Project', 'Name', 'Project Manager', 'Employees', 'REG Hours', 'OVT Hours', 'Night Hours', 'Unique Hours', 'REG Cost', 'OVT Cost', 'Night Labour', 'Night Allowance', 'Other Allowances', 'Adjustments', 'Approved Cost', 'Provisional Cost', 'Budget', 'Variance', 'Cost Complete', 'Status',
+  'Project', 'Name', 'Project Manager', 'Employees', 'REG Hours', 'OVT Hours', 'Night Hours', 'Unique Hours', 'REG Cost', 'OVT Cost', 'Night Labour', 'Night Allowance', 'Other Allowances', 'Adjustments', 'Approved Cost', 'Pending Cost', 'Total Labour Cost', 'Budget', 'Variance', 'Cost Complete', 'Status',
 ];
 
 const projectCostRow = (project: ProjectLabourRow): Array<string | number | null> => [
@@ -138,6 +139,7 @@ const projectCostRow = (project: ProjectLabourRow): Array<string | number | null
   projectMoney(project, project.adjustmentKobo),
   naira(project.approvedCostKobo),
   naira(project.provisionalCostKobo),
+  naira(project.totalCostKobo),
   naira(project.labourBudgetKobo),
   naira(project.varianceKobo),
   project.costIncomplete ? 'No - missing cost rate' : 'Yes',
@@ -248,7 +250,8 @@ export const labourWorkbookRows = (report: LabourReport, meta: LabourExportMeta)
     ['Employees utilized', report.overview.employees],
     ['Active projects', report.overview.projects],
     ['Approved labour cost', naira(report.overview.approvedCostKobo)],
-    ['Provisional labour cost', naira(report.overview.provisionalCostKobo)],
+    ['Pending labour cost (awaiting approval)', naira(report.overview.provisionalCostKobo)],
+    ['Total labour cost (approved + pending)', report.overview.approvedCostKobo == null || report.overview.provisionalCostKobo == null ? null : naira(report.overview.approvedCostKobo + report.overview.provisionalCostKobo)],
     ['Approved hours', report.overview.approvedHours],
     ['Provisional hours', report.overview.provisionalHours],
     ['Labour budget', naira(report.overview.labourBudgetKobo)],
@@ -257,7 +260,7 @@ export const labourWorkbookRows = (report: LabourReport, meta: LabourExportMeta)
     ['Workforce utilization %', report.overview.workforceUtilization],
   ];
   const projects: Array<Array<string | number | null>> = [[
-    'Project', 'Name', 'Project Manager', 'Employees', 'Weekday REG', 'Weekday OVT', 'Saturday', 'Saturday OVT', 'Sunday', 'Sunday OVT', 'PH', 'PH OVT', 'Night Hours', 'Unique Hours', 'Planned Hours', 'Utilization %', 'REG Cost', 'OVT Cost', 'Night Labour', 'Night Allowance', 'Other Allowances', 'Approved Cost', 'Provisional Cost', 'Budget', 'Variance', 'Status',
+    'Project', 'Name', 'Project Manager', 'Employees', 'Weekday REG', 'Weekday OVT', 'Saturday', 'Saturday OVT', 'Sunday', 'Sunday OVT', 'PH', 'PH OVT', 'Night Hours', 'Unique Hours', 'Planned Hours', 'Utilization %', 'REG Cost', 'OVT Cost', 'Night Labour', 'Night Allowance', 'Other Allowances', 'Approved Cost', 'Pending Cost', 'Total Labour Cost', 'Budget', 'Variance', 'Status',
   ], ...report.projects.map(projectRow)];
   const projectCosts: Array<Array<string | number | null>> = [projectCostHeader, ...report.projects.map(projectCostRow)];
   const employees: Array<Array<string | number | null>> = [[
@@ -338,7 +341,7 @@ export const buildLabourPdf = (report: LabourReport, meta: LabourExportMeta) => 
     `Workforce utilization: ${report.overview.workforceUtilization ?? 'Not Available'}%`,
     '',
     'Project summaries',
-    ...report.projects.slice(0, 40).map((project) => `${project.projectCode}  ${project.uniqueHours} h  NGN ${naira(project.approvedCostKobo) ?? 'n/a'}  ${project.status}`),
+    ...report.projects.slice(0, 40).map((project) => `${project.projectCode}  ${project.uniqueHours} h  total NGN ${naira(project.totalCostKobo) ?? 'n/a'}  (approved ${naira(project.approvedCostKobo) ?? 'n/a'}, pending ${naira(project.provisionalCostKobo) ?? 'n/a'})  ${project.status}`),
     '',
     'Assumptions',
     ...report.overview.assumptions,

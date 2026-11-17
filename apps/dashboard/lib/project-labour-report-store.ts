@@ -645,6 +645,7 @@ const present = (
     otherAllowance: costs ? naira(project.otherAllowanceKobo) : null,
     approvedCost: costs ? naira(project.approvedCostKobo) : null,
     provisionalCost: costs ? naira(project.provisionalCostKobo) : null,
+    totalCost: costs ? naira(project.totalCostKobo) : null,
     labourBudget: costs ? naira(project.labourBudgetKobo) : null,
     variance: costs ? naira(project.varianceKobo) : null,
     budgetUtilization: costs ? project.budgetUtilization : null,

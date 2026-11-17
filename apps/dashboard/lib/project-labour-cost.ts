@@ -804,6 +804,8 @@ const aggregateProjects = (
     const provisionalRows = rows.filter((row) => row.provisional);
     const approved = sumCosts(approvedRows);
     const provisional = sumCosts(provisionalRows);
+    // Job costing: cost components and the total cover every booked hour, approved or awaiting approval.
+    const booked = sumCosts(rows);
     const incomplete = rows.some((row) => row.totalCostKobo == null);
     const planned = budget ? budget.plannedHours : null;
     const labourBudget = budget ? budget.labourBudgetKobo : null;
@@ -831,15 +833,15 @@ const aggregateProjects = (
       plannedHours: planned,
       utilization,
       hourVariance: planned == null ? null : roundHours(hours.uniqueHours - planned),
-      regularCostKobo: approved.regular,
-      ovtCostKobo: approved.ovt,
-      nightLabourKobo: approved.nightLabour,
-      nightAllowanceKobo: approved.nightAllowance,
-      otherAllowanceKobo: approved.other,
+      regularCostKobo: booked.regular,
+      ovtCostKobo: booked.ovt,
+      nightLabourKobo: booked.nightLabour,
+      nightAllowanceKobo: booked.nightAllowance,
+      otherAllowanceKobo: booked.other,
       adjustmentKobo: rows.reduce((total, row) => total + row.adjustmentKobo, 0),
       approvedCostKobo: approvedCost,
       provisionalCostKobo: provisionalCost,
-      totalCostKobo: approvedCost,
+      totalCostKobo: booked.known ? booked.total : null,
       labourBudgetKobo: labourBudget,
       varianceKobo: labourBudget == null || approvedCost == null ? null : labourBudget - approvedCost,
       budgetUtilization,
