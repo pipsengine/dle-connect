@@ -3,18 +3,7 @@ import { hasPermission } from '@/lib/auth/permission-match';
 import { resolveAccessContext } from '@/lib/hris-access';
 import { buildLabourPdf, buildLabourWorkbook, type LabourExportMeta } from '@/lib/project-labour-export';
 import { canViewProjectLabourReport, type LabourReport } from '@/lib/project-labour-cost';
-import {
-  buildLabourRateSheet,
-  importLabourRates,
-  labourAccess,
-  readProjectLabourReport,
-  saveLabourAdjustment,
-  saveLabourBudget,
-  saveLabourRate,
-  seedLabourRatesFromPayroll,
-  type LabourFilters,
-  type LabourViewer,
-} from '@/lib/project-labour-report-store';
+import { labourAccess, readProjectLabourReport, saveLabourAdjustment, saveLabourBudget, type LabourFilters, type LabourViewer } from '@/lib/project-labour-report-store';
 
 const err = (status: number, error: string) => NextResponse.json({ status: 'error', error }, { status });
 
@@ -104,19 +93,8 @@ export async function GET(request: Request) {
     const viewer = viewerFrom(request);
     if (!canViewProjectLabourReport(viewer)) return err(403, 'Project Man-Hours & Labour Cost is available to Finance, Project, IT, Sales, Proposal, and the global super administrator.');
     const params = new URL(request.url).searchParams;
-    const format = params.get('format');
-    if (format === 'rate-sheet') {
-      if (!labourAccess(viewer).canManageRates) return err(403, 'You do not have permission to maintain project labour cost rates.');
-      const body = await buildLabourRateSheet(viewer);
-      return new NextResponse(new Uint8Array(body), {
-        status: 200,
-        headers: {
-          'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-          'Content-Disposition': 'attachment; filename="DLE_Project_Labour_Rates.xlsx"',
-        },
-      });
-    }
     const loaded = await readProjectLabourReport(filtersFrom(params), viewer);
+    const format = params.get('format');
     if (format === 'xlsx' || format === 'pdf') {
       const meta: LabourExportMeta = {
         title: 'Project Man-Hours and Labour Cost',
@@ -152,19 +130,12 @@ export async function POST(request: Request) {
   try {
     const body = await request.json() as Record<string, unknown>;
     const action = String(body.action || '');
-    let result: unknown = null;
-    if (action === 'save-rate') await saveLabourRate(body, viewer);
-    else if (action === 'save-adjustment') await saveLabourAdjustment(body, viewer);
+    if (action === 'save-adjustment') await saveLabourAdjustment(body, viewer);
     else if (action === 'save-budget') await saveLabourBudget(body, viewer);
-    else if (action === 'seed-payroll-rates') result = await seedLabourRatesFromPayroll(body, viewer);
-    else if (action === 'import-rates') {
-      const imported = await importLabourRates(body, viewer);
-      if (imported.errors.length) return NextResponse.json({ status: 'error', error: `${imported.errors.length} row(s) in the rate sheet need fixing. Nothing was saved.`, result: imported }, { status: 400 });
-      result = imported;
-    } else return err(400, 'Unknown labour cost action.');
+    else return err(400, 'Unknown labour cost action.');
     const filters = (body.filters || {}) as LabourFilters;
     const loaded = await readProjectLabourReport(filters, viewer);
-    return NextResponse.json({ status: 'success', data: loaded.view, result });
+    return NextResponse.json({ status: 'success', data: loaded.view });
   } catch (error) {
     console.error('[project-labour-cost] update', error);
     return err(400, error instanceof Error ? error.message : 'The labour cost update was not saved.');

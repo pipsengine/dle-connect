@@ -210,8 +210,7 @@ export const extractEmployeeCodesFromText = (text: string): string[] => {
   return extractCodesFromRows(rows);
 };
 
-/** Cell text of the first worksheet, row by row (row 1 first). Columns run A, B, C… with gaps kept. */
-export const readFirstSheetRows = (input: Buffer | ArrayBuffer | Uint8Array): string[][] => {
+export const extractEmployeeCodesFromXlsx = (input: Buffer | ArrayBuffer | Uint8Array): string[] => {
   const buffer = Buffer.isBuffer(input)
     ? input
     : Buffer.from(input instanceof ArrayBuffer ? new Uint8Array(input) : input);
@@ -234,18 +233,8 @@ export const readFirstSheetRows = (input: Buffer | ArrayBuffer | Uint8Array): st
   for (let r = 1; r <= maxRow; r += 1) {
     rows.push(sortedCols.map((col) => normalizeCode(grid.get(`${col}${r}`) || '')));
   }
-  return rows;
+  return extractCodesFromRows(rows);
 };
-
-/** Rows of a CSV / tab-separated text file. */
-export const readDelimitedRows = (text: string): string[][] => {
-  const lines = String(text || '').replace(/^﻿/, '').split(/\r?\n/).filter((line) => line.trim());
-  const tabbed = !lines.some((line) => line.includes(',')) && lines.some((line) => line.includes('\t'));
-  return lines.map((line) => (tabbed ? line.split('\t').map((cell) => cell.trim()) : splitCsvLine(line)));
-};
-
-export const extractEmployeeCodesFromXlsx = (input: Buffer | ArrayBuffer | Uint8Array): string[] =>
-  extractCodesFromRows(readFirstSheetRows(input));
 
 export type CrewUploadMatchResult = {
   matchedCodes: string[];
