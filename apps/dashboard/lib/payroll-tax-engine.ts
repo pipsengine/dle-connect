@@ -191,7 +191,10 @@ const calculateComponent = (component: TaxComponentConfig, input: PayrollTaxInpu
   if (!appliesToEmployee(component, input)) return 0;
   if ((component.id === 'pension' || component.id === 'nhf') && String(profileId).startsWith('contract-')) return 0;
   if (component.id === 'nhf' && !defaultNhfApplicableForEmployee(input.employee)) return 0;
-  if (component.id === 'union-dues' && input.employee) return calculatePermanentUnionDues(input.employee).amount * 12;
+  // Union dues follow the actual paid basic (same basis as NHF), not the grade template split.
+  if (component.id === 'union-dues' && input.employee) {
+    return calculatePermanentUnionDues(input.employee, undefined, Number(input.monthlyBasicPay || 0)).amount * 12;
+  }
   const monthlyBasic = Math.max(0, Number(input.monthlyBasicPay || 0));
   const monthlyBase = Math.max(0, Number(input.monthlyBasePay || 0));
   const annualBase = monthlyBase * 12;

@@ -1795,7 +1795,16 @@ export const pensionablePayrollInputFromEmployee = (employee: DleEmployeeDirecto
   };
 };
 
-export const calculatePermanentUnionDues = (employee: DleEmployeeDirectoryRow, options?: PayrollEarningsOptions) => {
+/**
+ * Union dues: 3% (junior) / 2.5% (senior) of the employee's actual monthly basic.
+ * Pass `actualMonthlyBasic` (the paid BASIC line) when known; otherwise the basic is
+ * taken from the earnings engine. Never use the grade template split (e.g. 41.6% of gross).
+ */
+export const calculatePermanentUnionDues = (
+  employee: DleEmployeeDirectoryRow,
+  options?: PayrollEarningsOptions,
+  actualMonthlyBasic?: number | null,
+) => {
   if (employee.unionDuesApplicable === false) {
     return {
       code: 'UNION_DUES',
@@ -1805,12 +1814,14 @@ export const calculatePermanentUnionDues = (employee: DleEmployeeDirectoryRow, o
     };
   }
   const earnings = calculatePayrollEarnings(employee, { ...options, includePeriodAdjustments: false });
+  const override = Number(actualMonthlyBasic);
+  const basicPay = Number.isFinite(override) && override > 0 ? override : earnings.basicPay;
   if (earnings.profileId === 'junior-permanent') {
     return {
       code: 'JNR_UNION_DUES',
       name: 'Jnr Union Dues',
       basis: '3% of Basic Earning',
-      amount: roundMoney(earnings.basicPay * 0.03),
+      amount: roundMoney(basicPay * 0.03),
     };
   }
   if (earnings.profileId === 'senior-permanent') {
@@ -1818,7 +1829,7 @@ export const calculatePermanentUnionDues = (employee: DleEmployeeDirectoryRow, o
       code: 'SNR_UNION',
       name: 'Snr Union Dues',
       basis: '2.5% of Basic Earning',
-      amount: roundMoney(earnings.basicPay * 0.025),
+      amount: roundMoney(basicPay * 0.025),
     };
   }
   return {
