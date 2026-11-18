@@ -1,7 +1,7 @@
 import sql from 'mssql';
 import path from 'node:path';
 import { ensureFinanceDb } from '@/lib/finance-intelligence/store';
-import { convertAmountToNgn, resolveApprovalChain, applyMdLineManagerLastApproverRule, applyGmApprovesOnceBeforeCfo, applyProjectReportingManagerFirst, skipProjectReportingManagerWhenSameAsPm, stripLeadingReportingManager, isProjectChainWithoutReportingManager, bandRequiresMdCeo, isProjectPaymentPath, isGmApprovalStage, placeDepartmentMdCeoLast } from '@/lib/finance-intelligence/approval-matrix-service';
+import { convertAmountToNgn, resolveApprovalChain, applyMdLineManagerLastApproverRule, applyGmApprovesOnceBeforeCfo, applyProjectReportingManagerFirst, skipProjectReportingManagerWhenSameAsPm, stripLeadingReportingManager, isProjectChainWithoutReportingManager, bandRequiresMdCeo, isProjectPaymentPath, isGmApprovalStage, placeDepartmentMdCeoLast, isMaintenancePaymentRequest } from '@/lib/finance-intelligence/approval-matrix-service';
 import {
   assertReportingManagerRoutable,
   isReportingManagerStage,
@@ -1367,6 +1367,9 @@ export const repairMissingCostCentreGm = async (row: PaymentRequestRow): Promise
     || /cfo|md\s*\/?\s*ceo|managing director|treasury/i.test(compact(refreshed.currentStage));
   if (!sittingPastGm) return refreshed;
   if (isGmApprovalStage(refreshed.currentStage)) return refreshed;
+  // Maintenance requests already with MD/CEO are not pulled back to GM.
+  if (isMaintenancePaymentRequest(refreshed)
+    && /md\s*\/?\s*ceo|managing director/i.test(compact(refreshed.currentStage))) return refreshed;
 
   const pool = await ensureFinanceDb().catch(() => null);
   if (!pool) return refreshed;
@@ -1406,6 +1409,82 @@ WHERE [RequestId] = @RequestId
     return refreshed;
   }
   return (await getPaymentRequestById(row.requestId)) || refreshed;
+};
+
+/**
+ * One-off: route in-flight Maintenance requests through GM Operations before CFO.
+ * Skips requests already showing a GM stage, requests the GM has approved at any stage,
+ * and requests sitting with MD/CEO. A request sitting with the CFO moves back to the GM.
+ */
+export const routeInFlightMaintenanceRequestsToGm = async (options?: { dryRun?: boolean }) => {
+  const dryRun = options?.dryRun !== false;
+  const pool = await ensureFinanceDb();
+  if (!pool) throw new Error('Finance database is not available.');
+  const ids = (await pool.request().query(`
+SELECT [RequestId] FROM [finance].[PaymentRequests]
+WHERE [Status] = N'Pending Approval'
+  AND ([Department] LIKE N'%MAINTENANCE%' OR [CostCentre] LIKE N'%MAINTENANCE%')
+`)).recordset.map((r: { RequestId: string }) => r.RequestId);
+
+  const results: Array<{ requestNumber: string; outcome: string; from?: string[]; to?: string[]; currentStage?: string; newCurrentStage?: string }> = [];
+  for (const id of ids) {
+    const row = await getPaymentRequestById(id);
+    if (!row || !isMaintenancePaymentRequest(row)) continue;
+    const stages = stagesFromPayload(row.payload);
+    const label = row.requestNumber;
+    if (stages.some(isGmApprovalStage)) { results.push({ requestNumber: label, outcome: 'skip: GM already in chain', currentStage: row.currentStage }); continue; }
+    if (/md\s*\/?\s*ceo|managing director/i.test(compact(row.currentStage))) { results.push({ requestNumber: label, outcome: 'skip: awaiting MD/CEO', currentStage: row.currentStage }); continue; }
+
+    const gm = await resolveRowStagePrincipal(row, 'GM');
+    if (!gm.code) { results.push({ requestNumber: label, outcome: 'skip: GM approver not resolved', currentStage: row.currentStage }); continue; }
+    const actions = await listPaymentRequestActions(row.requestId);
+    const gmApproved = actions.some((action) => /approve/i.test(action.actionType)
+      && samePaymentPrincipal({ code: action.actorCode, name: action.actorName }, gm));
+    if (gmApproved) { results.push({ requestNumber: label, outcome: 'skip: GM already approved', currentStage: row.currentStage }); continue; }
+
+    const cfoIdx = stages.findIndex((stage) => /^cfo$|chief\s*financial/i.test(compact(stage)));
+    const nextStages = cfoIdx >= 0 ? [...stages.slice(0, cfoIdx), 'GM', ...stages.slice(cfoIdx)] : [...stages, 'GM'];
+    const sittingAtCfo = /^cfo$|chief\s*financial/i.test(compact(row.currentStage));
+    const newCurrentStage = sittingAtCfo ? 'GM' : row.currentStage;
+    results.push({ requestNumber: label, outcome: dryRun ? 'would update' : 'updated', from: stages, to: nextStages, currentStage: row.currentStage, newCurrentStage });
+    if (dryRun) continue;
+
+    await persistPayloadStages(row.requestId, row.payload, nextStages, { approvalLevel: nextStages.length });
+    await logAction({
+      requestId: row.requestId,
+      actionType: 'repair-stages',
+      stage: newCurrentStage,
+      actorName: 'System',
+      actorCode: 'system',
+      comment: sittingAtCfo
+        ? 'Maintenance payment: GM Operations approval added before CFO. Request moved from CFO to GM.'
+        : 'Maintenance payment: GM Operations approval added before CFO.',
+    });
+    if (sittingAtCfo) {
+      await pool.request()
+        .input('RequestId', sql.NVarChar(60), row.requestId)
+        .input('CurrentStage', sql.NVarChar(80), 'GM')
+        .query(`UPDATE [finance].[PaymentRequests] SET [CurrentStage] = @CurrentStage, [UpdatedAt] = SYSUTCDATETIME() WHERE [RequestId] = @RequestId`);
+      await assignCurrentApprover({
+        requestId: row.requestId,
+        stage: 'GM',
+        requesterCode: row.requesterCode,
+        projectCode: row.projectCode,
+        department: row.department,
+        costCentre: row.costCentre,
+        supervisorName: row.supervisorName,
+        paymentType: row.paymentType,
+      });
+      const refreshed = (await getPaymentRequestById(row.requestId)) || row;
+      await notifyPaymentApprovalRequired({
+        request: refreshed,
+        stage: 'GM',
+        actorName: 'System',
+        baseUrl: resolveWorkflowLinkOrigin(),
+      }).catch((error) => console.error('[payment-requests] maintenance GM reroute notification failed', error));
+    }
+  }
+  return results;
 };
 
 const principalNameOf = (principal?: { name?: string | null; employee?: { fullName?: string | null } | null } | null) =>

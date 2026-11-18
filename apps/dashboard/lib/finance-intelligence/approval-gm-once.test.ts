@@ -2,7 +2,7 @@
  * Run: npx tsx --tsconfig apps/dashboard/tsconfig.json apps/dashboard/lib/finance-intelligence/approval-gm-once.test.ts
  */
 import assert from 'node:assert/strict';
-import { applyGmStageLayout, isGmEmployee } from './approval-matrix-service';
+import { applyGmStageLayout, isGmEmployee, isMaintenancePaymentRequest } from './approval-matrix-service';
 import { employeeMatchKeys, matchesEmployeeKeys, isCountableLeaveAllowanceEvent } from '../leave-allowance-policy';
 
 const projectChain = ['Reporting Manager', 'Project Manager', 'Cost Controller', 'Finance Manager', 'GM', 'CFO'];
@@ -44,6 +44,26 @@ assert.deepEqual(
   ['Finance Manager', 'GM', 'CFO', 'MD/CEO'],
   'GM cost-centre HoD who is also line manager still approves once, last before CFO',
 );
+
+// Maintenance payments always include GM Operations (includeGm) before CFO, or last when there is no CFO.
+assert.deepEqual(
+  applyGmStageLayout(['Reporting Manager', 'Finance Manager'], false, { includeGm: true }),
+  ['Reporting Manager', 'Finance Manager', 'GM'],
+  'Maintenance low band: GM approves last when there is no CFO',
+);
+assert.deepEqual(
+  applyGmStageLayout(['Reporting Manager', 'Finance Manager', 'CFO'], false, { includeGm: true }),
+  ['Reporting Manager', 'Finance Manager', 'GM', 'CFO'],
+  'Maintenance mid band: GM approves right before CFO',
+);
+assert.deepEqual(
+  applyGmStageLayout(['Reporting Manager', 'Finance Manager'], true, { includeGm: true }),
+  ['Finance Manager', 'GM'],
+  'Maintenance request whose line manager is the GM: GM approves once only',
+);
+assert.equal(isMaintenancePaymentRequest({ department: 'MAINTENANCE' }), true);
+assert.equal(isMaintenancePaymentRequest({ department: 'PROCUREMENT', costCentre: 'MAINTENANCE' }), true);
+assert.equal(isMaintenancePaymentRequest({ department: 'PROCUREMENT', costCentre: 'ADMINISTRATION' }), false);
 
 assert.equal(isGmEmployee({ jobTitle: 'General Manager' }), true);
 assert.equal(isGmEmployee({ jobTitle: 'GM' }), true);

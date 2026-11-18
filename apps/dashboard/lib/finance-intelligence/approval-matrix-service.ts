@@ -860,6 +860,13 @@ export const applyGmStageLayout = (
   return insertStageBeforeCfo(next.filter((stage) => !isGmStage(stage)), 'GM');
 };
 
+/** Maintenance department (raising department or cost centre charged). */
+export const isMaintenanceDepartment = (value?: string | null) => /\bmaintenance\b/i.test(compact(value));
+
+/** Payments raised from, or charged to, Maintenance always route through GM Operations before CFO. */
+export const isMaintenancePaymentRequest = (input: { department?: string | null; costCentre?: string | null }) =>
+  isMaintenanceDepartment(input.department) || isMaintenanceDepartment(input.costCentre);
+
 export const applyGmApprovesOnceBeforeCfo = async (input: {
   stages: string[];
   requesterCode?: string | null;
@@ -872,6 +879,7 @@ export const applyGmApprovesOnceBeforeCfo = async (input: {
   const original = [...(input.stages || [])].map((stage) => compact(stage)).filter(Boolean);
   if (!original.length) return original;
   const hadGmStage = original.some(isGmStage);
+  const maintenanceRequest = isMaintenancePaymentRequest(input);
 
   let gmIsLineManager = false;
   let costCentreHodIsGm = false;
@@ -886,7 +894,7 @@ export const applyGmApprovesOnceBeforeCfo = async (input: {
       paymentType: input.paymentType,
       principalOnly: true,
     });
-    const gm = hadGmStage
+    const gm = hadGmStage || maintenanceRequest
       ? await resolvePaymentStageApprover({
         stage: 'GM',
         requesterCode: input.requesterCode,
@@ -919,7 +927,7 @@ export const applyGmApprovesOnceBeforeCfo = async (input: {
     console.error('[approval-limits] GM one-approval rule failed', error);
   }
 
-  return applyGmStageLayout(original, gmIsLineManager, { includeGm: hadGmStage || costCentreHodIsGm });
+  return applyGmStageLayout(original, gmIsLineManager, { includeGm: hadGmStage || costCentreHodIsGm || maintenanceRequest });
 };
 
 /** True when the employee is the Managing Director / MD-CEO. */
