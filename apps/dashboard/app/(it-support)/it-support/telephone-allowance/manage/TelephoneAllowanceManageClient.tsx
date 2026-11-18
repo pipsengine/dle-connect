@@ -143,6 +143,7 @@ export default function TelephoneAllowanceManageClient() {
   const [bulk, setBulk] = useState<'amount' | 'eligibility' | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
   const autoPopulateRef = useRef<string | null>(null);
+  const dirSearchSeq = useRef(0);
   const [dirQuery, setDirQuery] = useState('');
   const [dirHits, setDirHits] = useState<DirectoryHit[]>([]);
   const [addForm, setAddForm] = useState({
@@ -296,14 +297,18 @@ export default function TelephoneAllowanceManageClient() {
 
   const searchDirectory = async (q: string) => {
     setDirQuery(q);
+    const seq = ++dirSearchSeq.current;
     if (q.trim().length < 2) {
       setDirHits([]);
       return;
     }
     const res = await get<{ employees: DirectoryHit[] | { employees?: DirectoryHit[] } }>('directory-search', { q });
+    // Ignore responses that arrive after a newer keystroke's search was sent.
+    if (seq !== dirSearchSeq.current) return;
     const payload = res.employees;
     const list = Array.isArray(payload) ? payload : payload?.employees || [];
-    setDirHits(list.filter((hit) => !hit.status || /active/i.test(hit.status)));
+    // The server already excludes inactive/exited staff; Probation, Confirmed, etc. are valid.
+    setDirHits(list);
   };
 
   const changeLabel = (row: CycleEmployee) => {
@@ -891,7 +896,16 @@ export default function TelephoneAllowanceManageClient() {
           <p className="text-sm font-medium text-slate-600">Select an active employee. Employee details come from the Employee Directory.</p>
           <input value={dirQuery} onChange={(e) => void searchDirectory(e.target.value)} placeholder="Search by code, name, department" className="mt-3 h-10 w-full rounded-lg border border-slate-200 px-3 text-sm" />
           <div className="mt-2 max-h-48 overflow-y-auto">
-            {dirHits.filter((hit) => !(cycle?.employees || []).some((row) => row.employeeCode === hit.employeeCode && row.changeBadge !== 'REMOVED')).map((hit) => (
+            {dirHits.map((hit) => {
+              const inCycle = (cycle?.employees || []).some((row) => row.employeeCode === hit.employeeCode && row.changeBadge !== 'REMOVED');
+              if (inCycle) {
+                return (
+                  <div key={hit.employeeCode} className="mt-2 flex w-full items-center justify-between rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-left opacity-70">
+                    <span><b className="block text-sm text-slate-600">{hit.employeeName}</b><small className="text-slate-500">{hit.employeeCode} • already in this cycle</small></span>
+                  </div>
+                );
+              }
+              return (
               <button
                 key={hit.employeeCode}
                 type="button"
@@ -901,7 +915,8 @@ export default function TelephoneAllowanceManageClient() {
                 <span><b className="block text-sm">{hit.employeeName}</b><small className="text-slate-500">{hit.employeeCode} • {hit.department}</small></span>
                 <Plus className="h-4 w-4 text-teal-700" />
               </button>
-            ))}
+              );
+            })}
           </div>
           <label className="mt-3 block text-xs font-bold text-slate-600">Monthly Amount (₦)
             <input type="number" value={addForm.monthlyRate} onChange={(e) => setAddForm({ ...addForm, monthlyRate: Number(e.target.value) })} className="mt-1 h-10 w-full rounded-lg border border-slate-200 px-3 text-sm font-semibold" />
