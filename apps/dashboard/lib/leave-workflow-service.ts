@@ -681,15 +681,53 @@ export const loadWorkflowLeaveRequests = async (options?: {
   return requests;
 };
 
+const STALE_EXPIRY_STATUSES = ['Line Manager Review', 'HR Review', 'Submitted', 'Under Review'];
+
+/**
+ * Close a timed-out request in [hris].[LeaveApplications] and give its reserved days back.
+ * Without this the SQL row stays "Under Review", is merged back as pending on the next load,
+ * and the days stay locked in PendingBalance.
+ */
+const terminateStaleLeaveRequestInDb = async (item: EssLeaveRequest, employees: DleEmployeeDirectoryRow[]) => {
+  const pool = await getDleEnterpriseDbPool();
+  if (!pool) return;
+  const updated = await pool.request()
+    .input('Id', sql.NVarChar(120), item.id)
+    .input('WorkflowJson', sql.NVarChar(sql.MAX), JSON.stringify(item.workflow || []))
+    .input('CommentsJson', sql.NVarChar(sql.MAX), JSON.stringify(item.comments || []))
+    .query(`
+UPDATE [hris].[LeaveApplications]
+SET [StatusName]=N'Terminated',[WorkflowStage]=N'Closed',[ApprovalStatus]=N'Terminated',
+    [WorkflowJson]=@WorkflowJson,[CommentsJson]=@CommentsJson,[UpdatedAt]=SYSUTCDATETIME()
+OUTPUT deleted.[EmployeeId],deleted.[LeaveType],deleted.[BalanceImpact],deleted.[StartDate],deleted.[PolicyComplianceStatus]
+WHERE [Id]=@Id AND [StatusName] IN (N'Submitted',N'Under Review',N'Line Manager Review',N'HR Review');`);
+  const row = updated.recordset?.[0] as
+    | { EmployeeId?: string; LeaveType?: string; BalanceImpact?: number; StartDate?: Date; PolicyComplianceStatus?: string }
+    | undefined;
+  if (!row) return;
+  // Leave balances only hold pending days for the current leave year and for non-blocked requests.
+  const startYear = row.StartDate ? new Date(row.StartDate).getUTCFullYear() : 0;
+  if (startYear !== new Date().getUTCFullYear() || compact(row.PolicyComplianceStatus) === 'Blocked') return;
+  const requester = resolveEmployeeReference(employees, compact(row.EmployeeId) || item.employeeId);
+  if (!requester) return;
+  await applyLeaveBalanceImpact({
+    employee: requester,
+    leaveType: compact(row.LeaveType) || item.leaveType,
+    days: Number(row.BalanceImpact || 0),
+    mode: 'release-pending',
+  });
+};
+
 export const expireStaleLeaveRequests = async (requests: EssLeaveRequest[]) => {
   let changed = false;
   const now = new Date().toISOString();
+  const terminated: EssLeaveRequest[] = [];
   const next = requests.map((item) => {
-    if (!/leave/i.test(item.category) || !['Line Manager Review', 'HR Review', 'Submitted'].includes(item.status)) return item;
+    if (!/leave/i.test(item.category) || !STALE_EXPIRY_STATUSES.includes(item.status)) return item;
     const slaAnchor = item.submittedAt || item.updatedAt;
     if (!slaAnchor || workingDaysSince(slaAnchor) <= workflowDeadlineDays) return item;
     changed = true;
-    return {
+    const expired: EssLeaveRequest = {
       ...item,
       status: 'Terminated' as EssLeaveRequestStatus,
       updatedAt: now,
@@ -707,10 +745,21 @@ export const expireStaleLeaveRequests = async (requests: EssLeaveRequest[]) => {
           : step,
       ),
     };
+    terminated.push(expired);
+    return expired;
   });
   if (changed) await writeAllEssRequests(next).catch((error) => {
     console.warn('[leave-workflow] stale leave expiry could not persist ESS JSON', error);
   });
+  if (terminated.length) {
+    const { employees } = await readPayrollEmployees();
+    for (const item of terminated) {
+      await terminateStaleLeaveRequestInDb(item, employees).catch((error) => {
+        console.warn('[leave-workflow] stale leave expiry could not update SQL', { id: item.id, error });
+      });
+    }
+    invalidateEssPortalCache();
+  }
   return next;
 };
 
