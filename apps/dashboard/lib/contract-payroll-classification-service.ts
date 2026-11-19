@@ -20,6 +20,7 @@ export const applyContractPayrollClassification = async (input: {
   reason?: string;
   payrollGroup?: string | null;
   ratePerDay?: number | null;
+  actor?: string | null;
 }): Promise<{ employeeId: string; classification: ContractPayrollClassification; persisted: boolean }> => {
   const employee = await findDirectoryEmployee(input.employeeId);
   if (!employee) throw new Error('Employee not found in directory.');
@@ -38,6 +39,7 @@ export const applyContractPayrollClassification = async (input: {
     reason: input.reason,
     payrollGroup: input.payrollGroup,
     ratePerDay: input.ratePerDay,
+    actor: input.actor,
   });
   if (!persisted) throw new Error('Unable to persist classification to DLE_Enterprise.');
 
@@ -55,6 +57,7 @@ export const applyContractPayrollClassificationBulk = async (input: {
   employeeIds?: string[];
   applyAll?: boolean;
   reason?: string;
+  actor?: string | null;
 }) => {
   const source = await readDirectoryEmployees();
   const targets = input.applyAll
@@ -72,6 +75,7 @@ export const applyContractPayrollClassificationBulk = async (input: {
         employeeId: employee.employeeCode || employee.employeeId,
         action: input.action,
         reason: input.reason,
+        actor: input.actor,
       });
       results.push({ employeeId: employee.employeeCode || employee.employeeId, ok: true });
     } catch (error) {

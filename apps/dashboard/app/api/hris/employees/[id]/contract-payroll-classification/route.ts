@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { applyContractPayrollClassification, findDirectoryEmployee, type ContractPayrollClassificationAction } from '@/lib/contract-payroll-classification-service';
 import { contractPayrollClassification } from '@/lib/payroll-employee-classification';
+import { auditActorFromRequest } from '@/lib/auth/request-actor';
 
 const jsonOk = <T,>(data: T) => NextResponse.json({ status: 'success', data });
 const jsonErr = (status: number, error: string) => NextResponse.json({ status: 'error', error }, { status });
@@ -31,7 +32,12 @@ export async function PATCH(request: Request, ctx: { params: Promise<{ id: strin
     return jsonErr(400, 'action must be deactivate-non-daily or activate-daily-rate');
   }
   try {
-    const result = await applyContractPayrollClassification({ employeeId: id, action: body.action, reason: body.reason });
+    const result = await applyContractPayrollClassification({
+      employeeId: id,
+      action: body.action,
+      reason: body.reason,
+      actor: await auditActorFromRequest(request),
+    });
     return jsonOk(result);
   } catch (error) {
     return jsonErr(400, error instanceof Error ? error.message : 'Classification update failed');

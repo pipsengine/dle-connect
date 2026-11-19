@@ -2758,6 +2758,8 @@ export const markEmployeeInactiveInDb = async (input: {
   employeeCode: string;
   employeeId?: string | null;
   reason?: string | null;
+  /** Signed-in person whose action made the employee inactive; recorded in the audit log. */
+  actor?: string | null;
 }) => {
   const p = await pool();
   if (!p) return false;
@@ -2773,11 +2775,24 @@ export const markEmployeeInactiveInDb = async (input: {
       SET employment_status = @employment_status,
           modified_at = SYSUTCDATETIME(),
           modified_by = SUSER_SNAME()
+      OUTPUT inserted.employee_id, deleted.employment_status AS previous_status
       WHERE employee_code = @employee_code
          OR employee_code = @employee_id_text
          OR CAST(employee_id AS NVARCHAR(50)) = @employee_id_text
          OR REPLACE(UPPER(employee_code), N'P', N'') = REPLACE(UPPER(@employee_code), N'P', N'');
     `);
+  for (const row of (result.recordset || []) as Array<{ employee_id: number; previous_status?: string | null }>) {
+    const diff = diffEmployeeAuditSnapshots(
+      { employment_status: row.previous_status },
+      { employment_status: 'Inactive' },
+    );
+    await writeEmployeeChangeAudit(p.request(), {
+      employeeId: Number(row.employee_id),
+      actor: input.actor,
+      reason: input.reason,
+      diff,
+    }).catch((error) => console.warn('markEmployeeInactiveInDb audit entry failed', error));
+  }
   return Number(result.rowsAffected?.[0] || 0) > 0;
 };
 
@@ -2787,12 +2802,14 @@ export const updateEmployeeContractPayrollClassificationInDb = async (input: {
   reason?: string | null;
   payrollGroup?: string | null;
   ratePerDay?: number | null;
+  /** Signed-in person running the classification; recorded in the audit log. */
+  actor?: string | null;
 }) => {
   const p = await pool();
   if (!p) return false;
   const employmentStatus = input.action === 'deactivate-non-daily' ? 'Inactive' : 'Active';
   const employmentType = input.action === 'deactivate-non-daily' ? 'Contract' : 'Daily Rate';
-  await p.request()
+  const previous = await p.request()
     .input('employee_id', sql.BigInt, input.employeeDbId)
     .input('employment_status', sql.VarChar(40), employmentStatus)
     .input('employment_type', sql.VarChar(40), employmentType)
@@ -2802,8 +2819,10 @@ export const updateEmployeeContractPayrollClassificationInDb = async (input: {
           employment_type = @employment_type,
           modified_at = SYSUTCDATETIME(),
           modified_by = SUSER_SNAME()
+      OUTPUT deleted.employment_status AS previous_status, deleted.employment_type AS previous_type
       WHERE employee_id = @employee_id;
     `);
+  const before = previous.recordset?.[0] as { previous_status?: string | null; previous_type?: string | null } | undefined;
   if (input.action === 'activate-daily-rate') {
     const ratePerDay = Number(input.ratePerDay || 0);
     const ratePerHour = ratePerDay > 0 ? Math.round((ratePerDay / 8) * 10000) / 10000 : null;
@@ -2857,12 +2876,23 @@ export const updateEmployeeContractPayrollClassificationInDb = async (input: {
         WHERE employee_id = @employee_id;
       `);
   }
+  const diff = diffEmployeeAuditSnapshots(
+    { employment_status: before?.previous_status, employment_type: before?.previous_type },
+    { employment_status: employmentStatus, employment_type: employmentType },
+  );
+  const reason = [
+    str(input.reason) || 'Contract payroll classification updated from employee directory',
+    diff.summary,
+  ].filter(Boolean).join(' · ').slice(0, 2000);
   await p.request()
     .input('employee_id', sql.BigInt, input.employeeDbId)
-    .input('reason', sql.NVarChar(500), nullable(input.reason || 'Contract payroll classification updated from employee directory'))
+    .input('performer', sql.NVarChar(128), auditActorName(input.actor))
+    .input('reason', sql.NVarChar(2000), reason)
+    .input('old_value', sql.NVarChar(sql.MAX), diff.changed ? JSON.stringify(diff.oldValue) : null)
+    .input('new_value', sql.NVarChar(sql.MAX), diff.changed ? JSON.stringify(diff.newValue) : null)
     .query(`
-      INSERT [hris].[EmployeeAuditLog](employee_id, audit_action, performed_by, reason)
-      VALUES (@employee_id, N'Contract payroll classification', SUSER_SNAME(), @reason);
+      INSERT [hris].[EmployeeAuditLog](employee_id, audit_action, performed_by, reason, old_value, new_value, audit_at)
+      VALUES (@employee_id, N'Contract payroll classification', @performer, @reason, @old_value, @new_value, SYSUTCDATETIME());
     `);
   return true;
 };
@@ -3346,7 +3376,127 @@ export const createEmployeeFromDraftInDb = async (draftId: string, employeeCode:
   }
 };
 
+/** Fields compared before/after a profile save so the audit log shows exactly what changed. */
+const EMPLOYEE_AUDIT_FIELDS: Array<[string, string]> = [
+  ['full_name', 'Full name'],
+  ['preferred_name', 'Preferred name'],
+  ['employment_status', 'Employment status'],
+  ['employment_type', 'Employment type'],
+  ['gender', 'Gender'],
+  ['date_of_birth', 'Date of birth'],
+  ['official_email', 'Official email'],
+  ['personal_email', 'Personal email'],
+  ['primary_phone', 'Phone'],
+  ['date_joined', 'Date joined'],
+  ['work_location', 'Work location'],
+  ['job_title', 'Job title'],
+  ['job_grade', 'Job grade'],
+  ['department', 'Department'],
+  ['division', 'Division'],
+  ['business_unit', 'Business unit'],
+  ['cost_center', 'Cost centre'],
+  ['reporting_manager', 'Reporting manager'],
+  ['payroll_group', 'Payroll group'],
+  ['salary_grade', 'Salary grade'],
+  ['period_salary', 'Period salary'],
+  ['annual_salary', 'Annual salary'],
+  ['basic_salary', 'Basic salary'],
+  ['rate_per_day', 'Rate per day'],
+  ['rate_per_hour', 'Rate per hour'],
+  ['pay_currency', 'Pay currency'],
+  ['bank_name', 'Bank name'],
+  ['account_number', 'Account number'],
+  ['account_name', 'Account name'],
+  ['pension_provider', 'Pension provider'],
+  ['pension_pin', 'Pension PIN'],
+  ['tax_identification_number', 'Tax ID'],
+  ['setup_assigned_to_payroll', 'Assigned to payroll'],
+];
+
+const auditValue = (value: unknown): string | null => {
+  if (value === null || value === undefined) return null;
+  if (value instanceof Date) return Number.isNaN(value.getTime()) ? null : value.toISOString().slice(0, 10);
+  if (typeof value === 'boolean') return value ? 'Yes' : 'No';
+  if (typeof value === 'number') return Number.isFinite(value) ? String(Math.round(value * 100) / 100) : null;
+  const text = String(value).trim();
+  return text ? text : null;
+};
+
+/** Pure diff of two employee snapshots; exported for tests. */
+export const diffEmployeeAuditSnapshots = (
+  before: Record<string, unknown> | null | undefined,
+  after: Record<string, unknown> | null | undefined,
+) => {
+  const oldValue: Record<string, string | null> = {};
+  const newValue: Record<string, string | null> = {};
+  const lines: string[] = [];
+  for (const [column, label] of EMPLOYEE_AUDIT_FIELDS) {
+    const from = auditValue(before?.[column]);
+    const to = auditValue(after?.[column]);
+    if (from === to) continue;
+    oldValue[column] = from;
+    newValue[column] = to;
+    lines.push(`${label}: ${from ?? '(blank)'} → ${to ?? '(blank)'}`);
+  }
+  return {
+    changed: lines.length > 0,
+    statusChanged: 'employment_status' in newValue,
+    oldValue,
+    newValue,
+    summary: lines.join('; '),
+  };
+};
+
+const readEmployeeAuditSnapshot = async (request: sql.Request, employeeId: number) => {
+  const result = await request
+    .input('audit_employee_id', sql.BigInt, employeeId)
+    .query(`
+      SELECT TOP (1)
+        v.full_name, v.preferred_name, v.employment_status, v.employment_type, v.gender, v.date_of_birth,
+        v.official_email, v.personal_email, v.primary_phone, v.date_joined, v.work_location,
+        v.job_title, v.job_grade, v.department, v.division, v.business_unit, v.cost_center, v.reporting_manager,
+        ps.payroll_group, ps.salary_grade, ps.period_salary, ps.annual_salary, ps.basic_salary,
+        ps.rate_per_day, ps.rate_per_hour, ps.pay_currency, ps.bank_name, ps.account_number, ps.account_name,
+        ps.pension_provider, ps.pension_pin, ps.tax_identification_number, ps.setup_assigned_to_payroll
+      FROM [hris].[EmployeeMasterView] v
+      LEFT JOIN [hris].[EmployeePayrollSetup] ps ON ps.employee_id = v.employee_id
+      WHERE v.employee_id = @audit_employee_id;
+    `);
+  return (result.recordset?.[0] as Record<string, unknown> | undefined) || null;
+};
+
+const auditActorName = (actor?: string | null) => str(actor).slice(0, 128) || 'Unknown user (not recorded)';
+
+const writeEmployeeChangeAudit = async (
+  request: sql.Request,
+  input: {
+    employeeId: number;
+    actor?: string | null;
+    reason?: string | null;
+    diff: ReturnType<typeof diffEmployeeAuditSnapshots>;
+  },
+) => {
+  if (!input.diff.changed) return;
+  const action = input.diff.statusChanged ? 'Employment status changed' : 'Employee profile updated';
+  const reason = [str(input.reason), input.diff.summary].filter(Boolean).join(' · ').slice(0, 2000);
+  await request
+    .input('audit_employee_id_w', sql.BigInt, input.employeeId)
+    .input('audit_action', sql.NVarChar(300), action)
+    .input('audit_performer', sql.NVarChar(128), auditActorName(input.actor))
+    .input('audit_reason', sql.NVarChar(2000), reason)
+    .input('audit_old', sql.NVarChar(sql.MAX), JSON.stringify(input.diff.oldValue))
+    .input('audit_new', sql.NVarChar(sql.MAX), JSON.stringify(input.diff.newValue))
+    .query(`
+      INSERT [hris].[EmployeeAuditLog](employee_id, audit_action, performed_by, reason, old_value, new_value, audit_at)
+      VALUES (@audit_employee_id_w, @audit_action, @audit_performer, @audit_reason, @audit_old, @audit_new, SYSUTCDATETIME());
+    `);
+};
+
 export type HrisEmployeeProfileSyncInput = {
+  /** Signed-in person making the change; recorded in the employee audit log. */
+  actor?: string | null;
+  /** Optional context for the audit entry (e.g. "Approved ESS profile update"). */
+  auditReason?: string | null;
   employeeCode: string;
   fullName?: string | null;
   preferredName?: string | null;
@@ -3438,6 +3588,7 @@ export const syncHrisEmployeeProfileToDb = async (input: HrisEmployeeProfileSync
       await tx.rollback().catch(() => undefined);
       return false;
     }
+    const auditBefore = await readEmployeeAuditSnapshot(new sql.Request(tx), employeeId).catch(() => null);
 
     if (!payrollOnly) {
     await new sql.Request(tx)
@@ -3802,6 +3953,20 @@ export const syncHrisEmployeeProfileToDb = async (input: HrisEmployeeProfileSync
             @is_primary, @is_next_of_kin, @is_beneficiary
           );
         `);
+    }
+
+    if (auditBefore) {
+      try {
+        const auditAfter = await readEmployeeAuditSnapshot(new sql.Request(tx), employeeId);
+        await writeEmployeeChangeAudit(new sql.Request(tx), {
+          employeeId,
+          actor: input.actor,
+          reason: input.auditReason,
+          diff: diffEmployeeAuditSnapshots(auditBefore, auditAfter),
+        });
+      } catch (auditError) {
+        console.warn('syncHrisEmployeeProfileToDb audit entry failed', { employeeCode, auditError });
+      }
     }
 
     await tx.commit();

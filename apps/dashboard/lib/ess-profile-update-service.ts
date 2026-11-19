@@ -2,6 +2,7 @@ import { readUsers, syncPortalMailboxForEmployee } from '@/lib/auth/auth-store';
 import type { SessionPayload } from '@/lib/auth/session';
 import type { DleEmployeeDirectoryRow } from '@/lib/dle-enterprise-db';
 import { syncHrisEmployeeProfileToDb } from '@/lib/dle-enterprise-db';
+import { auditActorFromSession } from '@/lib/auth/request-actor';
 import { invalidateEssPortalCache } from '@/lib/ess-portal-cache';
 import { serviceWorkflowFor } from '@/lib/ess-workflow-intelligence';
 import { createEnterpriseNotification } from '@/lib/enterprise-notifications-store';
@@ -667,6 +668,8 @@ export const transitionEssProfileUpdate = async (input: {
 
   const syncPayload = mapChangesToHrisSync(requester, current.profileSectionId, current.profileChanges);
   const applied = await syncHrisEmployeeProfileToDb({
+    actor: auditActorFromSession(input.actor) || actorName,
+    auditReason: `Approved self-service profile update ${current.id}`,
     employeeCode: syncPayload.employeeCode,
     fullName: syncPayload.fullName,
     preferredName: syncPayload.preferredName,

@@ -307,7 +307,8 @@ const applyApprovedSettlementToPayroll = async (settlement: FinalPayrollSettleme
   await markEmployeeInactiveInDb({
     employeeCode: settlement.employeeCode,
     employeeId: settlement.employeeId,
-    reason: `Final settlement ${settlement.id}`,
+    reason: `Final settlement ${settlement.id} approved for ${settlement.period}`,
+    actor,
   }).catch(() => undefined);
   invalidatePayrollEmployeeCache();
   invalidateHrisEmployeeCaches();

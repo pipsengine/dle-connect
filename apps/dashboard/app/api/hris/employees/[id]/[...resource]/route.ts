@@ -31,6 +31,7 @@ import { invalidatePayrollCalculationCache } from '@/lib/payroll-calculation-ser
 import { invalidatePayrollEmployeeOptionsCache } from '@/lib/payroll-employee-options-store';
 import { resolveHrisEmployeeRoute } from '@/lib/hris-employee-route';
 import { AUTH_COOKIE, verifySessionToken } from '@/lib/auth/session';
+import { auditActorFromRequest } from '@/lib/auth/request-actor';
 import { composePersonDisplayName } from '@/lib/person-display-name';
 import { resolveActivePayrollPeriod } from '@/lib/payroll-period-store';
 import { payrollFxForEmployeePackage } from '@/lib/payroll-run-fx';
@@ -2638,11 +2639,16 @@ const buildDbProfileRecord = (row: DleEmployeeDirectoryRow): EmployeeRecord => {
   return rec;
 };
 
-const persistHrisProfileToEnterprise = async (rec: EmployeeRecord, options?: { replaceEmergencyContacts?: boolean }) => {
+const persistHrisProfileToEnterprise = async (
+  rec: EmployeeRecord,
+  options?: { replaceEmergencyContacts?: boolean; actor?: string | null },
+) => {
   const employeeCode = rec.profile.employeeId;
   if (!employeeCode) return;
   try {
     const synced = await syncHrisEmployeeProfileToDb({
+      actor: options?.actor,
+      auditReason: 'HR employee profile',
       employeeCode,
       fullName: rec.profile.fullName,
       preferredName: rec.profile.personalInfo?.preferredName,
@@ -2698,8 +2704,8 @@ const persistHrisProfileToEnterprise = async (rec: EmployeeRecord, options?: { r
   }
 };
 
-const persistEmergencyContactsToEnterprise = async (rec: EmployeeRecord) =>
-  persistHrisProfileToEnterprise(rec, { replaceEmergencyContacts: true });
+const persistEmergencyContactsToEnterprise = async (rec: EmployeeRecord, actor?: string | null) =>
+  persistHrisProfileToEnterprise(rec, { replaceEmergencyContacts: true, actor });
 
 const hrisDataDir = () => (
   process.env.DLE_HRIS_DATA_DIR
@@ -5313,7 +5319,7 @@ async function patchEmployeeRecord(request: Request, ctx: { params: Promise<{ id
       permanentAddress: next.permanentAddress ?? rec.profile.contacts.permanentAddress ?? null,
     };
     rec.audit.unshift(auditEntry('Edited personal information', role));
-    await persistHrisProfileToEnterprise(rec);
+    await persistHrisProfileToEnterprise(rec, { actor: await auditActorFromRequest(request) });
     return jsonOk(sanitizeProfileForRole(rec, perms).personalInfo);
   }
 
@@ -5343,7 +5349,7 @@ async function patchEmployeeRecord(request: Request, ctx: { params: Promise<{ id
     if (next.dateJoined) rec.profile.dateJoined = `${String(next.dateJoined).slice(0, 10)}T00:00:00.000Z`;
     if (next.workLocation) rec.profile.location = next.workLocation;
     rec.audit.unshift(auditEntry('Updated employment details', role));
-    await persistHrisProfileToEnterprise(rec);
+    await persistHrisProfileToEnterprise(rec, { actor: await auditActorFromRequest(request) });
     return jsonOk(rec.profile.employmentDetails);
   }
 
@@ -5359,7 +5365,7 @@ async function patchEmployeeRecord(request: Request, ctx: { params: Promise<{ id
     if (typeof next.businessUnit === 'string' && next.businessUnit.trim()) rec.profile.businessUnit = next.businessUnit;
     if (typeof next.reportingManager === 'string' && next.reportingManager.trim()) rec.profile.reportingManager = next.reportingManager;
     rec.audit.unshift(auditEntry('Changed department/job details', role));
-    await persistHrisProfileToEnterprise(rec);
+    await persistHrisProfileToEnterprise(rec, { actor: await auditActorFromRequest(request) });
     return jsonOk(rec.profile.jobDetails);
   }
 
@@ -5383,7 +5389,7 @@ async function patchEmployeeRecord(request: Request, ctx: { params: Promise<{ id
       permanentAddress: next.permanentAddress ?? rec.profile.personalInfo.permanentAddress ?? null,
     };
     rec.audit.unshift(auditEntry('Updated contact information', role));
-    await persistHrisProfileToEnterprise(rec);
+    await persistHrisProfileToEnterprise(rec, { actor: await auditActorFromRequest(request) });
     return jsonOk(rec.profile.contacts);
   }
 
@@ -5426,7 +5432,7 @@ async function patchEmployeeRecord(request: Request, ctx: { params: Promise<{ id
     const err = validateEmergencyContacts(rec.emergencyContacts);
     if (err) return jsonErr(400, err);
     rec.audit.unshift(auditEntry('Updated emergency contact', role));
-    await persistEmergencyContactsToEnterprise(rec);
+    await persistEmergencyContactsToEnterprise(rec, await auditActorFromRequest(request));
     return jsonOk(rec.emergencyContacts);
   }
 
@@ -5601,7 +5607,7 @@ async function patchEmployeeRecord(request: Request, ctx: { params: Promise<{ id
     });
     rec.audit.unshift(auditEntry('Changed status', role, { oldValue: prev, newValue: nextStatus, reason: normalizeStr(body.reason, 240) ?? 'Status change' }));
     rec.history.unshift({ id: `h-${employeeId}-${Math.random().toString(16).slice(2)}`, at: nowIso(), type: 'Status Change', detail: `${prev} → ${nextStatus}`, actor: role });
-    await persistHrisProfileToEnterprise(rec);
+    await persistHrisProfileToEnterprise(rec, { actor: await auditActorFromRequest(request) });
     return jsonOk({ employmentStatus: nextStatus });
   }
 
@@ -5711,6 +5717,8 @@ async function patchEmployeeRecord(request: Request, ctx: { params: Promise<{ id
     rec.payrollSummary = next;
     rec.audit.unshift(auditEntry('Updated payroll summary', role));
     const synced = await syncHrisEmployeeProfileToDb({
+      actor: await auditActorFromRequest(request),
+      auditReason: 'HR employee payroll setup',
       employeeCode: rec.profile.employeeId,
       payrollOnly: true,
       payrollSetup: {
@@ -6741,7 +6749,7 @@ export async function POST(request: Request, ctx: { params: Promise<{ id: string
     if (err) return jsonErr(400, err);
     rec.emergencyContacts = next;
     rec.audit.unshift(auditEntry('Added emergency contact', role));
-    await persistEmergencyContactsToEnterprise(rec);
+    await persistEmergencyContactsToEnterprise(rec, await auditActorFromRequest(request));
     return jsonOk(rec.emergencyContacts);
   }
 
@@ -7146,7 +7154,7 @@ export async function DELETE(request: Request, ctx: { params: Promise<{ id: stri
     if (err) return jsonErr(400, err);
     rec.emergencyContacts = next;
     rec.audit.unshift(auditEntry('Deleted emergency contact', role));
-    await persistEmergencyContactsToEnterprise(rec);
+    await persistEmergencyContactsToEnterprise(rec, await auditActorFromRequest(request));
     return jsonOk({ deleted: true });
   }
 

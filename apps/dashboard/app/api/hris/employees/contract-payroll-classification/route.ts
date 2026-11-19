@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { applyContractPayrollClassificationBulk, type ContractPayrollClassificationAction } from '@/lib/contract-payroll-classification-service';
+import { auditActorFromRequest } from '@/lib/auth/request-actor';
 
 const jsonOk = <T,>(data: T) => NextResponse.json({ status: 'success', data });
 const jsonErr = (status: number, error: string) => NextResponse.json({ status: 'error', error }, { status });
@@ -23,6 +24,7 @@ export async function POST(request: Request) {
       employeeIds: body.employeeIds,
       applyAll: Boolean(body.applyAll),
       reason: body.reason,
+      actor: await auditActorFromRequest(request),
     });
     return jsonOk(result);
   } catch (error) {
