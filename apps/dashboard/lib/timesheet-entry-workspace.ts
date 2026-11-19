@@ -1124,23 +1124,40 @@ export const resolveTimesheetEntry = async (input: { periodId: string; workDate:
   if (!timesheet && otherSheet && shift === 'Day') {
     crew = attachNightBand(crew as CrewHourLine[], otherSheet.lines) as typeof crew;
   }
+  const offshoreCrew: ActiveMobilization[] = await listActiveMobilizations(workDate).catch(() => []);
   {
     const removedFromPeriod = await confirmedRemovalEmployeeCodes(supervisor);
     const presentOnCrew = new Set((timesheet ? timesheet.lines : crew).map((row) => text(row.employeeCode).toUpperCase()));
+    // Offshore crew this supervisor booked at the end of the previous period is carried into the
+    // new period while they are still mobilized; otherwise the first day of a period drops to
+    // hosted mobilizations only (Karonwi 7-of-15 on 16 Nov).
+    const stillOffshore = new Set([
+      ...offshoreCrew.map((row) => row.employeeCode.toUpperCase()),
+      ...legacyOffshoreCodes,
+    ]);
     const periodCrew = await connection.request()
       .input('PeriodId', sql.NVarChar(40), periodId)
       .input('Supervisor', sql.NVarChar(180), supervisor)
       .input('WorkDate', sql.Date, workDate)
+      .input('PeriodStart', sql.Date, start)
       .query(`
-        SELECT ranked.[EmployeeCode], ranked.[EmployeeName], ranked.[LocationName], ranked.[WorkCenterName]
+        SELECT ranked.[EmployeeCode], ranked.[EmployeeName], ranked.[LocationName], ranked.[WorkCenterName], ranked.[FromPriorPeriod]
         FROM (
           SELECT l.[EmployeeCode], l.[EmployeeName], l.[LocationName], l.[WorkCenterName],
+            CASE WHEN t.[PeriodId] = @PeriodId THEN 0 ELSE 1 END AS [FromPriorPeriod],
             ROW_NUMBER() OVER (PARTITION BY l.[EmployeeCode] ORDER BY t.[WorkDate] DESC) AS [rn]
           FROM [tsmgmt].[TimesheetEntryLines] l
           INNER JOIN [tsmgmt].[Timesheets] t ON t.[Id] = l.[TimesheetId]
-          WHERE t.[PeriodId] = @PeriodId
-            AND t.[SupervisorName] = @Supervisor
+          WHERE t.[SupervisorName] = @Supervisor
             AND t.[WorkDate] <> @WorkDate
+            AND (
+              t.[PeriodId] = @PeriodId
+              OR (
+                t.[WorkDate] < @PeriodStart
+                AND t.[WorkDate] >= DATEADD(day, -7, @PeriodStart)
+                AND UPPER(LTRIM(RTRIM(ISNULL(l.[LocationName], N'')))) = N'OFFSHORE'
+              )
+            )
         ) ranked
         LEFT JOIN [hris].[EmployeeMasterView] v ON v.employee_code = ranked.[EmployeeCode]
         WHERE ranked.[rn] = 1
@@ -1148,6 +1165,7 @@ export const resolveTimesheetEntry = async (input: { periodId: string; workDate:
       `);
     for (const row of periodCrew.recordset || []) {
       const code = text(row.EmployeeCode);
+      if (Number(row.FromPriorPeriod) === 1 && !stillOffshore.has(code.toUpperCase())) continue;
       if (!isBookableCrewCode(code) || presentOnCrew.has(code.toUpperCase()) || removedFromPeriod.has(code.toUpperCase()) || code.toUpperCase() === supervisorCode.toUpperCase()) continue;
       presentOnCrew.add(code.toUpperCase());
       const onLeave = leaveCodes.has(code.toUpperCase());
@@ -1172,7 +1190,6 @@ export const resolveTimesheetEntry = async (input: { periodId: string; workDate:
       else crew.push(person);
     }
   }
-  const offshoreCrew: ActiveMobilization[] = await listActiveMobilizations(workDate).catch(() => []);
   const knownOffshore = new Set(offshoreCrew.map((row) => row.employeeCode.toUpperCase()));
   for (const code of legacyOffshoreCodes) {
     if (!code || knownOffshore.has(code)) continue;
