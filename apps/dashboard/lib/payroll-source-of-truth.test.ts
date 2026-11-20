@@ -305,6 +305,27 @@ assert.equal(septemberUsesSavedVariableLines.paidEarningLines.find((line) => lin
 assert.equal(septemberUsesSavedVariableLines.paidEarningLines.some((line) => line.code === 'SATURDAY_OVT'), false, 'unstamped Sage overtime must not pay');
 assert.equal(septemberUsesSavedVariableLines.grossPay, 266000);
 
+const novemberMealFromDays = mergeTimesheetDayRateEarnings(dayRateWithSavedVariableLines, {
+  ratePerDay: 10000,
+  daysWorked: 21,
+  period: '2026-11',
+});
+assert.equal(novemberMealFromDays.paidEarningLines.find((line) => line.code === 'MEAL')?.amount, 10500, 'from the timesheet feed, C-code meal is NGN 500 × weekdays, not the saved package meal');
+assert.equal(novemberMealFromDays.paidEarningLines.filter((line) => /MEAL/i.test(line.code)).length, 1, 'saved package meal must not stack on the formula meal');
+
+const novemberWithTcmMeal = mergeTimesheetDayRateEarnings(employee({
+  employeeCode: 'C0198',
+  employeeId: 'C0198',
+  employmentType: 'Daily Rate',
+  ratePerDay: 10000,
+  hoursPerDay: 8,
+  sagePayrollEarnings: [
+    { code: 'TCMMEAL', name: 'TCM MEAL', amount: 150000, runFrequency: 'monthly', sourceAmount: 150000, includeInMonthlyPayroll: true },
+  ],
+}), { ratePerDay: 10000, daysWorked: 20, period: '2026-11' });
+assert.equal(novemberWithTcmMeal.paidEarningLines.find((line) => line.code === 'MEAL')?.amount, 10000, 'TCM meal must not remove the formula meal');
+assert.equal(novemberWithTcmMeal.paidEarningLines.find((line) => line.code === 'TCMMEAL')?.amount, 150000, 'TCM meal is a separate allowance and stays');
+
 const permanentVariable = employee({
   employeeCode: 'P0100',
   employeeId: 'P0100',

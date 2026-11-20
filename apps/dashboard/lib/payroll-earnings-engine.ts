@@ -716,6 +716,23 @@ const stripAutoMealWhenLegacyMealPresent = (
   return rebuildEarningsFromPaidLines(base, paidEarningLines);
 };
 
+/** Drops saved meal amounts (MEAL, NNDMEAL, …) but keeps TCM meal. */
+const withoutSavedMealLines = (supplemental: PayrollEarningsResult): PayrollEarningsResult => {
+  const paidEarningLines = supplemental.paidEarningLines.filter(
+    (line) => compact(line.code).toUpperCase() === 'TCMMEAL' || !isMealFamilyEarningCode(line.code, line.name),
+  );
+  if (paidEarningLines.length === supplemental.paidEarningLines.length) return supplemental;
+  return rebuildEarningsFromPaidLines(supplemental, paidEarningLines);
+};
+
+/** MEAL and TCMMEAL share one canonical code, so a TCM meal merge can drop the formula meal. Put it back. */
+const withFormulaMeal = (merged: PayrollEarningsResult, timesheetBase: PayrollEarningsResult): PayrollEarningsResult => {
+  const formulaMeal = timesheetBase.paidEarningLines.find((line) => compact(line.code).toUpperCase() === 'MEAL');
+  if (!formulaMeal) return merged;
+  if (merged.paidEarningLines.some((line) => compact(line.code).toUpperCase() === 'MEAL')) return merged;
+  return rebuildEarningsFromPaidLines(merged, [...merged.paidEarningLines, formulaMeal]);
+};
+
 /**
  * Allowance columns carried by the uploaded schedule. They are read from the stored
  * upload rather than posted as period adjustments, so they cannot drift apart from
@@ -788,16 +805,23 @@ export const mergeTimesheetDayRateEarnings = (
   // Never stack Sage Dayrate Payment Schedule OT / weekend / meal on top — that inflated July re-runs.
   // HRIS Timesheet Overtime postings are still merged via excludeSageDayrateSchedule filtering,
   // unless an HR Excel dayrate overlay is the authority for this employee.
-  const supplemental = buildDailyRateSupplementalEarnings(employee, {
+  // From the Timesheet Management feed (2026-10), C-code staff with no stored schedule
+  // always get meal as NGN 500 × weekdays booked. A meal amount saved on their salary
+  // package is left over from an earlier month's sheet and must not replace it.
+  // TCM meal is a separate allowance and stays.
+  const formulaMealOnly = !excel && contractEmployeeCode(employee) && portalCCodePayrollFeedApplies(input.period);
+  const rawSupplemental = buildDailyRateSupplementalEarnings(employee, {
     period: input.period,
     includePeriodAdjustments: true,
     excludeLegacyDayrateSchedule: true,
     excelDayrateOverride: Boolean(excel),
   });
-  const base = excel ? timesheetBase : stripAutoMealWhenLegacyMealPresent(timesheetBase, supplemental);
-  const merged = supplemental.paidEarningLines.some((line) => roundMoney(line.amount) !== 0)
+  const supplemental = formulaMealOnly ? withoutSavedMealLines(rawSupplemental) : rawSupplemental;
+  const base = excel || formulaMealOnly ? timesheetBase : stripAutoMealWhenLegacyMealPresent(timesheetBase, supplemental);
+  const supplementMerged = supplemental.paidEarningLines.some((line) => roundMoney(line.amount) !== 0)
     ? mergeDailySupplementalEarnings(base, supplemental)
     : base;
+  const merged = formulaMealOnly ? withFormulaMeal(supplementMerged, timesheetBase) : supplementMerged;
   if (!excel) return appendDayrateProfileTransport(employee, input.period, null, merged);
   // Sheet meal and TCM meal are separate columns. The package merger treats MEAL and
   // TCMMEAL as one code, which would drop the meal allowance whenever TCM meal is set.
