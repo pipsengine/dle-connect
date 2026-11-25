@@ -204,7 +204,7 @@ const workspaceModules = [
     href: '/security',
     icon: ShieldCheck,
     status: 'Live',
-    signal: 'Security portal for visitor management, reception, approvals, and site control',
+    signal: 'Register visitors and follow security check-in, reception, and check-out',
     permissions: ['view_security', 'security.view', 'security.visitor.view', 'visitor.view'],
   },
   {
