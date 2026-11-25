@@ -305,6 +305,7 @@ export const navigationConfig: NavItem[] = [
       'Onboarding Dashboard',
       'New Hire Checklist',
       'Document Collection',
+      'ID Card Generation',
       'Offer Acceptance',
       'Employee Account Creation',
       'Department Assignment',

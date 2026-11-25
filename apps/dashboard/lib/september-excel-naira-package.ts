@@ -21,12 +21,12 @@ export type SeptemberExcelNairaPackage = {
 
 const line = (code: string, name: string, amount: number): SeptemberExcelNairaLine => ({ code, name, amount });
 
-const SENIOR_NAIRA = (basic: number, housing: number, transport: number, other: number, refund: number) => [
+const SENIOR_NAIRA = (basic: number, housing: number, transport: number, other: number, refund = 0) => [
   line('BASIC', 'BASIC SALARY', basic),
   line('SNMHOUSINGTAX', 'SENIOR MANAGEMENT HOUSING_TAX', housing),
   line('SNMTRANSPTAX', 'SENIOR MANAGER TRANSPORT', transport),
   line('SNMOTHALLTAX', 'SENIOR MANAGEMENT OTHER ALLOWANCE_T', other),
-  line('PENSION_REFUND', 'PENSION REFUND', refund),
+  ...(refund > 0 ? [line('PENSION_REFUND', 'PENSION REFUND', refund)] : []),
 ];
 
 export const SEPTEMBER_EXCEL_NAIRA_PACKAGES: SeptemberExcelNairaPackage[] = [
@@ -39,17 +39,17 @@ export const SEPTEMBER_EXCEL_NAIRA_PACKAGES: SeptemberExcelNairaPackage[] = [
   },
   {
     employeeCode: 'P0364',
-    grossNgn: 6100527.02,
+    grossNgn: 5888539.59,
     paye: 1289218.23,
-    otherDeduction: 211987.43,
-    lines: SENIOR_NAIRA(1177707.92, 883280.94, 588853.96, 3238696.77, 211987.43),
+    otherDeduction: 0,
+    lines: SENIOR_NAIRA(1177707.92, 883280.94, 588853.96, 3238696.77),
   },
   {
     employeeCode: 'P0458',
-    grossNgn: 6100527.02,
+    grossNgn: 5888539.59,
     paye: 1289218.23,
-    otherDeduction: 211987.43,
-    lines: SENIOR_NAIRA(1177707.92, 883280.94, 588853.96, 3238696.77, 211987.43),
+    otherDeduction: 0,
+    lines: SENIOR_NAIRA(1177707.92, 883280.94, 588853.96, 3238696.77),
   },
   {
     employeeCode: 'P0457',

@@ -420,6 +420,8 @@ IF COL_LENGTH(N'commercial.TenderOpportunities', N'GmBidDecision') IS NULL
   ALTER TABLE [commercial].[TenderOpportunities] ADD [GmBidDecision] NVARCHAR(20) NULL;
 IF COL_LENGTH(N'commercial.TenderOpportunities', N'AssignedOfficersJson') IS NULL
   ALTER TABLE [commercial].[TenderOpportunities] ADD [AssignedOfficersJson] NVARCHAR(MAX) NULL;
+IF COL_LENGTH(N'commercial.TenderOpportunities', N'BidNoBidAssessmentJson') IS NULL
+  ALTER TABLE [commercial].[TenderOpportunities] ADD [BidNoBidAssessmentJson] NVARCHAR(MAX) NULL;
 -- Multi-assignee display names can exceed the original 180-character owner field.
 IF COL_LENGTH(N'commercial.TenderOpportunities', N'OwnerName') IS NOT NULL
   ALTER TABLE [commercial].[TenderOpportunities] ALTER COLUMN [OwnerName] NVARCHAR(500) NULL;

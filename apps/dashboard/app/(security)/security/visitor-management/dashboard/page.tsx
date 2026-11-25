@@ -1,6 +1,11 @@
-"use client";
+﻿"use client";
 
-import React, { useState, useMemo } from "react";
+import React, { useEffect, useState, useMemo } from "react";
+import { loadVisitorWorkspace, patchVisitorVisit, saveVisitorVisit } from "@/lib/security/visitor-client";
+import { EmployeeHostField } from "../_components/employee-host-field";
+import { emptyDirectories, type DirectoryEmployee, type VisitorDirectories, type VisitorVisit } from "@/lib/security/visitor-types";
+import { emptyVisitorAccess, type VisitorAccess } from "@/lib/security/visitor-access";
+import { formatVisitTime, groupVisitorProfiles, hostCardsFromVisits, scheduleFromVisit, todayISO, toDashboardStatus, visitorColor, visitorInitials, visitorStageAction } from "@/lib/security/visitor-views";
 import {
   Bell,
   Building2,
@@ -17,7 +22,6 @@ import {
   Printer,
   QrCode,
   Search,
-  ThumbsDown,
   ThumbsUp,
   Users,
   X,
@@ -79,6 +83,8 @@ interface ApprovalRequest {
   purpose: string;
   requestedTime: string;
   priority: "Low" | "Medium" | "High";
+  actionLabel: string;
+  canAct: boolean;
 }
 
 interface FlowPoint {
@@ -92,99 +98,7 @@ type StatDetail =
   | { kind: "schedule"; title: string; items: ScheduleItem[] }
   | { kind: "approvals"; title: string; items: ApprovalRequest[] };
 
-// ---------- mock data ----------
-const initialActivity: ActivityItem[] = [
-  {
-    id: "act-1", name: "Sarah Johnson", company: "ABC Technologies", host: "Finance Team", purpose: "Vendor Meeting", status: "Checked In", time: "10:24 AM", initials: "SJ", color: "bg-emerald-500",
-    timeline: [
-      { time: "10:05 AM", action: "Visitor Registered", staff: "System" },
-      { time: "10:20 AM", action: "Visitor Arrived", staff: "Reception" },
-      { time: "10:22 AM", action: "ID Verified", staff: "Reception" },
-      { time: "10:23 AM", action: "Badge Printed", staff: "Reception" },
-      { time: "10:24 AM", action: "Checked In", staff: "Reception" },
-    ],
-  },
-  {
-    id: "act-2", name: "Michael Ade", company: "Coastal Logistics", host: "David Wilson", purpose: "Awaiting Host Approval", status: "Awaiting Approval", time: "10:32 AM", initials: "MA", color: "bg-amber-500",
-    timeline: [
-      { time: "10:20 AM", action: "Visitor Registered", staff: "System" },
-      { time: "10:30 AM", action: "Visitor Arrived", staff: "Reception" },
-      { time: "10:32 AM", action: "Awaiting Host Approval", staff: "Reception" },
-    ],
-  },
-  {
-    id: "act-3", name: "Grace Lee", company: "Nimbus Consulting", host: "Emily Carter", purpose: "Proceeding to Meeting Room B", status: "Badge Printed", time: "10:35 AM", initials: "GL", color: "bg-blue-500",
-    timeline: [
-      { time: "10:15 AM", action: "Visitor Registered", staff: "System" },
-      { time: "10:30 AM", action: "Visitor Arrived", staff: "Reception" },
-      { time: "10:33 AM", action: "ID Verified", staff: "Reception" },
-      { time: "10:35 AM", action: "Badge Printed", staff: "Reception" },
-    ],
-  },
-  {
-    id: "act-4", name: "Tunde Bakare", company: "Zenith Freight", host: "James Okafor", purpose: "Interview — Operations", status: "Checked In", time: "10:41 AM", initials: "TB", color: "bg-emerald-500",
-    timeline: [
-      { time: "10:25 AM", action: "Visitor Registered", staff: "System" },
-      { time: "10:38 AM", action: "Visitor Arrived", staff: "Reception" },
-      { time: "10:39 AM", action: "ID Verified", staff: "Reception" },
-      { time: "10:40 AM", action: "Badge Printed", staff: "Reception" },
-      { time: "10:41 AM", action: "Checked In", staff: "Reception" },
-    ],
-  },
-  {
-    id: "act-5", name: "Amara Chukwu", company: "Coral Partners", host: "Sarah Johnson (HR)", purpose: "Contract Signing", status: "Checked Out", time: "09:58 AM", initials: "AC", color: "bg-slate-400",
-    timeline: [
-      { time: "09:10 AM", action: "Visitor Registered", staff: "System" },
-      { time: "09:20 AM", action: "Visitor Arrived", staff: "Reception" },
-      { time: "09:22 AM", action: "ID Verified", staff: "Reception" },
-      { time: "09:24 AM", action: "Badge Printed", staff: "Reception" },
-      { time: "09:25 AM", action: "Checked In", staff: "Reception" },
-      { time: "09:58 AM", action: "Checked Out", staff: "Reception", note: "Contract signed" },
-    ],
-  },
-  {
-    id: "act-6", name: "Ifeoma Nwosu", company: "BluePeak Analytics", host: "Michael Adams", purpose: "Software Demo", status: "Checked In", time: "09:40 AM", initials: "IN", color: "bg-emerald-500",
-    timeline: [
-      { time: "09:15 AM", action: "Visitor Registered", staff: "System" },
-      { time: "09:35 AM", action: "Visitor Arrived", staff: "Reception" },
-      { time: "09:37 AM", action: "ID Verified", staff: "Reception" },
-      { time: "09:39 AM", action: "Badge Printed", staff: "Reception" },
-      { time: "09:40 AM", action: "Checked In", staff: "Reception" },
-    ],
-  },
-];
-
-const initialSchedule: ScheduleItem[] = [
-  { id: "sc-1", time: "09:00", title: "Vendor Meeting", room: "Conference Room A", visitor: "Sarah Johnson", host: "Finance Team", status: "Completed", countdown: "Completed" },
-  { id: "sc-2", time: "10:30", title: "Software Demo", room: "Meeting Room 2", visitor: "Ifeoma Nwosu", host: "Michael Adams", status: "In Progress", countdown: "In progress" },
-  { id: "sc-3", time: "11:15", title: "Interview — Operations", room: "Meeting Room B", visitor: "Tunde Bakare", host: "James Okafor", status: "Arrived", countdown: "Starting soon" },
-  { id: "sc-4", time: "13:00", title: "Client Presentation", room: "Executive Boardroom", visitor: "Coral Partners Team", host: "Sarah Johnson (HR)", status: "Upcoming", countdown: "in 2h 15m" },
-  { id: "sc-5", time: "14:30", title: "Facility Walkthrough", room: "Lobby → Floor 3", visitor: "Coastal Logistics", host: "David Wilson", status: "Upcoming", countdown: "in 3h 45m" },
-];
-
-const initialHosts: HostAwaiting[] = [
-  { id: "ha-1", name: "David Wilson", department: "Procurement", expectedVisitor: "Michael Ade", scheduledTime: "10:30 AM", arrivalStatus: "Visitor Arrived", initials: "DW" },
-  { id: "ha-2", name: "Emily Carter", department: "Consulting Relations", expectedVisitor: "Grace Lee", scheduledTime: "10:30 AM", arrivalStatus: "Visitor Arrived", initials: "EC" },
-  { id: "ha-3", name: "James Okafor", department: "Operations", expectedVisitor: "Tunde Bakare", scheduledTime: "11:15 AM", arrivalStatus: "Visitor En Route", initials: "JO" },
-  { id: "ha-4", name: "Sarah Johnson (HR)", department: "Human Resources", expectedVisitor: "Coral Partners Team", scheduledTime: "1:00 PM", arrivalStatus: "Waiting", initials: "SJ" },
-];
-
-const initialApprovals: ApprovalRequest[] = [
-  { id: "ap-1", name: "Michael Ade", company: "Coastal Logistics", host: "David Wilson", purpose: "Contract renewal discussion", requestedTime: "10:32 AM", priority: "High" },
-  { id: "ap-2", name: "Chidi Eze", company: "Freelance Auditor", host: "Finance Team", purpose: "Quarterly audit review", requestedTime: "10:45 AM", priority: "Medium" },
-  { id: "ap-3", name: "Ngozi Umeh", company: "BluePeak Analytics", host: "Michael Adams", purpose: "Follow-up demo session", requestedTime: "11:00 AM", priority: "Low" },
-];
-
-const flowTimeline: FlowPoint[] = [
-  { time: "08:00", label: "6 Arrivals", icon: "arrival" },
-  { time: "09:00", label: "12 Arrivals", icon: "arrival" },
-  { time: "10:00", label: "Peak Check-ins", icon: "checkin" },
-  { time: "11:00", label: "Meetings Started", icon: "meeting" },
-  { time: "12:00", label: "Lunch Departures", icon: "departure" },
-  { time: "14:00", label: "Client Visits", icon: "visit" },
-];
-
-const occupancy = { totalCapacity: 300, currentVisitors: 22, employeesOnsite: 184, availableCapacity: 300 - 22 - 184 };
+const INSIDE_STATUSES = new Set(["Checked In", "Pending Reception Check-out", "Pending Security Check-out"]);
 
 // ---------- utility ----------
 const statusColor = (status: string) =>
@@ -208,12 +122,13 @@ const flowIcon = (icon: FlowPoint["icon"]) => {
 
 // ---------- component ----------
 export default function VisitorManagementDashboard() {
-  const [activity, setActivity] = useState<ActivityItem[]>(initialActivity);
-  const [approvals, setApprovals] = useState<ApprovalRequest[]>(initialApprovals);
+  const [visits, setVisits] = useState<VisitorVisit[]>([]);
+  const [directories, setDirectories] = useState<VisitorDirectories>(emptyDirectories());
+  const [access, setAccess] = useState<VisitorAccess>(emptyVisitorAccess());
   const [toast, setToast] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [activitySearchQuery, setActivitySearchQuery] = useState("");
-  const [selectedActivityId, setSelectedActivityId] = useState<string>(initialActivity[0].id);
+  const [selectedActivityId, setSelectedActivityId] = useState("");
   const router = useRouter();
 
   // modal state
@@ -237,37 +152,121 @@ export default function VisitorManagementDashboard() {
     setTimeout(() => setToast(null), 2600);
   };
 
-  const logActivity = (name: string, company: string, host: string, purpose: string, status: ActivityItem["status"], color: string) => {
-    const initials = name.split(" ").map(n => n[0]).join("").slice(0, 2).toUpperCase();
-    const id = `act-${Date.now()}`;
-    const firstEvent: TimelineEvent = {
-      time: "Just now",
-      action: status === "Awaiting Approval" ? "Visitor Registered" : "Checked In",
-      staff: "Reception",
+  useEffect(() => {
+    loadVisitorWorkspace()
+      .then((workspace) => {
+        setVisits(workspace.visits);
+        setDirectories(workspace.directories);
+        setAccess({ ...emptyVisitorAccess(), ...workspace.access });
+        setSelectedActivityId((current) => current || workspace.visits[0]?.id || "");
+      })
+      .catch((error) => showToast(error instanceof Error ? error.message : "Unable to load visitors."));
+  }, []);
+
+  const remember = (visit: VisitorVisit) => {
+    setVisits((prev) => [visit, ...prev.filter((item) => item.id !== visit.id)]);
+    setSelectedActivityId(visit.id);
+  };
+
+  const createVisit = async (input: Parameters<typeof saveVisitorVisit>[0]) => {
+    try {
+      const saved = await saveVisitorVisit(input);
+      remember(saved);
+      showToast(`${saved.visitorName} saved — ${saved.id}`);
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : "Unable to save visitor.");
+    }
+  };
+
+  const advanceStage = async (id: string) => {
+    const visit = visits.find((item) => item.id === id);
+    const step = visit ? visitorStageAction(visit.status) : null;
+    if (!visit || !step) return;
+    try {
+      const saved = await patchVisitorVisit(id, {
+        status: step.status,
+        idVerified: step.role === "security" || step.status === "Checked In" ? true : undefined,
+        badgeStatus: step.status === "Checked In" ? "Active" : undefined,
+        checkInAt: step.status === "Checked In" ? new Date().toISOString() : undefined,
+        checkOutAt: step.status === "Checked Out" ? new Date().toISOString() : undefined,
+      }, { time: "", action: step.action, actor: access.name || "Security" });
+      remember(saved);
+      showToast(`${saved.visitorName}: ${step.label} completed`);
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : "Unable to update the visit stage.");
+    }
+  };
+
+  const activity = useMemo<ActivityItem[]>(() => visits.flatMap((visit) => {
+    const status = toDashboardStatus(visit);
+    if (!status) return [];
+    return [{
+      id: visit.id,
+      name: visit.visitorName,
+      company: visit.company,
+      host: visit.hostName,
+      purpose: visit.purpose || visit.visitorType || "Visit",
+      status,
+      time: formatVisitTime(visit.visitTime),
+      initials: visitorInitials(visit.visitorName),
+      color: visitorColor(visit.visitorName),
+      timeline: visit.timeline.map((event) => ({ time: event.time, action: event.action, staff: event.actor, note: event.note })),
+    }];
+  }), [visits]);
+  const approvals = useMemo<ApprovalRequest[]>(() => visits.flatMap((visit) => {
+    const step = visitorStageAction(visit.status);
+    if (!step || visit.status === "Checked Out" || visit.status === "Cancelled" || visit.status === "Rejected") return [];
+    const canAct = (step.role === "security" && access.canSecurity) || (step.role === "reception" && access.canReception);
+    return [{
+      id: visit.id,
+      name: visit.visitorName,
+      company: visit.company,
+      host: visit.hostName,
+      purpose: visit.purpose,
+      requestedTime: formatVisitTime(visit.visitTime),
+      priority: visit.priority,
+      actionLabel: canAct ? step.label : step.status,
+      canAct,
+    }];
+  }), [visits, access]);
+  const schedule = useMemo(() => visits.filter((visit) => visit.visitDate.slice(0, 10) === todayISO() && visit.status !== "Draft" && visit.status !== "Cancelled").map(scheduleFromVisit), [visits]);
+  const hosts = useMemo<HostAwaiting[]>(() => hostCardsFromVisits(visits.filter((visit) => !["Checked Out", "Rejected", "Cancelled", "Draft"].includes(visit.status))).map((host) => {
+    const expected = visits.find((visit) => visit.hostName === host.name && !["Checked Out", "Rejected", "Cancelled", "Draft"].includes(visit.status));
+    const arrived = expected && INSIDE_STATUSES.has(expected.status);
+    return {
+      id: host.name,
+      name: host.name,
+      department: host.department,
+      expectedVisitor: expected?.visitorName || "—",
+      scheduledTime: formatVisitTime(expected?.visitTime || ""),
+      arrivalStatus: arrived ? "Visitor Arrived" : expected?.status === "Pending Reception Check-in" ? "Visitor Arrived" : "Waiting",
+      initials: host.initials,
     };
-    setActivity(prev => [{ id, name, company, host, purpose, status, time: "Just now", initials, color, timeline: [firstEvent] }, ...prev]);
-    setSelectedActivityId(id);
-  };
+  }), [visits]);
+  const flowTimeline = useMemo<FlowPoint[]>(() => {
+    const buckets = new Map<string, number>();
+    for (const visit of visits) {
+      const source = visit.checkInAt ? new Date(visit.checkInAt).toLocaleTimeString("en-GB", { hour: "2-digit", hour12: false, timeZone: "Africa/Lagos" }) : visit.visitTime.slice(0, 2);
+      if (!source) continue;
+      const hour = `${source.slice(0, 2).padStart(2, "0")}:00`;
+      buckets.set(hour, (buckets.get(hour) || 0) + 1);
+    }
+    return [...buckets.entries()].sort(([left], [right]) => left.localeCompare(right)).map(([time, count]) => ({
+      time,
+      label: `${count} Arrival${count === 1 ? "" : "s"}`,
+      icon: "arrival" as const,
+    }));
+  }, [visits]);
 
-  const approveRequest = (id: string) => {
-    const req = approvals.find(a => a.id === id);
-    setApprovals(prev => prev.filter(a => a.id !== id));
-    if (req) logActivity(req.name, req.company, req.host, "Approved — proceeding to reception", "Badge Printed", "bg-blue-500");
-    showToast(`${req?.name} approved`);
-  };
-  const rejectRequest = (id: string) => {
-    const req = approvals.find(a => a.id === id);
-    setApprovals(prev => prev.filter(a => a.id !== id));
-    showToast(`${req?.name}'s request declined`);
-  };
-
-  const todayLabel = "Wednesday, July 16, 2026";
-  const expectedToday = 48;
+  const todayLabel = new Date().toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric", year: "numeric" });
+  const expectedToday = schedule.length;
   const checkedInActivity = activity.filter(a => a.status === "Checked In" || a.status === "Badge Printed");
   const checkedOutActivity = activity.filter(a => a.status === "Checked Out");
-  const checkedIn = checkedInActivity.length + 25;
+  const checkedIn = checkedInActivity.length;
+  const insideCount = visits.filter((visit) => INSIDE_STATUSES.has(visit.status)).length;
+  const occupancy = { totalCapacity: 300, currentVisitors: insideCount, employeesOnsite: directories.employeeCount, availableCapacity: Math.max(0, 300 - insideCount) };
   const currentlyInside = occupancy.currentVisitors;
-  const checkedOut = checkedOutActivity.length + 8;
+  const checkedOut = checkedOutActivity.length;
   const pendingApprovalsCount = approvals.length;
 
   const occupancyPct = Math.round((occupancy.currentVisitors / occupancy.totalCapacity) * 100);
@@ -337,7 +336,7 @@ export default function VisitorManagementDashboard() {
         {[
           {
             label: "Visitors Expected Today", value: expectedToday, sub: "Scheduled", icon: <Users size={22} />, gradient: "from-blue-500 to-indigo-600",
-            open: () => setStatDetail({ kind: "schedule", title: "Visitors Expected Today", items: initialSchedule }),
+            open: () => setStatDetail({ kind: "schedule", title: "Visitors Expected Today", items: schedule }),
           },
           {
             label: "Checked In", value: checkedIn, sub: "Visitors", icon: <CheckCircle2 size={22} />, gradient: "from-emerald-500 to-teal-600",
@@ -352,8 +351,8 @@ export default function VisitorManagementDashboard() {
             open: () => setStatDetail({ kind: "activity", title: "Checked Out", items: checkedOutActivity }),
           },
           {
-            label: "Pending Approvals", value: pendingApprovalsCount, sub: "Requests", icon: <Clock size={22} />, gradient: "from-amber-500 to-orange-500",
-            open: () => setStatDetail({ kind: "approvals", title: "Pending Approvals", items: approvals }),
+            label: access.seesAll ? "Open visits" : "My requests", value: pendingApprovalsCount, sub: "Active", icon: <Clock size={22} />, gradient: "from-amber-500 to-orange-500",
+            open: () => setStatDetail({ kind: "approvals", title: access.seesAll ? "Open visits" : "My requests", items: approvals }),
           },
         ].map(tile => (
           <button
@@ -439,7 +438,7 @@ export default function VisitorManagementDashboard() {
                 <div className="text-sm font-bold text-indigo-600">{occupancy.currentVisitors}</div>
               </div>
               <div className="border border-slate-100 rounded-xl p-2.5">
-                <div className="text-[10px] text-slate-400">Employees On-site</div>
+                <div className="text-[10px] text-slate-400">Employee Directory</div>
                 <div className="text-sm font-bold text-slate-800">{occupancy.employeesOnsite}</div>
               </div>
               <div className="border border-slate-100 rounded-xl p-2.5">
@@ -462,11 +461,11 @@ export default function VisitorManagementDashboard() {
       {/* Section: Check-in Timeline (for selected visitor) */}
       <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm">
         <div className="flex items-center justify-between mb-1">
-          <h2 className="text-lg font-semibold text-slate-900">Check-in Timeline — {selectedActivity.name}</h2>
-          <span className="text-xs text-slate-400">{selectedActivity.company}</span>
+          <h2 className="text-lg font-semibold text-slate-900">Check-in Timeline — {selectedActivity?.name || "No visitor selected"}</h2>
+          <span className="text-xs text-slate-400">{selectedActivity?.company || ""}</span>
         </div>
         <p className="text-xs text-slate-400 mb-4">Select a visitor from Live Visitor Activity to view their timeline.</p>
-        {selectedActivity.timeline && selectedActivity.timeline.length > 0 ? (
+        {selectedActivity?.timeline && selectedActivity.timeline.length > 0 ? (
           <div className="flex items-start overflow-x-auto pb-2">
             {selectedActivity.timeline.map((ev, idx) => (
               <React.Fragment key={idx}>
@@ -491,7 +490,7 @@ export default function VisitorManagementDashboard() {
         <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm">
           <h2 className="text-lg font-semibold text-slate-900 mb-4">Today's Schedule</h2>
           <div className="space-y-3">
-            {initialSchedule.map(s => (
+            {schedule.map(s => (
               <button key={s.id} onClick={() => setScheduleDetail(s)} className="w-full text-left flex items-center gap-3 border border-slate-100 rounded-xl p-3 hover:bg-slate-50">
                 <div className="w-14 flex-shrink-0 text-center">
                   <div className="text-sm font-bold text-indigo-600">{s.time}</div>
@@ -513,7 +512,7 @@ export default function VisitorManagementDashboard() {
         <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm">
           <h2 className="text-lg font-semibold text-slate-900 mb-4">Hosts Awaiting Visitors</h2>
           <div className="space-y-3">
-            {initialHosts.map(h => (
+            {hosts.map(h => (
               <div key={h.id} className="flex items-center gap-3 border border-slate-100 rounded-xl p-3">
                 <span className="w-10 h-10 rounded-full bg-indigo-100 text-indigo-700 flex items-center justify-center text-xs font-bold flex-shrink-0">{h.initials}</span>
                 <div className="flex-1 min-w-0">
@@ -556,11 +555,11 @@ export default function VisitorManagementDashboard() {
 
         <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm">
           <div className="flex items-center justify-between mb-4">
-            <h2 className="text-lg font-semibold text-slate-900">Pending Approvals</h2>
-            <span className="text-xs text-slate-400">{approvals.length} requests</span>
+            <h2 className="text-lg font-semibold text-slate-900">{access.seesAll ? "Visit stages" : "My requests"}</h2>
+            <span className="text-xs text-slate-400">{approvals.length} active</span>
           </div>
           {approvals.length === 0 ? (
-            <div className="text-sm text-slate-400 text-center py-10">No pending approvals right now.</div>
+            <div className="text-sm text-slate-400 text-center py-10">{access.seesAll ? "No visits are waiting for a stage." : "You have no active visitor requests."}</div>
           ) : (
             <div className="space-y-3">
               {approvals.map(a => (
@@ -573,8 +572,7 @@ export default function VisitorManagementDashboard() {
                   <div className="text-xs text-slate-600 mt-1">{a.purpose}</div>
                   <div className="text-[11px] text-slate-400 mt-1">Requested {a.requestedTime}</div>
                   <div className="flex items-center gap-1.5 mt-2.5">
-                    <button onClick={() => approveRequest(a.id)} className="text-[11px] px-2 py-1 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 flex items-center gap-1"><ThumbsUp size={11} /> Approve</button>
-                    <button onClick={() => rejectRequest(a.id)} className="text-[11px] px-2 py-1 bg-red-50 text-red-600 rounded-lg hover:bg-red-100 flex items-center gap-1"><ThumbsDown size={11} /> Reject</button>
+                    {a.canAct ? <button onClick={() => advanceStage(a.id)} className="text-[11px] px-2 py-1 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 flex items-center gap-1"><ThumbsUp size={11} /> {a.actionLabel}</button> : <span className="text-[11px] px-2 py-1 rounded-lg bg-slate-100 text-slate-600">{a.actionLabel}</span>}
                     <button onClick={() => setApprovalDetail(a)} className="text-[11px] px-2 py-1 border border-slate-200 rounded-lg hover:bg-white">Details</button>
                   </div>
                 </div>
@@ -624,22 +622,52 @@ export default function VisitorManagementDashboard() {
       {/* ---------- Modals ---------- */}
       {showRegisterVisitor && (
         <RegisterVisitorModal onClose={() => setShowRegisterVisitor(false)} onSubmit={(data) => {
-          logActivity(data.name, data.company, data.host, data.purpose, "Awaiting Approval", "bg-amber-500");
-          showToast(`${data.name} registered — awaiting host approval`);
+          void createVisit({
+            visitorName: data.name,
+            company: data.company,
+            hostName: data.host,
+            hostEmployeeCode: data.hostCode,
+            department: data.department,
+            location: data.location,
+            purpose: data.purpose,
+            visitDate: data.visitDate || todayISO(),
+            visitTime: data.visitTime,
+            status: "Pending Security Check-in",
+          });
           setShowRegisterVisitor(false);
         }} />
       )}
 
       {showQuickCheckin && (
         <QuickCheckinModal onClose={() => setShowQuickCheckin(false)} onSubmit={(data) => {
-          logActivity(data.name, data.company, data.host, "Checked in", "Checked In", "bg-emerald-500");
-          showToast(`${data.name} checked in`);
+          void createVisit({
+            visitorName: data.name,
+            company: data.company,
+            hostName: data.host,
+            hostEmployeeCode: data.hostCode,
+            department: data.department,
+            location: data.location,
+            purpose: "Walk-in check-in",
+            visitDate: todayISO(),
+            status: "Pending Security Check-in",
+          });
           setShowQuickCheckin(false);
         }} />
       )}
 
       {showPrintBadge && (
-        <PrintBadgeModal onClose={() => setShowPrintBadge(false)} onPrint={(name) => { showToast(`Badge printed for ${name}`); setShowPrintBadge(false); }} />
+        <PrintBadgeModal onClose={() => setShowPrintBadge(false)} onPrint={async (name) => {
+          const match = visits.find((visit) => visit.visitorName.toLowerCase() === name.toLowerCase()) || visits.find((visit) => visit.id === selectedActivityId);
+          if (!match) { showToast("Register the visitor before printing a badge."); setShowPrintBadge(false); return; }
+          try {
+            const saved = await patchVisitorVisit(match.id, { badgeStatus: "Active", badgeTemplate: "Standard Guest" }, { time: "", action: "Badge printed", actor: "Reception" });
+            remember(saved);
+            showToast(`Badge ${saved.badgeNumber || ""} printed for ${saved.visitorName}`);
+          } catch (error) {
+            showToast(error instanceof Error ? error.message : "Unable to print the badge.");
+          }
+          setShowPrintBadge(false);
+        }} />
       )}
 
       {showExportLog && (
@@ -648,8 +676,15 @@ export default function VisitorManagementDashboard() {
 
       {showScanQr && (
         <ScanQrModal onClose={() => setShowScanQr(false)} onScan={(name) => {
-          logActivity(name, "Pre-registered visitor", "Auto-detected host", "Checked in via QR", "Checked In", "bg-emerald-500");
-          showToast(`${name} checked in via QR code`);
+          const match = visits.find((visit) => visit.visitorName.toLowerCase() === name.toLowerCase() || visit.id.toLowerCase() === name.toLowerCase());
+          if (match) {
+            const step = visitorStageAction(match.status);
+            void patchVisitorVisit(match.id, { status: step?.status || match.status, idVerified: true }, { time: "", action: step?.action || "QR scanned", actor: access.name || "Reception" })
+              .then(remember)
+              .catch((error) => showToast(error instanceof Error ? error.message : "Unable to check in."));
+          } else {
+            void createVisit({ visitorName: name, company: "Walk-in", purpose: "Walk-in via QR", visitDate: todayISO(), status: "Pending Security Check-in" });
+          }
           setShowScanQr(false);
         }} />
       )}
@@ -660,18 +695,35 @@ export default function VisitorManagementDashboard() {
 
       {showRegisterWalkin && (
         <RegisterWalkinModal onClose={() => setShowRegisterWalkin(false)} onSubmit={(data) => {
-          logActivity(data.name, data.company, data.host, "Walk-in — awaiting host", "Awaiting Approval", "bg-amber-500");
-          showToast(`Walk-in ${data.name} registered`);
+          void createVisit({
+            visitorName: data.name,
+            company: data.company,
+            hostName: data.host,
+            hostEmployeeCode: data.hostCode,
+            department: data.department,
+            location: data.location,
+            purpose: "Walk-in visit",
+            visitorType: "Guest",
+            visitDate: todayISO(),
+            status: "Pending Security Check-in",
+          });
           setShowRegisterWalkin(false);
         }} />
       )}
 
       {showNotifyHost && (
-        <NotifyHostModal onClose={() => setShowNotifyHost(false)} onSubmit={(host) => { showToast(`Notification sent to ${host}`); setShowNotifyHost(false); }} />
+        <NotifyHostModal onClose={() => setShowNotifyHost(false)} onSubmit={(host) => {
+          const target = visits.find((visit) => visit.hostName.toLowerCase() === host.toLowerCase()) || visits.find((visit) => visit.id === selectedActivityId);
+          if (target) {
+            void patchVisitorVisit(target.id, {}, { time: "", action: `Host ${host} notified`, actor: "Reception" }).then(remember).catch(() => undefined);
+          }
+          showToast(`Notification sent to ${host}`);
+          setShowNotifyHost(false);
+        }} />
       )}
 
       {showVisitorDirectory && (
-        <VisitorDirectoryModal onClose={() => setShowVisitorDirectory(false)} />
+        <VisitorDirectoryModal visits={visits} onClose={() => setShowVisitorDirectory(false)} />
       )}
 
       {showEmergencyList && (
@@ -679,7 +731,7 @@ export default function VisitorManagementDashboard() {
       )}
 
       {approvalDetail && (
-        <ApprovalDetailModal request={approvalDetail} onClose={() => setApprovalDetail(null)} onApprove={() => { approveRequest(approvalDetail.id); setApprovalDetail(null); }} onReject={() => { rejectRequest(approvalDetail.id); setApprovalDetail(null); }} />
+        <ApprovalDetailModal request={approvalDetail} onClose={() => setApprovalDetail(null)} onAdvance={() => { void advanceStage(approvalDetail.id); setApprovalDetail(null); }} />
       )}
 
       {hostContact && (
@@ -769,10 +821,11 @@ function StatDetailModal({
 }
 
 // ---------- Modal: Register Visitor ----------
-function RegisterVisitorModal({ onClose, onSubmit }: { onClose: () => void; onSubmit: (data: { name: string; company: string; host: string; purpose: string }) => void }) {
+function RegisterVisitorModal({ onClose, onSubmit }: { onClose: () => void; onSubmit: (data: { name: string; company: string; host: string; hostCode?: string; department?: string; location?: string; purpose: string; visitDate?: string; visitTime?: string }) => void }) {
   const [name, setName] = useState("");
   const [company, setCompany] = useState("");
   const [host, setHost] = useState("");
+  const [hostEmployee, setHostEmployee] = useState<DirectoryEmployee | null>(null);
   const [purpose, setPurpose] = useState("");
   const [visitDate, setVisitDate] = useState("");
   const [visitTime, setVisitTime] = useState("");
@@ -780,7 +833,7 @@ function RegisterVisitorModal({ onClose, onSubmit }: { onClose: () => void; onSu
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!name.trim() || !host.trim()) return;
-    onSubmit({ name, company, host, purpose: purpose || "General Visit" });
+    onSubmit({ name, company, host, hostCode: hostEmployee?.code, department: hostEmployee?.department, location: hostEmployee?.location, purpose: purpose || "General Visit", visitDate, visitTime });
   };
 
   return (
@@ -800,10 +853,7 @@ function RegisterVisitorModal({ onClose, onSubmit }: { onClose: () => void; onSu
               <label className="text-sm font-medium text-slate-700">Company</label>
               <input value={company} onChange={e => setCompany(e.target.value)} placeholder="Company name" className="w-full mt-1 border border-slate-200 rounded-xl px-3 py-2 text-sm" />
             </div>
-            <div>
-              <label className="text-sm font-medium text-slate-700">Host</label>
-              <input required value={host} onChange={e => setHost(e.target.value)} placeholder="Employee or team" className="w-full mt-1 border border-slate-200 rounded-xl px-3 py-2 text-sm" />
-            </div>
+            <EmployeeHostField required label="Host" value={host} onPick={(employee, typed) => { setHost(typed); setHostEmployee(employee); }} />
           </div>
           <div className="grid grid-cols-2 gap-4">
             <div>
@@ -830,15 +880,16 @@ function RegisterVisitorModal({ onClose, onSubmit }: { onClose: () => void; onSu
 }
 
 // ---------- Modal: Quick Check-in ----------
-function QuickCheckinModal({ onClose, onSubmit }: { onClose: () => void; onSubmit: (data: { name: string; company: string; host: string }) => void }) {
+function QuickCheckinModal({ onClose, onSubmit }: { onClose: () => void; onSubmit: (data: { name: string; company: string; host: string; hostCode?: string; department?: string; location?: string }) => void }) {
   const [name, setName] = useState("");
   const [company, setCompany] = useState("");
   const [host, setHost] = useState("");
+  const [hostEmployee, setHostEmployee] = useState<DirectoryEmployee | null>(null);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!name.trim()) return;
-    onSubmit({ name, company, host: host || "Front Desk" });
+    onSubmit({ name, company, host: host || "Front Desk", hostCode: hostEmployee?.code, department: hostEmployee?.department, location: hostEmployee?.location });
   };
 
   return (
@@ -857,10 +908,7 @@ function QuickCheckinModal({ onClose, onSubmit }: { onClose: () => void; onSubmi
             <label className="text-sm font-medium text-slate-700">Company</label>
             <input value={company} onChange={e => setCompany(e.target.value)} placeholder="Company name" className="w-full mt-1 border border-slate-200 rounded-xl px-3 py-2 text-sm" />
           </div>
-          <div>
-            <label className="text-sm font-medium text-slate-700">Host</label>
-            <input value={host} onChange={e => setHost(e.target.value)} placeholder="Employee name" className="w-full mt-1 border border-slate-200 rounded-xl px-3 py-2 text-sm" />
-          </div>
+          <EmployeeHostField label="Host" value={host} onPick={(employee, typed) => { setHost(typed); setHostEmployee(employee); }} />
           <div className="flex justify-end gap-2 pt-2">
             <button type="button" onClick={onClose} className="px-4 py-2 border border-slate-200 rounded-xl text-sm">Cancel</button>
             <button type="submit" className="px-4 py-2 bg-emerald-600 text-white rounded-xl text-sm hover:bg-emerald-700">Check In</button>
@@ -1006,16 +1054,17 @@ function SearchVisitorModal({ activity, onClose }: { activity: ActivityItem[]; o
 }
 
 // ---------- Modal: Register Walk-in ----------
-function RegisterWalkinModal({ onClose, onSubmit }: { onClose: () => void; onSubmit: (data: { name: string; company: string; host: string }) => void }) {
+function RegisterWalkinModal({ onClose, onSubmit }: { onClose: () => void; onSubmit: (data: { name: string; company: string; host: string; hostCode?: string; department?: string; location?: string }) => void }) {
   const [name, setName] = useState("");
   const [company, setCompany] = useState("");
   const [host, setHost] = useState("");
+  const [hostEmployee, setHostEmployee] = useState<DirectoryEmployee | null>(null);
   const [reason, setReason] = useState("");
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!name.trim() || !host.trim()) return;
-    onSubmit({ name, company, host });
+    onSubmit({ name, company, host, hostCode: hostEmployee?.code, department: hostEmployee?.department, location: hostEmployee?.location });
   };
 
   return (
@@ -1035,10 +1084,7 @@ function RegisterWalkinModal({ onClose, onSubmit }: { onClose: () => void; onSub
               <label className="text-sm font-medium text-slate-700">Company</label>
               <input value={company} onChange={e => setCompany(e.target.value)} placeholder="Company name" className="w-full mt-1 border border-slate-200 rounded-xl px-3 py-2 text-sm" />
             </div>
-            <div>
-              <label className="text-sm font-medium text-slate-700">Who are they visiting?</label>
-              <input required value={host} onChange={e => setHost(e.target.value)} placeholder="Employee name" className="w-full mt-1 border border-slate-200 rounded-xl px-3 py-2 text-sm" />
-            </div>
+            <EmployeeHostField required label="Who are they visiting?" value={host} onPick={(employee, typed) => { setHost(typed); setHostEmployee(employee); }} />
           </div>
           <div>
             <label className="text-sm font-medium text-slate-700">Reason for Visit</label>
@@ -1088,13 +1134,8 @@ function NotifyHostModal({ onClose, onSubmit }: { onClose: () => void; onSubmit:
 }
 
 // ---------- Modal: Visitor Directory ----------
-function VisitorDirectoryModal({ onClose }: { onClose: () => void }) {
-  const directory = [
-    { name: "Sarah Johnson", company: "ABC Technologies", visits: 4 },
-    { name: "Michael Ade", company: "Coastal Logistics", visits: 2 },
-    { name: "Grace Lee", company: "Nimbus Consulting", visits: 7 },
-    { name: "Tunde Bakare", company: "Zenith Freight", visits: 1 },
-  ];
+function VisitorDirectoryModal({ visits, onClose }: { visits: VisitorVisit[]; onClose: () => void }) {
+  const directory = groupVisitorProfiles(visits);
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 backdrop-blur-sm p-4">
       <div className="bg-white rounded-2xl shadow-xl w-full max-w-md p-6">
@@ -1103,13 +1144,13 @@ function VisitorDirectoryModal({ onClose }: { onClose: () => void }) {
           <button onClick={onClose} className="text-slate-400 hover:text-slate-600"><X size={20} /></button>
         </div>
         <div className="space-y-2">
-          {directory.map(d => (
-            <div key={d.name} className="flex items-center justify-between border border-slate-100 rounded-xl p-2.5">
+          {directory.length === 0 ? <p className="text-sm text-slate-500">No visitors recorded yet.</p> : directory.map(d => (
+            <div key={d.id} className="flex items-center justify-between border border-slate-100 rounded-xl p-2.5">
               <div>
                 <div className="text-sm font-medium text-slate-800">{d.name}</div>
-                <div className="text-xs text-slate-400">{d.company}</div>
+                <div className="text-xs text-slate-400">{d.company || "No company"}</div>
               </div>
-              <span className="text-xs text-slate-500">{d.visits} visits</span>
+              <span className="text-xs text-slate-500">{d.totalVisits} visits</span>
             </div>
           ))}
         </div>
@@ -1153,7 +1194,7 @@ function EmergencyListModal({ activity, onClose }: { activity: ActivityItem[]; o
 }
 
 // ---------- Modal: Approval Detail ----------
-function ApprovalDetailModal({ request, onClose, onApprove, onReject }: { request: ApprovalRequest; onClose: () => void; onApprove: () => void; onReject: () => void }) {
+function ApprovalDetailModal({ request, onClose, onAdvance }: { request: ApprovalRequest; onClose: () => void; onAdvance: () => void }) {
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 backdrop-blur-sm p-4">
       <div className="bg-white rounded-2xl shadow-xl w-full max-w-md p-6">
@@ -1169,8 +1210,8 @@ function ApprovalDetailModal({ request, onClose, onApprove, onReject }: { reques
           <div className="flex justify-between"><span className="text-slate-500">Priority</span><span className={`px-2 py-0.5 rounded-full text-xs ${priorityColor(request.priority)}`}>{request.priority}</span></div>
         </div>
         <div className="flex justify-end gap-2 pt-5">
-          <button onClick={onReject} className="px-4 py-2 border border-red-200 text-red-600 rounded-xl text-sm hover:bg-red-50">Reject</button>
-          <button onClick={onApprove} className="px-4 py-2 bg-emerald-600 text-white rounded-xl text-sm hover:bg-emerald-700">Approve</button>
+          <button onClick={onClose} className="px-4 py-2 border border-slate-200 rounded-xl text-sm">Close</button>
+          {request.canAct ? <button onClick={onAdvance} className="px-4 py-2 bg-emerald-600 text-white rounded-xl text-sm hover:bg-emerald-700">{request.actionLabel}</button> : null}
         </div>
       </div>
     </div>

@@ -221,7 +221,7 @@
 .pm-portal .prr-actions .primary{background:var(--prr-blue);color:#fff;border-color:var(--prr-blue)}
 .pm-portal .prr-banner{border:1px solid #dbe7f4;background:#f5f9fd;border-radius:10px;padding:10px 12px;font-size:12px;color:#4d6685;margin-bottom:12px}
 .pm-portal .prr-banner.error{border-color:#f5c2c7;background:#fff5f5;color:#b42318}
-.pm-portal .prr-kpis{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:10px;margin-bottom:12px}
+.pm-portal .prr-kpis{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin-bottom:12px}
 .pm-portal .prr-kpi{min-height:104px;background:#fff;border:1px solid var(--prr-line);border-radius:10px;display:flex;gap:12px;padding:15px 14px;box-shadow:var(--prr-shadow)}
 .pm-portal .prr-kicon{width:40px;height:40px;border-radius:9px;display:grid;place-items:center;flex:0 0 auto}
 .pm-portal .prr-kicon.blue{background:#e9f3ff;color:#0877e8}

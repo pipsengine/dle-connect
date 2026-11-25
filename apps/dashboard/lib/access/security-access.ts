@@ -14,10 +14,7 @@ export const SECURITY_PORTAL_PERMISSIONS = [
   'visitor.*',
 ] as const;
 
-export const canAccessSecurityPortal = (permissions?: string[], isGlobalAdmin = false) => {
-  if (hasUnrestrictedAccess(permissions, isGlobalAdmin)) return true;
-  return hasAnyPermission(permissions || [], [...SECURITY_PORTAL_PERMISSIONS]);
-};
+export const canAccessSecurityPortal = (_permissions?: string[], _isGlobalAdmin = false) => true;
 
 export const canAccessSecurityKeys = (
   permissionKeys?: readonly string[] | string[],

@@ -7,6 +7,7 @@ import { Button, Card, DataTable, KpiCard, MiniBar, PageHeading, Progress, Statu
 import { ManHourUtilizationPanel } from '@/components/projects-engineering/ManHourUtilizationPanel';
 import { CostControlOverviewFigma } from '@/components/projects-engineering/CostControlOverviewFigma';
 import { deriveProjectCostSnapshot } from '@/lib/projects-engineering/cost-control';
+import { useProjectPaymentMap, useProjectPaymentPosition } from '@/lib/projects-engineering/use-project-payment-costs';
 import { money } from '@/lib/projects-engineering/format';
 import type { Project } from '@/lib/projects-engineering/types';
 
@@ -30,15 +31,34 @@ export type CostTabKey = (typeof costTabs)[number][0];
 const EmptyCostRegister = ({ title, subtitle }: { title: string; subtitle: string }) => (
   <Card title={title} subtitle={subtitle}>
     <p style={{ margin: 0, color: '#6f7f95', fontSize: 12, lineHeight: 1.5 }}>
-      No cost-control register rows yet for this project. Apply `database/pm/003_cost_control_schema.sql` and capture
-      baselines, CBS, commitments and actuals in DLE_Enterprise. Headline KPIs below use the live project profile until
-      those registers are populated.
+      No rows in this register yet. Actual cost and open commitments on this page come from project-coded finance payments.
     </p>
   </Card>
 );
 
+function useLiveCost(project: Project) {
+  const payments = useProjectPaymentPosition(project.code);
+  const snap = useMemo(
+    () => deriveProjectCostSnapshot(project, payments.ready ? payments.ledger : undefined),
+    [project, payments.ready, payments.ledger],
+  );
+  return { ...payments, snap };
+}
+
+const paymentRows = (lines: ReturnType<typeof useLiveCost>['lines'], kind: 'actual' | 'commitment') =>
+  lines
+    .filter((line) => line.kind === kind)
+    .map((line) => [
+      line.requestNumber,
+      line.beneficiaryName || '—',
+      line.paymentType || '—',
+      line.status,
+      line.paidAt ? new Date(line.paidAt).toLocaleDateString('en-GB') : '—',
+      money(line.amountNgn, 'NGN'),
+    ]);
+
 export function CostControlHeader({ project, active = 'overview' }: { project: Project; active?: string }) {
-  const snap = deriveProjectCostSnapshot(project);
+  const { snap } = useLiveCost(project);
   return (
     <>
       <div className="cost-hero cc-figma-hero">
@@ -100,6 +120,7 @@ export function CostControlHeader({ project, active = 'overview' }: { project: P
 
 export function CostControlWorkbench() {
   const router = useRouter();
+  const paymentMap = useProjectPaymentMap();
   const [projects, setProjects] = useState<Project[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -125,14 +146,23 @@ export function CostControlWorkbench() {
   }, [load]);
 
   const portfolio = useMemo(() => {
-    const snaps = projects.map((p) => ({ project: p, snap: deriveProjectCostSnapshot(p) }));
+    const snaps = projects.map((p) => {
+      const position = paymentMap.map.get(String(p.code || '').toUpperCase());
+      return {
+        project: p,
+        snap: deriveProjectCostSnapshot(
+          p,
+          paymentMap.ready ? { actual: position?.actual || 0, commitments: position?.commitments || 0 } : undefined,
+        ),
+      };
+    });
     const bac = snaps.reduce((s, x) => s + x.snap.bac, 0);
     const commitments = snaps.reduce((s, x) => s + x.snap.commitments, 0);
     const actual = snaps.reduce((s, x) => s + x.snap.actual, 0);
     const eac = snaps.reduce((s, x) => s + x.snap.eac, 0);
     const atRisk = snaps.filter((x) => x.snap.health !== 'Healthy').length;
     return { snaps, bac, commitments, actual, eac, atRisk };
-  }, [projects]);
+  }, [projects, paymentMap.ready, paymentMap.map]);
 
   const rows = portfolio.snaps.map(({ project, snap }) => [
     <button
@@ -275,7 +305,7 @@ export function CostControlWorkbench() {
             {!portfolio.snaps.some((x) => x.snap.vac < 0) ? (
               <div>
                 <b>No forecast overruns on current profiles</b>
-                <p>Continue validating commitments and labour allocation as registers are populated.</p>
+                <p>Disbursed and open project payments are within the contract value.</p>
               </div>
             ) : null}
           </div>
@@ -292,14 +322,14 @@ export function CostOverview({ project }: ProjectProps) {
 }
 
 export function BudgetBaseline({ project }: ProjectProps) {
-  const snap = deriveProjectCostSnapshot(project);
+  const { snap } = useLiveCost(project);
   return (
     <>
       <div className="kpi-grid five">
         <KpiCard label="Current BAC" value={money(snap.bac, project.currency)} delta="Live contract value" />
         <KpiCard label="Status" value={project.status} delta={project.phase} tone="indigo" />
         <KpiCard label="Health" value={snap.health} delta={`CPI ${snap.cpi.toFixed(2)}`} tone="amber" />
-        <KpiCard label="Actual" value={money(snap.actual, project.currency)} delta="Profile-derived" tone="cyan" />
+        <KpiCard label="Actual" value={money(snap.actual, project.currency)} delta={snap.fromPayments ? 'Disbursed payments' : 'Loading payments'} tone="cyan" />
         <KpiCard label="Available (proxy)" value={money(Math.max(0, snap.bac - snap.commitments), project.currency)} delta="BAC − commitments" />
       </div>
       <div className="grid two">
@@ -333,17 +363,24 @@ export function CBS({ project }: ProjectProps) {
   return <EmptyCostRegister title="CBS & Cost Codes" subtitle={`No CBS hierarchy for ${project.code} yet`} />;
 }
 export function Commitments({ project }: ProjectProps) {
-  const snap = deriveProjectCostSnapshot(project);
+  const { snap, lines } = useLiveCost(project);
+  const rows = paymentRows(lines, 'commitment');
   return (
     <>
       <div className="kpi-grid five">
-        <KpiCard label="Total Commitments" value={money(snap.commitments, project.currency)} delta="Profile estimate until PO register is live" />
+        <KpiCard label="Total Commitments" value={money(snap.commitments, project.currency)} delta={snap.fromPayments ? 'Open project payments' : 'Loading payments'} />
         <KpiCard label="BAC" value={money(snap.bac, project.currency)} delta="Contract value" tone="indigo" />
-        <KpiCard label="Available" value={money(Math.max(0, snap.bac - snap.commitments), project.currency)} delta="Hard-stop aware" tone="cyan" />
+        <KpiCard label="Available" value={money(Math.max(0, snap.bac - snap.commitments - snap.actual), project.currency)} delta="BAC − actual − open" tone="cyan" />
         <KpiCard label="Status" value={project.status} delta={project.health} tone="amber" />
-        <KpiCard label="API" value="Ready" delta="/api/projects-engineering/cost-control/commitments" tone="purple" />
+        <KpiCard label="Open items" value={String(rows.length)} delta="Not yet disbursed" tone="purple" />
       </div>
-      <EmptyCostRegister title="Commitment Register" subtitle={`No commitments for ${project.code} yet`} />
+      {rows.length ? (
+        <Card title="Commitment Register" subtitle={`Project payments awaiting disbursement for ${project.code}`}>
+          <DataTable headers={['Request', 'Beneficiary', 'Type', 'Status', 'Paid', 'Amount']} rows={rows} />
+        </Card>
+      ) : (
+        <EmptyCostRegister title="Commitment Register" subtitle={snap.fromPayments ? `No open project payments for ${project.code}` : `Loading project payments for ${project.code}`} />
+      )}
       <Card title="Budget Check Workflow">
         <div className="workflow-strip">
           <span>Requirement Raised</span>
@@ -363,16 +400,23 @@ export function Commitments({ project }: ProjectProps) {
   );
 }
 export function Actuals({ project }: ProjectProps) {
-  const snap = deriveProjectCostSnapshot(project);
+  const { snap, lines } = useLiveCost(project);
+  const rows = paymentRows(lines, 'actual');
   return (
     <>
       <div className="kpi-grid four">
-        <KpiCard label="Actual Cost" value={money(snap.actual, project.currency)} delta="From progress × BAC proxy" />
-        <KpiCard label="CPI" value={snap.cpi.toFixed(2)} delta="Live profile" tone="indigo" />
+        <KpiCard label="Actual Cost" value={money(snap.actual, project.currency)} delta={snap.fromPayments ? 'Disbursed project payments' : 'Loading payments'} />
+        <KpiCard label="CPI" value={snap.cpi.toFixed(2)} delta={snap.fromPayments ? 'Earned value ÷ payments' : 'Loading payments'} tone="indigo" />
         <KpiCard label="EAC" value={money(snap.eac, project.currency)} delta="Forecast final" tone="amber" />
         <KpiCard label="VAC" value={money(snap.vac, project.currency)} delta="vs BAC" tone="rose" />
       </div>
-      <EmptyCostRegister title="Actual Cost Ledger" subtitle={`Awaiting Sage X3 / Finance sync for ${project.code}`} />
+      {rows.length ? (
+        <Card title="Actual Cost Ledger" subtitle={`Paid and posted project payments for ${project.code}`}>
+          <DataTable headers={['Request', 'Beneficiary', 'Type', 'Status', 'Paid', 'Amount']} rows={rows} />
+        </Card>
+      ) : (
+        <EmptyCostRegister title="Actual Cost Ledger" subtitle={snap.fromPayments ? `No disbursed project payments for ${project.code}` : `Loading project payments for ${project.code}`} />
+      )}
     </>
   );
 }
@@ -419,12 +463,12 @@ export function LabourTimesheets({ project }: ProjectProps) {
   );
 }
 export function Forecast({ project }: ProjectProps) {
-  const snap = deriveProjectCostSnapshot(project);
+  const { snap } = useLiveCost(project);
   return (
     <>
       <div className="kpi-grid five">
         <KpiCard label="BAC" value={money(snap.bac, project.currency)} delta="Approved baseline proxy" />
-        <KpiCard label="Actual" value={money(snap.actual, project.currency)} delta="To date" tone="cyan" />
+        <KpiCard label="Actual" value={money(snap.actual, project.currency)} delta={snap.fromPayments ? 'Disbursed payments' : 'Loading payments'} tone="cyan" />
         <KpiCard label="ETC (cost)" value={money(snap.etc, project.currency)} delta="Money remaining proxy" tone="purple" />
         <KpiCard label="EAC" value={money(snap.eac, project.currency)} delta="Forecast final cost" tone="amber" />
         <KpiCard label="VAC" value={money(snap.vac, project.currency)} delta={snap.bac ? `${(((snap.eac / snap.bac) - 1) * 100).toFixed(1)}% vs BAC` : '—'} tone="rose" />
@@ -449,7 +493,7 @@ export function Forecast({ project }: ProjectProps) {
   );
 }
 export function EarnedValue({ project }: ProjectProps) {
-  const snap = deriveProjectCostSnapshot(project);
+  const { snap } = useLiveCost(project);
   const cv = snap.ev - snap.actual;
   const sv = snap.ev - snap.pv;
   return (
@@ -457,7 +501,7 @@ export function EarnedValue({ project }: ProjectProps) {
       <div className="kpi-grid six">
         <KpiCard label="PV" value={money(snap.pv, project.currency)} delta="Planned value" />
         <KpiCard label="EV" value={money(snap.ev, project.currency)} delta="Earned value" tone="indigo" />
-        <KpiCard label="AC" value={money(snap.actual, project.currency)} delta="Actual cost proxy" tone="cyan" />
+        <KpiCard label="AC" value={money(snap.actual, project.currency)} delta={snap.fromPayments ? 'Disbursed payments' : 'Loading payments'} tone="cyan" />
         <KpiCard label="CPI" value={snap.cpi.toFixed(2)} delta="Cost efficiency" tone="amber" />
         <KpiCard label="SPI" value={snap.spi.toFixed(2)} delta="Schedule efficiency" tone="rose" />
         <KpiCard label="VAC" value={money(snap.vac, project.currency)} delta="vs BAC" tone="purple" />
@@ -496,7 +540,25 @@ export function Variations({ project }: ProjectProps) {
   return <EmptyCostRegister title="Cost Impact Assessment Register" subtitle={`No variations for ${project.code} yet`} />;
 }
 export function CashFlow({ project }: ProjectProps) {
-  return <EmptyCostRegister title="Monthly Project Cash Flow" subtitle={`No cash-flow periods for ${project.code} yet`} />;
+  const { snap, lines } = useLiveCost(project);
+  const months = new Map<string, number>();
+  for (const line of lines) {
+    if (line.kind !== 'actual') continue;
+    const when = line.paidAt || line.postedAt;
+    const key = when ? when.slice(0, 7) : 'Undated';
+    months.set(key, (months.get(key) || 0) + line.amountNgn);
+  }
+  const rows = [...months.entries()]
+    .sort((a, b) => a[0].localeCompare(b[0]))
+    .map(([period, amount]) => [period, money(amount, 'NGN'), money(snap.actual, 'NGN')]);
+  if (!rows.length) {
+    return <EmptyCostRegister title="Monthly Project Cash Flow" subtitle={snap.fromPayments ? `No disbursed payments for ${project.code} yet` : `Loading project payments for ${project.code}`} />;
+  }
+  return (
+    <Card title="Monthly Project Cash Flow" subtitle={`Disbursed project payments for ${project.code}`}>
+      <DataTable headers={['Period', 'Paid in period', 'Project actual to date']} rows={rows} />
+    </Card>
+  );
 }
 export function PeriodClose({ project }: ProjectProps) {
   return (

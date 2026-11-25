@@ -1,6 +1,9 @@
 "use client";
 
-import React, { useState, useMemo } from "react";
+import React, { useEffect, useState } from "react";
+import { loadVisitorWorkspace, saveVisitorArtifact, searchVisitorEmployees } from "@/lib/security/visitor-client";
+import { emptyDirectories, type VisitorDirectories, type VisitorVisit } from "@/lib/security/visitor-types";
+import { filterReportVisits, formatVisitDate, summarizeVisits } from "@/lib/security/visitor-views";
 import {
   BarChart3,
   Building2,
@@ -73,23 +76,11 @@ const initialTemplates: ReportTemplate[] = [
 ];
 
 const visitorTypes = ["Guest", "Vendor", "Contractor", "Interview Candidate", "Delivery", "VIP"];
-const departments = ["All Departments", "Finance", "HR", "Procurement", "Operations", "Platform Engineering", "Consulting Relations"];
-const hostOptions = ["Sarah Johnson", "David Wilson", "Emily Carter", "Michael Adams", "James Okafor", "Finance Team"];
 const statusFilters = ["Checked In", "Checked Out", "Pending", "Rejected"];
 const outputFormats = ["PDF", "Excel", "CSV"];
 
-const initialScheduled: ScheduledReport[] = [
-  { id: "sc-1", name: "Weekly Visitor Summary", cadence: "Every Monday", time: "08:00 AM", recipients: ["HR", "Security"], status: "Active" },
-  { id: "sc-2", name: "Monthly Security Audit", cadence: "1st of Every Month", time: "09:00 AM", recipients: ["Facilities Manager"], status: "Active" },
-  { id: "sc-3", name: "Executive Monthly Report", cadence: "Last Friday of Month", time: "05:00 PM", recipients: ["Management"], status: "Paused" },
-];
-
-const initialRecent: RecentReport[] = [
-  { id: "rr-1", name: "Daily Visitor Summary — Jul 16", generatedBy: "Sarah Johnson", date: "Today, 08:02 AM", format: "PDF", size: "1.2 MB", status: "Ready" },
-  { id: "rr-2", name: "Security Audit Report — Q2 2026", generatedBy: "Security Team", date: "Yesterday", format: "Excel", size: "3.8 MB", status: "Ready" },
-  { id: "rr-3", name: "Department Visits — Jun 2026", generatedBy: "Facilities Manager", date: "3 days ago", format: "CSV", size: "640 KB", status: "Ready" },
-  { id: "rr-4", name: "Frequent Visitors — H1 2026", generatedBy: "Sarah Johnson", date: "5 days ago", format: "PDF", size: "980 KB", status: "Processing" },
-];
+const initialScheduled: ScheduledReport[] = [];
+const initialRecent: RecentReport[] = [];
 
 const savedFilterSets = ["Weekly Reception Report", "Executive Monthly Report", "Vendor Visits"];
 
@@ -111,6 +102,10 @@ export default function VisitorReportsPage() {
   const [templates, setTemplates] = useState<ReportTemplate[]>(initialTemplates);
   const [scheduled, setScheduled] = useState<ScheduledReport[]>(initialScheduled);
   const [recentReports, setRecentReports] = useState<RecentReport[]>(initialRecent);
+  const [visits, setVisits] = useState<VisitorVisit[]>([]);
+  const [directories, setDirectories] = useState<VisitorDirectories>(emptyDirectories());
+  const [preview, setPreview] = useState<string[][]>([]);
+  const [hostSuggestions, setHostSuggestions] = useState<{ name: string; department: string }[]>([]);
   const [toast, setToast] = useState<string | null>(null);
 
   // report builder state
@@ -122,7 +117,7 @@ export default function VisitorReportsPage() {
   const [selectedHost, setSelectedHost] = useState("");
   const [statusChecks, setStatusChecks] = useState<string[]>(["Checked In", "Checked Out"]);
   const [outputFormat, setOutputFormat] = useState("PDF");
-  const [generatedReport, setGeneratedReport] = useState({ title: initialTemplates[0].name, generatedAt: "Not yet generated", page: 1 });
+  const [generatedReport, setGeneratedReport] = useState<{ title: string; generatedAt: string; page: number; rows: string[][] }>({ title: initialTemplates[0].name, generatedAt: "Not yet generated", page: 1, rows: [] });
   const [zoom, setZoom] = useState(100);
 
   const [showCreateReport, setShowCreateReport] = useState(false);
@@ -137,20 +132,76 @@ export default function VisitorReportsPage() {
     setTimeout(() => setToast(null), 2600);
   };
 
-  const toggleFavorite = (id: string) => setTemplates(prev => prev.map(t => t.id === id ? { ...t, favorite: !t.favorite } : t));
+  useEffect(() => {
+    loadVisitorWorkspace()
+      .then((workspace) => {
+        setVisits(workspace.visits);
+        setDirectories(workspace.directories);
+        const favorites = new Map(workspace.artifacts.filter((item) => item.kind === "report-favorite").map((item) => [String(item.payload.templateId || ""), Boolean(item.payload.favorite)]));
+        setTemplates((prev) => prev.map((template) => favorites.has(template.id) ? { ...template, favorite: favorites.get(template.id) || false } : template));
+        setScheduled(workspace.artifacts.filter((item) => item.kind === "report-schedule").map((item) => ({
+          id: item.id,
+          name: item.name,
+          cadence: String(item.payload.cadence || ""),
+          time: String(item.payload.time || ""),
+          recipients: Array.isArray(item.payload.recipients) ? item.payload.recipients.map(String) : [],
+          status: item.payload.status === "Paused" ? "Paused" : "Active",
+        })));
+        setRecentReports(workspace.artifacts.filter((item) => item.kind === "report-recent").map((item) => ({
+          id: item.id,
+          name: item.name,
+          generatedBy: String(item.payload.generatedBy || "You"),
+          date: item.updatedAt ? new Date(item.updatedAt).toLocaleString() : "Saved",
+          format: String(item.payload.format || "PDF"),
+          size: String(item.payload.size || "—"),
+          status: "Ready",
+        })));
+      })
+      .catch((error) => showToast(error instanceof Error ? error.message : "Unable to load visitor reports."));
+  }, []);
+
+  useEffect(() => {
+    if (selectedHost || hostSearch.trim().length < 2) {
+      setHostSuggestions([]);
+      return;
+    }
+    const timer = window.setTimeout(() => {
+      searchVisitorEmployees(hostSearch)
+        .then((employees) => setHostSuggestions(employees.map((employee) => ({ name: employee.name, department: employee.department }))))
+        .catch(() => setHostSuggestions([]));
+    }, 250);
+    return () => window.clearTimeout(timer);
+  }, [hostSearch, selectedHost]);
+
+  const departments = ["All Departments", ...directories.departments];
+  const insights = summarizeVisits(visits);
+
+  const toggleFavorite = (id: string) => setTemplates(prev => {
+    const next = prev.map(t => t.id === id ? { ...t, favorite: !t.favorite } : t);
+    const template = next.find((item) => item.id === id);
+    if (template) {
+      void saveVisitorArtifact({ id: `report-favorite-${id}`, kind: "report-favorite", name: template.name, payload: { templateId: id, favorite: template.favorite } })
+        .catch((error) => showToast(error instanceof Error ? error.message : "Unable to save the favorite."));
+    }
+    return next;
+  });
 
   const toggleVisitorType = (t: string) => setSelectedVisitorTypes(prev => prev.includes(t) ? prev.filter(x => x !== t) : [...prev, t]);
   const toggleStatusFilter = (s: string) => setStatusChecks(prev => prev.includes(s) ? prev.filter(x => x !== s) : [...prev, s]);
 
-  const hostSuggestions = useMemo(() => {
-    if (!hostSearch) return [];
-    return hostOptions.filter(h => h.toLowerCase().includes(hostSearch.toLowerCase()));
-  }, [hostSearch]);
+  const rememberRecent = (recent: RecentReport) => {
+    setRecentReports(prev => [recent, ...prev.filter((item) => item.id !== recent.id)]);
+    void saveVisitorArtifact({ id: recent.id, kind: "report-recent", name: recent.name, payload: { ...recent } })
+      .catch((error) => showToast(error instanceof Error ? error.message : "Unable to save the report."));
+  };
 
-  const generateReport = () => {
-    setGeneratedReport({ title: reportType, generatedAt: "Just now", page: 1 });
-    showToast(`"${reportType}" generated — ${outputFormat} ready`);
-    setRecentReports(prev => [{ id: `rr-${Date.now()}`, name: `${reportType} — ${dateRange}`, generatedBy: "You", date: "Just now", format: outputFormat, size: "1.1 MB", status: "Ready" }, ...prev]);
+  const generateReport = (title = reportType) => {
+    const filtered = filterReportVisits(visits, { dateRange, visitorTypes: selectedVisitorTypes, department, host: selectedHost, statuses: statusChecks });
+    const rows = filtered.map((visit) => [visit.visitorName, visit.hostName || "—", formatVisitDate(visit.visitDate), visit.status]);
+    setPreview(rows);
+    setGeneratedReport({ title, generatedAt: new Date().toLocaleString(), page: 1, rows });
+    rememberRecent({ id: `rr-${Date.now()}`, name: `${title} — ${dateRange}`, generatedBy: "You", date: "Just now", format: outputFormat, size: `${filtered.length} visits`, status: "Ready" });
+    showToast(filtered.length ? `"${title}" generated — ${filtered.length} visits` : `"${title}" generated — no visits match these filters`);
   };
 
   const useTemplate = (tpl: ReportTemplate) => {
@@ -158,13 +209,21 @@ export default function VisitorReportsPage() {
     showToast(`Loaded "${tpl.name}" into Report Builder`);
   };
 
+  const persistSchedule = (schedule: ScheduledReport) => {
+    setScheduled(prev => [schedule, ...prev.filter((item) => item.id !== schedule.id)]);
+    void saveVisitorArtifact({ id: schedule.id, kind: "report-schedule", name: schedule.name, payload: { ...schedule } })
+      .catch((error) => showToast(error instanceof Error ? error.message : "Unable to save the schedule."));
+  };
+
   const toggleScheduleStatus = (id: string) => {
-    setScheduled(prev => prev.map(s => s.id === id ? { ...s, status: s.status === "Active" ? "Paused" : "Active" } : s));
+    const current = scheduled.find((item) => item.id === id);
+    if (!current) return;
+    persistSchedule({ ...current, status: current.status === "Active" ? "Paused" : "Active" });
   };
 
   const runScheduleNow = (s: ScheduledReport) => {
-    setRecentReports(prev => [{ id: `rr-${Date.now()}`, name: s.name, generatedBy: "Scheduled Run", date: "Just now", format: "PDF", size: "1.3 MB", status: "Ready" }, ...prev]);
-    showToast(`"${s.name}" generated and sent to ${s.recipients.join(", ")}`);
+    rememberRecent({ id: `rr-${Date.now()}`, name: s.name, generatedBy: "Scheduled Run", date: "Just now", format: "PDF", size: `${visits.length} visits`, status: "Ready" });
+    showToast(`"${s.name}" generated for ${s.recipients.join(", ") || "the saved recipients"}`);
   };
 
   return (
@@ -210,7 +269,7 @@ export default function VisitorReportsPage() {
               <p className="text-xs text-slate-500 mt-1 leading-relaxed">{tpl.description}</p>
               <div className="text-[11px] text-slate-400 mt-2">Est. generation: {tpl.estTime}</div>
               <div className="flex items-center gap-1.5 mt-3">
-                <button onClick={() => { useTemplate(tpl); generateReport(); }} className="text-[11px] px-2 py-1 bg-blue-600 text-white rounded-lg hover:bg-blue-700 flex-1">Generate</button>
+                <button onClick={() => { setReportType(tpl.name); generateReport(tpl.name); }} className="text-[11px] px-2 py-1 bg-blue-600 text-white rounded-lg hover:bg-blue-700 flex-1">Generate</button>
                 <button onClick={() => useTemplate(tpl)} className="text-[11px] px-2 py-1 border border-slate-200 rounded-lg hover:bg-slate-50">Customize</button>
               </div>
             </div>
@@ -263,7 +322,7 @@ export default function VisitorReportsPage() {
               {hostSuggestions.length > 0 && !selectedHost && (
                 <div className="absolute z-10 top-full left-0 right-0 mt-1 bg-white border border-slate-200 rounded-xl shadow-lg overflow-hidden">
                   {hostSuggestions.map(h => (
-                    <button key={h} type="button" onClick={() => { setSelectedHost(h); setHostSearch(""); }} className="w-full text-left px-3 py-2 text-sm hover:bg-slate-50">{h}</button>
+                    <button key={`${h.name}-${h.department}`} type="button" onClick={() => { setSelectedHost(h.name); setHostSearch(""); }} className="w-full text-left px-3 py-2 text-sm hover:bg-slate-50">{h.name}{h.department ? ` · ${h.department}` : ""}</button>
                   ))}
                 </div>
               )}
@@ -286,7 +345,7 @@ export default function VisitorReportsPage() {
                 ))}
               </div>
             </div>
-            <button onClick={generateReport} className="w-full px-4 py-2.5 bg-blue-600 text-white rounded-xl text-sm font-medium hover:bg-blue-700">Generate Report</button>
+            <button onClick={() => generateReport()} className="w-full px-4 py-2.5 bg-blue-600 text-white rounded-xl text-sm font-medium hover:bg-blue-700">Generate Report</button>
           </div>
         </div>
 
@@ -309,14 +368,14 @@ export default function VisitorReportsPage() {
                 <h3 className="text-lg font-bold text-slate-900 mt-1">{generatedReport.title}</h3>
                 <p className="text-xs text-slate-500 mt-1">Summary: {statusChecks.join(", ") || "All statuses"} · {selectedVisitorTypes.join(", ") || "All visitor types"} · {department}</p>
                 <div className="flex items-end gap-1.5 h-16 mt-4">
-                  {[40, 65, 52, 78, 90, 60, 45].map((v, i) => <div key={i} className="flex-1 bg-blue-500/70 rounded-t" style={{ height: `${v}%` }} />)}
+                  {(preview.length ? preview.slice(0, 7) : [["—"]]).map((row, i) => <div key={i} className="flex-1 bg-blue-500/70 rounded-t" style={{ height: `${Math.min(100, 24 + String(row[0]).length * 5)}%` }} />)}
                 </div>
                 <table className="w-full text-xs mt-4">
                   <thead className="text-slate-400 border-b border-slate-100">
                     <tr><th className="text-left py-1.5 font-medium">Visitor</th><th className="text-left py-1.5 font-medium">Host</th><th className="text-left py-1.5 font-medium">Date</th><th className="text-left py-1.5 font-medium">Status</th></tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100">
-                    {[["John Smith", "Sarah Johnson", "Jul 16", "Checked In"], ["Mary Johnson", "David Wilson", "Jul 16", "Checked In"], ["David Lee", "Emily Carter", "Jul 15", "Checked Out"]].map((row, i) => (
+                    {(preview.length ? preview.slice((generatedReport.page - 1) * 8, generatedReport.page * 8) : [["No visits recorded yet", "—", "—", "—"]]).map((row, i) => (
                       <tr key={i}>{row.map((cell, j) => <td key={j} className="py-1.5 text-slate-600">{cell}</td>)}</tr>
                     ))}
                   </tbody>
@@ -325,10 +384,10 @@ export default function VisitorReportsPage() {
             </div>
           </div>
           <div className="flex items-center justify-between mt-2 text-xs text-slate-400">
-            <span>Page {generatedReport.page} of 4</span>
+            <span>Page {generatedReport.page} of {Math.max(1, Math.ceil(preview.length / 8))}</span>
             <div className="flex items-center gap-1">
               <button onClick={() => setGeneratedReport(r => ({ ...r, page: Math.max(1, r.page - 1) }))} className="px-2 py-0.5 border border-slate-200 rounded">Prev</button>
-              <button onClick={() => setGeneratedReport(r => ({ ...r, page: Math.min(4, r.page + 1) }))} className="px-2 py-0.5 border border-slate-200 rounded">Next</button>
+              <button onClick={() => setGeneratedReport(r => ({ ...r, page: Math.min(Math.max(1, Math.ceil(preview.length / 8)), r.page + 1) }))} className="px-2 py-0.5 border border-slate-200 rounded">Next</button>
             </div>
           </div>
         </div>
@@ -340,12 +399,12 @@ export default function VisitorReportsPage() {
           <h2 className="text-base font-semibold text-slate-900 mb-4">Visitor Insights</h2>
           <div className="grid grid-cols-2 gap-3">
             {[
-              { label: "Most Visited Department", value: "Finance" },
-              { label: "Peak Visiting Day", value: "Tuesday" },
-              { label: "Average Visit Duration", value: "1h 42m" },
-              { label: "Top Host", value: "Sarah Johnson" },
-              { label: "Repeat Visitor Rate", value: "38%" },
-              { label: "Vendor Share of Visits", value: "42%" },
+              { label: "Most Visited Department", value: insights.department },
+              { label: "Peak Visiting Day", value: insights.peakDay },
+              { label: "Average Visit Duration", value: insights.averageDuration },
+              { label: "Top Host", value: insights.topHost },
+              { label: "Repeat Visitor Rate", value: insights.repeatRate },
+              { label: "Vendor Share of Visits", value: insights.vendorShare },
             ].map(card => (
               <div key={card.label} className="border border-slate-100 rounded-xl p-3">
                 <div className="text-[11px] text-slate-400">{card.label}</div>
@@ -356,10 +415,14 @@ export default function VisitorReportsPage() {
           <div className="mt-4 border border-purple-100 bg-purple-50/40 rounded-xl p-3">
             <div className="flex items-center gap-1.5 text-xs font-semibold text-purple-700 mb-1"><Sparkles size={13} /> AI Summary</div>
             <ul className="text-xs text-slate-700 space-y-1 list-disc list-inside">
-              <li>Visitor traffic increased by 18% compared to last month.</li>
-              <li>Tuesdays remain the busiest visitor day.</li>
-              <li>Vendor visits account for 42% of all registrations.</li>
-              <li>The average check-in process takes 3 minutes.</li>
+              {insights.total ? (
+                <>
+                  <li>{insights.total} visits are in the visitor register.</li>
+                  <li>{insights.peakDay} is the busiest visiting day.</li>
+                  <li>Vendor visits account for {insights.vendorShare} of registrations.</li>
+                  <li>Average visit duration is {insights.averageDuration}.</li>
+                </>
+              ) : <li>No visits recorded yet.</li>}
             </ul>
           </div>
         </div>
@@ -367,6 +430,7 @@ export default function VisitorReportsPage() {
         <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm">
           <h2 className="text-lg font-semibold text-slate-900 mb-4">Scheduled Reports</h2>
           <div className="space-y-3">
+            {scheduled.length === 0 && <p className="text-sm text-slate-500">No reports scheduled yet.</p>}
             {scheduled.map(s => (
               <div key={s.id} className="border border-slate-200 rounded-xl p-3">
                 <div className="flex items-center justify-between">
@@ -410,6 +474,7 @@ export default function VisitorReportsPage() {
         <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm">
           <h2 className="text-lg font-semibold text-slate-900 mb-4">Recent Reports</h2>
           <div className="space-y-2.5 max-h-[320px] overflow-y-auto pr-1">
+            {recentReports.length === 0 && <p className="text-sm text-slate-500">No reports generated yet.</p>}
             {recentReports.map(r => (
               <div key={r.id} className="border border-slate-100 rounded-xl p-3">
                 <div className="flex items-center justify-between">
@@ -422,7 +487,7 @@ export default function VisitorReportsPage() {
                   <div className="flex items-center gap-1.5">
                     <button onClick={() => showToast(`Downloading "${r.name}"`)} className="p-1 text-slate-400 hover:text-blue-600" title="Download"><Download size={13} /></button>
                     <button onClick={() => showToast(`Share link copied for "${r.name}"`)} className="p-1 text-slate-400 hover:text-blue-600" title="Share"><Share2 size={13} /></button>
-                    <button onClick={() => { setRecentReports(prev => [{ ...r, id: `rr-${Date.now()}`, name: `${r.name} (Copy)`, date: "Just now" }, ...prev]); showToast("Report duplicated"); }} className="p-1 text-slate-400 hover:text-blue-600" title="Duplicate"><Copy size={13} /></button>
+                    <button onClick={() => { rememberRecent({ ...r, id: `rr-${Date.now()}`, name: `${r.name} (Copy)`, date: "Just now" }); showToast("Report duplicated"); }} className="p-1 text-slate-400 hover:text-blue-600" title="Duplicate"><Copy size={13} /></button>
                   </div>
                 </div>
               </div>
@@ -433,12 +498,12 @@ export default function VisitorReportsPage() {
 
       {/* ---------- Modals ---------- */}
       {showCreateReport && (
-        <CreateReportModal templates={templates} onClose={() => setShowCreateReport(false)} onSubmit={(name) => { setReportType(name); generateReport(); setShowCreateReport(false); }} />
+        <CreateReportModal templates={templates} onClose={() => setShowCreateReport(false)} onSubmit={(name) => { setReportType(name); generateReport(name); setShowCreateReport(false); }} />
       )}
 
       {showScheduleReport && (
         <ScheduleReportModal templates={templates} onClose={() => setShowScheduleReport(false)} onSubmit={(data) => {
-          setScheduled(prev => [{ id: `sc-${Date.now()}`, name: data.name, cadence: data.cadence, time: data.time, recipients: data.recipients, status: "Active" }, ...prev]);
+          persistSchedule({ id: `sc-${Date.now()}`, name: data.name, cadence: data.cadence, time: data.time, recipients: data.recipients, status: "Active" });
           showToast(`"${data.name}" scheduled`);
           setShowScheduleReport(false);
         }} />
@@ -458,7 +523,7 @@ export default function VisitorReportsPage() {
 
       {editSchedule && (
         <EditScheduleModal schedule={editSchedule} onClose={() => setEditSchedule(null)} onSave={(data) => {
-          setScheduled(prev => prev.map(s => s.id === editSchedule.id ? { ...s, ...data } : s));
+          persistSchedule({ ...editSchedule, ...data });
           showToast(`"${editSchedule.name}" updated`);
           setEditSchedule(null);
         }} />
@@ -612,7 +677,7 @@ function ShareModal({ onClose, onShare }: { onClose: () => void; onShare: (email
 }
 
 // ---------- Modal: Fullscreen Preview ----------
-function FullscreenPreviewModal({ report, onClose }: { report: { title: string; generatedAt: string; page: number }; onClose: () => void }) {
+function FullscreenPreviewModal({ report, onClose }: { report: { title: string; generatedAt: string; page: number; rows: string[][] }; onClose: () => void }) {
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-6">
       <div className="bg-white rounded-2xl shadow-xl w-full max-w-3xl max-h-[90vh] overflow-y-auto p-8">
@@ -629,7 +694,7 @@ function FullscreenPreviewModal({ report, onClose }: { report: { title: string; 
             <tr><th className="text-left py-2 font-medium">Visitor</th><th className="text-left py-2 font-medium">Host</th><th className="text-left py-2 font-medium">Date</th><th className="text-left py-2 font-medium">Status</th></tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
-            {[["John Smith", "Sarah Johnson", "Jul 16", "Checked In"], ["Mary Johnson", "David Wilson", "Jul 16", "Checked In"], ["David Lee", "Emily Carter", "Jul 15", "Checked Out"], ["Michael Ade", "David Wilson", "Jul 15", "Checked In"]].map((row, i) => (
+            {(report.rows.length ? report.rows : [["No visits recorded yet", "—", "—", "—"]]).map((row, i) => (
               <tr key={i}>{row.map((cell, j) => <td key={j} className="py-2 text-slate-700">{cell}</td>)}</tr>
             ))}
           </tbody>

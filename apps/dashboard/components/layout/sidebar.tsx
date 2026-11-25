@@ -74,6 +74,7 @@ const requiredPermission = (route?: string) => {
   if (route.startsWith('/logistics-fleet')) return 'view_logistics_fleet';
   if (route.startsWith('/security')) return 'view_security';
   if (route.startsWith('/corporate-office')) return 'view_corporate_office';
+  if (route.startsWith('/operations-center/galvanizing')) return 'operations.galvanizing.view';
   if (route.startsWith('/operations-center/timesheets')) return 'operations.timesheets.submit';
   if (route.startsWith('/operations-center/workforce-allocation')) return 'operations.allocation.view';
   if (route.startsWith('/operations-center/resource-planning')) return 'operations.resource-planning.view';

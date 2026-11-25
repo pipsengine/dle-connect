@@ -120,7 +120,25 @@ export function budgetAvailability(
   return { available, proposed, after: available - proposed, approved: available >= proposed };
 }
 
-/** Derive portfolio cost KPIs from live project profiles until cost registers are populated. */
+export type ProjectCostLedger = {
+  /** Disbursed project payments, in NGN. */
+  actual: number;
+  /** Approved or in-approval project payments that have not been paid yet. */
+  commitments: number;
+};
+
+const healthFromCpi = (projectHealth: string, cpi: number) =>
+  projectHealth === 'Critical' || cpi < 0.95
+    ? 'Critical'
+    : projectHealth === 'Watch' || cpi < 1
+      ? 'Watch'
+      : 'Healthy';
+
+/**
+ * Cost KPIs for a project.
+ * Pass a payment ledger to use disbursed and open finance payments.
+ * Without a ledger, figures stay on the progress proxy until the ledger loads.
+ */
 export function deriveProjectCostSnapshot(project: {
   contractValue: number;
   actual: number;
@@ -129,19 +147,36 @@ export function deriveProjectCostSnapshot(project: {
   schedulePerformance: number;
   health: string;
   currency?: string;
-}) {
+}, ledger?: ProjectCostLedger | null) {
   const bac = Number(project.contractValue || 0);
   const actualPct = Math.min(100, Math.max(0, Number(project.actual || 0))) / 100;
   const plannedPct = Math.min(100, Math.max(0, Number(project.planned || 0))) / 100;
-  const cpi = Number(project.costPerformance || 1) || 1;
   const spi = Number(project.schedulePerformance || 1) || 1;
-  const commitments = bac * Math.min(0.95, actualPct * 1.25 + 0.08);
-  const actual = bac * actualPct;
-  const etc = Math.max(0, bac / Math.max(cpi, 0.01) - actual);
-  const eac = actual + etc;
-  const vac = bac - eac;
   const pv = bac * plannedPct;
   const ev = bac * actualPct;
+  const fromPayments = Boolean(ledger);
+
+  let cpi = Number(project.costPerformance || 1) || 1;
+  let commitments: number;
+  let actual: number;
+  let etc: number;
+  if (ledger) {
+    actual = Math.max(0, Number(ledger.actual || 0));
+    commitments = Math.max(0, Number(ledger.commitments || 0));
+    if (actual > 0 && ev > 0) {
+      cpi = ev / actual;
+      etc = Math.max(0, (bac - ev) / Math.max(cpi, 0.01));
+      if (commitments > etc) etc = commitments;
+    } else {
+      etc = Math.max(0, bac - actual, commitments);
+    }
+  } else {
+    commitments = bac * Math.min(0.95, actualPct * 1.25 + 0.08);
+    actual = bac * actualPct;
+    etc = Math.max(0, bac / Math.max(cpi, 0.01) - actual);
+  }
+  const eac = actual + etc;
+  const vac = bac - eac;
   return {
     bac,
     commitments,
@@ -153,11 +188,7 @@ export function deriveProjectCostSnapshot(project: {
     spi,
     pv,
     ev,
-    health:
-      project.health === 'Critical' || cpi < 0.95
-        ? 'Critical'
-        : project.health === 'Watch' || cpi < 1
-          ? 'Watch'
-          : 'Healthy',
+    fromPayments,
+    health: healthFromCpi(project.health, cpi),
   };
 }

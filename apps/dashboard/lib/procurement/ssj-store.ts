@@ -23,6 +23,11 @@ import {
   type SsjWorkflowEvent,
 } from '@/lib/procurement/ssj-types';
 import { resolveWorkflowLinkOrigin } from '@/lib/public-app-url';
+import {
+  buildSingleSourceJustificationWorkflowEmail,
+  singleSourceJustificationPortalUrl,
+  type SingleSourceJustificationEmailEvent,
+} from '@/lib/workflow-email-builders';
 
 export type { SsjActions, SsjInput, SsjRecord, SsjWorkflowEvent };
 export {
@@ -110,16 +115,19 @@ export const actionsForSsj = (row: Pick<SsjRecord, 'status' | 'requesterCode' | 
   const superActor = sessionIsSuper(session);
   const requester = codesMatch(session.employeeCode, row.requesterCode)
     || (!row.requesterCode && compact(session.fullName) && compact(session.fullName) === compact(row.requesterName || row.createdBy));
-  const lineManager = codesMatch(session.employeeCode, row.lineManagerCode);
-  const md = sessionIsMd(session) || codesMatch(session.employeeCode, row.mdCode);
+  const lineManager = codesMatch(session.employeeCode, row.lineManagerCode) && !requester;
+  // MD approval is identity-bound to the Managing Director employee — Super Admin must not click through as MD.
+  const md = (codesMatch(session.employeeCode, row.mdCode) || codesMatch(session.employeeCode, MD_CEO_EMPLOYEE_CODE) || sessionIsMd(session))
+    && !requester;
   const editable = editableStatus(row.status) && (requester || superActor);
   return {
     canEdit: editable,
     canSubmit: editable,
-    canCheck: row.status === SSJ_LINE_MANAGER && (lineManager || superActor),
-    canApprove: row.status === SSJ_MD && (md || superActor),
-    canReturn: (row.status === SSJ_LINE_MANAGER && (lineManager || superActor)) || (row.status === SSJ_MD && (md || superActor)),
-    canReject: (row.status === SSJ_LINE_MANAGER && (lineManager || superActor)) || (row.status === SSJ_MD && (md || superActor)),
+    // Line manager check is identity-bound; Super Admin must not stand in for the assigned manager.
+    canCheck: row.status === SSJ_LINE_MANAGER && lineManager,
+    canApprove: row.status === SSJ_MD && md,
+    canReturn: (row.status === SSJ_LINE_MANAGER && lineManager) || (row.status === SSJ_MD && md),
+    canReject: (row.status === SSJ_LINE_MANAGER && lineManager) || (row.status === SSJ_MD && md),
   };
 };
 
@@ -188,6 +196,42 @@ const loadRaw = async (pool: sql.ConnectionPool, ssjId: string) => {
   return (result.recordset[0] as Record<string, unknown> | undefined) || null;
 };
 
+type SsjEmailSnapshot = {
+  ssjId: string;
+  title: string;
+  status?: string | null;
+  prId?: string | null;
+  requesterName?: string | null;
+  department?: string | null;
+  project?: string | null;
+  site?: string | null;
+  supplierName?: string | null;
+  reasonCategory?: string | null;
+  currency?: string | null;
+  estimatedAmount?: number | null;
+  currentWith?: string | null;
+  lineManagerName?: string | null;
+  mdName?: string | null;
+};
+
+const ssjSnapshot = (row: Partial<SsjRecord> & { ssjId: string; title: string }): SsjEmailSnapshot => ({
+  ssjId: row.ssjId,
+  title: compact(row.title) || row.ssjId,
+  status: row.status,
+  prId: row.prId,
+  requesterName: row.requesterName,
+  department: row.department,
+  project: row.project,
+  site: row.site,
+  supplierName: row.supplierName,
+  reasonCategory: row.reasonCategory,
+  currency: row.currency,
+  estimatedAmount: row.estimatedAmount == null ? null : Number(row.estimatedAmount),
+  currentWith: row.currentWith,
+  lineManagerName: row.lineManagerName,
+  mdName: row.mdName,
+});
+
 const notifyPerson = async (input: {
   actor: string;
   employee?: DleEmployeeDirectoryRow | null;
@@ -196,8 +240,25 @@ const notifyPerson = async (input: {
   title: string;
   body: string;
   ssjId: string;
+  event: SingleSourceJustificationEmailEvent;
+  headline: string;
+  statusBadge?: string;
+  note?: string;
+  comment?: string;
+  ssj?: SsjEmailSnapshot;
 }) => {
   const href = hrefFor(input.ssjId);
+  const origin = resolveWorkflowLinkOrigin();
+  const portalLink = singleSourceJustificationPortalUrl(input.ssjId, origin);
+  const recipientName = compact(input.name || input.employee?.fullName) || 'Colleague';
+  const severity = input.event === 'rejected'
+    ? 'critical'
+    : input.event === 'returned' || input.event === 'submitted' || input.event === 'awaiting-md' || input.event === 'reopened'
+      ? 'warning'
+      : input.event === 'approved' || input.event === 'checked'
+        ? 'success'
+        : 'info';
+
   await createEnterpriseNotification({
     sub: 'system-ssj-workflow',
     username: 'system-ssj-workflow',
@@ -215,21 +276,35 @@ const notifyPerson = async (input: {
     module: 'Procurement',
     title: input.title,
     body: input.body,
-    severity: 'warning',
+    severity,
     recipientEmployeeCode: input.code || (input.employee ? employeeCodeOf(input.employee) : undefined) || undefined,
     href,
     channels: ['In-App', 'Email'],
-    metadata: { ssjId: input.ssjId, recipientName: input.name || input.employee?.fullName || '' },
+    metadata: { ssjId: input.ssjId, recipientName },
     actor: input.actor,
   }).catch((error) => console.error('[ssj-workflow] in-app notification failed', error));
 
   const mailbox = input.employee ? await resolveEmployeeMailbox(input.employee).catch(() => '') : '';
   if (!mailbox) return;
+  const email = buildSingleSourceJustificationWorkflowEmail({
+    event: input.event,
+    ssj: input.ssj || { ssjId: input.ssjId, title: input.ssjId },
+    recipientName,
+    actorName: input.actor,
+    intro: input.body,
+    subject: input.title,
+    headline: input.headline,
+    statusBadge: input.statusBadge,
+    note: input.note,
+    comment: input.comment,
+    portalLink,
+    baseUrl: origin,
+  });
   await sendTransactionalEmail({
     to: mailbox,
-    subject: input.title,
-    text: `${input.body}\n\nOpen: ${resolveWorkflowLinkOrigin()}${href}`,
-    html: `<p>${input.body}</p><p><a href="${resolveWorkflowLinkOrigin()}${href}">Open single sourced justification</a></p>`,
+    subject: email.subject,
+    text: email.text,
+    html: email.html,
   }).catch((error) => console.error('[ssj-workflow] email failed', error));
 };
 
@@ -237,6 +312,153 @@ const requireRecord = async (pool: sql.ConnectionPool, ssjId: string, session: S
   const raw = await loadRaw(pool, ssjId);
   if (!raw) throw new Error('Single sourced justification not found.');
   return mapRow(raw, session);
+};
+
+const notifySsjStakeholders = async (input: {
+  actor: string;
+  ssj: SsjEmailSnapshot;
+  event: SingleSourceJustificationEmailEvent;
+  statusBadge?: string;
+  note?: string;
+  comment?: string;
+  md?: DleEmployeeDirectoryRow | null;
+  requester?: DleEmployeeDirectoryRow | null;
+  includeProcurement?: boolean;
+  mdTitle?: string;
+  mdBody?: string;
+  mdHeadline?: string;
+  requesterTitle?: string;
+  requesterBody?: string;
+  requesterHeadline?: string;
+  procurementTitle?: string;
+  procurementBody?: string;
+  procurementHeadline?: string;
+}) => {
+  const ssjId = input.ssj.ssjId;
+  if (input.md && input.mdTitle && input.mdBody) {
+    await notifyPerson({
+      actor: input.actor,
+      employee: input.md,
+      code: employeeCodeOf(input.md),
+      name: input.md.fullName,
+      title: input.mdTitle,
+      body: input.mdBody,
+      ssjId,
+      event: input.event,
+      headline: input.mdHeadline || input.mdTitle,
+      statusBadge: input.statusBadge,
+      note: input.note,
+      comment: input.comment,
+      ssj: input.ssj,
+    });
+  }
+  if (input.requester && input.requesterTitle && input.requesterBody) {
+    await notifyPerson({
+      actor: input.actor,
+      employee: input.requester,
+      code: employeeCodeOf(input.requester),
+      name: input.requester.fullName,
+      title: input.requesterTitle,
+      body: input.requesterBody,
+      ssjId,
+      event: input.event,
+      headline: input.requesterHeadline || input.requesterTitle,
+      statusBadge: input.statusBadge,
+      note: input.note,
+      comment: input.comment,
+      ssj: input.ssj,
+    });
+  }
+  if (!input.includeProcurement || !input.procurementTitle || !input.procurementBody) return;
+  const { listProcurementManagers } = await import('@/lib/procurement/pr-workflow');
+  const managers = await listProcurementManagers().catch(() => [] as DleEmployeeDirectoryRow[]);
+  const seen = new Set<string>();
+  for (const manager of managers) {
+    const code = upper(employeeCodeOf(manager));
+    if (!code || seen.has(code)) continue;
+    if (input.md && codesMatch(code, employeeCodeOf(input.md))) continue;
+    if (input.requester && codesMatch(code, employeeCodeOf(input.requester))) continue;
+    seen.add(code);
+    await notifyPerson({
+      actor: input.actor,
+      employee: manager,
+      code: employeeCodeOf(manager),
+      name: manager.fullName,
+      title: input.procurementTitle,
+      body: input.procurementBody,
+      ssjId,
+      event: input.event,
+      headline: input.procurementHeadline || input.procurementTitle,
+      statusBadge: input.statusBadge,
+      note: input.note,
+      comment: input.comment,
+      ssj: input.ssj,
+    });
+  }
+};
+
+/** Undo a mistaken MD approval and put the SSJ back with the Managing Director. */
+export const reopenSsjForMdApproval = async (ssjId: string, session: SessionPayload, reason?: string) => {
+  const pool = await ensureProcurementDb();
+  const record = await requireRecord(pool, compact(ssjId), session);
+  if (record.status !== SSJ_APPROVED && record.status !== SSJ_MD) {
+    throw new Error(`SSJ ${record.ssjId} is ${record.status} and cannot be reopened for MD approval.`);
+  }
+  const employees = (await readEmployeeDirectoryFromDb()) || [];
+  const md = findManagingDirector(employees)
+    || findEmployee(employees, record.mdCode || record.mdName)
+    || null;
+  if (!md) throw new Error('Managing Director could not be matched in HRIS.');
+  const actor = session.fullName || session.username;
+  const comment = compact(reason) || 'Mistaken MD approval reversed. Returned to Managing Director for proper approval.';
+  await writeWorkflow(pool, record, {
+    status: SSJ_MD,
+    currentStage: SSJ_STAGE_MD,
+    currentWith: md.fullName,
+    mdName: md.fullName,
+    mdCode: employeeCodeOf(md),
+    approvedBy: null,
+    approvedAt: null,
+    approvalComment: null,
+  }, {
+    at: nowIso(),
+    action: 'MD approval reverted',
+    actor,
+    actorCode: session.employeeCode,
+    stage: SSJ_STAGE_MD,
+    comment,
+  }, actor);
+
+  const requester = findEmployee(employees, record.requesterCode || record.requesterName);
+  const snapshot = ssjSnapshot({
+    ...record,
+    status: SSJ_MD,
+    currentWith: md.fullName,
+    mdName: md.fullName,
+    approvedBy: null,
+    approvedAt: null,
+  });
+  await notifySsjStakeholders({
+    actor,
+    ssj: snapshot,
+    event: 'reopened',
+    statusBadge: SSJ_MD,
+    comment,
+    note: 'Please complete Managing Director approval so procurement can continue.',
+    md,
+    requester,
+    includeProcurement: true,
+    mdTitle: `${record.ssjId} awaiting your approval`,
+    mdHeadline: 'Single sourced justification awaiting your approval',
+    mdBody: `${actor} reopened single sourced justification ${record.ssjId} (${record.title}) for Managing Director approval. ${comment}`,
+    requesterTitle: `${record.ssjId} returned to MD approval`,
+    requesterHeadline: 'Justification returned to Managing Director',
+    requesterBody: `Your single sourced justification ${record.ssjId} is again with the Managing Director for approval.`,
+    procurementTitle: `${record.ssjId} awaiting MD approval`,
+    procurementHeadline: 'Justification awaiting Managing Director approval',
+    procurementBody: `${actor} reopened ${record.ssjId} (${record.title}). It is awaiting Managing Director approval after the line manager check.`,
+  });
+  return requireRecord(pool, record.ssjId, session);
 };
 
 const writeWorkflow = async (
@@ -437,6 +659,16 @@ export const submitSingleSourceJustification = async (input: SsjInput, session: 
     title: `${saved.ssjId} awaiting line manager check`,
     body: `${requester.fullName} submitted single sourced justification ${saved.ssjId} (${saved.title}) for your check.`,
     ssjId: saved.ssjId,
+    event: 'submitted',
+    headline: 'Single sourced justification awaiting your check',
+    statusBadge: SSJ_LINE_MANAGER,
+    note: 'Complete the line manager check so this can move to the Managing Director.',
+    ssj: ssjSnapshot({
+      ...saved,
+      status: SSJ_LINE_MANAGER,
+      currentWith: manager.employee.fullName,
+      lineManagerName: manager.employee.fullName,
+    }),
   });
   return requireRecord(pool, saved.ssjId, session);
 };
@@ -475,26 +707,32 @@ export const actionSingleSourceJustification = async (input: {
       stage: SSJ_STAGE_MD,
       comment: comment || 'Checked by line manager.',
     }, actor);
-    await notifyPerson({
-      actor,
-      employee: md,
-      code: employeeCodeOf(md),
-      name: md.fullName,
-      title: `${record.ssjId} awaiting MD approval`,
-      body: `${actor} checked single sourced justification ${record.ssjId} (${record.title}). It is waiting for Managing Director approval.`,
-      ssjId: record.ssjId,
+    const afterCheck = ssjSnapshot({
+      ...record,
+      status: SSJ_MD,
+      currentWith: md.fullName,
+      mdName: md.fullName,
     });
-    if (requester) {
-      await notifyPerson({
-        actor,
-        employee: requester,
-        code: employeeCodeOf(requester),
-        name: requester.fullName,
-        title: `${record.ssjId} checked by line manager`,
-        body: `${actor} checked your single sourced justification ${record.ssjId}. It is now with the Managing Director.`,
-        ssjId: record.ssjId,
-      });
-    }
+    await notifySsjStakeholders({
+      actor,
+      ssj: afterCheck,
+      event: 'awaiting-md',
+      statusBadge: SSJ_MD,
+      comment: comment || undefined,
+      note: 'Managing Director approval is required before procurement can proceed.',
+      md,
+      requester,
+      includeProcurement: true,
+      mdTitle: `${record.ssjId} awaiting MD approval`,
+      mdHeadline: 'Single sourced justification awaiting your approval',
+      mdBody: `${actor} checked single sourced justification ${record.ssjId} (${record.title}). It is waiting for Managing Director approval.`,
+      requesterTitle: `${record.ssjId} checked by line manager`,
+      requesterHeadline: 'Line manager checked your justification',
+      requesterBody: `${actor} checked your single sourced justification ${record.ssjId}. It is now with the Managing Director.`,
+      procurementTitle: `${record.ssjId} with Managing Director`,
+      procurementHeadline: 'Justification with Managing Director',
+      procurementBody: `${actor} completed the line manager check on ${record.ssjId} (${record.title}). It is now awaiting Managing Director approval.`,
+    });
     return requireRecord(pool, record.ssjId, session);
   }
 
@@ -515,17 +753,26 @@ export const actionSingleSourceJustification = async (input: {
       stage: SSJ_STAGE_COMPLETE,
       comment: comment || 'Approved by Managing Director.',
     }, actor);
-    if (requester) {
-      await notifyPerson({
-        actor,
-        employee: requester,
-        code: employeeCodeOf(requester),
-        name: requester.fullName,
-        title: `${record.ssjId} approved by MD`,
-        body: `${actor} approved single sourced justification ${record.ssjId} (${record.title}).`,
-        ssjId: record.ssjId,
-      });
-    }
+    const afterApprove = ssjSnapshot({
+      ...record,
+      status: SSJ_APPROVED,
+      currentWith: record.requesterName,
+    });
+    await notifySsjStakeholders({
+      actor,
+      ssj: afterApprove,
+      event: 'approved',
+      statusBadge: SSJ_APPROVED,
+      comment: comment || undefined,
+      requester,
+      includeProcurement: true,
+      requesterTitle: `${record.ssjId} approved by MD`,
+      requesterHeadline: 'Managing Director approved your justification',
+      requesterBody: `${actor} approved single sourced justification ${record.ssjId} (${record.title}).`,
+      procurementTitle: `${record.ssjId} approved by MD`,
+      procurementHeadline: 'Single sourced justification approved',
+      procurementBody: `${actor} approved single sourced justification ${record.ssjId} (${record.title}). Procurement may proceed with the linked requisition.`,
+    });
     return requireRecord(pool, record.ssjId, session);
   }
 
@@ -556,6 +803,18 @@ export const actionSingleSourceJustification = async (input: {
         title: `${record.ssjId} ${status.toLowerCase()}`,
         body: `Single sourced justification ${record.ssjId} was ${status.toLowerCase()} by ${actor}. ${comment}`,
         ssjId: record.ssjId,
+        event: decision === 'return' ? 'returned' : 'rejected',
+        headline: decision === 'return' ? 'Single sourced justification returned' : 'Single sourced justification rejected',
+        statusBadge: status,
+        comment,
+        note: decision === 'return'
+          ? 'Update the justification and resubmit it for approval.'
+          : 'Review the comment and raise a new justification if still required.',
+        ssj: ssjSnapshot({
+          ...record,
+          status,
+          currentWith: record.requesterName,
+        }),
       });
     }
     return requireRecord(pool, record.ssjId, session);

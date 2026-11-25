@@ -24,6 +24,7 @@ import {
   YAxis,
 } from 'recharts';
 import { deriveProjectCostSnapshot } from '@/lib/projects-engineering/cost-control';
+import { useProjectPaymentPosition } from '@/lib/projects-engineering/use-project-payment-costs';
 import { compactNaira, dmy, hours, money, pct } from '@/lib/projects-engineering/format';
 import type { ProjectManHourUtilization } from '@/lib/projects-engineering/man-hour-types';
 import { deriveProjectHealth } from '@/lib/projects-engineering/project-health';
@@ -87,21 +88,24 @@ export function ActiveProjectOverviewFigma({ project }: Props) {
     };
   }, [project.id]);
 
-  const snap = useMemo(() => deriveProjectCostSnapshot(project), [project]);
+  const payments = useProjectPaymentPosition(project.code);
+  const snap = useMemo(
+    () => deriveProjectCostSnapshot(project, payments.ready ? payments.ledger : undefined),
+    [project, payments.ready, payments.ledger],
+  );
   const summary = utilization?.summary;
   const planned = Number(project.planned || 0);
   const actual = Number(project.actual || 0);
   const spi = Number(project.schedulePerformance || 0);
-  const cpi = Number(project.costPerformance || 0);
   const hasBudget = Number(summary?.budgetedHours || 0) > 0;
   const health = useMemo(
     () => deriveProjectHealth({
-      project,
+      project: payments.ready && payments.position.actual > 0 ? { ...project, costPerformance: snap.cpi } : project,
       budgetedHours: Number(summary?.budgetedHours || 0),
       utilizationPct: Number(summary?.utilizationPct || 0),
       eac: snap.eac,
     }),
-    [project, summary?.budgetedHours, summary?.utilizationPct, snap.eac],
+    [project, payments.ready, payments.position.actual, summary?.budgetedHours, summary?.utilizationPct, snap.cpi, snap.eac],
   );
   const healthScore = health.score;
   const healthLabel = health.health === 'Watch' ? 'At Risk' : health.health;
@@ -171,12 +175,20 @@ export function ActiveProjectOverviewFigma({ project }: Props) {
     { label: 'Remaining / ETC', value: snap.etc, tone: 'c4' },
   ];
 
+  const latestPayment = payments.lines.find((line) => line.kind === 'actual');
   const activities = [
+    latestPayment
+      ? {
+          title: `${latestPayment.requestNumber} · ${money(latestPayment.amountNgn, 'NGN')} ${latestPayment.status}`,
+          by: latestPayment.beneficiaryName || 'Finance',
+          when: latestPayment.paidAt ? dmy(latestPayment.paidAt) : dmy(project.start),
+        }
+      : null,
     { title: 'Project profile loaded from DLE_Enterprise', by: 'System', when: project.createdAt ? dmy(project.createdAt) : dmy(project.start) },
     { title: `Project Manager: ${project.manager || 'Unassigned'}`, by: 'Directory', when: dmy(project.start) },
     { title: `Status · ${project.status}`, by: 'Controls', when: dmy(project.start) },
     { title: `Health · ${healthLabel}`, by: 'Live score', when: dmy(project.start) },
-  ];
+  ].filter((row): row is { title: string; by: string; when: string } => Boolean(row));
 
   return (
     <div className="apo">
@@ -184,7 +196,7 @@ export function ActiveProjectOverviewFigma({ project }: Props) {
         {[
           { label: 'Actual Progress', value: pct(actual), meta: `${pct(planned)} planned`, icon: CheckCircle2, href: `/projects-engineering/projects/${project.id}/progress` },
           { label: 'Schedule Index (SPI)', value: spi.toFixed(2), meta: spi < 0.98 ? 'Below threshold' : 'On track', icon: ClipboardCheck, href: `/projects-engineering/projects/${project.id}/planning` },
-          { label: 'Cost Index (CPI)', value: cpi.toFixed(2), meta: 'From project profile', icon: ChartNoAxesCombined, href: `/projects-engineering/projects/${project.id}/cost-control/overview` },
+          { label: 'Cost Index (CPI)', value: snap.cpi.toFixed(2), meta: snap.fromPayments ? 'From project payments' : 'Loading payments', icon: ChartNoAxesCombined, href: `/projects-engineering/projects/${project.id}/cost-control/overview` },
           { label: 'Man-Hours', value: mhPrimary, meta: hasBudget ? `${pct(Number(summary?.utilizationPct || 0))} utilised` : 'No approved budget', icon: Timer, href: `/projects-engineering/projects/${project.id}/resources` },
           { label: 'Contract Value', value: compactNaira(Number(project.contractValue || 0)), meta: project.client || '—', icon: Wallet, href: '/projects-engineering/projects' },
         ].map((kpi) => {

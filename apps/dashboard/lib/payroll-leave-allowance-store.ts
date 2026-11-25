@@ -396,14 +396,27 @@ export const reconcilePayrollLeaveAllowanceEvents = async (
 
     if (eligible) {
       if (isOutsideCollectedLeaveAllowance(event)) return event;
+      // Clear stale "reversed ineligible" audits once leave days qualify again; otherwise
+      // isCountableLeaveAllowanceEvent stays false even when status is restored to Paid.
+      const cleanedAudit = (event.audit || []).filter(
+        (entry) => !/reversed ineligible/i.test(`${entry.action || ''} ${entry.note || ''}`),
+      );
       const next = {
         ...event,
         days: approvedDays,
         requestId: linkedApplication?.id || event.requestId,
         updatedAt: now,
         status: event.status === 'Reversed' ? 'Paid' as const : event.status,
+        audit: cleanedAudit,
       };
-      if (next.days !== event.days || next.requestId !== event.requestId || next.status !== event.status) changed = true;
+      if (
+        next.days !== event.days
+        || next.requestId !== event.requestId
+        || next.status !== event.status
+        || cleanedAudit.length !== (event.audit || []).length
+      ) {
+        changed = true;
+      }
       return next;
     }
 

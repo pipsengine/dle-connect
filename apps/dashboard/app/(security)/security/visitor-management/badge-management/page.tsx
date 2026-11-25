@@ -1,6 +1,10 @@
 "use client";
 
 import React, { useState, useEffect, useMemo } from "react";
+import { EmployeeHostField } from "../_components/employee-host-field";
+import { loadVisitorWorkspace, patchVisitorVisit, removeVisitorArtifact, saveVisitorArtifact, saveVisitorVisit } from "@/lib/security/visitor-client";
+import type { VisitorArtifact, VisitorVisit } from "@/lib/security/visitor-types";
+import { durationToMinutes, epochOrNull, todayISO, visitorColor, visitorInitials } from "@/lib/security/visitor-views";
 import {
   AlertTriangle,
   Building2,
@@ -69,53 +73,6 @@ interface PrintJob {
   eta: string;
 }
 
-// ---------- mock data ----------
-const now0 = Date.now();
-
-const badgeTemplates: BadgeTemplate[] = [
-  { id: "tpl-1", name: "Standard Guest", visitorType: "Guest", lastModified: "3 days ago", accent: "from-blue-500 to-indigo-600" },
-  { id: "tpl-2", name: "Vendor Access", visitorType: "Vendor", lastModified: "1 week ago", accent: "from-emerald-500 to-teal-600" },
-  { id: "tpl-3", name: "Contractor Pass", visitorType: "Contractor", lastModified: "2 weeks ago", accent: "from-amber-500 to-orange-500" },
-  { id: "tpl-4", name: "VIP Executive", visitorType: "VIP", lastModified: "5 days ago", accent: "from-indigo-500 to-purple-600" },
-  { id: "tpl-5", name: "Interview Candidate", visitorType: "Interview", lastModified: "1 month ago", accent: "from-slate-500 to-slate-600" },
-  { id: "tpl-6", name: "Delivery / Courier", visitorType: "Delivery", lastModified: "2 months ago", accent: "from-cyan-500 to-blue-500" },
-];
-
-const initialBadges: IssuedBadge[] = [
-  {
-    id: "bd-1", badgeNumber: "V-2041", visitorName: "John Smith", initials: "JS", color: "bg-blue-500", company: "ABC Technologies", host: "Sarah Johnson", visitorType: "Vendor", templateName: "Vendor Access",
-    issueTime: now0 - 1000 * 60 * 40, expiryTime: now0 + 1000 * 60 * 20, status: "Active",
-    timeline: [{ time: "09:10", action: "Badge Issued", staff: "Reception" }, { time: "09:11", action: "Printed", staff: "Reception" }, { time: "09:13", action: "Visitor Checked In", staff: "Reception" }],
-  },
-  {
-    id: "bd-2", badgeNumber: "V-2042", visitorName: "Mary Johnson", initials: "MJ", color: "bg-emerald-500", company: "Google", host: "David Wilson", visitorType: "Vendor", templateName: "Vendor Access",
-    issueTime: now0 - 1000 * 60 * 165, expiryTime: now0 - 1000 * 60 * 5, status: "Due for Return",
-    timeline: [{ time: "10:15", action: "Badge Issued", staff: "Reception" }, { time: "10:17", action: "Printed", staff: "Reception" }, { time: "10:20", action: "Visitor Checked In", staff: "Reception" }],
-  },
-  {
-    id: "bd-3", badgeNumber: "V-2039", visitorName: "David Lee", initials: "DL", color: "bg-slate-400", company: "Microsoft", host: "Emily Carter", visitorType: "Guest", templateName: "Standard Guest",
-    issueTime: now0 - 1000 * 60 * 240, expiryTime: now0 - 1000 * 60 * 90, status: "Returned",
-    timeline: [{ time: "10:43", action: "Badge Issued", staff: "Reception" }, { time: "10:46", action: "Printed", staff: "Reception" }, { time: "10:47", action: "Visitor Checked In", staff: "Reception" }, { time: "11:15", action: "Badge Returned", staff: "Reception" }, { time: "11:15", action: "Closed", staff: "System" }],
-  },
-  {
-    id: "bd-4", badgeNumber: "V-2035", visitorName: "Chidi Eze", initials: "CE", color: "bg-red-400", company: "Freelance Auditor", host: "Finance Team", visitorType: "Contractor", templateName: "Contractor Pass",
-    issueTime: now0 - 1000 * 60 * 300, expiryTime: now0 - 1000 * 60 * 180, status: "Lost",
-    timeline: [{ time: "09:00", action: "Badge Issued", staff: "Reception" }, { time: "09:02", action: "Printed", staff: "Reception" }, { time: "10:10", action: "Visitor Checked Out (badge not returned)", staff: "Reception" }, { time: "12:30", action: "Flagged as Lost", staff: "Security" }],
-  },
-  {
-    id: "bd-5", badgeNumber: "V-2043", visitorName: "Bola Adeyemi", initials: "BA", color: "bg-indigo-500", company: "Coral Partners", host: "Sarah Johnson (HR)", visitorType: "VIP", templateName: "VIP Executive",
-    issueTime: now0 - 1000 * 60 * 12, expiryTime: now0 + 1000 * 60 * 48, status: "Active",
-    timeline: [{ time: "10:58", action: "Badge Issued", staff: "Reception" }, { time: "10:59", action: "Printed", staff: "Reception" }, { time: "11:00", action: "Visitor Checked In", staff: "Reception" }],
-  },
-];
-
-const initialPrintQueue: PrintJob[] = [
-  { id: "pq-1", visitorName: "Tunde Bakare", template: "Interview Candidate", printer: "Zebra ZD421 (Reception)", status: "Printing", eta: "5 sec" },
-  { id: "pq-2", visitorName: "Ngozi Umeh", template: "Vendor Access", printer: "Zebra ZD421 (Reception)", status: "Waiting", eta: "~30 sec" },
-  { id: "pq-3", visitorName: "Grace Lee", template: "Standard Guest", printer: "HID FARGO (Lobby)", status: "Ready", eta: "—" },
-  { id: "pq-4", visitorName: "Michael Ade", template: "Vendor Access", printer: "Zebra ZD421 (Reception)", status: "Failed", eta: "—" },
-];
-
 // ---------- utility ----------
 const statusColor = (status: BadgeStatus) =>
   status === "Active" ? "bg-emerald-50 text-emerald-700" :
@@ -139,11 +96,38 @@ function formatDuration(ms: number) {
 }
 
 // ---------- component ----------
+const EMPTY_BADGE: IssuedBadge = {
+  id: "", badgeNumber: "", visitorName: "No badge selected", initials: "", color: "bg-slate-300", company: "", host: "", visitorType: "", templateName: "Standard Guest", issueTime: Date.now(), expiryTime: Date.now(), status: "Returned", timeline: [],
+};
+
+const badgeFromVisit = (visit: VisitorVisit): IssuedBadge | null => {
+  if (!visit.badgeNumber && !visit.badgeStatus) return null;
+  const issued = epochOrNull(visit.checkInAt) || Date.parse(visit.updatedAt) || Date.now();
+  const status = (visit.badgeStatus === "Lost" || visit.badgeStatus === "Returned" || visit.badgeStatus === "Due for Return" || visit.badgeStatus === "Active"
+    ? visit.badgeStatus
+    : visit.status === "Checked Out" ? "Returned" : "Active") as BadgeStatus;
+  return {
+    id: visit.id,
+    badgeNumber: visit.badgeNumber || "Pending",
+    visitorName: visit.visitorName,
+    initials: visitorInitials(visit.visitorName),
+    color: visitorColor(visit.visitorName),
+    company: visit.company,
+    host: visit.hostName,
+    visitorType: visit.visitorType || "Guest",
+    templateName: visit.badgeTemplate || "Standard Guest",
+    issueTime: issued,
+    expiryTime: issued + durationToMinutes(visit.duration) * 60 * 1000,
+    status,
+    timeline: visit.timeline.map((event) => ({ time: event.time, action: event.action, staff: event.actor })),
+  };
+};
+
 export default function BadgeManagementPage() {
-  const [badges, setBadges] = useState<IssuedBadge[]>(initialBadges);
-  const [printQueue, setPrintQueue] = useState<PrintJob[]>(initialPrintQueue);
-  const [selectedId, setSelectedId] = useState<string>(initialBadges[0].id);
-  const [selectedTemplateId, setSelectedTemplateId] = useState<string>(badgeTemplates[1].id);
+  const [records, setRecords] = useState<VisitorVisit[]>([]);
+  const [artifacts, setArtifacts] = useState<VisitorArtifact[]>([]);
+  const [selectedId, setSelectedId] = useState("");
+  const [selectedTemplateId, setSelectedTemplateId] = useState("");
   const [toast, setToast] = useState<string | null>(null);
   const [clock, setClock] = useState(Date.now());
 
@@ -167,8 +151,41 @@ export default function BadgeManagementPage() {
     return () => clearInterval(t);
   }, []);
 
-  const selected = badges.find(b => b.id === selectedId) || badges[0];
-  const selectedTemplate = badgeTemplates.find(t => t.id === selectedTemplateId) || badgeTemplates[0];
+  const refresh = () => loadVisitorWorkspace().then((workspace) => {
+    setRecords(workspace.visits);
+    setArtifacts(workspace.artifacts);
+    const firstBadge = workspace.visits.map(badgeFromVisit).find(Boolean);
+    setSelectedId((current) => current || firstBadge?.id || "");
+    const firstTemplate = workspace.artifacts.find((item) => item.kind === "badge-template");
+    setSelectedTemplateId((current) => current || firstTemplate?.id || "");
+  }).catch((error) => showToast(error instanceof Error ? error.message : "Unable to load badges."));
+
+  useEffect(() => { void refresh(); }, []);
+
+  const templates = useMemo<BadgeTemplate[]>(() => artifacts.filter((item) => item.kind === "badge-template").map((item) => ({
+    id: item.id,
+    name: item.name,
+    visitorType: String(item.payload.visitorType || "Guest"),
+    lastModified: item.updatedAt ? new Date(item.updatedAt).toLocaleDateString() : "Saved",
+    accent: String(item.payload.accent || "from-blue-500 to-indigo-600"),
+  })), [artifacts]);
+  const badges = useMemo(() => records.map(badgeFromVisit).filter((badge): badge is IssuedBadge => Boolean(badge)), [records]);
+  const printQueue = useMemo<PrintJob[]>(() => artifacts.filter((item) => item.kind === "print-job").map((item) => ({
+    id: item.id,
+    visitorName: String(item.payload.visitorName || item.name),
+    template: String(item.payload.template || ""),
+    printer: String(item.payload.printer || "Reception"),
+    status: (item.payload.status as PrintStatus) || "Waiting",
+    eta: String(item.payload.eta || "—"),
+  })), [artifacts]);
+  const selected = badges.find(b => b.id === selectedId) || badges[0] || EMPTY_BADGE;
+  const selectedTemplate = templates.find(t => t.id === selectedTemplateId) || templates[0] || { id: "", name: "Standard Guest", visitorType: "Guest", lastModified: "", accent: "from-blue-500 to-indigo-600" };
+  const applySaved = (saved: VisitorVisit) => setRecords((prev) => [saved, ...prev.filter((item) => item.id !== saved.id)]);
+  const queueJob = (job: PrintJob) => {
+    void saveVisitorArtifact({ id: job.id, kind: "print-job", name: job.visitorName, payload: { ...job } })
+      .then((saved) => setArtifacts((prev) => [saved, ...prev.filter((item) => item.id !== saved.id)]))
+      .catch((error) => showToast(error instanceof Error ? error.message : "Unable to queue the print job."));
+  };
 
   const activeCount = badges.filter(b => b.status === "Active").length;
   const outstanding = badges.filter(b => b.status === "Active" || b.status === "Due for Return");
@@ -178,38 +195,47 @@ export default function BadgeManagementPage() {
     showToast(`"${tpl.name}" template selected — preview updated`);
   };
 
-  const duplicateTemplate = (tpl: BadgeTemplate) => showToast(`"${tpl.name}" duplicated`);
+  const duplicateTemplate = (tpl: BadgeTemplate) => {
+    void saveVisitorArtifact({ kind: "badge-template", name: `${tpl.name} copy`, payload: { visitorType: tpl.visitorType, accent: tpl.accent } })
+      .then((saved) => { setArtifacts((prev) => [saved, ...prev]); showToast(`"${tpl.name}" duplicated`); })
+      .catch((error) => showToast(error instanceof Error ? error.message : "Unable to duplicate the template."));
+  };
 
   const reprintBadge = (b: IssuedBadge) => {
-    setPrintQueue(prev => [{ id: `pq-${Date.now()}`, visitorName: b.visitorName, template: b.templateName, printer: "Zebra ZD421 (Reception)", status: "Waiting", eta: "~20 sec" }, ...prev]);
+    if (!b.id) return;
+    queueJob({ id: `pq-${Date.now()}`, visitorName: b.visitorName, template: b.templateName, printer: "Zebra ZD421 (Reception)", status: "Waiting", eta: "~20 sec" });
     showToast(`${b.visitorName}'s badge queued for reprint`);
   };
 
   const deactivateBadge = (b: IssuedBadge) => {
-    setBadges(prev => prev.map(x => x.id === b.id ? { ...x, status: "Returned", timeline: [...x.timeline, { time: new Date().toTimeString().slice(0, 5), action: "Badge Deactivated", staff: "Reception" }] } : x));
-    showToast(`Badge #${b.badgeNumber} deactivated`);
+    if (!b.id) return;
+    void patchVisitorVisit(b.id, { badgeStatus: "Returned" }, { time: "", action: "Badge deactivated", actor: "Reception" })
+      .then((saved) => { applySaved(saved); showToast(`Badge ${b.badgeNumber} deactivated`); })
+      .catch((error) => showToast(error instanceof Error ? error.message : "Unable to deactivate the badge."));
   };
 
   const markReturned = (b: IssuedBadge) => {
-    setBadges(prev => prev.map(x => x.id === b.id ? { ...x, status: "Returned", timeline: [...x.timeline, { time: new Date().toTimeString().slice(0, 5), action: "Badge Returned", staff: "Reception" }, { time: new Date().toTimeString().slice(0, 5), action: "Closed", staff: "System" }] } : x));
-    showToast(`Badge #${b.badgeNumber} marked returned`);
-    setShowReturnBadge(null);
+    if (!b.id) return;
+    void patchVisitorVisit(b.id, { badgeStatus: "Returned" }, { time: "", action: "Badge returned", actor: "Reception" })
+      .then((saved) => { applySaved(saved); showToast(`Badge ${b.badgeNumber} marked returned`); setShowReturnBadge(null); })
+      .catch((error) => showToast(error instanceof Error ? error.message : "Unable to return the badge."));
   };
 
   const retryPrintJob = (id: string) => {
-    setPrintQueue(prev => prev.map(p => p.id === id ? { ...p, status: "Waiting", eta: "~15 sec" } : p));
+    const job = printQueue.find((item) => item.id === id);
+    if (!job) return;
+    queueJob({ ...job, status: "Waiting", eta: "~15 sec" });
     showToast("Print job retried");
   };
   const cancelPrintJob = (id: string) => {
-    setPrintQueue(prev => prev.filter(p => p.id !== id));
-    showToast("Print job cancelled");
+    void removeVisitorArtifact(id)
+      .then(() => { setArtifacts((prev) => prev.filter((item) => item.id !== id)); showToast("Print job cancelled"); })
+      .catch((error) => showToast(error instanceof Error ? error.message : "Unable to cancel the print job."));
   };
   const prioritizePrintJob = (id: string) => {
-    setPrintQueue(prev => {
-      const job = prev.find(p => p.id === id);
-      if (!job) return prev;
-      return [job, ...prev.filter(p => p.id !== id)];
-    });
+    const job = printQueue.find((item) => item.id === id);
+    if (!job) return;
+    queueJob(job);
     showToast("Print job prioritized");
   };
 
@@ -244,7 +270,7 @@ export default function BadgeManagementPage() {
       <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm">
         <h2 className="text-lg font-semibold text-slate-900 mb-4">Badge Templates Gallery</h2>
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-          {badgeTemplates.map(tpl => (
+          {templates.map(tpl => (
             <div key={tpl.id} className={`border rounded-xl overflow-hidden ${selectedTemplateId === tpl.id ? "border-blue-300 ring-1 ring-blue-200" : "border-slate-200"}`}>
               <div className={`bg-gradient-to-br ${tpl.accent} p-4 text-white text-center`}>
                 <div className="text-[10px] uppercase tracking-wide opacity-80">Company Logo</div>
@@ -302,7 +328,7 @@ export default function BadgeManagementPage() {
         {/* Badge Preview */}
         <div className="lg:col-span-2 bg-white border border-slate-200 rounded-2xl p-5 shadow-sm">
           <h2 className="text-lg font-semibold text-slate-900 mb-4">Badge Preview</h2>
-          <div className={`rounded-xl p-5 text-white text-center bg-gradient-to-br ${badgeTemplates.find(t => t.name === selected.templateName)?.accent || "from-blue-500 to-indigo-600"}`}>
+          <div className={`rounded-xl p-5 text-white text-center bg-gradient-to-br ${templates.find(t => t.name === selected.templateName)?.accent || "from-blue-500 to-indigo-600"}`}>
             <div className="text-[10px] uppercase tracking-wide opacity-80 flex items-center justify-center gap-1"><Building2 size={11} /> Acme Corp</div>
             <div className="w-14 h-14 rounded-full bg-white/20 mx-auto mt-3 flex items-center justify-center text-lg font-bold">{selected.initials}</div>
             <div className="text-base font-bold mt-2">{selected.visitorName}</div>
@@ -453,30 +479,46 @@ export default function BadgeManagementPage() {
 
       {/* ---------- Modals ---------- */}
       {showIssueBadge && (
-        <IssueBadgeModal onClose={() => setShowIssueBadge(false)} onSubmit={(data) => {
-          const newBadge: IssuedBadge = {
-            id: `bd-${Date.now()}`, badgeNumber: `V-${2044 + badges.length}`, visitorName: data.name, initials: data.name.split(" ").map(n => n[0]).join("").slice(0, 2).toUpperCase(),
-            color: "bg-blue-500", company: data.company || "—", host: data.host, visitorType: data.visitorType, templateName: badgeTemplates.find(t => t.id === data.templateId)?.name || "Standard Guest",
-            issueTime: Date.now(), expiryTime: Date.now() + 1000 * 60 * 60, status: "Active",
-            timeline: [{ time: new Date().toTimeString().slice(0, 5), action: "Badge Issued", staff: "Reception" }],
-          };
-          setBadges(prev => [newBadge, ...prev]);
-          setSelectedId(newBadge.id);
-          showToast(`Badge #${newBadge.badgeNumber} issued for ${data.name}`);
+        <IssueBadgeModal templates={templates} onClose={() => setShowIssueBadge(false)} onSubmit={(data) => {
+          const templateName = templates.find(t => t.id === data.templateId)?.name || "Standard Guest";
+          void saveVisitorVisit({
+            visitorName: data.name,
+            company: data.company,
+            hostName: data.host,
+            hostEmployeeCode: data.hostCode,
+            department: data.department,
+            location: data.location,
+            visitorType: data.visitorType,
+            badgeStatus: "Active",
+            badgeTemplate: templateName,
+            status: "Checked In",
+            checkInAt: new Date().toISOString(),
+            visitDate: todayISO(),
+            purpose: "Badge issued",
+          }).then((saved) => {
+            applySaved(saved);
+            setSelectedId(saved.id);
+            showToast(`Badge ${saved.badgeNumber || ""} issued for ${saved.visitorName}`);
+          }).catch((error) => showToast(error instanceof Error ? error.message : "Unable to issue the badge."));
           setShowIssueBadge(false);
         }} />
       )}
 
       {showPrintBadge && (
         <PrintBadgeModal badges={badges} defaultId={selected.id} onClose={() => setShowPrintBadge(false)} onPrint={(b) => {
-          setPrintQueue(prev => [{ id: `pq-${Date.now()}`, visitorName: b.visitorName, template: b.templateName, printer: "Zebra ZD421 (Reception)", status: "Waiting", eta: "~20 sec" }, ...prev]);
+          queueJob({ id: `pq-${Date.now()}`, visitorName: b.visitorName, template: b.templateName, printer: "Zebra ZD421 (Reception)", status: "Waiting", eta: "~20 sec" });
           showToast(`Print job queued for ${b.visitorName}`);
           setShowPrintBadge(false);
         }} />
       )}
 
       {showCreateTemplate && (
-        <CreateTemplateModal onClose={() => setShowCreateTemplate(false)} onSubmit={(name) => { showToast(`Template "${name}" created`); setShowCreateTemplate(false); }} />
+        <CreateTemplateModal onClose={() => setShowCreateTemplate(false)} onSubmit={(name) => {
+          void saveVisitorArtifact({ kind: "badge-template", name, payload: { visitorType: "Guest", accent: "from-blue-500 to-indigo-600" } })
+            .then((saved) => { setArtifacts((prev) => [saved, ...prev]); setSelectedTemplateId(saved.id); showToast(`Template "${name}" created`); })
+            .catch((error) => showToast(error instanceof Error ? error.message : "Unable to create the template."));
+          setShowCreateTemplate(false);
+        }} />
       )}
 
       {showExportLog && (
@@ -488,7 +530,12 @@ export default function BadgeManagementPage() {
       )}
 
       {showPrinterSettings && (
-        <PrinterSettingsModal onClose={() => setShowPrinterSettings(false)} onSave={() => { showToast("Printer settings saved"); setShowPrinterSettings(false); }} />
+        <PrinterSettingsModal onClose={() => setShowPrinterSettings(false)} onSave={() => {
+          void saveVisitorArtifact({ id: "printer-settings", kind: "printer-settings", name: "Printer settings", payload: { savedAt: new Date().toISOString() } })
+            .then(() => showToast("Printer settings saved"))
+            .catch((error) => showToast(error instanceof Error ? error.message : "Unable to save printer settings."));
+          setShowPrinterSettings(false);
+        }} />
       )}
 
       {showReturnBadge && (
@@ -507,17 +554,20 @@ export default function BadgeManagementPage() {
 }
 
 // ---------- Modal: Issue Badge ----------
-function IssueBadgeModal({ onClose, onSubmit }: { onClose: () => void; onSubmit: (data: { name: string; company: string; host: string; visitorType: string; templateId: string }) => void }) {
+function IssueBadgeModal({ templates, onClose, onSubmit }: { templates: BadgeTemplate[]; onClose: () => void; onSubmit: (data: { name: string; company: string; host: string; hostCode?: string; department?: string; location?: string; visitorType: string; templateId: string }) => void }) {
   const [name, setName] = useState("");
   const [company, setCompany] = useState("");
   const [host, setHost] = useState("");
+  const [hostCode, setHostCode] = useState("");
+  const [department, setDepartment] = useState("");
+  const [location, setLocation] = useState("");
   const [visitorType, setVisitorType] = useState("Guest");
-  const [templateId, setTemplateId] = useState(badgeTemplates[0].id);
+  const [templateId, setTemplateId] = useState(templates[0]?.id || "");
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!name.trim()) return;
-    onSubmit({ name, company, host, visitorType, templateId });
+    onSubmit({ name, company, host, hostCode, department, location, visitorType, templateId });
   };
 
   return (
@@ -536,14 +586,11 @@ function IssueBadgeModal({ onClose, onSubmit }: { onClose: () => void; onSubmit:
             <label className="text-sm font-medium text-slate-700">Company</label>
             <input value={company} onChange={e => setCompany(e.target.value)} placeholder="Company name" className="w-full mt-1 border border-slate-200 rounded-xl px-3 py-2 text-sm" />
           </div>
-          <div>
-            <label className="text-sm font-medium text-slate-700">Host</label>
-            <input value={host} onChange={e => setHost(e.target.value)} placeholder="Employee name" className="w-full mt-1 border border-slate-200 rounded-xl px-3 py-2 text-sm" />
-          </div>
+          <EmployeeHostField label="Host" value={host} onPick={(employee, typed) => { setHost(typed); setHostCode(employee?.code || ""); setDepartment(employee?.department || ""); setLocation(employee?.location || ""); }} />
           <div>
             <label className="text-sm font-medium text-slate-700">Template</label>
             <select value={templateId} onChange={e => setTemplateId(e.target.value)} className="w-full mt-1 border border-slate-200 rounded-xl px-3 py-2 text-sm">
-              {badgeTemplates.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
+              {templates.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
             </select>
           </div>
           <div className="flex justify-end gap-2 pt-2">
@@ -560,6 +607,7 @@ function IssueBadgeModal({ onClose, onSubmit }: { onClose: () => void; onSubmit:
 function PrintBadgeModal({ badges, defaultId, onClose, onPrint }: { badges: IssuedBadge[]; defaultId: string; onClose: () => void; onPrint: (b: IssuedBadge) => void }) {
   const [id, setId] = useState(defaultId);
   const b = badges.find(x => x.id === id) || badges[0];
+  if (!b) return null;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 backdrop-blur-sm p-4">

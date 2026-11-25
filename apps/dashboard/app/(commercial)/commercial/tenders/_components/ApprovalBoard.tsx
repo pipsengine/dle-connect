@@ -21,7 +21,9 @@ import {
   stageMatchesActor,
   tenderApprovalBucket,
 } from '@/lib/commercial/tender-workflow';
+import { bidNoBidAssessmentComplete } from '@/lib/commercial/bid-no-bid-assessment';
 import type { TenderApproval, TenderOpportunity } from '@/lib/commercial/tender-types';
+import { BidNoBidAssessmentForm } from './BidNoBidAssessmentForm';
 import { formatWhen, tenderGet, tenderPost } from './tender-api';
 import { OfficerMultiSearch, type DirectoryEmployee } from './OfficerSearch';
 import { useTenderRecord } from './use-tender-record';
@@ -175,7 +177,7 @@ export function ApprovalBoard() {
     setInternal((storedInternal || (external ? internalDeadlineFromExternal(external) : '')).slice(0, 10));
     setReviewPriority(opportunity.priority || 'Medium');
     setConfirming('');
-    setDetailTab('details');
+    setDetailTab(awaitsGmCommercial(opportunity) ? 'assessment' : 'details');
   }, [opportunity?.id, opportunity?.updatedAt]);
 
   const run = async (decision: string) => {
@@ -416,7 +418,14 @@ export function ApprovalBoard() {
                   <div className="mb-3">
                     <div className="text-[11px] font-bold uppercase tracking-[0.08em] text-orange-700">Your action required</div>
                     <h3 className="text-[16px] font-black text-slate-950">GM Commercial Approval</h3>
-                    <p className="mt-1 text-[12px] text-slate-600">Assign one or more employees, choose BID or NO BID, then confirm.</p>
+                    <p className="mt-1 text-[12px] text-slate-600">Review the BID / NO BID assessment below, decide BID or NO BID, assign employee(s), then approve.</p>
+                    {opportunity.bidNoBidAssessment ? (
+                      <button type="button" onClick={() => setDetailTab('assessment')} className="mt-2 text-[12px] font-bold text-[#2563eb]">
+                        {bidNoBidAssessmentComplete(opportunity.bidNoBidAssessment) ? 'Open completed assessment' : 'Open assessment'}
+                      </button>
+                    ) : (
+                      <p className="mt-2 text-[12px] font-semibold text-amber-700">No BID / NO BID assessment was submitted with this opportunity.</p>
+                    )}
                   </div>
                   <div className="grid gap-3 sm:grid-cols-2">
                     <DecisionCard
@@ -602,7 +611,7 @@ export function ApprovalBoard() {
                 </article>
               ) : null}
 
-              {detailTab === 'assessment' ? <Assessment approvals={approvals} decided={decided} /> : null}
+              {detailTab === 'assessment' ? <Assessment opportunity={opportunity} approvals={approvals} decided={decided} showRestricted={gm || md} /> : null}
               {detailTab === 'comments' ? (
                 <article className="rounded-2xl border border-slate-200 bg-white p-4">
                   {approvals.filter((item) => item.comments).length === 0 ? <p className="text-sm text-slate-500">No comments yet.</p> : approvals.filter((item) => item.comments).map((item) => (
@@ -669,12 +678,36 @@ function Comment({ item }: { item: TenderApproval }) {
   return <div className="border-b border-slate-100 py-2 text-[13px]"><div className="font-bold text-slate-800">{item.actor} · {item.stage} · {item.decision}</div><p className="text-slate-600">{item.comments}</p><div className="text-[11px] text-slate-400">{formatWhen(item.createdAt)}</div></div>;
 }
 
-function Assessment({ approvals, decided }: { approvals: TenderApproval[]; decided: string }) {
+function Assessment({
+  opportunity,
+  approvals,
+  decided,
+  showRestricted,
+}: {
+  opportunity: TenderOpportunity;
+  approvals: TenderApproval[];
+  decided: string;
+  showRestricted: boolean;
+}) {
   const decision = approvals.find((item) => (item.stage === 'GM Commercial Approval' || item.stage === 'MD Final Approval' || item.stage === 'MD Bid / No Bid') && ['BID', 'NO BID'].includes(item.decision.toUpperCase()));
+  const assessment = opportunity.bidNoBidAssessment;
   return (
-    <article className="rounded-2xl border border-slate-200 bg-white p-4 text-[13px] text-slate-700">
-      <p>{decided ? `The recorded decision is ${decided}.` : 'No bid decision has been confirmed.'}</p>
-      {decision ? <p className="mt-2">{decision.actor} · {formatWhen(decision.createdAt)}{decision.comments ? ` · ${decision.comments}` : ''}</p> : null}
-    </article>
+    <div className="space-y-3">
+      <article className="rounded-2xl border border-slate-200 bg-white p-4 text-[13px] text-slate-700">
+        <p className="font-semibold text-slate-900">Official decision</p>
+        <p className="mt-1">{decided ? `The recorded decision is ${decided}.` : 'No bid decision has been confirmed yet. GM Commercial reviews the scorecard below, then decides BID or NO BID in the action panel.'}</p>
+        {decision ? <p className="mt-2">{decision.actor} · {formatWhen(decision.createdAt)}{decision.comments ? ` · ${decision.comments}` : ''}</p> : null}
+        {assessment?.completedAt ? (
+          <p className="mt-2 text-[12px] text-slate-500">Assessment submitted {formatWhen(assessment.completedAt)}{assessment.completedBy ? ` by ${assessment.completedBy}` : ''}.</p>
+        ) : null}
+      </article>
+      {assessment?.values ? (
+        <BidNoBidAssessmentForm values={assessment.values} readOnly showRestricted={showRestricted} lockFromOpportunity={false} />
+      ) : (
+        <article className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-[13px] text-amber-900">
+          No BID / NO BID assessment was saved with this opportunity.
+        </article>
+      )}
+    </div>
   );
 }

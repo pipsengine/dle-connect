@@ -40,6 +40,7 @@ import {
 } from 'recharts';
 import { ProjectFormModal } from '@/components/projects-engineering/ProjectFormModal';
 import { deriveProjectCostSnapshot } from '@/lib/projects-engineering/cost-control';
+import { useProjectPaymentMap } from '@/lib/projects-engineering/use-project-payment-costs';
 import { compactNaira, hours, money, pct } from '@/lib/projects-engineering/format';
 import type { PortfolioManHourSummary } from '@/lib/projects-engineering/man-hour-types';
 import type { Project } from '@/lib/projects-engineering/types';
@@ -194,6 +195,15 @@ export function PortfolioDashboardFigma() {
     return () => window.clearInterval(timer);
   }, [load]);
 
+  const paymentMap = useProjectPaymentMap();
+  const snapFor = useCallback((project: Project) => {
+    const position = paymentMap.map.get(String(project.code || '').toUpperCase());
+    return deriveProjectCostSnapshot(
+      project,
+      paymentMap.ready ? { actual: position?.actual || 0, commitments: position?.commitments || 0 } : undefined,
+    );
+  }, [paymentMap.ready, paymentMap.map]);
+
   const manHourByCode = useMemo(() => {
     const map = new Map<string, PortfolioManHourSummary>();
     for (const row of manHours) map.set(row.projectCode.toUpperCase(), row);
@@ -206,14 +216,14 @@ export function PortfolioDashboardFigma() {
     let actual = 0;
     let eac = 0;
     for (const project of projects) {
-      const snap = deriveProjectCostSnapshot(project);
+      const snap = snapFor(project);
       bac += snap.bac;
       commitments += snap.commitments;
       actual += snap.actual;
       eac += snap.eac;
     }
     return { bac, commitments, actual, eac };
-  }, [projects]);
+  }, [projects, snapFor]);
 
   const metrics = useMemo(() => {
     const active = projects.filter((p) => !/cancelled|closed|archived|draft/i.test(p.status));
@@ -234,7 +244,7 @@ export function PortfolioDashboardFigma() {
       const finish = Date.parse(p.finish);
       return Number.isFinite(finish) && finish < Date.now() && Number(p.actual || 0) < 100;
     }).length;
-    const lowCpi = projects.filter((p) => Number(p.costPerformance || 1) < 0.95).length;
+    const lowCpi = projects.filter((p) => snapFor(p).cpi < 0.95).length;
     const lowSpi = projects.filter((p) => Number(p.schedulePerformance || 1) < 0.95).length;
     return {
       activeCount,
@@ -253,7 +263,7 @@ export function PortfolioDashboardFigma() {
       hseAlerts: Math.max(critical, Math.min(projects.length, watch)),
       clientActions: Math.max(overdue + lowSpi, watch),
     };
-  }, [projects, manHourTotals]);
+  }, [projects, manHourTotals, snapFor]);
 
   const healthPie = useMemo(() => {
     const total = Math.max(1, projects.length);
@@ -270,7 +280,7 @@ export function PortfolioDashboardFigma() {
       : 0;
     const avgActual = metrics.avgProgress;
     const avgCpi = projects.length
-      ? projects.reduce((s, p) => s + Number(p.costPerformance || 1), 0) / projects.length
+      ? projects.reduce((s, p) => s + snapFor(p).cpi, 0) / projects.length
       : 1;
     const now = new Date().getMonth();
     return Array.from({ length: 6 }, (_, i) => {
@@ -283,7 +293,7 @@ export function PortfolioDashboardFigma() {
         cpi: Math.round((0.92 + (avgCpi - 0.92) * factor) * 100) / 100,
       };
     });
-  }, [projects, metrics.avgProgress]);
+  }, [projects, metrics.avgProgress, snapFor]);
 
   const manHourSeries = useMemo(() => {
     const plannedMonthly = manHourTotals.budgetedHours > 0 ? manHourTotals.budgetedHours / 6 : 0;
@@ -339,7 +349,7 @@ export function PortfolioDashboardFigma() {
           id: `${p.id}-crit`,
           tone: 'critical',
           title: `Critical health — ${p.code}`,
-          meta: `${p.name} · CPI ${Number(p.costPerformance || 0).toFixed(2)}`,
+          meta: `${p.name} · CPI ${snapFor(p).cpi.toFixed(2)}`,
           href: `/projects-engineering/projects/${p.id}/overview`,
         });
       } else if (p.health === 'Watch') {
@@ -361,12 +371,13 @@ export function PortfolioDashboardFigma() {
           href: `/projects-engineering/projects/${p.id}/resources`,
         });
       }
-      if (Number(p.costPerformance || 1) < 0.95) {
+      const snap = snapFor(p);
+      if (snap.fromPayments && snap.cpi < 0.95) {
         items.push({
           id: `${p.id}-cpi`,
           tone: 'critical',
           title: `Cost overrun forecast — ${p.code}`,
-          meta: `CPI ${Number(p.costPerformance || 0).toFixed(2)} · EAC above BAC`,
+          meta: `CPI ${snap.cpi.toFixed(2)} · payments ${compactNaira(snap.actual)}`,
           href: `/projects-engineering/projects/${p.id}/cost-control/overview`,
         });
       }
@@ -381,7 +392,7 @@ export function PortfolioDashboardFigma() {
       });
     }
     return items.slice(0, 6);
-  }, [projects, manHourByCode]);
+  }, [projects, manHourByCode, snapFor]);
 
   const milestones = useMemo(() => {
     return [...projects]
@@ -403,21 +414,21 @@ export function PortfolioDashboardFigma() {
 
   const aiInsight = useMemo(() => {
     const topUtil = [...manHours].sort((a, b) => b.utilizationPct - a.utilizationPct)[0];
-    const weakCost = [...projects].sort((a, b) => Number(a.costPerformance || 1) - Number(b.costPerformance || 1))[0];
+    const weakCost = [...projects].sort((a, b) => snapFor(a).cpi - snapFor(b).cpi)[0];
     const utilText =
       manHourTotals.budgetedHours > 0
         ? `Man-hour utilisation is ${pct(metrics.util)} against approved budgets`
         : 'Set man-hour budgets to unlock utilisation insights';
     const costText =
-      weakCost && Number(weakCost.costPerformance || 1) < 1
-        ? `${weakCost.code} is forecast under CPI ${Number(weakCost.costPerformance || 0).toFixed(2)}`
+      weakCost && snapFor(weakCost).fromPayments && snapFor(weakCost).cpi < 1
+        ? `${weakCost.code} is forecast under CPI ${snapFor(weakCost).cpi.toFixed(2)}`
         : 'Portfolio cost performance is within control thresholds';
     const action =
       topUtil && topUtil.utilizationPct > 85
         ? `Consider resource reallocation on ${topUtil.projectCode} and a schedule recovery plan.`
         : 'Continue monitoring SPI/CPI and overdue finish dates.';
     return `${utilText}. ${costText}. ${action}`;
-  }, [manHours, projects, manHourTotals.budgetedHours, metrics.util]);
+  }, [manHours, projects, manHourTotals.budgetedHours, metrics.util, snapFor]);
 
   const period = reportingPeriodLabel();
 
@@ -523,8 +534,8 @@ export function PortfolioDashboardFigma() {
 
       <div className="ppd-kpi-row-sm">
         <SecondaryKpi label="Total Budget (BAC)" value={compactNaira(costAgg.bac)} hint="Contract baselines" href="/projects-engineering/cost-control" />
-        <SecondaryKpi label="Total Commitments" value={compactNaira(costAgg.commitments)} hint="Linked obligations" href="/projects-engineering/cost-control" />
-        <SecondaryKpi label="Actual Costs" value={compactNaira(costAgg.actual)} hint="Earned / consumed" href="/projects-engineering/cost-control" />
+        <SecondaryKpi label="Total Commitments" value={compactNaira(costAgg.commitments)} hint="Open project payments" href="/projects-engineering/cost-control" />
+        <SecondaryKpi label="Actual Costs" value={compactNaira(costAgg.actual)} hint="Disbursed project payments" href="/projects-engineering/cost-control" />
         <SecondaryKpi label="Portfolio EAC" value={compactNaira(costAgg.eac)} hint="Forecast at completion" href="/projects-engineering/cost-control" />
         <SecondaryKpi label="Open Critical Risks" value={String(metrics.openRisks)} hint="Health-derived" href="/projects-engineering/risks" />
         <SecondaryKpi label="Overdue Deliverables" value={String(metrics.overdue)} hint="Past finish / incomplete" href="/projects-engineering/deliverables" />
@@ -733,7 +744,7 @@ export function PortfolioDashboardFigma() {
                         </td>
                         <td className="num">{mh ? hours(mh.pmApprovedHours) : '0 hrs'}</td>
                         <td className="num">{Number(p.schedulePerformance || 0).toFixed(2)}</td>
-                        <td className="num">{Number(p.costPerformance || 0).toFixed(2)}</td>
+                        <td className="num">{snapFor(p).cpi.toFixed(2)}</td>
                         <td>
                           <span className={`ppd-pill ${p.health === 'Healthy' ? 'ok' : p.health === 'Watch' ? 'warn' : 'bad'}`}>
                             {p.health === 'Watch' ? 'At Risk' : p.health}

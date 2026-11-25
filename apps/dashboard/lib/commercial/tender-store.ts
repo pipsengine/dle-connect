@@ -31,6 +31,12 @@ import {
   tenderDraftFromEnquiry,
   type AssignedOfficer,
 } from '@/lib/commercial/tender-workflow';
+import {
+  bidNoBidAssessmentComplete,
+  parseBidNoBidAssessment,
+  serializeBidNoBidAssessment,
+  validateBidNoBidAssessment,
+} from '@/lib/commercial/bid-no-bid-assessment';
 import type {
   TenderApproval,
   TenderAuditEvent,
@@ -155,6 +161,7 @@ const mapOpportunity = (row: Record<string, unknown>): TenderOpportunity => ({
   commercialReviewedAt: iso(row.CommercialReviewedAt),
   gmBidDecision: clean(row.GmBidDecision, 20),
   originalInternalDeadline: dateOnly(row.OriginalInternalDeadline),
+  bidNoBidAssessment: parseBidNoBidAssessment(row.BidNoBidAssessmentJson),
   createdAt: iso(row.CreatedAt),
   updatedAt: iso(row.UpdatedAt),
   createdBy: clean(row.CreatedBy, 120),
@@ -260,9 +267,9 @@ const OPPORTUNITY_COLUMNS = `
   [ContractType],[ProjectLocation],[ContractDuration],[DurationUnit],[AllowJv],[Retentions],[ScopeSummary],
   [SubmissionDeadline],[ClosingDate],[InvitationDate],[SiteVisitDate],[ClarificationDeadline],[OwnerName],
   [TeamNotes],[ApprovalNotes],[Watchlisted],[CreatedAt],[UpdatedAt],[CreatedBy],[UpdatedBy],
-  [PreparationStatus],[ClientStatus],[AwardedToDle],[OwnerEmployeeCode],[AssignedAt],[AcknowledgedAt],
+  [PreparationStatus],[ClientStatus],[AwardedToDle],[OwnerEmployeeCode],[AssignedOfficersJson],[AssignedAt],[AcknowledgedAt],
   [DeadlineOverrideReason],[UrgentException],[CommercialKind],[CommercialReview],[CommercialReviewNote],
-  [CommercialReviewedBy],[CommercialReviewedAt],[GmBidDecision],[OriginalInternalDeadline]
+  [CommercialReviewedBy],[CommercialReviewedAt],[GmBidDecision],[OriginalInternalDeadline],[BidNoBidAssessmentJson]
 `;
 
 export const listOpportunities = async (): Promise<TenderOpportunity[]> => {
@@ -299,6 +306,12 @@ const validate = (input: TenderOpportunityInput, mode: 'draft' | 'submit') => {
       if (!clean(input.category, 80)) throw new Error('Sector is required.');
       if (!externalDeadlineOf(input)) throw new Error('External deadline is required.');
       if (!clean(input.description)) throw new Error('Description is required.');
+      const assessment = parseBidNoBidAssessment(input.bidNoBidAssessment);
+      if (!assessment || !bidNoBidAssessmentComplete(assessment)) {
+        const errors = validateBidNoBidAssessment(assessment?.values || {}, 'submit');
+        const first = Object.values(errors)[0];
+        throw new Error(first ? `Complete the BID / NO BID assessment before submitting (${first}).` : 'Complete the BID / NO BID assessment before submitting for review.');
+      }
     }
     return;
   }
@@ -308,6 +321,42 @@ const validate = (input: TenderOpportunityInput, mode: 'draft' | 'submit') => {
     if (!clean(input.site, 180)) throw new Error('Select a site.');
     if (!(num(input.estimatedValue) > 0)) throw new Error('Estimated value is required.');
   }
+};
+
+const persistBidNoBidAssessment = async (
+  pool: sql.ConnectionPool,
+  id: string,
+  input: TenderOpportunityInput,
+  actor: string,
+  mode: 'draft' | 'submit',
+) => {
+  if (!commercialKindInput(input)) return;
+  if (input.bidNoBidAssessment === undefined) return;
+  const assessment = parseBidNoBidAssessment(input.bidNoBidAssessment);
+  const payload = assessment
+    ? {
+        values: assessment.values,
+        completedAt: mode === 'submit' ? (assessment.completedAt || new Date().toISOString()) : assessment.completedAt,
+        completedBy: mode === 'submit' ? (assessment.completedBy || clean(actor, 120)) : assessment.completedBy,
+      }
+    : null;
+  const json = serializeBidNoBidAssessment(payload);
+  const internal = clean(assessment?.values?.internalDeadline, 40).slice(0, 10);
+  const contractValue = num(assessment?.values?.contractValue);
+  await pool
+    .request()
+    .input('Id', sql.NVarChar(40), id)
+    .input('Json', sql.NVarChar(sql.MAX), json)
+    .input('ClosingDate', sql.Date, dateOrNull(internal))
+    .input('EstimatedValue', sql.Decimal(19, 2), contractValue > 0 ? contractValue : null)
+    .query(`
+      UPDATE [commercial].[TenderOpportunities]
+      SET [BidNoBidAssessmentJson]=@Json,
+          [ClosingDate]=CASE WHEN @ClosingDate IS NULL THEN [ClosingDate] ELSE @ClosingDate END,
+          [EstimatedValue]=CASE WHEN @EstimatedValue IS NULL OR @EstimatedValue <= 0 THEN [EstimatedValue] ELSE @EstimatedValue END,
+          [UpdatedAt]=SYSUTCDATETIME()
+      WHERE [OpportunityId]=@Id
+    `);
 };
 
 const withDefaultInternalDeadline = (input: TenderOpportunityInput): TenderOpportunityInput => {
@@ -423,6 +472,7 @@ export const saveOpportunity = async (input: TenderOpportunityInput, actor: stri
     await audit(pool, existingId, actor, mode === 'submit' ? 'SUBMITTED_FOR_REVIEW' : 'UPDATED', referenceNo);
     await stampWorkflow(pool, existingId);
     await persistCommercial(pool, existingId, input, mode);
+    await persistBidNoBidAssessment(pool, existingId, input, actor, mode);
     const updated = await getOpportunity(existingId);
     if (updated) await upsertTenderClient(updated, actor).catch(() => undefined);
     return updated;
@@ -459,6 +509,7 @@ export const saveOpportunity = async (input: TenderOpportunityInput, actor: stri
   await audit(pool, id, actor, mode === 'submit' ? 'SUBMITTED_FOR_REVIEW' : 'CREATED', referenceNo);
   await stampWorkflow(pool, id);
   await persistCommercial(pool, id, input, mode);
+  await persistBidNoBidAssessment(pool, id, input, actor, mode);
   const created = await getOpportunity(id);
   if (created) await upsertTenderClient(created, actor).catch(() => undefined);
   return created;

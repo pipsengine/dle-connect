@@ -10,6 +10,7 @@ import {
   ChevronLeft,
   ChevronRight,
   Columns3,
+  Coins,
   Download,
   FolderKanban,
   LayoutGrid,
@@ -24,7 +25,9 @@ import {
   Wallet,
 } from 'lucide-react';
 import { ProjectFormModal } from '@/components/projects-engineering/ProjectFormModal';
+import { deriveProjectCostSnapshot } from '@/lib/projects-engineering/cost-control';
 import { compactNaira, hours, money, pct } from '@/lib/projects-engineering/format';
+import { useProjectPaymentMap } from '@/lib/projects-engineering/use-project-payment-costs';
 import type { PortfolioManHourSummary } from '@/lib/projects-engineering/man-hour-types';
 import type { Project } from '@/lib/projects-engineering/types';
 
@@ -101,11 +104,12 @@ export default function ProjectsRegisterFigma() {
   const [typeFilter, setTypeFilter] = useState('all');
   const [locationFilter, setLocationFilter] = useState('all');
   const [view, setView] = useState<'list' | 'card'>('list');
-  const [sortKey, setSortKey] = useState<'code' | 'name' | 'value' | 'actual' | 'hours'>('code');
+  const [sortKey, setSortKey] = useState<'code' | 'name' | 'value' | 'actual' | 'hours' | 'paid' | 'committed'>('code');
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc');
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const paymentMap = useProjectPaymentMap();
   const [modalOpen, setModalOpen] = useState(false);
   const [modalMode, setModalMode] = useState<'create' | 'edit'>('create');
   const [selected, setSelected] = useState<Project | null>(null);
@@ -184,6 +188,13 @@ export default function ProjectsRegisterFigma() {
       const actual = Number(project.actual || 0);
       const variance = actual - planned;
       const util = mh?.budgetedHours ? mh.utilizationPct : mh?.consumedPct || 0;
+      const position = paymentMap.map.get(String(project.code || '').toUpperCase());
+      const snap = deriveProjectCostSnapshot(
+        project,
+        paymentMap.ready
+          ? { actual: position?.actual || 0, commitments: position?.commitments || 0 }
+          : undefined,
+      );
       return {
         project,
         stage: normalizeStage(project.phase || '', project.status || ''),
@@ -193,10 +204,12 @@ export default function ProjectsRegisterFigma() {
         hours: mh?.pmApprovedHours || 0,
         util,
         spi: Number(project.schedulePerformance || 0),
-        cpi: Number(project.costPerformance || 0),
+        cpi: snap.cpi,
+        paid: snap.fromPayments ? snap.actual : null,
+        committed: snap.fromPayments ? snap.commitments : null,
       };
     });
-  }, [projects, mhByCode]);
+  }, [projects, mhByCode, paymentMap.ready, paymentMap.map]);
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -232,6 +245,8 @@ export default function ProjectsRegisterFigma() {
       if (sortKey === 'code') return a.project.code.localeCompare(b.project.code) * dir;
       if (sortKey === 'name') return a.project.name.localeCompare(b.project.name) * dir;
       if (sortKey === 'value') return (Number(a.project.contractValue || 0) - Number(b.project.contractValue || 0)) * dir;
+      if (sortKey === 'paid') return ((a.paid || 0) - (b.paid || 0)) * dir;
+      if (sortKey === 'committed') return ((a.committed || 0) - (b.committed || 0)) * dir;
       if (sortKey === 'actual') return (a.actual - b.actual) * dir;
       return (a.hours - b.hours) * dir;
     });
@@ -254,6 +269,8 @@ export default function ProjectsRegisterFigma() {
     const completed = projects.filter((p) => /complet|closed|closeout/i.test(p.status)).length;
     const atRisk = projects.filter((p) => p.health === 'Watch' || p.health === 'Critical').length;
     const value = projects.reduce((sum, p) => sum + Number(p.contractValue || 0), 0);
+    const paid = projects.reduce((sum, p) => sum + (paymentMap.map.get(String(p.code || '').toUpperCase())?.actual || 0), 0);
+    const committed = projects.reduce((sum, p) => sum + (paymentMap.map.get(String(p.code || '').toUpperCase())?.commitments || 0), 0);
     const share = (n: number) => (total ? Math.round((n / total) * 100) : 0);
     return [
       { label: 'Total Projects', value: String(total), meta: `${filtered.length} in view`, icon: FolderKanban, tone: 'blue' as const, bar: null as number | null },
@@ -262,8 +279,10 @@ export default function ProjectsRegisterFigma() {
       { label: 'Completed', value: String(completed), meta: `${share(completed)}%`, icon: CheckCircle2, tone: 'green' as const, bar: share(completed) },
       { label: 'At Risk', value: String(atRisk), meta: `${share(atRisk)}%`, icon: TriangleAlert, tone: 'red' as const, bar: share(atRisk) },
       { label: 'Total Contract Value', value: compactNaira(value), meta: `${total} contracts`, icon: Wallet, tone: 'blue' as const, bar: null as number | null },
+      { label: 'Actual Cost', value: paymentMap.ready ? compactNaira(paid) : '…', meta: 'Disbursed project payments', icon: Coins, tone: 'green' as const, bar: null as number | null },
+      { label: 'Open Commitments', value: paymentMap.ready ? compactNaira(committed) : '…', meta: 'Approved, not yet paid', icon: Wallet, tone: 'amber' as const, bar: null as number | null },
     ];
-  }, [projects, filtered.length]);
+  }, [projects, filtered.length, paymentMap.ready, paymentMap.map]);
 
   const openCreate = () => {
     if (!identity?.canCreateProjects) return;
@@ -328,6 +347,8 @@ export default function ProjectsRegisterFigma() {
       'Manager',
       'Stage',
       'ContractValue',
+      'ActualCost',
+      'Commitments',
       'Planned%',
       'Actual%',
       'Variance%',
@@ -338,7 +359,7 @@ export default function ProjectsRegisterFigma() {
       'Health',
       'Status',
     ];
-    const lines = filtered.map(({ project, stage, planned, actual, variance, hours: h, util, spi, cpi }) =>
+    const lines = filtered.map(({ project, stage, planned, actual, variance, hours: h, util, spi, cpi, paid, committed }) =>
       [
         project.code,
         project.name,
@@ -346,6 +367,8 @@ export default function ProjectsRegisterFigma() {
         project.manager,
         stage,
         project.contractValue,
+        paid ?? '',
+        committed ?? '',
         planned.toFixed(1),
         actual.toFixed(1),
         variance.toFixed(1),
@@ -538,6 +561,8 @@ export default function ProjectsRegisterFigma() {
               <option value="code">Project Code (A-Z)</option>
               <option value="name">Project Name</option>
               <option value="value">Contract Value</option>
+              <option value="paid">Actual Cost</option>
+              <option value="committed">Commitments</option>
               <option value="actual">Actual %</option>
               <option value="hours">Man-Hours</option>
             </select>
@@ -569,7 +594,7 @@ export default function ProjectsRegisterFigma() {
           </div>
         ) : view === 'card' ? (
           <div className="prr-cards">
-            {pageRows.map(({ project, stage, planned, actual, variance, hours: h, util, spi, cpi }) => (
+            {pageRows.map(({ project, stage, planned, actual, variance, hours: h, util, spi, cpi, paid, committed }) => (
               <article key={project.id} className="prr-card">
                 <header>
                   <span className="prr-thumb">{project.code.slice(0, 2)}</span>
@@ -590,6 +615,14 @@ export default function ProjectsRegisterFigma() {
                   <div>
                     <small>Value</small>
                     <strong>{compactNaira(Number(project.contractValue || 0))}</strong>
+                  </div>
+                  <div>
+                    <small>Actual Cost</small>
+                    <strong>{paid == null ? '…' : compactNaira(paid)}</strong>
+                  </div>
+                  <div>
+                    <small>Commitments</small>
+                    <strong>{committed == null ? '…' : compactNaira(committed)}</strong>
                   </div>
                   <div>
                     <small>Progress</small>
@@ -637,6 +670,8 @@ export default function ProjectsRegisterFigma() {
                   <th>Project Manager</th>
                   <th>Stage</th>
                   <th>Contract Value</th>
+                  <th>Actual Cost</th>
+                  <th>Commitments</th>
                   <th>Planned %</th>
                   <th>Actual %</th>
                   <th>Variance</th>
@@ -650,7 +685,7 @@ export default function ProjectsRegisterFigma() {
                 </tr>
               </thead>
               <tbody>
-                {pageRows.map(({ project, stage, planned, actual, variance, hours: h, util, spi, cpi }, index) => (
+                {pageRows.map(({ project, stage, planned, actual, variance, hours: h, util, spi, cpi, paid, committed }, index) => (
                   <tr key={project.id}>
                     <td>
                       <input
@@ -692,6 +727,12 @@ export default function ProjectsRegisterFigma() {
                     </td>
                     <td>
                       <b>{money(Number(project.contractValue || 0), project.currency || 'NGN')}</b>
+                    </td>
+                    <td>
+                      <b>{paid == null ? '…' : compactNaira(paid)}</b>
+                    </td>
+                    <td>
+                      <b>{committed == null ? '…' : compactNaira(committed)}</b>
                     </td>
                     <td>
                       <MetricBar value={planned} blue />

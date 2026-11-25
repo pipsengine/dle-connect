@@ -1,4 +1,8 @@
-﻿import { Card, KpiCard, DataTable, Status, MiniBar, Progress, Button } from '@/components/projects-engineering/UI';
+﻿'use client';
+
+import { Card, KpiCard, DataTable, Status, MiniBar, Progress, Button } from '@/components/projects-engineering/UI';
+import { deriveProjectCostSnapshot } from '@/lib/projects-engineering/cost-control';
+import { useProjectPaymentPosition } from '@/lib/projects-engineering/use-project-payment-costs';
 import { ActiveProjectOverviewFigma } from '@/components/projects-engineering/ActiveProjectOverviewFigma';
 import { ManHourUtilizationPanel } from '@/components/projects-engineering/ManHourUtilizationPanel';
 import { money, dmy } from '@/lib/projects-engineering/format';
@@ -45,13 +49,15 @@ export function Procurement({ project }: ProjectProps) {
   return <EmptyRegister title="Procurement Packages" subtitle={`No packages for ${project.code} yet`} />;
 }
 export function Cost({ project }: ProjectProps) {
-  const snapNote = `${Number(project.costPerformance || 0).toFixed(2)} CPI · ${project.status}`;
+  const payments = useProjectPaymentPosition(project.code);
+  const snap = deriveProjectCostSnapshot(project, payments.ready ? payments.ledger : undefined);
+  const snapNote = `${snap.cpi.toFixed(2)} CPI · ${project.status}`;
   return (
     <>
       <div className="kpi-grid four">
         <KpiCard label="Contract Value" value={money(project.contractValue, project.currency)} delta="Approved contract" href={`/projects-engineering/projects/${project.id}/cost-control/overview`} />
-        <KpiCard label="CPI" value={Number(project.costPerformance || 0).toFixed(2)} delta="Cost performance" tone="indigo" href={`/projects-engineering/projects/${project.id}/cost-control/earned-value`} />
-        <KpiCard label="Actual Progress" value={`${Number(project.actual || 0).toFixed(1)}%`} delta="Earned proxy" href={`/projects-engineering/projects/${project.id}/cost-control/forecast`} />
+        <KpiCard label="CPI" value={snap.cpi.toFixed(2)} delta={snap.fromPayments ? 'From project payments' : 'Loading payments'} tone="indigo" href={`/projects-engineering/projects/${project.id}/cost-control/earned-value`} />
+        <KpiCard label="Actual Cost" value={money(snap.actual, 'NGN')} delta={snap.fromPayments ? 'Disbursed payments' : 'Loading payments'} href={`/projects-engineering/projects/${project.id}/cost-control/actuals`} />
         <KpiCard label="Status" value={project.status} delta={snapNote} tone="amber" href={`/projects-engineering/projects/${project.id}/cost-control/overview`} />
       </div>
       <Card title="Cost Control Unit" subtitle="Full budget, commitments, actuals, forecast and EVM workspaces">
@@ -109,12 +115,14 @@ export function Interface({ project }: ProjectProps) {
   return <EmptyRegister title="Client Interface" subtitle={`No correspondence for ${project.code} yet`} />;
 }
 export function ProgressPage({ project }: ProjectProps) {
+  const payments = useProjectPaymentPosition(project.code);
+  const snap = deriveProjectCostSnapshot(project, payments.ready ? payments.ledger : undefined);
   return (
     <>
       <div className="kpi-grid five">
         <KpiCard label="Overall Progress" value={`${Number(project.actual || 0).toFixed(1)}%`} delta={`${Number(project.planned || 0).toFixed(1)}% planned`} />
         <KpiCard label="SPI" value={Number(project.schedulePerformance || 0).toFixed(2)} delta="Schedule performance" tone="amber" />
-        <KpiCard label="CPI" value={Number(project.costPerformance || 0).toFixed(2)} delta="Cost performance" tone="indigo" />
+        <KpiCard label="CPI" value={snap.cpi.toFixed(2)} delta={snap.fromPayments ? 'From project payments' : 'Loading payments'} tone="indigo" />
         <KpiCard label="Health" value={project.health} delta={project.status} tone={project.health === 'Critical' ? 'rose' : 'blue'} />
         <KpiCard label="Finish" value={dmy(project.finish)} delta={`Start ${dmy(project.start)}`} />
       </div>

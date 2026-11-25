@@ -1255,3 +1255,112 @@ export const buildPurchaseRequisitionWorkflowEmail = (input: {
     footerNote: 'Sign in to DLE Connect to review the full requisition, attachments, and approval history.',
   }, input.baseUrl);
 };
+
+export type SingleSourceJustificationEmailEvent =
+  | 'submitted'
+  | 'checked'
+  | 'awaiting-md'
+  | 'approved'
+  | 'returned'
+  | 'rejected'
+  | 'reopened';
+
+type SingleSourceJustificationEmailSsj = {
+  ssjId: string;
+  title: string;
+  status?: string | null;
+  prId?: string | null;
+  requesterName?: string | null;
+  department?: string | null;
+  project?: string | null;
+  site?: string | null;
+  supplierName?: string | null;
+  reasonCategory?: string | null;
+  currency?: string | null;
+  estimatedAmount?: number | null;
+  currentWith?: string | null;
+  lineManagerName?: string | null;
+  mdName?: string | null;
+};
+
+const singleSourceJustificationDetails = (ssj: SingleSourceJustificationEmailSsj) => {
+  const amount = ssj.estimatedAmount == null
+    ? null
+    : ssj.currency && !/^ngn$/i.test(String(ssj.currency))
+      ? `${String(ssj.currency).toUpperCase()} ${Number(ssj.estimatedAmount).toLocaleString('en-NG', { maximumFractionDigits: 2 })}`
+      : moneyNgn(Number(ssj.estimatedAmount));
+  return [
+    { label: 'SSJ number', value: ssj.ssjId },
+    { label: 'Title', value: ssj.title || '—' },
+    ...(ssj.prId ? [{ label: 'Linked PR', value: ssj.prId }] : []),
+    ...(ssj.requesterName ? [{ label: 'Requester', value: ssj.requesterName }] : []),
+    ...(ssj.department ? [{ label: 'Department', value: ssj.department }] : []),
+    ...(ssj.project ? [{ label: 'Project', value: ssj.project }] : []),
+    ...(ssj.site ? [{ label: 'Site', value: ssj.site }] : []),
+    ...(ssj.supplierName ? [{ label: 'Proposed supplier', value: ssj.supplierName }] : []),
+    ...(ssj.reasonCategory ? [{ label: 'Reason', value: ssj.reasonCategory }] : []),
+    ...(amount ? [{ label: 'Estimate', value: amount }] : []),
+    ...(ssj.lineManagerName ? [{ label: 'Line manager', value: ssj.lineManagerName }] : []),
+    ...(ssj.mdName ? [{ label: 'Managing Director', value: ssj.mdName }] : []),
+    ...(ssj.currentWith ? [{ label: 'Current with', value: ssj.currentWith }] : []),
+  ];
+};
+
+export const singleSourceJustificationPortalUrl = (ssjId: string, baseUrl?: string | null) =>
+  `${String(baseUrl || '').replace(/\/$/, '')}/procurement/purchase-requisitions/single-sourced-justification?id=${encodeURIComponent(ssjId)}`;
+
+export const buildSingleSourceJustificationWorkflowEmail = (input: {
+  event: SingleSourceJustificationEmailEvent;
+  ssj: SingleSourceJustificationEmailSsj;
+  recipientName: string;
+  actorName?: string;
+  intro: string;
+  subject: string;
+  headline: string;
+  statusBadge?: string;
+  note?: string;
+  comment?: string;
+  portalLink: string;
+  baseUrl?: string | null;
+}) => {
+  const toneByEvent: Record<SingleSourceJustificationEmailEvent, 'info' | 'success' | 'warning' | 'danger'> = {
+    submitted: 'warning',
+    checked: 'success',
+    'awaiting-md': 'warning',
+    approved: 'success',
+    returned: 'warning',
+    rejected: 'danger',
+    reopened: 'warning',
+  };
+  const actionLabelByEvent: Record<SingleSourceJustificationEmailEvent, string> = {
+    submitted: 'Check single sourced justification',
+    checked: 'Open single sourced justification',
+    'awaiting-md': 'Approve single sourced justification',
+    approved: 'Open single sourced justification',
+    returned: 'Revise single sourced justification',
+    rejected: 'Open single sourced justification',
+    reopened: 'Approve single sourced justification',
+  };
+  const tone = toneByEvent[input.event];
+  return withBrand({
+    recipientName: input.recipientName,
+    subject: input.subject,
+    module: 'Procurement',
+    headline: input.headline,
+    intro: input.intro,
+    tone,
+    statusBadge: input.statusBadge || input.ssj.status || undefined,
+    details: [
+      ...singleSourceJustificationDetails(input.ssj),
+      ...(input.actorName ? [{ label: 'Action by', value: input.actorName }] : []),
+      ...(input.comment ? [{ label: 'Comment', value: input.comment }] : []),
+    ],
+    note: input.note,
+    actions: [{
+      href: input.portalLink,
+      label: actionLabelByEvent[input.event],
+      tone: tone === 'danger' ? 'danger' : tone === 'success' ? 'success' : 'primary',
+    }],
+    footerNote: 'Sign in to DLE Connect to review the full justification, linked requisition, and approval history.',
+  }, input.baseUrl);
+};

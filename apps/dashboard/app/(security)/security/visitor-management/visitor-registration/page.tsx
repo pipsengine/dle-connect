@@ -1,6 +1,9 @@
 "use client";
 
-import React, { useState, useRef, useMemo } from "react";
+import React, { useEffect, useState, useRef, useMemo } from "react";
+import { EmployeeHostField } from "../_components/employee-host-field";
+import { loadVisitorWorkspace, patchVisitorVisit, saveVisitorVisit } from "@/lib/security/visitor-client";
+import { emptyDirectories, type DirectoryEmployee, type VisitorDirectories } from "@/lib/security/visitor-types";
 import {
   Briefcase,
   Building2,
@@ -29,22 +32,6 @@ const nationalities = [
 ];
 const knownCompanies = ["ABC Technologies", "Coastal Logistics", "Nimbus Consulting", "Zenith Freight", "Coral Partners", "BluePeak Analytics"];
 const durationChips = ["30 mins", "1 hour", "2 hours", "Half Day", "Full Day"];
-
-interface Employee {
-  name: string;
-  department: string;
-  floor: string;
-  ext: string;
-  available: boolean;
-}
-
-const employees: Employee[] = [
-  { name: "Sarah Johnson", department: "HR Department", floor: "Floor 3", ext: "204", available: true },
-  { name: "David Wilson", department: "Procurement", floor: "Floor 2", ext: "118", available: true },
-  { name: "Emily Carter", department: "Consulting Relations", floor: "Floor 4", ext: "231", available: false },
-  { name: "James Okafor", department: "Operations", floor: "Floor 1", ext: "102", available: true },
-  { name: "Michael Adams", department: "Platform Engineering", floor: "Floor 5", ext: "310", available: true },
-];
 
 const idTypes = ["National ID", "Driver's License", "International Passport", "Company ID", "Voter's Card"];
 
@@ -86,7 +73,12 @@ export default function VisitorRegistrationPage() {
 
   // Section 3 - Host & Destination
   const [hostName, setHostName] = useState("");
+  const [hostEmployee, setHostEmployee] = useState<DirectoryEmployee | null>(null);
+  const [department, setDepartment] = useState("");
+  const [siteLocation, setSiteLocation] = useState("");
   const [meetingLocation, setMeetingLocation] = useState("");
+  const [directories, setDirectories] = useState<VisitorDirectories>(emptyDirectories());
+  const [saving, setSaving] = useState(false);
 
   // Section 4 - Access & Security
   const [idType, setIdType] = useState("");
@@ -117,13 +109,28 @@ export default function VisitorRegistrationPage() {
     setTimeout(() => setToast(null), 2600);
   };
 
-  const selectedHost = employees.find(e => e.name === hostName);
+  useEffect(() => {
+    loadVisitorWorkspace()
+      .then((workspace) => setDirectories(workspace.directories))
+      .catch(() => setDirectories(emptyDirectories()));
+  }, []);
+
+  const selectedHost = hostEmployee || hostName
+    ? {
+        name: hostEmployee?.name || hostName,
+        department: department || hostEmployee?.department || "",
+        floor: siteLocation || hostEmployee?.location || "—",
+        ext: hostEmployee?.extension || hostEmployee?.phone || "—",
+        available: true,
+      }
+    : undefined;
   const nationalityFlag = nationalities.find(n => n.name === nationality)?.flag;
 
   const companySuggestions = useMemo(() => {
     if (!company || !companyFocused) return [];
-    return knownCompanies.filter(c => c.toLowerCase().includes(company.toLowerCase()) && c.toLowerCase() !== company.toLowerCase());
-  }, [company, companyFocused]);
+    const source = directories.companies.length ? directories.companies : knownCompanies;
+    return source.filter(c => c.toLowerCase().includes(company.toLowerCase()) && c.toLowerCase() !== company.toLowerCase());
+  }, [company, companyFocused, directories.companies]);
 
   const initials = fullName.trim() ? fullName.trim().split(/\s+/).map(n => n[0]).join("").slice(0, 2).toUpperCase() : "";
 
@@ -157,14 +164,62 @@ export default function VisitorRegistrationPage() {
 
   const canRegister = completedRequired === requiredFields.length;
 
-  const handleRegister = () => {
-    if (!canRegister) { showToast("Please complete all required fields before registering."); return; }
-    const id = `VIS-${Math.floor(10000 + Math.random() * 89999)}`;
-    setRegistered({ id });
-    showToast(`Visitor registered — ${id}`);
+  const visitPayload = (status: "Draft" | "Pending Security Check-in") => ({
+    visitorName: fullName.trim(),
+    phone,
+    email,
+    company,
+    visitorType,
+    nationality,
+    visitDate,
+    visitTime,
+    duration,
+    purpose,
+    hostName,
+    hostEmployeeCode: hostEmployee?.code || "",
+    department: department || hostEmployee?.department || "",
+    location: siteLocation,
+    meetingRoom: meetingLocation,
+    floor: hostEmployee?.location || "",
+    hostPhone: hostEmployee?.extension || hostEmployee?.phone || "",
+    idType,
+    idNumber,
+    itemsCarried,
+    vehicleRegistered: vehicleBrought ? [vehicleType, plateNumber, parkingSlot].filter(Boolean).join(" · ") : null,
+    notes: internalNotes,
+    attachments: attachments.map((file) => ({ name: file.name, type: "File", size: file.size })),
+    status,
+    priority: visitorType === "VIP" ? "High" as const : "Medium" as const,
+    isVip: visitorType === "VIP",
+  });
+
+  const handleRegister = async () => {
+    if (!canRegister || saving) { showToast("Please complete all required fields before registering."); return; }
+    setSaving(true);
+    try {
+      const visit = await saveVisitorVisit(visitPayload("Pending Security Check-in"));
+      setRegistered({ id: visit.id });
+      showToast(`Visitor registered — ${visit.id}`);
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : "Unable to register visitor.");
+    } finally {
+      setSaving(false);
+    }
   };
 
-  const handleSaveDraft = () => showToast("Draft saved");
+  const handleSaveDraft = async () => {
+    if (!fullName.trim()) { showToast("Add the visitor name before saving a draft."); return; }
+    setSaving(true);
+    try {
+      const visit = await saveVisitorVisit(visitPayload("Draft"));
+      setRegistered({ id: visit.id });
+      showToast(`Draft saved — ${visit.id}`);
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : "Unable to save draft.");
+    } finally {
+      setSaving(false);
+    }
+  };
   const handleCancel = () => showToast("Registration cancelled");
 
   const FieldCheck = ({ filled }: { filled: boolean }) => filled ? <CheckCircle2 size={14} className="text-emerald-500 flex-shrink-0" /> : null;
@@ -193,7 +248,15 @@ export default function VisitorRegistrationPage() {
             </div>
             <div className="flex items-center gap-2 mt-5">
               <button onClick={() => setRegistered(null)} className="flex-1 px-4 py-2 border border-slate-200 rounded-xl text-sm hover:bg-slate-50">Close</button>
-              <button onClick={() => showToast(`Badge printed for ${fullName || "visitor"}`)} className="flex-1 px-4 py-2 bg-indigo-600 text-white rounded-xl text-sm hover:bg-indigo-700 flex items-center justify-center gap-1.5"><Printer size={14} /> Print Badge</button>
+              <button onClick={async () => {
+                if (!registered) return;
+                try {
+                  const updated = await patchVisitorVisit(registered.id, { badgeStatus: "Active", badgeTemplate: visitorType === "VIP" ? "VIP Executive" : "Standard Guest" }, { time: "", action: "Badge printed", actor: "Reception" });
+                  showToast(`Badge ${updated.badgeNumber || ""} printed for ${fullName || "visitor"}`);
+                } catch (error) {
+                  showToast(error instanceof Error ? error.message : "Unable to print badge.");
+                }
+              }} className="flex-1 px-4 py-2 bg-indigo-600 text-white rounded-xl text-sm hover:bg-indigo-700 flex items-center justify-center gap-1.5"><Printer size={14} /> Print Badge</button>
             </div>
           </div>
         </div>
@@ -328,24 +391,40 @@ export default function VisitorRegistrationPage() {
           <div ref={hostSectionRef} className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm">
             <h2 className="text-base font-semibold text-slate-900 mb-4 flex items-center gap-2"><Building2 size={17} className="text-blue-600" /> Host & Destination</h2>
             <div className="grid grid-cols-2 gap-3 mb-4">
+              <EmployeeHostField
+                required
+                value={hostName}
+                department={department}
+                onPick={(employee, typed) => {
+                  setHostName(typed);
+                  setHostEmployee(employee);
+                  if (employee) {
+                    setDepartment(employee.department);
+                    if (!siteLocation && employee.location) setSiteLocation(employee.location);
+                  }
+                }}
+              />
               <div>
-                <label className="text-xs font-medium text-slate-600 mb-1 flex items-center gap-1">Person to Visit <span className="text-red-500">*</span> <FieldCheck filled={!!hostName} /></label>
-                <select value={hostName} onChange={e => setHostName(e.target.value)} className="w-full border border-slate-200 rounded-xl px-3 py-2 text-sm">
-                  <option value="">Select host</option>
-                  {employees.map(e => <option key={e.name}>{e.name}</option>)}
+                <label className="text-xs font-medium text-slate-600 mb-1">Site / Location</label>
+                <select value={siteLocation} onChange={e => setSiteLocation(e.target.value)} className="w-full border border-slate-200 rounded-xl px-3 py-2 text-sm">
+                  <option value="">Select location</option>
+                  {directories.locations.map(location => <option key={location}>{location}</option>)}
                 </select>
               </div>
               <div>
-                <label className="text-xs font-medium text-slate-600 mb-1">Meeting Location / Area</label>
+                <label className="text-xs font-medium text-slate-600 mb-1">Host Department</label>
+                <select value={department} onChange={e => setDepartment(e.target.value)} className="w-full border border-slate-200 rounded-xl px-3 py-2 text-sm">
+                  <option value="">Select department</option>
+                  {directories.departments.map(item => <option key={item}>{item}</option>)}
+                </select>
+              </div>
+              <div>
+                <label className="text-xs font-medium text-slate-600 mb-1">Meeting Room / Area</label>
                 <input value={meetingLocation} onChange={e => setMeetingLocation(e.target.value)} placeholder="e.g., Meeting Room B" className="w-full border border-slate-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-blue-300" />
               </div>
-              <div>
-                <label className="text-xs font-medium text-slate-600 mb-1">Host Department</label>
-                <input readOnly value={selectedHost?.department || ""} placeholder="Auto-filled" className="w-full border border-slate-100 bg-slate-50 rounded-xl px-3 py-2 text-sm text-slate-500" />
-              </div>
-              <div>
+              <div className="col-span-2">
                 <label className="text-xs font-medium text-slate-600 mb-1">Host Phone / Extension</label>
-                <input readOnly value={selectedHost ? `Ext. ${selectedHost.ext}` : ""} placeholder="Auto-filled" className="w-full border border-slate-100 bg-slate-50 rounded-xl px-3 py-2 text-sm text-slate-500" />
+                <input readOnly value={hostEmployee ? [hostEmployee.phone, hostEmployee.extension ? `Ext. ${hostEmployee.extension}` : ""].filter(Boolean).join(" · ") : ""} placeholder="Filled from the employee directory" className="w-full border border-slate-100 bg-slate-50 rounded-xl px-3 py-2 text-sm text-slate-500" />
               </div>
             </div>
             {selectedHost && (

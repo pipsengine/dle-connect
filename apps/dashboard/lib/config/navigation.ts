@@ -192,6 +192,7 @@ export const navigationConfig: NavItem[] = [
       { title: 'Resource Planning', slug: 'resource-planning', route: '/operations-center/resource-planning', permissionKey: 'operations.resource-planning.view' },
       { title: 'Daily Activity Reports', slug: 'daily-activity-reports', route: '/operations-center/daily-activity-reports', permissionKey: 'operations.daily-reports.create' },
       { title: 'Production Tracking', slug: 'production-tracking', route: '/operations-center/production-tracking', permissionKey: 'operations.production.view' },
+      { title: 'Galvanizing Operations', slug: 'galvanizing', route: '/operations-center/galvanizing', permissionKey: 'operations.galvanizing.view' },
     ]
   },
   {

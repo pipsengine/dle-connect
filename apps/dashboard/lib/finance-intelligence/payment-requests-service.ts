@@ -367,6 +367,12 @@ export type CreatePaymentRequestInput = {
 
 const compact = (value: unknown) => String(value ?? '').trim();
 const nowIso = () => new Date().toISOString();
+
+const refreshProjectPaymentCosts = () => {
+  void import('@/lib/projects-engineering/payment-cost-store')
+    .then((mod) => mod.refreshProjectPaymentCosts())
+    .catch((error) => console.error('[payment-requests] project portal cost sync failed', error));
+};
 const moneyRound = (value: number) => Math.round(value * 10000) / 10000;
 
 const resolveInitialStage = async (
@@ -3281,6 +3287,7 @@ INSERT INTO [finance].[PaymentRequests] (
     }).catch((error) => console.error('[payment-requests] submit notification failed', error));
   }
 
+  refreshProjectPaymentCosts();
   return { request, workspace };
 };
 
@@ -3683,6 +3690,7 @@ WHERE [RequestId] = @RequestId
     }).catch((error) => console.error('[payment-requests] resubmit notification failed', error));
   }
 
+  refreshProjectPaymentCosts();
   return {
     request,
     workspace,
@@ -3800,6 +3808,7 @@ WHERE [RequestId] = @RequestId
     }
   }
 
+  refreshProjectPaymentCosts();
   return {
     request,
     workspace,
@@ -4393,5 +4402,6 @@ WHERE [RequestId] = @RequestId
     }).catch((error) => console.error('[payment-requests] transition notification failed', error));
   }
 
+  refreshProjectPaymentCosts();
   return { request };
 };

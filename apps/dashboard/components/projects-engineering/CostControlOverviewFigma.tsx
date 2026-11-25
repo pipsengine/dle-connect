@@ -29,6 +29,7 @@ import {
   YAxis,
 } from 'recharts';
 import { deriveProjectCostSnapshot } from '@/lib/projects-engineering/cost-control';
+import { useProjectPaymentPosition } from '@/lib/projects-engineering/use-project-payment-costs';
 import { money } from '@/lib/projects-engineering/format';
 import type { ProjectManHourUtilization } from '@/lib/projects-engineering/man-hour-types';
 import type { Project } from '@/lib/projects-engineering/types';
@@ -83,7 +84,11 @@ function OverviewKpi({
 }
 
 export function CostControlOverviewFigma({ project }: Props) {
-  const snap = useMemo(() => deriveProjectCostSnapshot(project), [project]);
+  const payments = useProjectPaymentPosition(project.code);
+  const snap = useMemo(
+    () => deriveProjectCostSnapshot(project, payments.ready ? payments.ledger : undefined),
+    [project, payments.ready, payments.ledger],
+  );
   const [utilization, setUtilization] = useState<ProjectManHourUtilization | null>(null);
   const [loadingMh, setLoadingMh] = useState(true);
 
@@ -171,36 +176,32 @@ export function CostControlOverviewFigma({ project }: Props) {
   }, [utilization, actualHrs, plannedHrs, mhUtil]);
 
   const pieData = useMemo(() => {
-    const total = Math.max(snap.actual, 1);
-    const slices = [
-      { name: 'Labour', share: 0.36, color: '#3389ef' },
-      { name: 'Materials', share: 0.27, color: '#2fbf7b' },
-      { name: 'Subcontract', share: 0.24, color: '#f4a43b' },
-      { name: 'Equipment', share: 0.08, color: '#7458d6' },
-      { name: 'Others', share: 0.05, color: '#91a0b4' },
-    ];
-    return slices.map((s) => ({
-      name: s.name,
-      value: Math.round((total * s.share) / 1_000_000),
-      color: s.color,
-      naira: total * s.share,
+    const colors = ['#3389ef', '#2fbf7b', '#f4a43b', '#7458d6', '#91a0b4', '#24b5b9'];
+    const grouped = new Map<string, number>();
+    const actualLines = payments.lines.filter((line) => line.kind === 'actual');
+    for (const line of actualLines) {
+      const key = line.paymentType || line.expenseCode || 'Other';
+      grouped.set(key, (grouped.get(key) || 0) + line.amountNgn);
+    }
+    const rows = [...grouped.entries()].sort((a, b) => b[1] - a[1]);
+    if (!rows.length) {
+      return [{ name: 'No payments', value: 0, color: '#d5deea', naira: 0, share: 0 }];
+    }
+    const total = rows.reduce((sum, row) => sum + row[1], 0) || 1;
+    return rows.slice(0, 6).map(([name, naira], index) => ({
+      name,
+      value: Math.round(naira / 1_000_000 * 100) / 100,
+      color: colors[index % colors.length],
+      naira,
+      share: Math.round((naira / total) * 1000) / 10,
     }));
-  }, [snap.actual]);
+  }, [payments.lines]);
 
-  const costCodes = pieData.map((s, i) => ({
-    code: ['LAB-001', 'MAT-001', 'SUB-001', 'EQP-001', 'OTH-001'][i],
-    description:
-      s.name === 'Labour'
-        ? 'Direct Labour'
-        : s.name === 'Materials'
-          ? 'Structural Materials'
-          : s.name === 'Subcontract'
-            ? 'Fabrication Subcontract'
-            : s.name === 'Equipment'
-              ? 'Plant & Equipment'
-              : 'Other Costs',
-    actual: money(s.naira, project.currency),
-    pct: `${[36, 27, 24, 8, 5][i]}%`,
+  const costCodes = pieData.map((s) => ({
+    code: s.name,
+    description: s.name === 'No payments' ? 'No disbursed project payments yet' : 'Finance payment type',
+    actual: money(s.naira, 'NGN'),
+    pct: `${s.share}%`,
   }));
 
   const queueCount = utilization?.labourQueue?.length || 0;
@@ -241,11 +242,11 @@ export function CostControlOverviewFigma({ project }: Props) {
 
       <div className="cc-kpi-grid">
         <OverviewKpi label="Project Budget (BAC)" value={money(snap.bac, project.currency)} meta="Live contract value" tone="blue" fill={100} icon={Layers3} />
-        <OverviewKpi label="Total Commitments" value={money(snap.commitments, project.currency)} meta={`${pct(snap.commitments, snap.bac)}% of Budget`} tone="purple" fill={pct(snap.commitments, snap.bac)} icon={ShoppingCart} />
-        <OverviewKpi label="Actual Cost" value={money(snap.actual, project.currency)} meta={`${pct(snap.actual, snap.bac)}% of Budget`} tone="green" fill={pct(snap.actual, snap.bac)} icon={Coins} />
+        <OverviewKpi label="Total Commitments" value={money(snap.commitments, project.currency)} meta={snap.fromPayments ? 'Open project payments' : 'Loading payments'} tone="purple" fill={pct(snap.commitments, snap.bac)} icon={ShoppingCart} />
+        <OverviewKpi label="Actual Cost" value={money(snap.actual, project.currency)} meta={snap.fromPayments ? `${pct(snap.actual, snap.bac)}% of Budget · disbursed` : 'Loading payments'} tone="green" fill={pct(snap.actual, snap.bac)} icon={Coins} />
         <OverviewKpi label="Estimate to Complete (ETC)" value={money(snap.etc, project.currency)} meta={`${pct(snap.etc, snap.bac)}% of Budget`} tone="orange" fill={pct(snap.etc, snap.bac)} icon={TrendingUp} />
         <OverviewKpi label="Estimate at Completion (EAC)" value={money(snap.eac, project.currency)} meta={`${snap.vac >= 0 ? '' : '+ '}${money(Math.abs(snap.eac - snap.bac), project.currency)} vs BAC`} tone="purple" fill={pct(snap.eac, snap.bac || snap.eac)} icon={Calculator} />
-        <OverviewKpi label="Cost Performance Index (CPI)" value={snap.cpi.toFixed(2)} meta={snap.cpi >= 1 ? '> 1.00 (Good)' : '< 1.00 (Watch)'} tone="blue" fill={Math.min(100, snap.cpi * 86)} icon={Gauge} />
+        <OverviewKpi label="Cost Performance Index (CPI)" value={snap.cpi.toFixed(2)} meta={snap.fromPayments ? (snap.cpi >= 1 ? 'Payments vs earned value' : 'Payments ahead of progress') : 'Loading payments'} tone="blue" fill={Math.min(100, snap.cpi * 86)} icon={Gauge} />
         <OverviewKpi
           label="Man Hours Utilization"
           value={loadingMh ? '…' : `${Math.round(mhUtil)}%`}
@@ -315,7 +316,7 @@ export function CostControlOverviewFigma({ project }: Props) {
           <div className="cc-card-head">
             <div>
               <div className="cc-card-title">Cost Breakdown (Actual)</div>
-              <div className="cc-card-sub">Composition proxy until cost-code ledger syncs</div>
+              <div className="cc-card-sub">Disbursed project payments by type</div>
             </div>
             <span className="cc-right-select">{periodLabel}</span>
           </div>
@@ -397,8 +398,8 @@ export function CostControlOverviewFigma({ project }: Props) {
         <section className="cc-card">
           <div className="cc-card-head">
             <div>
-              <div className="cc-card-title">Top Cost Codes by Actual Cost</div>
-              <div className="cc-card-sub">Highest-cost charge codes (proxy until CBS sync)</div>
+              <div className="cc-card-title">Payments by Type</div>
+              <div className="cc-card-sub">Disbursed amounts from finance payment requests</div>
             </div>
             <Link className="cc-btn" href={`/projects-engineering/projects/${project.id}/cost-control/cbs`}>
               View All

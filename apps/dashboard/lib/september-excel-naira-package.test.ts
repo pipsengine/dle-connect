@@ -20,8 +20,9 @@ assert.equal(applied.payeCalculation?.ngnMonthlyPayeOverride, 1359887.56);
 assert.equal(applied.periodSalary, 4631.33);
 
 const mgbeoji = applySeptemberExcelNairaPackage({ employeeCode: 'P0364', fullName: 'MGBEOJI' } as DleEmployeeDirectoryRow, '2026-10');
-assert.equal(mgbeoji.localPeriodSalary, 6100527.02);
-assert.equal(mgbeoji.sageLocalPayrollEarnings?.find((line) => line.code === 'PENSION_REFUND')?.amount, 211987.43);
+assert.equal(mgbeoji.localPeriodSalary, 5888539.59);
+assert.equal(mgbeoji.sageLocalPayrollEarnings?.some((line) => line.code === 'PENSION_REFUND'), false);
+assert.equal(septemberExcelNairaPackageFor({ employeeCode: 'P0364' }, '2026-11')?.otherDeduction, 0);
 
 const austen = applySeptemberExcelNairaPackage({ employeeCode: '0457', fullName: 'AUSTEN-PETERS' } as DleEmployeeDirectoryRow, '2026-09');
 assert.equal(austen.localPeriodSalary, 2481637.88);
@@ -29,7 +30,9 @@ assert.equal(austen.sageLocalPayrollEarnings?.some((line) => line.code === 'PENS
 assert.equal(austen.payeCalculation?.ngnMonthlyPayeOverride, 443744.19);
 
 assert.equal(septemberExcelNairaPackageFor(odulate, '2026-08'), null);
-assert.equal(septemberExcelNairaPackageFor({ employeeCode: 'P0458' }, '2026-09')?.grossNgn, 6100527.02);
+assert.equal(septemberExcelNairaPackageFor({ employeeCode: 'P0458' }, '2026-09')?.grossNgn, 5888539.59);
+assert.equal(septemberExcelNairaPackageFor({ employeeCode: 'P0458' }, '2026-11')?.otherDeduction, 0);
+assert.equal(septemberExcelNairaPackageFor({ employeeCode: 'P0458' }, '2026-11')?.lines.some((line) => line.code === 'PENSION_REFUND'), false);
 
 const pensionOnBht = (basic: number, housing: number, transport: number) => (basic + housing + transport) * 0.08;
 const nets: Record<string, number> = {

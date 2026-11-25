@@ -10,6 +10,7 @@ import {
 import { canAccessRecruitment } from '@/lib/access/recruitment-access';
 import { canAccessTimesheetEntryAndApproval, isTimesheetEntryOrApprovalPath } from '@/lib/access/timesheet-access';
 import { canAccessTenderPortal } from '@/lib/access/commercial-access';
+import { canViewGalvanizing } from '@/lib/galvanizing/access';
 type SessionLike = Pick<SessionPayload, 'department' | 'unit' | 'roles' | 'permissions' | 'isGlobalAdmin'> & {
   employeeCode?: string;
   username?: string;
@@ -592,6 +593,13 @@ export const canAccessRoute = (session: SessionLike, pathname: string) => {
       'vendor.view',
       'vendor.*',
     ]);
+  }
+  if (path.startsWith('/operations-center/galvanizing') || path.startsWith('/api/galvanizing')) {
+    return canViewGalvanizing({
+      permissions: session.permissions || [],
+      isGlobalAdmin: session.isGlobalAdmin,
+      roles: session.roles || [],
+    });
   }
   if (path.startsWith('/projects-engineering') || path.startsWith('/api/projects-engineering')) {
     if (session.isGlobalAdmin || (session.roles || []).includes('Super Administrator')) return true;

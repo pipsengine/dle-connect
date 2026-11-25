@@ -2,6 +2,8 @@
 import { Bell, ChevronDown, FileText, HardHat, Pencil } from 'lucide-react';
 import { money, dmy } from '@/lib/projects-engineering/format';
 import { deriveProjectCostSnapshot } from '@/lib/projects-engineering/cost-control';
+import { paymentPositionForProject } from '@/lib/projects-engineering/payment-cost-store';
+import { ledgerFromPosition } from '@/lib/projects-engineering/payment-cost';
 import { deriveProjectHealth } from '@/lib/projects-engineering/project-health';
 import { workspaceTabs } from '@/lib/projects-engineering/data';
 import { getProjectById, listAllProjects } from '@/lib/projects-engineering/project-store';
@@ -21,9 +23,11 @@ export async function ProjectHeader({ id, active }: { id: string; active: string
   }
 
   const progress = Math.min(100, Math.max(0, Number(project.actual || 0)));
+  const payments = await paymentPositionForProject(project.code).catch(() => null);
+  const snap = deriveProjectCostSnapshot(project, payments ? ledgerFromPosition(payments) : undefined);
   const liveHealth = deriveProjectHealth({
-    project,
-    eac: deriveProjectCostSnapshot(project).eac,
+    project: payments && payments.actual > 0 ? { ...project, costPerformance: snap.cpi } : project,
+    eac: snap.eac,
   });
   const healthLabel = liveHealth.health === 'Watch' ? 'At Risk' : liveHealth.health;
   const healthClass = liveHealth.health === 'Healthy' ? 'green' : liveHealth.health === 'Watch' ? 'amber' : 'red';

@@ -28,6 +28,10 @@ import {
   X,
 } from "lucide-react";
 import { useRouter } from "next/navigation";
+import { EmployeeHostField } from "../_components/employee-host-field";
+import { loadVisitorWorkspace, patchVisitorVisit, saveVisitorVisit } from "@/lib/security/visitor-client";
+import type { DirectoryEmployee, VisitorVisit } from "@/lib/security/visitor-types";
+import { durationToMinutes, epochOrNull, formatVisitTime, minutesToDuration, todayISO, toDeskStatus, visibleOnDesk, visitorColor, visitorInitials, visitorStageAction } from "@/lib/security/visitor-views";
 
 // ---------- types ----------
 type VisitorStatus = "Ready for Check-in" | "Waiting for Host" | "Checked In" | "Checked Out";
@@ -69,69 +73,36 @@ interface StatDetail {
   visitors: Visitor[];
 }
 
-// ---------- mock data ----------
-const now = Date.now();
-const initialVisitors: Visitor[] = [
-  {
-    id: "VIS-40881", name: "John Smith", initials: "JS", color: "bg-blue-500", company: "ABC Ltd", host: "Sarah Johnson", department: "Finance", meetingRoom: "Conference Room A", purpose: "Vendor Meeting",
-    visitorType: "Vendor", expectedDurationMin: 60, appointmentTime: "09:00 AM", status: "Ready for Check-in", idVerified: false, badgeIssued: false, badgeNumber: null, itemsCarried: "Laptop bag", vehicleRegistered: null,
-    checkInAt: null, checkOutAt: null, floor: "Floor 2",
-    timeline: [{ time: "08:45", action: "Visitor Registered", staff: "System" }],
-  },
-  {
-    id: "VIS-40882", name: "Mary Johnson", initials: "MJ", color: "bg-emerald-500", company: "Google", host: "David Wilson", department: "Procurement", meetingRoom: "Meeting Room 2", purpose: "Software Demo",
-    visitorType: "Vendor", expectedDurationMin: 60, appointmentTime: "10:00 AM", status: "Checked In", idVerified: true, badgeIssued: true, badgeNumber: "0038", itemsCarried: "Demo equipment", vehicleRegistered: null,
-    checkInAt: now - 1000 * 60 * 165, checkOutAt: null, floor: "Floor 2",
-    timeline: [
-      { time: "09:50", action: "Visitor Registered", staff: "System" },
-      { time: "10:15", action: "Visitor Arrived", staff: "Reception" },
-      { time: "10:17", action: "ID Verified", staff: "Reception" },
-      { time: "10:19", action: "Badge Printed", staff: "Reception" },
-      { time: "10:20", action: "Checked In", staff: "Reception" },
-    ],
-  },
-  {
-    id: "VIS-40883", name: "David Lee", initials: "DL", color: "bg-slate-400", company: "Microsoft", host: "Emily Carter", department: "Consulting Relations", meetingRoom: "Meeting Room B", purpose: "Partnership Discussion",
-    visitorType: "Guest", expectedDurationMin: 45, appointmentTime: "10:45 AM", status: "Checked Out", idVerified: true, badgeIssued: true, badgeNumber: "0039", itemsCarried: "None", vehicleRegistered: "Sedan · LND-234-XY",
-    checkInAt: now - 1000 * 60 * 180, checkOutAt: now - 1000 * 60 * 60, floor: "Floor 4",
-    timeline: [
-      { time: "10:40", action: "Visitor Registered", staff: "System" },
-      { time: "10:43", action: "Visitor Arrived", staff: "Reception" },
-      { time: "10:44", action: "ID Verified", staff: "Reception" },
-      { time: "10:46", action: "Badge Printed", staff: "Reception" },
-      { time: "10:47", action: "Checked In", staff: "Reception" },
-      { time: "11:15", action: "Checked Out", staff: "Reception", note: "Meeting concluded early" },
-    ],
-  },
-  {
-    id: "VIS-40884", name: "Michael Ade", initials: "MA", color: "bg-amber-500", company: "Coastal Logistics", host: "David Wilson", department: "Procurement", meetingRoom: "Reception", purpose: "Contract renewal discussion",
-    visitorType: "Vendor", expectedDurationMin: 30, appointmentTime: "10:30 AM", status: "Waiting for Host", idVerified: true, badgeIssued: false, badgeNumber: null, itemsCarried: "Documents folder", vehicleRegistered: null,
-    checkInAt: null, checkOutAt: null, floor: "Lobby",
-    timeline: [
-      { time: "10:20", action: "Visitor Registered", staff: "System" },
-      { time: "10:31", action: "Visitor Arrived", staff: "Reception" },
-      { time: "10:32", action: "ID Verified", staff: "Reception" },
-    ],
-  },
-  {
-    id: "VIS-40885", name: "Grace Lee", initials: "GL", color: "bg-emerald-500", company: "Nimbus Consulting", host: "Emily Carter", department: "Consulting Relations", meetingRoom: "Meeting Room B", purpose: "Follow-up Session",
-    visitorType: "Guest", expectedDurationMin: 60, appointmentTime: "10:30 AM", status: "Checked In", idVerified: true, badgeIssued: true, badgeNumber: "0040", itemsCarried: "None", vehicleRegistered: null,
-    checkInAt: now - 1000 * 60 * 25, checkOutAt: null, floor: "Floor 4",
-    timeline: [
-      { time: "10:15", action: "Visitor Registered", staff: "System" },
-      { time: "10:33", action: "Visitor Arrived", staff: "Reception" },
-      { time: "10:34", action: "ID Verified", staff: "Reception" },
-      { time: "10:35", action: "Badge Printed", staff: "Reception" },
-      { time: "10:36", action: "Checked In", staff: "Reception" },
-    ],
-  },
-  {
-    id: "VIS-40886", name: "Tunde Bakare", initials: "TB", color: "bg-blue-500", company: "Zenith Freight", host: "James Okafor", department: "Operations", meetingRoom: "Meeting Room C", purpose: "Interview — Operations",
-    visitorType: "Interview Candidate", expectedDurationMin: 45, appointmentTime: "11:15 AM", status: "Ready for Check-in", idVerified: false, badgeIssued: false, badgeNumber: null, itemsCarried: "Documents", vehicleRegistered: null,
-    checkInAt: null, checkOutAt: null, floor: "Floor 1",
-    timeline: [{ time: "11:00", action: "Visitor Registered", staff: "System" }],
-  },
-];
+const EMPTY_VISITOR: Visitor = {
+  id: "", name: "No visitor selected", initials: "", color: "bg-slate-300", company: "", host: "", department: "", meetingRoom: "", purpose: "", visitorType: "",
+  expectedDurationMin: 60, appointmentTime: "", status: "Ready for Check-in", idVerified: false, badgeIssued: false, badgeNumber: null, itemsCarried: "", vehicleRegistered: null,
+  checkInAt: null, checkOutAt: null, floor: "", timeline: [],
+};
+
+const toDeskVisitor = (visit: VisitorVisit): Visitor => ({
+  id: visit.id,
+  name: visit.visitorName,
+  initials: visitorInitials(visit.visitorName),
+  color: visitorColor(visit.visitorName),
+  company: visit.company,
+  host: visit.hostName,
+  department: visit.department,
+  meetingRoom: visit.meetingRoom || visit.location || "Reception",
+  purpose: visit.purpose,
+  visitorType: visit.visitorType || "Guest",
+  expectedDurationMin: durationToMinutes(visit.duration),
+  appointmentTime: formatVisitTime(visit.visitTime),
+  status: toDeskStatus(visit.status) || "Ready for Check-in",
+  idVerified: visit.idVerified,
+  badgeIssued: Boolean(visit.badgeNumber),
+  badgeNumber: visit.badgeNumber,
+  itemsCarried: visit.itemsCarried,
+  vehicleRegistered: visit.vehicleRegistered,
+  checkInAt: epochOrNull(visit.checkInAt),
+  checkOutAt: epochOrNull(visit.checkOutAt),
+  floor: visit.floor || visit.location,
+  timeline: visit.timeline.map((event) => ({ time: event.time, action: event.action, staff: event.actor, note: event.note })),
+});
 
 // ---------- utility ----------
 const statusColor = (status: VisitorStatus) =>
@@ -155,8 +126,8 @@ function formatElapsed(ms: number) {
 // ---------- component ----------
 export default function VisitorCheckInOutPage() {
   const router = useRouter();
-  const [visitors, setVisitors] = useState<Visitor[]>(initialVisitors);
-  const [selectedId, setSelectedId] = useState<string>(initialVisitors[1].id);
+  const [records, setRecords] = useState<VisitorVisit[]>([]);
+  const [selectedId, setSelectedId] = useState("");
   const [toast, setToast] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [queueSearchQuery, setQueueSearchQuery] = useState("");
@@ -187,7 +158,18 @@ export default function VisitorCheckInOutPage() {
     return () => clearInterval(t);
   }, []);
 
-  const selected = visitors.find(v => v.id === selectedId) || visitors[0];
+  useEffect(() => {
+    loadVisitorWorkspace()
+      .then((workspace) => {
+        setRecords(workspace.visits);
+        const desk = workspace.visits.filter(visibleOnDesk);
+        setSelectedId((current) => current || desk[0]?.id || "");
+      })
+      .catch((error) => showToast(error instanceof Error ? error.message : "Unable to load visitors."));
+  }, []);
+
+  const visitors = useMemo(() => records.filter(visibleOnDesk).map(toDeskVisitor), [records]);
+  const selected = visitors.find(v => v.id === selectedId) || visitors[0] || EMPTY_VISITOR;
 
   // reception overview stats
   const totalVisitorsToday = visitors.length;
@@ -217,32 +199,40 @@ export default function VisitorCheckInOutPage() {
   }, [filteredVisitors, queueSearchQuery]);
 
   const updateVisitor = (id: string, patch: Partial<Visitor>, timelineEntry?: Omit<TimelineEvent, "time">) => {
-    setVisitors(prev => prev.map(v => {
-      if (v.id !== id) return v;
-      const updated = { ...v, ...patch };
-      if (timelineEntry) {
-        const time = new Date().toTimeString().slice(0, 5);
-        updated.timeline = [...v.timeline, { time, ...timelineEntry }];
-      }
-      return updated;
-    }));
+    if (!id) return;
+    const current = visitors.find((visitor) => visitor.id === id);
+    if (!current) return;
+    const record = records.find((item) => item.id === id);
+    const step = patch.status && record ? visitorStageAction(record.status) : null;
+    void patchVisitorVisit(id, {
+      status: step?.status,
+      idVerified: patch.idVerified,
+      badgeStatus: patch.badgeIssued ? "Active" : undefined,
+      badgeNumber: patch.badgeNumber || undefined,
+      checkInAt: patch.checkInAt ? new Date(patch.checkInAt).toISOString() : undefined,
+      checkOutAt: patch.checkOutAt ? new Date(patch.checkOutAt).toISOString() : undefined,
+      duration: patch.expectedDurationMin ? minutesToDuration(patch.expectedDurationMin) : undefined,
+    }, timelineEntry ? { time: "", action: timelineEntry.action, actor: timelineEntry.staff, note: timelineEntry.note } : undefined)
+      .then((saved) => setRecords((prev) => prev.map((item) => item.id === saved.id ? saved : item)))
+      .catch((error) => showToast(error instanceof Error ? error.message : "Unable to update the visit."));
   };
 
   const checkIn = (id: string) => {
     const v = visitors.find(x => x.id === id);
-    if (!v) return;
-    const badgeNumber = v.badgeNumber || String(41 + visitors.indexOf(v)).padStart(4, "0");
-    updateVisitor(id, { status: "Checked In", idVerified: true, badgeIssued: true, badgeNumber, checkInAt: Date.now() }, { action: "Checked In", staff: "Reception" });
-    showToast(`${v.name} checked in`);
+    const step = visitorStageAction(records.find((item) => item.id === id)?.status || "Checked Out");
+    if (!v || !step?.label.includes("check-in")) { showToast("This visit is not waiting for check-in."); return; }
+    updateVisitor(id, { status: "Checked In", idVerified: true, badgeIssued: true, checkInAt: Date.now() }, { action: step.action, staff: step.role === "security" ? "Security" : "Reception" });
+    showToast(`${v.name}: ${step.label} completed`);
     setHostNotified(v.host);
     setTimeout(() => setHostNotified(null), 4000);
   };
 
   const checkOut = (id: string) => {
     const v = visitors.find(x => x.id === id);
-    if (!v) return;
-    updateVisitor(id, { status: "Checked Out", checkOutAt: Date.now() }, { action: "Checked Out", staff: "Reception" });
-    showToast(`${v.name} checked out`);
+    const step = visitorStageAction(records.find((item) => item.id === id)?.status || "Checked Out");
+    if (!v || !step?.label.includes("check-out")) { showToast("This visit is not waiting for check-out."); return; }
+    updateVisitor(id, { status: "Checked Out", checkOutAt: Date.now() }, { action: step.action, staff: step.role === "security" ? "Security" : "Reception" });
+    showToast(`${v.name}: ${step.label} completed`);
   };
 
   const notifyHost = (id: string) => {
@@ -530,22 +520,34 @@ export default function VisitorCheckInOutPage() {
       {/* ---------- Modals ---------- */}
       {showRegisterWalkin && (
         <RegisterWalkinModal onClose={() => setShowRegisterWalkin(false)} onSubmit={(data) => {
-          const newV: Visitor = {
-            id: `VIS-${40887 + visitors.length}`, name: data.name, initials: data.name.split(" ").map(n => n[0]).join("").slice(0, 2).toUpperCase(), color: "bg-amber-500",
-            company: data.company || "Walk-in", host: data.host, department: "—", meetingRoom: "Reception", purpose: "Walk-in visit", visitorType: "Guest", expectedDurationMin: 30,
-            appointmentTime: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }), status: "Ready for Check-in", idVerified: false, badgeIssued: false, badgeNumber: null,
-            itemsCarried: "None", vehicleRegistered: null, checkInAt: null, checkOutAt: null, floor: "Lobby",
-            timeline: [{ time: new Date().toTimeString().slice(0, 5), action: "Visitor Registered (Walk-in)", staff: "Reception" }],
-          };
-          setVisitors(prev => [newV, ...prev]);
-          setSelectedId(newV.id);
-          showToast(`${data.name} registered as walk-in`);
+          void saveVisitorVisit({
+            visitorName: data.name,
+            company: data.company || "Walk-in",
+            hostName: data.host,
+            hostEmployeeCode: data.hostCode,
+            department: data.department,
+            location: data.location,
+            meetingRoom: "Reception",
+            purpose: "Walk-in visit",
+            visitorType: "Guest",
+            duration: "30 min",
+            visitDate: todayISO(),
+            status: "Pending Security Check-in",
+          }).then((saved) => {
+            setRecords((prev) => [saved, ...prev]);
+            setSelectedId(saved.id);
+            showToast(`${data.name} registered as walk-in`);
+          }).catch((error) => showToast(error instanceof Error ? error.message : "Unable to register the walk-in."));
           setShowRegisterWalkin(false);
         }} />
       )}
 
       {showPrintBadge && (
-        <PrintBadgeModal visitors={visitors} defaultId={selected.id} onClose={() => setShowPrintBadge(false)} onPrint={(v) => { showToast(`Badge printed for ${v.name}`); setShowPrintBadge(false); }} />
+        <PrintBadgeModal visitors={visitors} defaultId={selected.id} onClose={() => setShowPrintBadge(false)} onPrint={(v) => {
+          updateVisitor(v.id, { badgeIssued: true }, { action: "Badge printed", staff: "Reception" });
+          showToast(`Badge printed for ${v.name}`);
+          setShowPrintBadge(false);
+        }} />
       )}
 
       {showScanQr && (
@@ -640,15 +642,16 @@ function StatDetailModal({ title, visitors, onClose, onSelect }: { title: string
 }
 
 // ---------- Modal: Register Walk-in ----------
-function RegisterWalkinModal({ onClose, onSubmit }: { onClose: () => void; onSubmit: (data: { name: string; company: string; host: string }) => void }) {
+function RegisterWalkinModal({ onClose, onSubmit }: { onClose: () => void; onSubmit: (data: { name: string; company: string; host: string; hostCode?: string; department?: string; location?: string }) => void }) {
   const [name, setName] = useState("");
   const [company, setCompany] = useState("");
   const [host, setHost] = useState("");
+  const [hostEmployee, setHostEmployee] = useState<DirectoryEmployee | null>(null);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!name.trim() || !host.trim()) return;
-    onSubmit({ name, company, host });
+    onSubmit({ name, company, host, hostCode: hostEmployee?.code, department: hostEmployee?.department, location: hostEmployee?.location });
   };
 
   return (
@@ -667,10 +670,7 @@ function RegisterWalkinModal({ onClose, onSubmit }: { onClose: () => void; onSub
             <label className="text-sm font-medium text-slate-700">Company</label>
             <input value={company} onChange={e => setCompany(e.target.value)} placeholder="Company name" className="w-full mt-1 border border-slate-200 rounded-xl px-3 py-2 text-sm" />
           </div>
-          <div>
-            <label className="text-sm font-medium text-slate-700">Who are they visiting?</label>
-            <input required value={host} onChange={e => setHost(e.target.value)} placeholder="Employee name" className="w-full mt-1 border border-slate-200 rounded-xl px-3 py-2 text-sm" />
-          </div>
+          <EmployeeHostField required label="Who are they visiting?" value={host} onPick={(employee, typed) => { setHost(typed); setHostEmployee(employee); }} />
           <div className="flex justify-end gap-2 pt-2">
             <button type="button" onClick={onClose} className="px-4 py-2 border border-slate-200 rounded-xl text-sm">Cancel</button>
             <button type="submit" className="px-4 py-2 bg-amber-500 text-white rounded-xl text-sm hover:bg-amber-600">Register</button>
@@ -685,6 +685,7 @@ function RegisterWalkinModal({ onClose, onSubmit }: { onClose: () => void; onSub
 function PrintBadgeModal({ visitors, defaultId, onClose, onPrint }: { visitors: Visitor[]; defaultId: string; onClose: () => void; onPrint: (v: Visitor) => void }) {
   const [id, setId] = useState(defaultId);
   const v = visitors.find(x => x.id === id) || visitors[0];
+  if (!v) return null;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 backdrop-blur-sm p-4">

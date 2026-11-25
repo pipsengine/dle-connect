@@ -211,6 +211,12 @@ const role = (name: EnterpriseRole, category: string, permissions: string[], des
 });
 
 const platformWithoutHris = [...PLATFORM_WITHOUT_HRIS_PERMISSIONS];
+const galvanizingView = ['operations.galvanizing.view'] as const;
+const galvanizingFloor = ['operations.galvanizing.view', 'operations.galvanizing.intake', 'operations.galvanizing.production'] as const;
+const galvanizingGm = ['operations.galvanizing.view', 'operations.galvanizing.release', 'operations.galvanizing.dispatch', 'operations.galvanizing.scrap'] as const;
+const galvanizingQc = ['operations.galvanizing.view', 'operations.galvanizing.qc'] as const;
+const galvanizingQcLead = ['operations.galvanizing.view', 'operations.galvanizing.qc', 'operations.galvanizing.release', 'operations.galvanizing.scrap'] as const;
+const galvanizingStores = ['operations.galvanizing.view', 'operations.galvanizing.inventory', 'operations.galvanizing.dispatch'] as const;
 
 export const roleDefinitions: RoleDefinition[] = [
   role('Super Administrator', 'Global / System', ['*'], 'Unrestricted emergency system administration including HRIS.'),
@@ -223,7 +229,7 @@ export const roleDefinitions: RoleDefinition[] = [
   role('Executive User', 'General Enterprise', ['enterprise.view', 'dashboard.view', 'reports.view', 'reports.export', 'hris.view', 'operations.view', 'operations.dashboard.view', 'operations.reports.view', 'workflow.approve', 'procurement.view', 'procurement.approve', 'procurement.reject', ...payrollMdReviewPerms, ...telephoneAllowanceMdPerms], 'Executive dashboard, reports, MD/CEO payroll salary review, and purchase requisition / SSJ approval.'),
   role('Department Head', 'General Enterprise', ['hris.view', 'employees.view', 'workflow.approve', 'reports.view', 'operations.view', 'operations.allocation.view', 'operations.dashboard.view', 'finance.payments.self', 'offboarding.clearance.approve', 'page.hris.time-and-logs.timesheet-approval.view', 'page.hris.time-and-logs.timesheet-entry.view', 'timesheet.approve', 'operations.timesheets.approve'], 'Department-level visibility and approvals.'),
   role('Manager', 'General Enterprise', ['hris.view', 'employees.view', 'workflow.approve', 'leave.approve', 'timesheet.approve', 'timesheet.supervisor.approve', 'page.hris.time-and-logs.timesheet-approval.view', 'page.hris.time-and-logs.timesheet-entry.view', 'operations.view', 'operations.timesheets.approve', 'operations.timesheets.submit', 'operations.allocation.view', 'finance.payments.self', 'offboarding.clearance.approve'], 'Team management and approvals, including purchase requisitions waiting on the line manager.'),
-  role('Supervisor', 'General Enterprise', ['hris.view', 'employees.view', 'timesheet.submit', 'timesheet.approve', 'timesheet.supervisor.approve', 'timesheet.supervisor.reject', 'timesheet.supervisor.return', 'page.hris.time-and-logs.timesheet-approval.view', 'page.hris.time-and-logs.timesheet-entry.view', 'attendance.view', 'operations.view', 'operations.timesheets.submit', 'operations.timesheets.approve', 'operations.daily-reports.create', 'finance.payments.self', 'offboarding.clearance.approve'], 'Supervisor timesheet and attendance review.'),
+  role('Supervisor', 'General Enterprise', ['hris.view', 'employees.view', 'timesheet.submit', 'timesheet.approve', 'timesheet.supervisor.approve', 'timesheet.supervisor.reject', 'timesheet.supervisor.return', 'page.hris.time-and-logs.timesheet-approval.view', 'page.hris.time-and-logs.timesheet-entry.view', 'attendance.view', 'operations.view', 'operations.timesheets.submit', 'operations.timesheets.approve', 'operations.daily-reports.create', 'finance.payments.self', 'offboarding.clearance.approve', ...galvanizingFloor], 'Supervisor timesheet, attendance, and galvanizing floor review.'),
   role('Employee', 'General Enterprise', ['ess.view', 'profile.view', 'leave.submit', 'payroll.payslip.view', 'finance.payments.self'], 'Employee self-service access including own payment requests.'),
   role('Auditor', 'General Enterprise', ['audit.view', 'reports.view', 'reports.export', ...telephoneAllowanceViewPerms], 'Read-oriented compliance review.'),
   role('Read-Only User', 'General Enterprise', ['enterprise.view', 'hris.view', 'reports.view'], 'Read-only enterprise visibility.'),
@@ -248,7 +254,7 @@ export const roleDefinitions: RoleDefinition[] = [
   role('Executive Director', 'General Enterprise', [...payrollMdReviewPerms, 'enterprise.view', 'dashboard.view', 'reports.view', 'reports.export', 'workflow.approve', 'procurement.view', 'procurement.approve', 'procurement.reject', 'commercial.view', 'view_sales_crm', ...telephoneAllowanceMdPerms], 'Executive director payroll MD/CEO approval, salary review, purchase requisition / SSJ approval, and commercial tender management.'),
   role('Executive Management', 'General Enterprise', [...payrollMdReviewPerms, 'enterprise.view', 'dashboard.view', 'reports.view', 'reports.export', 'workflow.approve', 'procurement.view', 'procurement.approve', 'procurement.reject', 'commercial.view', 'view_sales_crm', ...telephoneAllowanceMdPerms], 'Executive management payroll MD/CEO approval, salary review, purchase requisition / SSJ approval, and commercial tender management.'),
   role('GM Commercial', 'Commercial', ['enterprise.view', 'dashboard.view', 'reports.view', 'workflow.approve', 'commercial.view', 'commercial.edit', 'commercial.create', 'view_sales_crm'], 'GM Commercial tender review, assignment, and first approval authority.'),
-  role('GM Operations', 'Operations', ['enterprise.view', 'dashboard.view', 'reports.view', 'workflow.approve', 'operations.view', 'commercial.view', 'view_sales_crm'], 'GM Operations visibility including commercial outcome notifications.'),
+  role('GM Operations', 'Operations', ['enterprise.view', 'dashboard.view', 'reports.view', 'workflow.approve', 'operations.view', 'commercial.view', 'view_sales_crm', ...galvanizingGm], 'GM Operations visibility, galvanizing release, and commercial outcome notifications.'),
   role('Accountant', 'Finance', [...financeBankFinancePerms, 'finance.create', 'finance.edit', 'finance.posting.operate'], 'Accounting transactions and bank-and-finance payroll outputs.'),
   role('Accounts Payable Officer', 'Finance', ['finance.ap.view', 'finance.ap.create', 'finance.ap.edit'], 'Accounts payable operations.'),
   role('Accounts Receivable Officer', 'Finance', ['finance.ar.view', 'finance.ar.create', 'finance.ar.edit'], 'Accounts receivable operations.'),
@@ -260,13 +266,13 @@ export const roleDefinitions: RoleDefinition[] = [
   role('Vendor Manager', 'Procurement', ['vendor.view', 'vendor.create', 'vendor.edit', 'vendor.approve'], 'Vendor administration.'),
   role('Purchase Request Approver', 'Procurement', ['procurement.view', 'procurement.approve', 'procurement.reject'], 'Purchase request approvals.'),
   role('Project Administrator', 'Project', ['project.*'], 'Project module administration.'),
-  role('Project Manager', 'Project', ['project.view', 'project.create', 'project.edit', 'project.approve', 'timesheet.approve', 'operations.view', 'operations.timesheets.approve', 'operations.production.view', 'operations.reports.view'], 'Project delivery and approvals.'),
+  role('Project Manager', 'Project', ['project.view', 'project.create', 'project.edit', 'project.approve', 'timesheet.approve', 'operations.view', 'operations.timesheets.approve', 'operations.production.view', 'operations.reports.view', ...galvanizingView], 'Project delivery and approvals.'),
   role('Project Engineer', 'Project', ['project.view', 'project.edit', 'timesheet.submit', 'operations.view', 'operations.daily-reports.create', 'operations.production.view'], 'Engineering project execution.'),
   role('Project Planner', 'Project', ['project.view', 'planning.view', 'planning.create', 'planning.edit', 'operations.view', 'operations.resource-planning.view', 'operations.resource-planning.edit'], 'Project planning.'),
-  role('Project Cost Controller', 'Project', ['project.view', 'cost.view', 'cost.approve', 'timesheet.approve', 'operations.view', 'operations.cost-control.view', 'operations.timesheets.approve', 'operations.reports.view'], 'Project cost control.'),
+  role('Project Cost Controller', 'Project', ['project.view', 'cost.view', 'cost.approve', 'timesheet.approve', 'operations.view', 'operations.cost-control.view', 'operations.timesheets.approve', 'operations.reports.view', ...galvanizingView], 'Project cost control.'),
   role('Operations Manager', 'Operations', ['operations.*', 'timesheet.approve', 'reports.view', 'reports.export'], 'Operations execution, workforce allocation, and production oversight.'),
-  role('Operations Officer', 'Operations', ['operations.view', 'operations.timesheets.submit', 'operations.allocation.view', 'operations.daily-reports.create', 'operations.production.view'], 'Daily operations execution and reporting.'),
-  role('Cost Control Officer', 'Operations', ['operations.view', 'operations.cost-control.view', 'operations.timesheets.approve', 'operations.reports.view', 'cost.view', 'cost.approve'], 'Operations cost control and labor allocation review.'),
+  role('Operations Officer', 'Operations', ['operations.view', 'operations.timesheets.submit', 'operations.allocation.view', 'operations.daily-reports.create', 'operations.production.view', ...galvanizingFloor], 'Daily operations execution, galvanizing intake, and reporting.'),
+  role('Cost Control Officer', 'Operations', ['operations.view', 'operations.cost-control.view', 'operations.timesheets.approve', 'operations.reports.view', 'cost.view', 'cost.approve', ...galvanizingView], 'Operations cost control and labor allocation review.'),
   role('Asset Administrator', 'EAM / CMMS', ['asset.*'], 'Asset administration.'),
   role('Maintenance Manager', 'EAM / CMMS', ['maintenance.view', 'maintenance.approve', 'asset.view'], 'Maintenance management.'),
   role('Maintenance Planner', 'EAM / CMMS', ['maintenance.view', 'maintenance.create', 'maintenance.edit'], 'Maintenance planning.'),
@@ -277,14 +283,14 @@ export const roleDefinitions: RoleDefinition[] = [
   role('HSE Officer', 'HSE', ['hse.view', 'hse.create', 'hse.edit'], 'HSE operations.'),
   role('Incident Investigator', 'HSE', ['incident.view', 'incident.create', 'incident.edit', 'incident.submit'], 'Incident investigation.'),
   role('Compliance Reviewer', 'HSE', ['compliance.view', 'compliance.approve', 'audit.view'], 'Compliance review.'),
-  role('Quality Administrator', 'Quality', ['quality.*'], 'Quality administration.'),
-  role('Quality Manager', 'Quality', ['quality.view', 'quality.approve', 'quality.export'], 'Quality management.'),
-  role('Quality Inspector', 'Quality', ['quality.view', 'quality.create', 'quality.edit'], 'Inspection operations.'),
-  role('NCR Reviewer', 'Quality', ['ncr.view', 'ncr.approve', 'ncr.reject'], 'NCR reviews.'),
+  role('Quality Administrator', 'Quality', ['quality.*', ...galvanizingQcLead], 'Quality administration, including galvanizing inspection and scrap authority.'),
+  role('Quality Manager', 'Quality', ['quality.view', 'quality.approve', 'quality.export', ...galvanizingQcLead], 'Quality management and galvanizing disposition.'),
+  role('Quality Inspector', 'Quality', ['quality.view', 'quality.create', 'quality.edit', ...galvanizingQc], 'Inspection operations, including galvanizing QC.'),
+  role('NCR Reviewer', 'Quality', ['ncr.view', 'ncr.approve', 'ncr.reject', ...galvanizingQc], 'NCR reviews, including galvanizing nonconformance.'),
   role('Corrective Action Owner', 'Quality', ['corrective-action.view', 'corrective-action.edit', 'corrective-action.submit'], 'Corrective action execution.'),
-  role('Inventory Administrator', 'Inventory', ['inventory.*'], 'Inventory administration.'),
-  role('Store Manager', 'Inventory', ['inventory.view', 'inventory.approve', 'inventory.export'], 'Store management.'),
-  role('Store Officer', 'Inventory', ['inventory.view', 'inventory.create', 'inventory.edit'], 'Store operations.'),
+  role('Inventory Administrator', 'Inventory', ['inventory.*', ...galvanizingStores], 'Inventory administration, including galvanizing stock and dispatch.'),
+  role('Store Manager', 'Inventory', ['inventory.view', 'inventory.approve', 'inventory.export', ...galvanizingStores], 'Store management, including galvanizing stock and dispatch.'),
+  role('Store Officer', 'Inventory', ['inventory.view', 'inventory.create', 'inventory.edit', ...galvanizingStores], 'Store operations, including galvanizing stock and dispatch.'),
   role('Inventory Controller', 'Inventory', ['inventory.view', 'inventory.edit', 'inventory.audit'], 'Inventory control.'),
   role('Stock Approver', 'Inventory', ['inventory.view', 'inventory.approve', 'inventory.reject'], 'Stock approvals.'),
   role('Fleet Administrator', 'Logistics & Fleet', ['fleet.*'], 'Fleet administration.'),

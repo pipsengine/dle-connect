@@ -379,6 +379,7 @@ export default function OperationsCenterClient({ initialSection }: Props) {
             <IntegrationPanel payload={payload} />
 
             <div className="flex flex-wrap gap-2">
+              <Link href="/operations-center/galvanizing" className="inline-flex h-10 items-center gap-2 rounded-lg bg-blue-600 px-4 text-sm font-black text-white hover:bg-blue-700">Open Galvanizing Operations <ArrowRight className="h-4 w-4" /></Link>
               <Link href="/hris/workforce-management/timesheet-entry" className="inline-flex h-10 items-center gap-2 rounded-lg bg-slate-950 px-4 text-sm font-black text-white hover:bg-slate-800">Open Timesheet Entry <ArrowRight className="h-4 w-4" /></Link>
               <Link href="/hris/workforce-management/timesheet-approval" className="inline-flex h-10 items-center gap-2 rounded-lg border border-slate-200 px-4 text-sm font-black text-slate-700 hover:bg-slate-50">Open Approval Workflow <ArrowRight className="h-4 w-4" /></Link>
             </div>

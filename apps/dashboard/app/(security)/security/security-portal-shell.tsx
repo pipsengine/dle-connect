@@ -77,9 +77,9 @@ export function SecurityPortalShell({ children, employee }: Props) {
   useEffect(() => {
     const activeSection = visibleSections.find(
       (section) =>
-        (section.id !== 'overview' && (pathname === section.href || pathname.startsWith(`${section.href}/`)))
-        || section.children.some((child) => child.href !== '/security' && (pathname === child.href || pathname.startsWith(`${child.href}/`)))
-        || (section.id === 'overview' && (pathname === '/security' || pathname === '/security/')),
+        pathname === section.href
+        || pathname.startsWith(`${section.href}/`)
+        || section.children.some((child) => pathname === child.href || pathname.startsWith(`${child.href}/`)),
     );
     if (activeSection) {
       setExpanded((current) => ({ ...current, [activeSection.id]: true }));
@@ -100,8 +100,7 @@ export function SecurityPortalShell({ children, employee }: Props) {
   const widthClass = railCollapsed ? 'w-[72px]' : 'w-[278px]';
   const contentPad = railCollapsed ? 'lg:pl-[72px]' : 'lg:pl-[278px]';
 
-  const isSectionActive = (sectionHref: string, sectionId: string, children: { href: string }[]) => {
-    if (sectionId === 'overview') return pathname === '/security' || pathname === '/security/';
+  const isSectionActive = (sectionHref: string, children: { href: string }[]) => {
     if (pathname === sectionHref || pathname.startsWith(`${sectionHref}/`)) return true;
     return children.some((child) => pathname === child.href || pathname.startsWith(`${child.href}/`));
   };
@@ -133,7 +132,7 @@ export function SecurityPortalShell({ children, employee }: Props) {
 
       <nav className="flex-1 space-y-1 overflow-y-auto px-2.5 py-3">
         {visibleSections.map((section) => {
-          const sectionActive = isSectionActive(section.href, section.id, section.children);
+          const sectionActive = isSectionActive(section.href, section.children);
           const isOpen = Boolean(expanded[section.id]) || sectionActive;
           return (
             <div key={section.id} className="mb-1">
@@ -166,10 +165,7 @@ export function SecurityPortalShell({ children, employee }: Props) {
               {!railCollapsed && isOpen && section.children.length > 0 ? (
                 <div className="ml-4 mt-0.5 space-y-0.5 border-l border-slate-100 pl-2">
                   {section.children.map((child) => {
-                    const active =
-                      child.href === '/security'
-                        ? pathname === '/security' || pathname === '/security/'
-                        : pathname === child.href || pathname.startsWith(`${child.href}/`);
+                    const active = pathname === child.href || pathname.startsWith(`${child.href}/`);
                     return (
                       <Link
                         key={child.id}

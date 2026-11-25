@@ -192,6 +192,16 @@ const PERMISSION_ALIASES: Record<string, string[]> = {
   'performance.view': ['page.hris.performance-management.view', 'hris.performance-management', 'page.hris.management.view'],
   'hris.performance-management': ['page.hris.performance-management.view', 'performance.view'],
   'performance.admin': ['performance.cycles', 'performance.objectives', 'performance.calibration'],
+  'operations.galvanizing.view': [
+    'operations.view',
+    'operations.dashboard.view',
+    'operations.production.view',
+    'quality.view',
+    'quality.*',
+    'inventory.view',
+    'inventory.*',
+    'ncr.view',
+  ],
 };
 
 const reverseAliases = () => {
@@ -213,6 +223,7 @@ const REVERSE_ALIASES = reverseAliases();
  */
 const ONE_WAY_PERMISSION_ALIASES = new Set([
   'payroll.view',
+  'operations.galvanizing.view',
 ]);
 
 export const hasPermission = (permissions: string[], required: string, visited = new Set<string>()): boolean => {

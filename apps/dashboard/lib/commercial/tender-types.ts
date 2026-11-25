@@ -1,3 +1,5 @@
+import type { BidNoBidAssessment } from '@/lib/commercial/bid-no-bid-assessment';
+
 export type TenderOpportunity = {
   id: string;
   referenceNo: string;
@@ -58,6 +60,8 @@ export type TenderOpportunity = {
   commercialReviewedAt: string;
   gmBidDecision: string;
   originalInternalDeadline: string;
+  /** DL/Prop/F-03 scorecard completed at capture; GM reviews on Approvals. */
+  bidNoBidAssessment: BidNoBidAssessment | null;
   createdAt: string;
   updatedAt: string;
   createdBy: string;

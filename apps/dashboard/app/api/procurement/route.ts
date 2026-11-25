@@ -183,7 +183,8 @@ export async function POST(request: NextRequest) {
     || action === 'remind-pr'
     || action === 'upsert-ssj'
     || action === 'submit-ssj'
-    || action === 'action-ssj';
+    || action === 'action-ssj'
+    || action === 'reopen-ssj-md';
   if (workflowAction) {
     if (!canAccessProcurementWorkflowApis(permissions, session)) return err(403, 'Forbidden');
   } else if (!canCreateProcurement(permissions, session.isGlobalAdmin) && !canEditProcurement(permissions, session.isGlobalAdmin)) {
@@ -220,6 +221,15 @@ export async function POST(request: NextRequest) {
           decision: String(payload.decision || ''),
           comment: payload.comment ? String(payload.comment) : undefined,
         }, session));
+      }
+      case 'reopen-ssj-md': {
+        if (!session.isGlobalAdmin && !(session.roles || []).some((role) => /super administrator/i.test(role))) {
+          return err(403, 'Only a Super Administrator can reopen an SSJ for MD approval.');
+        }
+        const ssjId = String(body.ssjId || body.payload?.ssjId || '');
+        if (!ssjId) return err(400, 'ssjId required');
+        const { reopenSsjForMdApproval } = await import('@/lib/procurement/ssj-store');
+        return ok(await reopenSsjForMdApproval(ssjId, session, body.comment ? String(body.comment) : undefined));
       }
       case 'submit-pr': {
         const prId = String(body.prId || body.payload?.prId || '');

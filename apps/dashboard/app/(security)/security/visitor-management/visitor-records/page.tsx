@@ -1,6 +1,10 @@
 "use client";
 
-import React, { useState, useMemo } from "react";
+import React, { useEffect, useState, useMemo } from "react";
+import { EmployeeHostField } from "../_components/employee-host-field";
+import { loadVisitorWorkspace, patchVisitorVisit, saveVisitorVisit } from "@/lib/security/visitor-client";
+import { emptyDirectories, type VisitorDirectories, type VisitorVisit } from "@/lib/security/visitor-types";
+import { groupVisitorProfiles, hostCardsFromVisits, todayISO } from "@/lib/security/visitor-views";
 import {
   Award,
   Briefcase,
@@ -45,6 +49,7 @@ interface VisitEntry {
   status: "Completed" | "Ongoing";
   checkIn: string;
   checkOut: string | null;
+  dateISO?: string;
 }
 
 interface VisitorRecord {
@@ -81,87 +86,13 @@ interface HostCard {
   initials: string;
 }
 
-// ---------- mock data ----------
-const visitorRecords: VisitorRecord[] = [
-  {
-    id: "VIS-40881", name: "John Smith", initials: "JS", color: "bg-blue-500", company: "ABC Technologies", visitorType: "Vendor", phone: "+234 802 555 0134", email: "john.smith@abctech.com", nationality: "United States",
-    lastVisit: "15 Jul 2026", totalVisits: 12, status: "Currently Inside", host: "Sarah Johnson", avgDuration: "1h 35m", favoriteHost: "Sarah Johnson", mostVisitedDept: "Finance",
-    idVerified: true, badgeHistory: ["#0041", "#0038", "#0029"], vehicleRegistered: "Sedan · LND-234-XY", itemsCarried: "Laptop bag", notes: "Regular vendor contact for finance software renewals. Always punctual.",
-    isVIP: false,
-    visits: [
-      { date: "15 Jul 2026", host: "Sarah Johnson", department: "Finance", purpose: "Vendor Meeting", duration: "Ongoing", status: "Ongoing", checkIn: "09:00 AM", checkOut: null },
-      { date: "10 Jul 2026", host: "Sarah Johnson", department: "Finance", purpose: "Vendor Meeting", duration: "1h 20m", status: "Completed", checkIn: "09:15 AM", checkOut: "10:35 AM" },
-      { date: "02 Jul 2026", host: "Sarah Johnson", department: "Finance", purpose: "Equipment Delivery", duration: "35m", status: "Completed", checkIn: "02:00 PM", checkOut: "02:35 PM" },
-    ],
-  },
-  {
-    id: "VIS-40882", name: "Mary Johnson", initials: "MJ", color: "bg-emerald-500", company: "Google", visitorType: "Vendor", phone: "+1 650 555 0198", email: "mjohnson@google.com", nationality: "United States",
-    lastVisit: "16 Jul 2026", totalVisits: 5, status: "Currently Inside", host: "David Wilson", avgDuration: "58m", favoriteHost: "David Wilson", mostVisitedDept: "Procurement",
-    idVerified: true, badgeHistory: ["#0038"], vehicleRegistered: null, itemsCarried: "Demo equipment", notes: "Presents quarterly cloud services updates.", isVIP: true,
-    visits: [
-      { date: "16 Jul 2026", host: "David Wilson", department: "Procurement", purpose: "Software Demo", duration: "Ongoing", status: "Ongoing", checkIn: "10:15 AM", checkOut: null },
-      { date: "20 Apr 2026", host: "David Wilson", department: "Procurement", purpose: "Contract Renewal", duration: "1h 10m", status: "Completed", checkIn: "11:00 AM", checkOut: "12:10 PM" },
-    ],
-  },
-  {
-    id: "VIS-40883", name: "David Lee", initials: "DL", color: "bg-slate-400", company: "Microsoft", visitorType: "Guest", phone: "+1 425 555 0177", email: "dlee@microsoft.com", nationality: "United States",
-    lastVisit: "16 Jul 2026", totalVisits: 3, status: "Checked Out", host: "Emily Carter", avgDuration: "45m", favoriteHost: "Emily Carter", mostVisitedDept: "Consulting Relations",
-    idVerified: true, badgeHistory: ["#0039"], vehicleRegistered: "Sedan · LND-234-XY", itemsCarried: "None", notes: "", isVIP: false,
-    visits: [
-      { date: "16 Jul 2026", host: "Emily Carter", department: "Consulting Relations", purpose: "Partnership Discussion", duration: "32m", status: "Completed", checkIn: "10:43 AM", checkOut: "11:15 AM" },
-      { date: "22 May 2026", host: "Emily Carter", department: "Consulting Relations", purpose: "Introductory Meeting", duration: "50m", status: "Completed", checkIn: "02:00 PM", checkOut: "02:50 PM" },
-    ],
-  },
-  {
-    id: "VIS-40884", name: "Michael Ade", initials: "MA", color: "bg-amber-500", company: "Coastal Logistics", visitorType: "Vendor", phone: "+234 803 555 0212", email: "m.ade@coastallogistics.com", nationality: "Nigeria",
-    lastVisit: "16 Jul 2026", totalVisits: 7, status: "Currently Inside", host: "David Wilson", avgDuration: "40m", favoriteHost: "David Wilson", mostVisitedDept: "Procurement",
-    idVerified: true, badgeHistory: ["#0035", "#0031"], vehicleRegistered: null, itemsCarried: "Documents folder", notes: "Contract renewal discussions ongoing; flagged for finance review.", isVIP: false,
-    visits: [
-      { date: "16 Jul 2026", host: "David Wilson", department: "Procurement", purpose: "Contract renewal discussion", duration: "Ongoing", status: "Ongoing", checkIn: "10:31 AM", checkOut: null },
-      { date: "28 Jun 2026", host: "David Wilson", department: "Procurement", purpose: "Logistics Review", duration: "45m", status: "Completed", checkIn: "09:30 AM", checkOut: "10:15 AM" },
-    ],
-  },
-  {
-    id: "VIS-40887", name: "Chidi Eze", initials: "CE", color: "bg-red-400", company: "Freelance Auditor", visitorType: "Contractor", phone: "+234 805 555 0311", email: "chidi.eze@auditpro.com", nationality: "Nigeria",
-    lastVisit: "01 Jun 2026", totalVisits: 2, status: "Blacklisted", host: "Finance Team", avgDuration: "1h 10m", favoriteHost: "Finance Team", mostVisitedDept: "Finance",
-    idVerified: false, badgeHistory: ["#0022"], vehicleRegistered: null, itemsCarried: "Documents", notes: "Access revoked after a security policy violation during last visit — unauthorized photography in server room.", isVIP: false,
-    visits: [
-      { date: "01 Jun 2026", host: "Finance Team", department: "Finance", purpose: "Quarterly Audit", duration: "1h 10m", status: "Completed", checkIn: "09:00 AM", checkOut: "10:10 AM" },
-    ],
-  },
-  {
-    id: "VIS-40888", name: "Ngozi Umeh", initials: "NU", color: "bg-emerald-500", company: "BluePeak Analytics", visitorType: "Vendor", phone: "+234 806 555 0442", email: "ngozi.umeh@bluepeak.io", nationality: "Nigeria",
-    lastVisit: "14 Jul 2026", totalVisits: 4, status: "Expected Today", host: "Michael Adams", avgDuration: "1h 05m", favoriteHost: "Michael Adams", mostVisitedDept: "Platform Engineering",
-    idVerified: true, badgeHistory: ["#0033"], vehicleRegistered: null, itemsCarried: "Laptop", notes: "", isVIP: false,
-    visits: [
-      { date: "14 Jul 2026", host: "Michael Adams", department: "Platform Engineering", purpose: "Follow-up Demo", duration: "58m", status: "Completed", checkIn: "11:00 AM", checkOut: "11:58 AM" },
-    ],
-  },
-  {
-    id: "VIS-40889", name: "Amara Chukwu", initials: "AC", color: "bg-indigo-500", company: "Coral Partners", visitorType: "Guest", phone: "+234 807 555 0587", email: "amara.chukwu@coralpartners.com", nationality: "Nigeria",
-    lastVisit: "09 Jul 2026", totalVisits: 15, status: "Pre-Registered", host: "Sarah Johnson (HR)", avgDuration: "1h 40m", favoriteHost: "Sarah Johnson (HR)", mostVisitedDept: "Human Resources",
-    idVerified: true, badgeHistory: ["#0030", "#0027", "#0021"], vehicleRegistered: "SUV · ABJ-901-KL", itemsCarried: "Contract documents", notes: "Executive client — always greet personally at reception.", isVIP: true,
-    visits: [
-      { date: "09 Jul 2026", host: "Sarah Johnson (HR)", department: "Human Resources", purpose: "Contract Signing", duration: "1h 45m", status: "Completed", checkIn: "09:58 AM", checkOut: "11:43 AM" },
-      { date: "15 Mar 2026", host: "Sarah Johnson (HR)", department: "Human Resources", purpose: "Partnership Renewal", duration: "1h 30m", status: "Completed", checkIn: "10:00 AM", checkOut: "11:30 AM" },
-    ],
-  },
-];
-
-const hostCards: HostCard[] = [
-  { name: "Sarah Johnson", department: "HR / Finance Liaison", visits: 8, lastMeeting: "15 Jul", initials: "SJ" },
-  { name: "David Wilson", department: "Procurement", visits: 11, lastMeeting: "16 Jul", initials: "DW" },
-  { name: "Emily Carter", department: "Consulting Relations", visits: 5, lastMeeting: "16 Jul", initials: "EC" },
-  { name: "Michael Adams", department: "Platform Engineering", visits: 4, lastMeeting: "14 Jul", initials: "MA" },
-];
-
-const companies = ["All Companies", "ABC Technologies", "Google", "Microsoft", "Coastal Logistics", "Freelance Auditor", "BluePeak Analytics", "Coral Partners"];
-const visitorTypeOptions = ["All Types", "Vendor", "Guest", "Contractor", "Interview Candidate", "Delivery"];
-const departmentOptions = ["All Departments", "Finance", "Procurement", "Consulting Relations", "Platform Engineering", "Human Resources"];
-const hostOptions = ["All Hosts", "Sarah Johnson", "David Wilson", "Emily Carter", "Michael Adams", "Sarah Johnson (HR)", "Finance Team"];
 const statusOptions = ["All Statuses", "Currently Inside", "Checked Out", "Expected Today", "Pre-Registered", "Blacklisted"];
 const quickChips = ["Today", "This Week", "This Month", "VIP", "Frequent Visitors", "Currently Inside", "Checked Out", "Contractors", "Guests"];
 const historyFilters = ["All Visits", "Last 30 Days", "Last 6 Months", "This Year"];
+
+const EMPTY_RECORD: VisitorRecord = {
+  id: "", name: "No visitor selected", initials: "", color: "bg-slate-300", company: "", visitorType: "", phone: "", email: "", nationality: "", lastVisit: "—", totalVisits: 0, status: "Pre-Registered", host: "", avgDuration: "—", favoriteHost: "", mostVisitedDept: "", idVerified: false, badgeHistory: [], vehicleRegistered: null, itemsCarried: "", notes: "", isVIP: false, visits: [],
+};
 
 // ---------- utility ----------
 const statusColor = (status: VisitorStatus) =>
@@ -179,7 +110,9 @@ const statusDot = (status: VisitorStatus) =>
 // ---------- component ----------
 export default function VisitorRecordsPage() {
   const router = useRouter();
-  const [selectedId, setSelectedId] = useState<string>(visitorRecords[0].id);
+  const [records, setRecords] = useState<VisitorVisit[]>([]);
+  const [directories, setDirectories] = useState<VisitorDirectories>(emptyDirectories());
+  const [selectedId, setSelectedId] = useState("");
   const [toast, setToast] = useState<string | null>(null);
   const [viewMode, setViewMode] = useState<"card" | "list">("card");
 
@@ -208,7 +141,25 @@ export default function VisitorRecordsPage() {
     setTimeout(() => setToast(null), 2600);
   };
 
-  const selected = visitorRecords.find(v => v.id === selectedId) || visitorRecords[0];
+  useEffect(() => {
+    loadVisitorWorkspace()
+      .then((workspace) => {
+        setRecords(workspace.visits);
+        setDirectories(workspace.directories);
+        const first = groupVisitorProfiles(workspace.visits)[0];
+        setSelectedId((current) => current || first?.id || "");
+      })
+      .catch((error) => showToast(error instanceof Error ? error.message : "Unable to load visitor records."));
+  }, []);
+
+  const visitorRecords = useMemo(() => groupVisitorProfiles(records), [records]);
+  const hostCards = useMemo(() => hostCardsFromVisits(records), [records]);
+  const companies = ["All Companies", ...Array.from(new Set(visitorRecords.map((record) => record.company).filter(Boolean)))];
+  const visitorTypeOptions = ["All Types", ...Array.from(new Set(visitorRecords.map((record) => record.visitorType).filter(Boolean)))];
+  const departmentOptions = ["All Departments", ...directories.departments];
+  const hostOptions = ["All Hosts", ...Array.from(new Set([...visitorRecords.map((record) => record.host), ...records.map((visit) => visit.hostName)].filter(Boolean)))];
+  const selected = visitorRecords.find(v => v.id === selectedId) || visitorRecords[0] || EMPTY_RECORD;
+  const remember = (saved: VisitorVisit) => setRecords((prev) => [saved, ...prev.filter((item) => item.id !== saved.id)]);
 
   const toggleChip = (chip: string) => setActiveChips(prev => prev.includes(chip) ? prev.filter(c => c !== chip) : [...prev, chip]);
 
@@ -227,18 +178,31 @@ export default function VisitorRecordsPage() {
         if (chip === "Checked Out") return v.status === "Checked Out";
         if (chip === "Contractors") return v.visitorType === "Contractor";
         if (chip === "Guests") return v.visitorType === "Guest";
-        return true; // Today / This Week / This Month treated as no-op on mock data
+        const iso = records.find((visit) => visit.id === v.id)?.visitDate || "";
+        if (chip === "Today") return iso.slice(0, 10) === todayISO();
+        if (chip === "This Week" || chip === "This Month") {
+          if (!iso) return false;
+          const days = (Date.now() - new Date(`${iso.slice(0, 10)}T12:00:00`).getTime()) / 86400000;
+          return days >= 0 && days <= (chip === "This Week" ? 7 : 31);
+        }
+        return true;
       });
       return matchSearch && matchCompany && matchType && matchDept && matchHost && matchStatus && matchChips;
     });
-  }, [searchQuery, companyFilter, typeFilter, deptFilter, hostFilter, statusFilter, activeChips]);
+  }, [visitorRecords, records, searchQuery, companyFilter, typeFilter, deptFilter, hostFilter, statusFilter, activeChips]);
 
   const filteredVisits = useMemo(() => {
-    // mock data has no real date filtering logic beyond showing all; filter is illustrative
-    return selected.visits;
+    return selected.visits.filter((visit) => {
+      if (!visit.dateISO || historyFilter === "All Visits") return true;
+      const days = (Date.now() - new Date(`${visit.dateISO}T12:00:00`).getTime()) / 86400000;
+      if (historyFilter === "Last 30 Days") return days <= 30;
+      if (historyFilter === "Last 6 Months") return days <= 183;
+      if (historyFilter === "This Year") return visit.dateISO.slice(0, 4) === String(new Date().getFullYear());
+      return true;
+    });
   }, [selected, historyFilter]);
 
-  const lastUpdated = "2 minutes ago";
+  const lastUpdated = records[0]?.updatedAt ? new Date(records[0].updatedAt).toLocaleString() : "No records yet";
 
   return (
     <div className="space-y-6 relative">
@@ -255,7 +219,7 @@ export default function VisitorRecordsPage() {
           <h1 className="text-2xl font-semibold text-slate-900">Visitor Records</h1>
           <p className="mt-1 text-sm text-slate-500 max-w-xl">Search, review, and manage visitor profiles and historical visit records.</p>
           <div className="flex items-center gap-4 mt-3 text-xs text-slate-500">
-            <span className="flex items-center gap-1"><Users size={12} /> {visitorRecords.length * 43} Total Records</span>
+            <span className="flex items-center gap-1"><Users size={12} /> {visitorRecords.length} Total Records</span>
             <span className="flex items-center gap-1"><Clock size={12} /> Last Updated: {lastUpdated}</span>
           </div>
         </div>
@@ -521,7 +485,12 @@ export default function VisitorRecordsPage() {
       )}
 
       {showRegisterVisitor && (
-        <RegisterVisitorModal onClose={() => setShowRegisterVisitor(false)} onSubmit={(name) => { showToast(`${name} registered`); setShowRegisterVisitor(false); }} />
+        <RegisterVisitorModal onClose={() => setShowRegisterVisitor(false)} onSubmit={(data) => {
+          void saveVisitorVisit({ visitorName: data.name, company: data.company, hostName: data.host, hostEmployeeCode: data.hostCode, department: data.department, location: data.location, status: "Pending Security Check-in", visitDate: todayISO(), purpose: "Registered from visitor records" })
+            .then((saved) => { remember(saved); setSelectedId(saved.id); showToast(`${saved.visitorName} registered`); })
+            .catch((error) => showToast(error instanceof Error ? error.message : "Unable to register the visitor."));
+          setShowRegisterVisitor(false);
+        }} />
       )}
 
       {showPrintReport && (
@@ -529,19 +498,46 @@ export default function VisitorRecordsPage() {
       )}
 
       {showAddNotes && (
-        <AddNotesModal visitor={selected} onClose={() => setShowAddNotes(false)} onSave={() => { showToast(`Notes updated for ${selected.name}`); setShowAddNotes(false); }} />
+        <AddNotesModal visitor={selected} onClose={() => setShowAddNotes(false)} onSave={(notes) => {
+          if (!selected.id) return;
+          void patchVisitorVisit(selected.id, { notes }, { time: "", action: "Notes updated", actor: "Reception" })
+            .then((saved) => { remember(saved); showToast(`Notes updated for ${selected.name}`); })
+            .catch((error) => showToast(error instanceof Error ? error.message : "Unable to save notes."));
+          setShowAddNotes(false);
+        }} />
       )}
 
       {showRegisterVisit && (
-        <RegisterVisitModal visitor={selected} onClose={() => setShowRegisterVisit(false)} onSubmit={() => { showToast(`New visit scheduled for ${selected.name}`); setShowRegisterVisit(false); }} />
+        <RegisterVisitModal visitor={selected} onClose={() => setShowRegisterVisit(false)} onSubmit={(data) => {
+          if (!selected.id) return;
+          void saveVisitorVisit({
+            visitorName: selected.name, company: selected.company, phone: selected.phone, email: selected.email, nationality: selected.nationality,
+            hostName: selected.host, department: selected.mostVisitedDept, visitorType: selected.visitorType, isVip: selected.isVIP,
+            visitDate: data.date, visitTime: data.time, purpose: data.purpose || "Scheduled visit", status: "Pending Security Check-in",
+          }).then((saved) => { remember(saved); setSelectedId(saved.id); showToast(`New visit scheduled for ${selected.name}`); })
+            .catch((error) => showToast(error instanceof Error ? error.message : "Unable to schedule the visit."));
+          setShowRegisterVisit(false);
+        }} />
       )}
 
       {showCheckVisitorIn && (
-        <CheckVisitorInModal visitor={selected} onClose={() => setShowCheckVisitorIn(false)} onCheckIn={() => { showToast(`${selected.name} checked in`); setShowCheckVisitorIn(false); }} />
+        <CheckVisitorInModal visitor={selected} onClose={() => setShowCheckVisitorIn(false)} onCheckIn={() => {
+          if (!selected.id) return;
+          void patchVisitorVisit(selected.id, { status: "Checked In", checkInAt: new Date().toISOString(), idVerified: true, badgeStatus: "Active" }, { time: "", action: "Checked in from records", actor: "Reception" })
+            .then((saved) => { remember(saved); showToast(`${selected.name} checked in`); })
+            .catch((error) => showToast(error instanceof Error ? error.message : "Unable to check the visitor in."));
+          setShowCheckVisitorIn(false);
+        }} />
       )}
 
       {showPrintBadge && (
-        <PrintBadgeModal visitor={selected} onClose={() => setShowPrintBadge(false)} onPrint={() => { showToast(`Badge printed for ${selected.name}`); setShowPrintBadge(false); }} />
+        <PrintBadgeModal visitor={selected} onClose={() => setShowPrintBadge(false)} onPrint={() => {
+          if (!selected.id) return;
+          void patchVisitorVisit(selected.id, { badgeStatus: "Active" }, { time: "", action: "Badge printed", actor: "Reception" })
+            .then((saved) => { remember(saved); showToast(`Badge printed for ${selected.name}`); })
+            .catch((error) => showToast(error instanceof Error ? error.message : "Unable to print the badge."));
+          setShowPrintBadge(false);
+        }} />
       )}
 
       {showFullHistory && (
@@ -591,10 +587,13 @@ function ExportRecordsModal({ onClose, onExport }: { onClose: () => void; onExpo
 }
 
 // ---------- Modal: Register Visitor ----------
-function RegisterVisitorModal({ onClose, onSubmit }: { onClose: () => void; onSubmit: (name: string) => void }) {
+function RegisterVisitorModal({ onClose, onSubmit }: { onClose: () => void; onSubmit: (data: { name: string; company: string; host: string; hostCode?: string; department?: string; location?: string }) => void }) {
   const [name, setName] = useState("");
   const [company, setCompany] = useState("");
   const [host, setHost] = useState("");
+  const [hostCode, setHostCode] = useState("");
+  const [department, setDepartment] = useState("");
+  const [location, setLocation] = useState("");
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 backdrop-blur-sm p-4">
@@ -603,7 +602,7 @@ function RegisterVisitorModal({ onClose, onSubmit }: { onClose: () => void; onSu
           <h3 className="text-lg font-semibold text-slate-900 flex items-center gap-2"><UserPlus size={18} className="text-blue-600" /> Register Visitor</h3>
           <button onClick={onClose} className="text-slate-400 hover:text-slate-600"><X size={20} /></button>
         </div>
-        <form onSubmit={e => { e.preventDefault(); if (name.trim()) onSubmit(name); }} className="space-y-4">
+        <form onSubmit={e => { e.preventDefault(); if (name.trim()) onSubmit({ name, company, host, hostCode, department, location }); }} className="space-y-4">
           <div>
             <label className="text-sm font-medium text-slate-700">Visitor Name</label>
             <input required value={name} onChange={e => setName(e.target.value)} placeholder="Full name" className="w-full mt-1 border border-slate-200 rounded-xl px-3 py-2 text-sm" />
@@ -612,10 +611,7 @@ function RegisterVisitorModal({ onClose, onSubmit }: { onClose: () => void; onSu
             <label className="text-sm font-medium text-slate-700">Company</label>
             <input value={company} onChange={e => setCompany(e.target.value)} placeholder="Company name" className="w-full mt-1 border border-slate-200 rounded-xl px-3 py-2 text-sm" />
           </div>
-          <div>
-            <label className="text-sm font-medium text-slate-700">Host</label>
-            <input value={host} onChange={e => setHost(e.target.value)} placeholder="Employee name" className="w-full mt-1 border border-slate-200 rounded-xl px-3 py-2 text-sm" />
-          </div>
+          <EmployeeHostField label="Host" value={host} onPick={(employee, typed) => { setHost(typed); setHostCode(employee?.code || ""); setDepartment(employee?.department || ""); setLocation(employee?.location || ""); }} />
           <div className="flex justify-end gap-2 pt-2">
             <button type="button" onClick={onClose} className="px-4 py-2 border border-slate-200 rounded-xl text-sm">Cancel</button>
             <button type="submit" className="px-4 py-2 bg-blue-600 text-white rounded-xl text-sm hover:bg-blue-700">Register</button>
@@ -655,7 +651,7 @@ function PrintReportModal({ onClose, onPrint }: { onClose: () => void; onPrint: 
 }
 
 // ---------- Modal: Add Notes ----------
-function AddNotesModal({ visitor, onClose, onSave }: { visitor: VisitorRecord; onClose: () => void; onSave: () => void }) {
+function AddNotesModal({ visitor, onClose, onSave }: { visitor: VisitorRecord; onClose: () => void; onSave: (notes: string) => void }) {
   const [notes, setNotes] = useState(visitor.notes);
 
   return (
@@ -668,7 +664,7 @@ function AddNotesModal({ visitor, onClose, onSave }: { visitor: VisitorRecord; o
         <textarea value={notes} onChange={e => setNotes(e.target.value)} rows={5} placeholder="Internal reception/security notes visible only to staff..." className="w-full border border-slate-200 rounded-xl px-3 py-2 text-sm" />
         <div className="flex justify-end gap-2 pt-4">
           <button onClick={onClose} className="px-4 py-2 border border-slate-200 rounded-xl text-sm">Cancel</button>
-          <button onClick={onSave} className="px-4 py-2 bg-blue-600 text-white rounded-xl text-sm hover:bg-blue-700">Save Notes</button>
+          <button onClick={() => onSave(notes)} className="px-4 py-2 bg-blue-600 text-white rounded-xl text-sm hover:bg-blue-700">Save Notes</button>
         </div>
       </div>
     </div>
@@ -676,7 +672,7 @@ function AddNotesModal({ visitor, onClose, onSave }: { visitor: VisitorRecord; o
 }
 
 // ---------- Modal: Register New Visit ----------
-function RegisterVisitModal({ visitor, onClose, onSubmit }: { visitor: VisitorRecord; onClose: () => void; onSubmit: () => void }) {
+function RegisterVisitModal({ visitor, onClose, onSubmit }: { visitor: VisitorRecord; onClose: () => void; onSubmit: (data: { date: string; time: string; purpose: string }) => void }) {
   const [date, setDate] = useState("");
   const [time, setTime] = useState("");
   const [purpose, setPurpose] = useState("");
@@ -688,7 +684,7 @@ function RegisterVisitModal({ visitor, onClose, onSubmit }: { visitor: VisitorRe
           <h3 className="text-lg font-semibold text-slate-900">New Visit — {visitor.name}</h3>
           <button onClick={onClose} className="text-slate-400 hover:text-slate-600"><X size={20} /></button>
         </div>
-        <form onSubmit={e => { e.preventDefault(); onSubmit(); }} className="space-y-4">
+        <form onSubmit={e => { e.preventDefault(); onSubmit({ date, time, purpose }); }} className="space-y-4">
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="text-sm font-medium text-slate-700">Date</label>
