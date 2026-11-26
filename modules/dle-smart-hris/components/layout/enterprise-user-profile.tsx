@@ -44,6 +44,7 @@ type ProfileUser = {
   pendingApprovals?: number;
   teamSize?: number;
   rbacRole?: string;
+  accountKind?: 'portal';
 };
 
 type EnterpriseUserProfileProps = Partial<ProfileUser> & {
@@ -217,6 +218,7 @@ export function EnterpriseUserProfile({
   pendingApprovals,
 }: EnterpriseUserProfileProps) {
   const [currentUser, setCurrentUser] = useState<Partial<ProfileUser>>({});
+  const [portalAccount, setPortalAccount] = useState(false);
 
   useEffect(() => {
     let ignore = false;
@@ -237,8 +239,10 @@ export function EnterpriseUserProfile({
             onlineStatus: 'Online',
             availabilityStatus: 'Online',
             rbacRole: Array.isArray(session.roles) ? session.roles[0] : '',
+            accountKind: session.accountKind === 'portal' ? 'portal' : undefined,
           }),
         }));
+        if (session.accountKind === 'portal') setPortalAccount(true);
       })
       .catch(() => undefined);
 
@@ -246,7 +250,10 @@ export function EnterpriseUserProfile({
       fetch(`/api/current-user?context=${context}`, { cache: 'no-store' })
         .then((response) => (response.ok ? response.json() : null))
         .then((payload) => {
-          if (!ignore && payload?.data) setCurrentUser(pruneEmpty(payload.data));
+          if (!ignore && payload?.data) {
+            setCurrentUser(pruneEmpty(payload.data));
+            if (payload.data.accountKind === 'portal') setPortalAccount(true);
+          }
         })
         .catch(() => undefined);
     };
@@ -281,9 +288,12 @@ export function EnterpriseUserProfile({
       : {}),
   } as ProfileUser;
   user.role = displayRole(user.role) || user.role;
+  const portalVisitor = portalAccount
+    || user.accountKind === 'portal'
+    || /^DL-\d{4,}$/i.test(compact(user.employeeCode));
   const displayName = sanitizePersonDisplayName(user.name) || user.name;
-  const resolvedPhotoUrl = resolveProfilePhotoUrl(user);
-  const useEmployeePhoto = Boolean(resolvedPhotoUrl) || !isPlaceholderEmployeeCode(user.employeeCode);
+  const resolvedPhotoUrl = portalVisitor ? '' : resolveProfilePhotoUrl(user);
+  const useEmployeePhoto = portalVisitor ? false : Boolean(resolvedPhotoUrl) || !isPlaceholderEmployeeCode(user.employeeCode);
   const tone = contextTone(context);
   const links = linksFor(context, user);
   const utilityLinks = utilityLinksFor(context, user.rbacRole || 'Employee');
@@ -301,7 +311,7 @@ export function EnterpriseUserProfile({
   return (
     <details className="group relative">
       <summary
-        aria-label="Open employee profile menu"
+        aria-label={portalVisitor ? 'Open account menu' : 'Open employee profile menu'}
         className={`flex h-11 min-w-11 cursor-pointer list-none items-center justify-center gap-2 rounded-lg border px-1.5 py-1.5 text-left shadow-sm transition-colors sm:justify-start sm:px-2 lg:gap-3 ${tone.shell}`}
       >
         <span className="relative h-8 w-8 shrink-0">
@@ -331,7 +341,9 @@ export function EnterpriseUserProfile({
         <ChevronDown className="hidden h-4 w-4 text-slate-400 transition-transform group-open:rotate-180 md:block" />
       </summary>
 
-      <div className="fixed inset-x-2 bottom-2 top-2 z-50 overflow-y-auto overscroll-contain rounded-lg border border-slate-200 bg-white shadow-xl sm:absolute sm:inset-x-auto sm:bottom-auto sm:right-0 sm:top-auto sm:mt-2 sm:max-h-[calc(100dvh-5rem)] sm:w-[min(92vw,440px)]">
+      <div className={portalVisitor
+        ? 'absolute right-0 z-50 mt-2 w-[min(92vw,320px)] overflow-hidden rounded-lg border border-slate-200 bg-white shadow-xl'
+        : 'fixed inset-x-2 bottom-2 top-2 z-50 overflow-y-auto overscroll-contain rounded-lg border border-slate-200 bg-white shadow-xl sm:absolute sm:inset-x-auto sm:bottom-auto sm:right-0 sm:top-auto sm:mt-2 sm:max-h-[calc(100dvh-5rem)] sm:w-[min(92vw,440px)]'}>
         <div className={`border-b border-slate-100 p-4 ${tone.panel}`}>
           <div className="flex items-start gap-3">
             <span className="relative h-14 w-14 shrink-0">
@@ -349,77 +361,89 @@ export function EnterpriseUserProfile({
             <div className="min-w-0 flex-1">
               <p className="truncate text-base font-black text-slate-950">{displayName}</p>
               <p className="truncate text-sm font-semibold text-slate-600">{user.role}</p>
-              <div className="mt-2 flex flex-wrap gap-1.5">
-                <span className={`rounded-full border px-2 py-1 text-[11px] font-black ${statusTone(user.employmentStatus)}`}>{user.employmentStatus || 'Unknown'}</span>
-                <span className={`rounded-full border px-2 py-1 text-[11px] font-black ${statusTone(user.availabilityStatus)}`}>{user.availabilityStatus || 'Offline'}</span>
-                <span className="rounded-full border border-slate-200 bg-white px-2 py-1 text-[11px] font-black text-slate-700">{user.rbacRole || 'Employee'}</span>
+              {portalVisitor ? null : (
+                <div className="mt-2 flex flex-wrap gap-1.5">
+                  <span className={`rounded-full border px-2 py-1 text-[11px] font-black ${statusTone(user.employmentStatus)}`}>{user.employmentStatus || 'Unknown'}</span>
+                  <span className={`rounded-full border px-2 py-1 text-[11px] font-black ${statusTone(user.availabilityStatus)}`}>{user.availabilityStatus || 'Offline'}</span>
+                  <span className="rounded-full border border-slate-200 bg-white px-2 py-1 text-[11px] font-black text-slate-700">{user.rbacRole || 'Employee'}</span>
+                </div>
+              )}
+            </div>
+            {portalVisitor ? null : (
+              <div className="relative shrink-0 rounded-lg border border-slate-200 bg-white p-2 text-slate-600">
+                <Bell className="h-4 w-4" />
+                {notificationCount > 0 ? <span className="absolute -right-1 -top-1 min-w-4 rounded-full bg-red-600 px-1 text-center text-[9px] font-black text-white">{notificationCount}</span> : null}
+              </div>
+            )}
+          </div>
+
+          {portalVisitor ? (
+            <p className="mt-3 text-xs font-semibold text-slate-500">Visitor portal account · {user.employeeCode}</p>
+          ) : (
+            <div className="mt-4 grid grid-cols-1 gap-2 min-[420px]:grid-cols-3">
+              <Link href={profileActionHref} className={`flex min-h-11 items-center justify-center rounded-lg px-3 py-2 text-center text-xs font-black text-white ${tone.action}`}>
+                View Profile
+              </Link>
+              <Link href={leaveActionHref} className="flex min-h-11 items-center justify-center rounded-lg border border-slate-200 bg-white px-3 py-2 text-center text-xs font-black text-slate-800 hover:bg-slate-50">
+                Apply Leave
+              </Link>
+              <Link href={payslipActionHref} className="flex min-h-11 items-center justify-center rounded-lg border border-slate-200 bg-white px-3 py-2 text-center text-xs font-black text-slate-800 hover:bg-slate-50">
+                View Payslip
+              </Link>
+            </div>
+          )}
+        </div>
+
+        {portalVisitor ? null : (
+          <>
+            <div className="grid grid-cols-2 gap-2 border-b border-slate-100 p-3">
+              <div className="rounded-lg border border-blue-100 bg-blue-50 px-3 py-2">
+                <p className="text-[10px] font-black uppercase text-blue-700">Team Size</p>
+                <p className="mt-1 text-lg font-black text-slate-950">{isManager ? Number(user.teamSize || 0) : '-'}</p>
+              </div>
+              <div className="rounded-lg border border-amber-100 bg-amber-50 px-3 py-2">
+                <p className="text-[10px] font-black uppercase text-amber-700">Pending Approvals</p>
+                <p className="mt-1 text-lg font-black text-slate-950">{isManager ? pendingApprovalCount : '-'}</p>
               </div>
             </div>
-            <div className="relative shrink-0 rounded-lg border border-slate-200 bg-white p-2 text-slate-600">
-              <Bell className="h-4 w-4" />
-              {notificationCount > 0 ? <span className="absolute -right-1 -top-1 min-w-4 rounded-full bg-red-600 px-1 text-center text-[9px] font-black text-white">{notificationCount}</span> : null}
-            </div>
-          </div>
 
-          <div className="mt-4 grid grid-cols-1 gap-2 min-[420px]:grid-cols-3">
-            <Link href={profileActionHref} className={`flex min-h-11 items-center justify-center rounded-lg px-3 py-2 text-center text-xs font-black text-white ${tone.action}`}>
-              View Profile
-            </Link>
-            <Link href={leaveActionHref} className="flex min-h-11 items-center justify-center rounded-lg border border-slate-200 bg-white px-3 py-2 text-center text-xs font-black text-slate-800 hover:bg-slate-50">
-              Apply Leave
-            </Link>
-            <Link href={payslipActionHref} className="flex min-h-11 items-center justify-center rounded-lg border border-slate-200 bg-white px-3 py-2 text-center text-xs font-black text-slate-800 hover:bg-slate-50">
-              View Payslip
-            </Link>
-          </div>
-        </div>
-
-        <div className="grid grid-cols-2 gap-2 border-b border-slate-100 p-3">
-          <div className="rounded-lg border border-blue-100 bg-blue-50 px-3 py-2">
-            <p className="text-[10px] font-black uppercase text-blue-700">Team Size</p>
-            <p className="mt-1 text-lg font-black text-slate-950">{isManager ? Number(user.teamSize || 0) : '-'}</p>
-          </div>
-          <div className="rounded-lg border border-amber-100 bg-amber-50 px-3 py-2">
-            <p className="text-[10px] font-black uppercase text-amber-700">Pending Approvals</p>
-            <p className="mt-1 text-lg font-black text-slate-950">{isManager ? pendingApprovalCount : '-'}</p>
-          </div>
-        </div>
-
-        <div className="border-b border-slate-100 p-3">
-          <div className="grid grid-cols-1 gap-2 min-[420px]:grid-cols-2">
-            {infoRows(user).map(([label, value]) => (
-              <div key={label} className="min-w-0 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
-                <p className="text-[10px] font-black uppercase text-slate-500">{label}</p>
-                <p className="mt-1 truncate text-xs font-bold text-slate-900" title={value}>{value}</p>
+            <div className="border-b border-slate-100 p-3">
+              <div className="grid grid-cols-1 gap-2 min-[420px]:grid-cols-2">
+                {infoRows(user).map(([label, value]) => (
+                  <div key={label} className="min-w-0 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
+                    <p className="text-[10px] font-black uppercase text-slate-500">{label}</p>
+                    <p className="mt-1 truncate text-xs font-bold text-slate-900" title={value}>{value}</p>
+                  </div>
+                ))}
               </div>
-            ))}
-          </div>
-        </div>
+            </div>
 
-        <nav aria-label="Employee profile shortcuts" className="grid grid-cols-1 gap-1 border-b border-slate-100 p-2 min-[420px]:grid-cols-2">
-          {links.map((item) => {
-            const Icon = item.icon;
-            return (
-              <Link key={item.label} href={item.href} className="flex min-h-11 items-center gap-2 rounded-lg px-3 py-2 text-sm font-bold text-slate-700 hover:bg-slate-50">
-                <Icon className={`h-4 w-4 ${tone.accent}`} />
-                <span className="min-w-0 flex-1 truncate">{item.label}</span>
-                {item.count ? <span className="rounded-full bg-amber-100 px-1.5 py-0.5 text-[10px] font-black text-amber-700">{item.count}</span> : null}
-              </Link>
-            );
-          })}
-        </nav>
+            <nav aria-label="Employee profile shortcuts" className="grid grid-cols-1 gap-1 border-b border-slate-100 p-2 min-[420px]:grid-cols-2">
+              {links.map((item) => {
+                const Icon = item.icon;
+                return (
+                  <Link key={item.label} href={item.href} className="flex min-h-11 items-center gap-2 rounded-lg px-3 py-2 text-sm font-bold text-slate-700 hover:bg-slate-50">
+                    <Icon className={`h-4 w-4 ${tone.accent}`} />
+                    <span className="min-w-0 flex-1 truncate">{item.label}</span>
+                    {item.count ? <span className="rounded-full bg-amber-100 px-1.5 py-0.5 text-[10px] font-black text-amber-700">{item.count}</span> : null}
+                  </Link>
+                );
+              })}
+            </nav>
 
-        <div className="grid grid-cols-1 gap-1 border-b border-slate-100 p-2 min-[420px]:grid-cols-2">
-          {utilityLinks.map((item) => {
-            const Icon = item.icon;
-            return (
-              <Link key={item.label} href={item.href} className="flex min-h-11 items-center gap-2 rounded-lg px-3 py-2 text-sm font-bold text-slate-700 hover:bg-slate-50">
-                <Icon className={`h-4 w-4 ${item.tone}`} />
-                {item.label}
-              </Link>
-            );
-          })}
-        </div>
+            <div className="grid grid-cols-1 gap-1 border-b border-slate-100 p-2 min-[420px]:grid-cols-2">
+              {utilityLinks.map((item) => {
+                const Icon = item.icon;
+                return (
+                  <Link key={item.label} href={item.href} className="flex min-h-11 items-center gap-2 rounded-lg px-3 py-2 text-sm font-bold text-slate-700 hover:bg-slate-50">
+                    <Icon className={`h-4 w-4 ${item.tone}`} />
+                    {item.label}
+                  </Link>
+                );
+              })}
+            </div>
+          </>
+        )}
 
         <div className="p-2">
           <button type="button" onClick={() => void logout()} className="flex min-h-11 w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm font-bold text-red-700 hover:bg-red-50">

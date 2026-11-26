@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { AUTH_COOKIE, clearAuthCookieOptions, isPublicPath, verifySessionToken } from '@/lib/auth/session';
 import { canAccessRoute } from '@/lib/access/route-access';
+import { portalVisitorPathAllowed } from '@/lib/auth/portal-users';
 import { deriveHrisRole } from '@/lib/hris-access';
 import { resolveAccessPermissions } from '@/lib/auth/resolve-access-session';
 import { isSuperActor } from '@/lib/auth/role-delegation';
@@ -67,6 +68,10 @@ export async function middleware(request: NextRequest) {
       url.pathname = '/change-password';
       url.searchParams.set('next', pathname + request.nextUrl.search);
       return NextResponse.redirect(url);
+    }
+
+    if (session.accountKind === 'portal' && !portalVisitorPathAllowed(pathname)) {
+      return denied(request, 403);
     }
 
     const roles = session.roles;

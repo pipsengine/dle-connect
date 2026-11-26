@@ -16,6 +16,13 @@ import {
   protectedGlobalSuperAdminRoles,
 } from '@/lib/auth/protected-global-admin';
 import { sanitizePersonDisplayName } from '@/lib/person-display-name';
+import {
+  isPortalAccount,
+  isPortalVisitorRole,
+  nextPortalUsername,
+  PORTAL_ACCOUNT_KIND,
+  type PortalVisitorRole,
+} from '@/lib/auth/portal-users';
 
 export type UserStatus = 'Active' | 'Inactive' | 'Disabled' | 'Locked' | 'Pending First Login' | 'Password Reset Required';
 
@@ -52,6 +59,10 @@ export type UserAccount = {
   deleted?: boolean;
   /** Locked Global Super Administrator — unrestricted access; roles cannot be changed. */
   isGlobalAdmin?: boolean;
+  /** Portal accounts sign in for visitor management and are not employee-directory records. */
+  accountKind?: 'employee' | 'portal';
+  phone?: string;
+  organisation?: string;
 };
 
 export type SecurityAudit = {
@@ -520,12 +531,24 @@ export const readLoginHistory = async () => {
 export const syncUsersFromEmployeeDirectory = async () => {
   const source = await readDirectoryEmployees();
   const stored = await readUsersStoreRaw();
-  const byCode = new Map(stored.map((user) => [lower(user.employeeCode || user.employeeId), user]));
-  const next = source.employees.map((employee) => {
-    const key = lower(employee.employeeCode || employee.employeeId);
-    const existing = byCode.get(key);
-    return existing ? mergeEmployee(existing, employee) : userFromEmployee(employee);
-  });
+  // Other users are created in IT Support. Directory sync must not merge or drop them.
+  const portalUsers = stored.filter((user) => isPortalAccount(user) && !user.deleted);
+  const portalKeys = new Set(
+    portalUsers.flatMap((user) => [user.username, user.employeeCode, user.employeeId].map(lower)).filter(Boolean),
+  );
+  const byCode = new Map(
+    stored
+      .filter((user) => !isPortalAccount(user))
+      .map((user) => [lower(user.employeeCode || user.employeeId), user]),
+  );
+  const employees = source.employees
+    .filter((employee) => !portalKeys.has(lower(employee.employeeCode || employee.employeeId)))
+    .map((employee) => {
+      const key = lower(employee.employeeCode || employee.employeeId);
+      const existing = byCode.get(key);
+      return existing ? mergeEmployee(existing, employee) : userFromEmployee(employee);
+    });
+  const next = [...employees, ...portalUsers];
   await writeUsersStore(next);
   return { users: next.filter((user) => !user.deleted), source };
 };
@@ -570,7 +593,7 @@ export const syncPortalMailboxForEmployee = async (employeeCode: string, email: 
 
 export const readUsersForAccessControl = async () => {
   const stored = await readUsersStoreRaw();
-  const activeUsers = stored.filter((user) => !user.deleted);
+  const activeUsers = stored.filter((user) => !user.deleted && !isPortalAccount(user));
   const permissions = await effectivePermissionsForUsers(activeUsers.map((user) => ({ id: user.id, roles: user.roles })));
   return activeUsers.map((user, index) => {
     const locked = isProtectedGlobalSuperAdminIdentity(user) || Boolean(user.isGlobalAdmin);
@@ -702,6 +725,7 @@ const publicUser = async (user: UserAccount): Promise<SessionUser> => {
     firstLoginRequired: user.firstLoginRequired,
     passwordResetRequired: user.passwordResetRequired,
     isGlobalAdmin: lockedGlobal,
+    accountKind: isPortalAccount(user) ? PORTAL_ACCOUNT_KIND : undefined,
   };
 };
 
@@ -852,6 +876,9 @@ export const updateUser = async (
   const users = await readUsersStoreRaw();
   const target = users.find((item) => item.id === userId);
   if (!target) throw new Error('User account was not found.');
+  if (isPortalAccount(target) && action === 'assign-roles') {
+    throw new Error('Other user access is managed in IT Support. These accounts are not employee roles.');
+  }
   let updated: UserAccount = target;
   const oldValue = JSON.stringify({ status: target.status, roles: target.roles, departmentAccess: target.departmentAccess, moduleAccess: target.moduleAccess });
 
@@ -960,3 +987,221 @@ export const logoutAudit = async (user: string, userId: string, headers: Headers
 };
 
 export const rolesPayload = () => roleDefinitions;
+
+const surnameFromFullName = (fullName: string) => {
+  const parts = compact(fullName).split(/\s+/).filter(Boolean);
+  return parts[parts.length - 1] || compact(fullName);
+};
+
+const portalPermissions = (role: PortalVisitorRole) => permissionsForRoles([role]);
+
+export type PortalUserInput = {
+  fullName: string;
+  email?: string;
+  phone?: string;
+  organisation?: string;
+  role: string;
+};
+
+export type PortalUserView = {
+  id: string;
+  username: string;
+  fullName: string;
+  email: string;
+  phone: string;
+  organisation: string;
+  role: string;
+  department: string;
+  status: UserStatus;
+  firstLoginRequired: boolean;
+  passwordResetRequired: boolean;
+  failedAttempts: number;
+  lastLoginAt: string | null;
+  createdAt: string;
+};
+
+export const toPortalUserView = (user: UserAccount): PortalUserView => ({
+  id: user.id,
+  username: user.username,
+  fullName: user.fullName,
+  email: user.email || '',
+  phone: user.phone || '',
+  organisation: user.organisation || '',
+  role: user.roles[0] || '',
+  department: user.department || '',
+  status: user.status,
+  firstLoginRequired: user.firstLoginRequired,
+  passwordResetRequired: user.passwordResetRequired,
+  failedAttempts: user.failedAttempts,
+  lastLoginAt: user.lastLoginAt,
+  createdAt: user.createdAt,
+});
+
+export const listPortalUsers = async () => {
+  const users = await readUsersStoreRaw();
+  return users
+    .filter((user) => isPortalAccount(user) && !user.deleted)
+    .map(toPortalUserView)
+    .sort((a, b) => a.username.localeCompare(b.username));
+};
+
+const takenLoginKeys = async () => {
+  const users = await readUsersStoreRaw();
+  const source = await readDirectoryEmployees().catch(() => ({ employees: [] as DleEmployeeDirectoryRow[] }));
+  return [
+    ...users.flatMap((user) => [user.username, user.employeeCode, user.employeeId, user.email]),
+    ...source.employees.flatMap((employee) => [
+      employee.employeeCode,
+      employee.employeeId,
+      employee.officialEmail,
+      employee.email,
+      employee.personalEmail,
+    ]),
+  ];
+};
+
+export const createPortalUser = async (input: PortalUserInput, headers: Headers, performedBy: string) => {
+  const fullName = sanitizePersonDisplayName(compact(input.fullName)) || compact(input.fullName);
+  if (fullName.length < 2) throw new Error('Enter the person\'s full name.');
+  if (!isPortalVisitorRole(input.role)) throw new Error('Choose Visitor Reception or Visitor Security.');
+  const email = lower(input.email);
+  if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) throw new Error('Enter a valid email address.');
+  const phone = compact(input.phone);
+  const organisation = compact(input.organisation);
+  const users = await readUsersStoreRaw();
+  if (email && users.some((user) => !user.deleted && lower(user.email) === email)) {
+    throw new Error('That email is already used by another sign-in account.');
+  }
+  const taken = await takenLoginKeys();
+  if (email && taken.some((value) => lower(value) === email)) {
+    throw new Error('That email belongs to an employee directory record. Use an email that is not on the directory.');
+  }
+  const username = nextPortalUsername(taken);
+  const surname = surnameFromFullName(fullName);
+  const temporaryPassword = defaultPasswordFromSurname(surname, username);
+  const hashed = hashPassword(temporaryPassword);
+  const role: PortalVisitorRole = input.role;
+  const now = nowIso();
+  const user: UserAccount = {
+    id: `usr-${username}`,
+    username,
+    employeeId: username,
+    employeeCode: username,
+    fullName,
+    surname,
+    email,
+    department: 'Visitor Management',
+    unit: organisation,
+    jobTitle: role,
+    grade: '',
+    location: '',
+    employmentStatus: 'Portal',
+    reportingManager: '',
+    passwordHash: hashed.hash,
+    passwordSalt: hashed.salt,
+    status: 'Pending First Login',
+    roles: [role],
+    permissions: portalPermissions(role),
+    departmentAccess: ['Visitor Management'],
+    moduleAccess: ['security'],
+    firstLoginRequired: true,
+    passwordResetRequired: false,
+    failedAttempts: 0,
+    lockedUntil: null,
+    lastLoginAt: null,
+    createdAt: now,
+    updatedAt: now,
+    disabledAt: null,
+    deleted: false,
+    accountKind: PORTAL_ACCOUNT_KIND,
+    phone,
+    organisation,
+  };
+  await persistUserRecord(user);
+  const { ip, device } = client(headers);
+  await appendAudit({
+    user: username,
+    action: 'Create other user',
+    ipAddress: ip,
+    device,
+    newValue: JSON.stringify({ fullName, role, email, organisation }),
+    performedBy,
+  });
+  return { user: toPortalUserView(user), temporaryPassword };
+};
+
+export const updatePortalUser = async (
+  userId: string,
+  action: 'disable' | 'enable' | 'reset-password' | 'update',
+  input: Partial<PortalUserInput>,
+  headers: Headers,
+  performedBy: string,
+) => {
+  const users = await readUsersStoreRaw();
+  const target = users.find((user) => user.id === userId && isPortalAccount(user) && !user.deleted);
+  if (!target) throw new Error('Other user account was not found.');
+  let updated: UserAccount = { ...target, updatedAt: nowIso() };
+  let temporaryPassword: string | undefined;
+
+  if (action === 'disable') {
+    updated = { ...updated, status: 'Disabled', disabledAt: nowIso() };
+  }
+  if (action === 'enable') {
+    updated = {
+      ...updated,
+      status: updated.firstLoginRequired ? 'Pending First Login' : 'Active',
+      disabledAt: null,
+      failedAttempts: 0,
+      lockedUntil: null,
+    };
+  }
+  if (action === 'reset-password') {
+    temporaryPassword = defaultPasswordFromSurname(target.surname, target.username);
+    const hashed = hashPassword(temporaryPassword);
+    updated = {
+      ...updated,
+      passwordHash: hashed.hash,
+      passwordSalt: hashed.salt,
+      status: 'Password Reset Required',
+      passwordResetRequired: true,
+      failedAttempts: 0,
+      lockedUntil: null,
+    };
+  }
+  if (action === 'update') {
+    const fullName = sanitizePersonDisplayName(compact(input.fullName || target.fullName)) || target.fullName;
+    if (fullName.length < 2) throw new Error('Enter the person\'s full name.');
+    const role = compact(input.role || target.roles[0] || '');
+    if (!isPortalVisitorRole(role)) throw new Error('Choose Visitor Reception or Visitor Security.');
+    const email = input.email === undefined ? target.email : lower(input.email);
+    if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) throw new Error('Enter a valid email address.');
+    if (email && users.some((user) => user.id !== target.id && !user.deleted && lower(user.email) === email)) {
+      throw new Error('That email is already used by another sign-in account.');
+    }
+    updated = {
+      ...updated,
+      fullName,
+      surname: surnameFromFullName(fullName),
+      email,
+      phone: input.phone === undefined ? target.phone : compact(input.phone),
+      organisation: input.organisation === undefined ? target.organisation : compact(input.organisation),
+      unit: input.organisation === undefined ? target.unit : compact(input.organisation),
+      jobTitle: role,
+      roles: [role],
+      permissions: portalPermissions(role),
+    };
+  }
+
+  await persistUserRecord(updated);
+  const { ip, device } = client(headers);
+  await appendAudit({
+    user: target.username,
+    action: `Other user ${action}`,
+    ipAddress: ip,
+    device,
+    oldValue: JSON.stringify({ status: target.status, roles: target.roles, email: target.email }),
+    newValue: JSON.stringify({ status: updated.status, roles: updated.roles, email: updated.email }),
+    performedBy,
+  });
+  return { user: toPortalUserView(updated), temporaryPassword };
+};

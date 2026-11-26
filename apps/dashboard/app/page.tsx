@@ -37,7 +37,7 @@ import { WORKFORCE_PORTAL_ENABLED } from '@/lib/workforce-portal-availability';
 const getSessionPermissions = async () => {
   const token = (await cookies()).get(AUTH_COOKIE)?.value;
   const session = await verifySessionToken(token);
-  if (!session) return { permissions: [] as string[], name: 'Signed-in user', session: null, isGlobalAdmin: false };
+  if (!session) return { permissions: [] as string[], name: 'Signed-in user', session: null, isGlobalAdmin: false, accountKind: undefined as 'portal' | undefined };
   const permissions = await withCorrespondenceParticipantPermission(
     await effectivePermissionsForUser(session.sub, session.roles).catch(() => session.permissions),
     session.employeeCode,
@@ -68,6 +68,7 @@ const getSessionPermissions = async () => {
     name: greeting,
     session: { ...session, permissions },
     isGlobalAdmin: Boolean(session.isGlobalAdmin),
+    accountKind: session.accountKind === 'portal' ? 'portal' as const : undefined,
   };
 };
 
@@ -219,9 +220,10 @@ const workspaceModules = [
 ] as const;
 
 export default async function Home() {
-  const { permissions, name, isGlobalAdmin } = await getSessionPermissions();
+  const { permissions, name, isGlobalAdmin, accountKind } = await getSessionPermissions();
 
   const visibleModules = workspaceModules.filter((module) => {
+    if (accountKind === 'portal') return module.id === 'security';
     if (module.href === '/workforce-portal' && !WORKFORCE_PORTAL_ENABLED) return false;
 
     if (module.id === 'finance') {

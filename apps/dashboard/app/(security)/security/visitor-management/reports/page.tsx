@@ -4,6 +4,8 @@ import React, { useEffect, useState } from "react";
 import { loadVisitorWorkspace, saveVisitorArtifact, searchVisitorEmployees } from "@/lib/security/visitor-client";
 import { emptyDirectories, type VisitorDirectories, type VisitorVisit } from "@/lib/security/visitor-types";
 import { filterReportVisits, formatVisitDate, summarizeVisits } from "@/lib/security/visitor-views";
+import { VisitorOverview } from "../_components/visitor-overview";
+import "../dashboard/visitor-dashboard.css";
 import {
   BarChart3,
   Building2,
@@ -251,6 +253,10 @@ export default function VisitorReportsPage() {
           <button onClick={() => setShowExportModal(true)} className="border border-slate-200 px-3 py-1.5 rounded-lg text-sm text-slate-700 hover:bg-slate-50 flex items-center gap-1.5"><Download size={16} /> Export</button>
           <button onClick={() => setShowShareModal(true)} className="border border-slate-200 px-3 py-1.5 rounded-lg text-sm text-slate-700 hover:bg-slate-50 flex items-center gap-1.5"><Share2 size={16} /> Share</button>
         </div>
+      </div>
+
+      <div className="vms-dashboard">
+        <VisitorOverview visits={visits} employeeCount={directories.employeeCount} />
       </div>
 
       {/* Section 1 - Report Templates */}

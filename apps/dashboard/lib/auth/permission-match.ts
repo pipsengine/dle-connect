@@ -173,6 +173,9 @@ const PERMISSION_ALIASES: Record<string, string[]> = {
   'it.account-recovery': ['it.account-recovery.view', 'it.account-recovery.edit', 'page.it-support.account-recovery.view'],
   'it.account-recovery.view': ['page.it-support.account-recovery.view'],
   'page.it-support.account-recovery.view': ['it.account-recovery.view'],
+  'it.other-users': ['it.other-users.view', 'it.other-users.edit', 'page.it-support.other-users.view'],
+  'it.other-users.view': ['page.it-support.other-users.view'],
+  'page.it-support.other-users.view': ['it.other-users.view'],
   'application-support.view': ['it.view'],
   'service-desk.view': ['it.view'],
   'view_corporate_office': [
@@ -295,6 +298,12 @@ export const expandPublishedPermissions = (permissions: string[]) => {
     out.add('it.account-recovery.view');
     out.add('it.account-recovery.edit');
     out.add('page.it-support.account-recovery.view');
+  }
+  if (list.some((permission) => permission.startsWith('it.other-users') || permission.startsWith('page.it-support.other-users'))) {
+    out.add('view_it_support');
+    out.add('it.other-users.view');
+    out.add('it.other-users.edit');
+    out.add('page.it-support.other-users.view');
   }
   if (list.some((permission) => permission.startsWith('admin.roles'))) out.add('page.admin.access-control.view');
   if (list.some((permission) => permission.startsWith('admin.users'))) {

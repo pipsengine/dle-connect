@@ -29,6 +29,8 @@ export type SessionUser = {
   firstLoginRequired: boolean;
   passwordResetRequired: boolean;
   isGlobalAdmin?: boolean;
+  /** Visitor-portal operator created in IT Support. Not an employee-directory account. */
+  accountKind?: 'portal';
 };
 
 export type SessionPayload = {
@@ -45,6 +47,7 @@ export type SessionPayload = {
   firstLoginRequired: boolean;
   passwordResetRequired: boolean;
   isGlobalAdmin?: boolean;
+  accountKind?: 'portal';
   iat: number;
   exp: number;
   /** Unix seconds — updated on each authenticated activity / refresh. */
@@ -123,6 +126,7 @@ export const sessionUserFromPayload = (session: SessionPayload, permissions?: st
   firstLoginRequired: session.firstLoginRequired,
   passwordResetRequired: session.passwordResetRequired,
   isGlobalAdmin: session.isGlobalAdmin,
+  accountKind: session.accountKind === 'portal' ? 'portal' : undefined,
 });
 
 const idleLimitForSession = (session: Pick<SessionPayload, 'firstLoginRequired' | 'passwordResetRequired'> | Pick<SessionUser, 'firstLoginRequired' | 'passwordResetRequired'>) => (
@@ -156,6 +160,7 @@ export const createSessionToken = async (
     firstLoginRequired: user.firstLoginRequired,
     passwordResetRequired: user.passwordResetRequired,
     isGlobalAdmin: user.isGlobalAdmin,
+    accountKind: user.accountKind === 'portal' ? 'portal' : undefined,
     iat,
     lastActivityAt,
     exp: Math.min(absoluteExp, idleExp),
@@ -182,6 +187,7 @@ export const normalizeSession = (session: SessionPayload): SessionPayload => ({
   firstLoginRequired: Boolean(session.firstLoginRequired),
   passwordResetRequired: Boolean(session.passwordResetRequired),
   isGlobalAdmin: Boolean(session.isGlobalAdmin),
+  accountKind: session.accountKind === 'portal' ? 'portal' : undefined,
   lastActivityAt: Number(session.lastActivityAt || session.iat || 0) || undefined,
 });
 

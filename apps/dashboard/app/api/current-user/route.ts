@@ -150,6 +150,38 @@ export async function GET(request: Request) {
   const session = await verifySessionToken(token);
   const notificationCount = session ? await unreadNotificationCountForSession(session).catch(() => 0) : 0;
 
+  if (session?.accountKind === 'portal') {
+    const roleName = compact(session.roles?.[0]) || 'Visitor';
+    return NextResponse.json({
+      status: 'success',
+      data: {
+        name: sanitizePersonDisplayName(session.fullName) || session.fullName || session.username,
+        role: roleName,
+        employeeCode: session.username,
+        department: 'Visitor Management',
+        photoUrl: '',
+        hasPhoto: false,
+        profileHref: '/security',
+        email: '',
+        grade: '',
+        location: '',
+        employmentStatus: 'Active',
+        dateJoined: '',
+        yearsOfService: 0,
+        reportingManager: '',
+        availabilityStatus: 'Online',
+        onlineStatus: 'Online',
+        notificationCount,
+        pendingApprovals: 0,
+        teamSize: 0,
+        rbacRole: roleName,
+        accountKind: 'portal',
+        linked: false,
+        source: 'portal-user',
+      },
+    });
+  }
+
   const configuredIdentities = session
     ? []
     : configuredEmployeeIdentities(request, context);

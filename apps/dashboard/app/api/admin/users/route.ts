@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { effectivePermissionsForUser } from '@/lib/auth/access-control-store';
 import { readLoginHistory, readUsers, syncUsersFromEmployeeDirectory, updateUser } from '@/lib/auth/auth-store';
+import { isPortalAccount } from '@/lib/auth/portal-users';
 import { hasPermission } from '@/lib/auth/permission-match';
 import { isSuperActor } from '@/lib/auth/role-delegation';
 import { AUTH_COOKIE, verifySessionToken } from '@/lib/auth/session';
@@ -24,7 +25,8 @@ export async function GET(request: Request) {
   const auth = await authorize(request, 'admin.users.view');
   if (auth.error) return auth.error;
   const url = new URL(request.url);
-  const users = url.searchParams.get('sync') === '1' ? (await syncUsersFromEmployeeDirectory()).users : await readUsers();
+  const loaded = url.searchParams.get('sync') === '1' ? (await syncUsersFromEmployeeDirectory()).users : await readUsers();
+  const users = loaded.filter((user) => !isPortalAccount(user));
   const history = await readLoginHistory();
   return NextResponse.json({ status: 'success', data: { users, loginHistory: history } });
 }

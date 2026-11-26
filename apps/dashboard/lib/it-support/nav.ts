@@ -11,6 +11,7 @@ import {
   Package,
   Phone,
   Shield,
+  UserRound,
 } from 'lucide-react';
 
 export type ItSupportBadgeTone = 'blue' | 'amber' | 'red' | 'green' | 'grey';
@@ -84,6 +85,19 @@ export const IT_SUPPORT_NAV_SECTIONS: ItSupportNavSection[] = [
           'security.*',
           'view_it_support',
           'it.*',
+        ],
+      },
+      {
+        id: 'other-users',
+        label: 'Other Users',
+        href: '/it-support/other-users',
+        status: 'live',
+        permissionKeys: [
+          'it.other-users.view',
+          'it.other-users.edit',
+          'page.it-support.other-users.view',
+          'it.*',
+          'security.*',
         ],
       },
       {
@@ -366,6 +380,21 @@ export const IT_SUPPORT_MODULE_CARDS = [
       'security.*',
       'view_it_support',
       'it.*',
+    ],
+  },
+  {
+    id: 'other-users',
+    title: 'Other Users',
+    description: 'Create visitor-portal sign-ins for people who are not on the employee directory.',
+    href: '/it-support/other-users',
+    icon: UserRound,
+    status: 'live' as const,
+    permissionKeys: [
+      'it.other-users.view',
+      'it.other-users.edit',
+      'page.it-support.other-users.view',
+      'it.*',
+      'security.*',
     ],
   },
   {

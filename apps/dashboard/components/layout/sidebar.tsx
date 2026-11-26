@@ -142,6 +142,7 @@ export function Sidebar({
     isGlobalAdmin: boolean;
     employeeCode: string;
     username: string;
+    accountKind?: 'portal';
   }>({
     roles: [],
     department: '',
@@ -164,6 +165,7 @@ export function Sidebar({
             isGlobalAdmin: Boolean(json.data.isGlobalAdmin),
             employeeCode: String(json.data.employeeCode || ''),
             username: String(json.data.username || ''),
+            accountKind: json.data.accountKind === 'portal' ? 'portal' : undefined,
           });
         }
       })
@@ -186,6 +188,10 @@ export function Sidebar({
         .every((role) => role === 'Admin' || role === 'System Administrator');
 
     const canSeeAdministration = canAccessAdministrationCentre(sessionContext);
+
+    if (sessionContext.accountKind === 'portal') {
+      return navigationConfig.filter((item) => item.id === 'security');
+    }
 
     return navigationConfig
       .map((item) => {

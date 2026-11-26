@@ -2,6 +2,235 @@
   "schemaVersion": 1,
   "notifications": [
     {
+      "id": "ntf-1795685631660-12662t",
+      "recipientUserId": "P0442",
+      "recipientUsername": "P0442",
+      "recipientEmployeeCode": "P0442",
+      "recipientRoles": [],
+      "kind": "Approval",
+      "module": "Finance Approvals",
+      "title": "Payment approval required",
+      "body": "Miss OLUFUNKE COMFORT ABE submitted Supplier Invoice Payment DLPC261135 (NGN 920,251.6) for GM approval.",
+      "severity": "warning",
+      "status": "Unread",
+      "href": "/finance/approvals/request/PREQ-1795449434253",
+      "createdAt": "2026-11-26T09:33:51.660Z",
+      "actor": "Payment Approval Reminder",
+      "channels": [
+        "In-App",
+        "Email"
+      ],
+      "metadata": {
+        "requestId": "PREQ-1795449434253",
+        "requestNumber": "DLPC261135",
+        "stage": "GM",
+        "recipientCode": "P0442",
+        "recipientName": "Mrs. TEMITOPE ABIODUN ODULATE"
+      }
+    },
+    {
+      "id": "ntf-1795682931877-25pxq9",
+      "recipientUserId": "P0442",
+      "recipientUsername": "P0442",
+      "recipientEmployeeCode": "P0442",
+      "recipientRoles": [],
+      "kind": "Approval",
+      "module": "Finance Approvals",
+      "title": "Payment approval required",
+      "body": "Miss OLUFUNKE COMFORT ABE submitted Supplier Invoice Payment DLE2611123 (NGN 5,160,000) for Project Manager approval.",
+      "severity": "warning",
+      "status": "Unread",
+      "href": "/finance/approvals/request/PREQ-1795450555297",
+      "createdAt": "2026-11-26T08:48:51.877Z",
+      "actor": "Payment Approval Reminder",
+      "channels": [
+        "In-App",
+        "Email"
+      ],
+      "metadata": {
+        "requestId": "PREQ-1795450555297",
+        "requestNumber": "DLE2611123",
+        "stage": "Project Manager",
+        "recipientCode": "P0442",
+        "recipientName": "Mrs. TEMITOPE ABIODUN ODULATE"
+      }
+    },
+    {
+      "id": "ntf-1795682033083-eg08iv",
+      "recipientUserId": "P0051",
+      "recipientUsername": "P0051",
+      "recipientEmployeeCode": "P0051",
+      "recipientRoles": [],
+      "kind": "Workflow",
+      "module": "Commercial",
+      "title": "Deadline reminder · DLE-T-2026-111",
+      "body": "RFQ for STAGING EQUIPMENT, RFQ for Erection Equipment for Hopic (Nigeria) Limited. morning reminder on 2026-11-26 for the internal deadline (2026-11-26); morning reminder on 2026-11-26 for the external deadline (2026-11-27). Responsible officer(s): Mr. PHILIP SUNDAY AREMU; Mrs. NKECHI EKE KALU.",
+      "severity": "warning",
+      "status": "Unread",
+      "href": "/commercial/tenders/workspace?id=TOP-mwizmkbx-2j9zm",
+      "createdAt": "2026-11-26T08:33:53.083Z",
+      "actor": "Tender deadline service",
+      "channels": [
+        "In-App",
+        "Email"
+      ]
+    },
+    {
+      "id": "ntf-1795682031478-ybt1pm",
+      "recipientUserId": "P0092",
+      "recipientUsername": "P0092",
+      "recipientEmployeeCode": "P0092",
+      "recipientRoles": [],
+      "kind": "Workflow",
+      "module": "Commercial",
+      "title": "Deadline reminder · DLE-T-2026-111",
+      "body": "RFQ for STAGING EQUIPMENT, RFQ for Erection Equipment for Hopic (Nigeria) Limited. morning reminder on 2026-11-26 for the internal deadline (2026-11-26); morning reminder on 2026-11-26 for the external deadline (2026-11-27). Responsible officer(s): Mr. PHILIP SUNDAY AREMU; Mrs. NKECHI EKE KALU.",
+      "severity": "warning",
+      "status": "Unread",
+      "href": "/commercial/tenders/workspace?id=TOP-mwizmkbx-2j9zm",
+      "createdAt": "2026-11-26T08:33:51.479Z",
+      "actor": "Tender deadline service",
+      "channels": [
+        "In-App",
+        "Email"
+      ]
+    },
+    {
+      "id": "ntf-1795680231898-26w3y8",
+      "recipientUserId": "P0455",
+      "recipientUsername": "P0455",
+      "recipientEmployeeCode": "P0455",
+      "recipientRoles": [],
+      "kind": "Approval",
+      "module": "Finance Approvals",
+      "title": "Payment approval required",
+      "body": "Mrs. CLAUDIA ONYINYE NWANKWO submitted Expense Payment DLE2611125 (NGN 160,000) for Project Manager approval.",
+      "severity": "warning",
+      "status": "Unread",
+      "href": "/finance/approvals/request/PREQ-1795543922234",
+      "createdAt": "2026-11-26T08:03:51.898Z",
+      "actor": "Payment Approval Reminder",
+      "channels": [
+        "In-App",
+        "Email"
+      ],
+      "metadata": {
+        "requestId": "PREQ-1795543922234",
+        "requestNumber": "DLE2611125",
+        "stage": "Project Manager",
+        "recipientCode": "P0455",
+        "recipientName": "IDRIS ASIPITA ABUBAKAR"
+      }
+    },
+    {
+      "id": "ntf-1795678435009-kqrln2",
+      "recipientUserId": "P0442",
+      "recipientUsername": "P0442",
+      "recipientEmployeeCode": "P0442",
+      "recipientRoles": [],
+      "kind": "Approval",
+      "module": "Finance Approvals",
+      "title": "Payment approval required",
+      "body": "Miss KEHINDE GLORY ADENUBI submitted Supplier Invoice Payment DLPC261114 (NGN 817,537.5) for GM approval.",
+      "severity": "warning",
+      "status": "Unread",
+      "href": "/finance/approvals/request/PREQ-1794497410892",
+      "createdAt": "2026-11-26T07:33:55.009Z",
+      "actor": "Payment Approval Reminder",
+      "channels": [
+        "In-App",
+        "Email"
+      ],
+      "metadata": {
+        "requestId": "PREQ-1794497410892",
+        "requestNumber": "DLPC261114",
+        "stage": "GM",
+        "recipientCode": "P0442",
+        "recipientName": "Mrs. TEMITOPE ABIODUN ODULATE"
+      }
+    },
+    {
+      "id": "ntf-1795678434428-wzlspi",
+      "recipientUserId": "P0442",
+      "recipientUsername": "P0442",
+      "recipientEmployeeCode": "P0442",
+      "recipientRoles": [],
+      "kind": "Approval",
+      "module": "Finance Approvals",
+      "title": "Payment approval required",
+      "body": "MATTHEW ROTIMI submitted Expense Payment DLPC261113 (NGN 40,000) for GM approval.",
+      "severity": "warning",
+      "status": "Unread",
+      "href": "/finance/approvals/request/PREQ-1794481156762",
+      "createdAt": "2026-11-26T07:33:54.428Z",
+      "actor": "Payment Approval Reminder",
+      "channels": [
+        "In-App",
+        "Email"
+      ],
+      "metadata": {
+        "requestId": "PREQ-1794481156762",
+        "requestNumber": "DLPC261113",
+        "stage": "GM",
+        "recipientCode": "P0442",
+        "recipientName": "Mrs. TEMITOPE ABIODUN ODULATE"
+      }
+    },
+    {
+      "id": "ntf-1795678433781-sv0g8f",
+      "recipientUserId": "P0442",
+      "recipientUsername": "P0442",
+      "recipientEmployeeCode": "P0442",
+      "recipientRoles": [],
+      "kind": "Approval",
+      "module": "Finance Approvals",
+      "title": "Payment approval required",
+      "body": "Miss KEHINDE GLORY ADENUBI submitted Supplier Invoice Payment DLPC261133 (NGN 245,100) for GM approval.",
+      "severity": "warning",
+      "status": "Unread",
+      "href": "/finance/approvals/request/PREQ-1795172615213",
+      "createdAt": "2026-11-26T07:33:53.781Z",
+      "actor": "Payment Approval Reminder",
+      "channels": [
+        "In-App",
+        "Email"
+      ],
+      "metadata": {
+        "requestId": "PREQ-1795172615213",
+        "requestNumber": "DLPC261133",
+        "stage": "GM",
+        "recipientCode": "P0442",
+        "recipientName": "Mrs. TEMITOPE ABIODUN ODULATE"
+      }
+    },
+    {
+      "id": "ntf-1795678431431-ciw2go",
+      "recipientUserId": "P0442",
+      "recipientUsername": "P0442",
+      "recipientEmployeeCode": "P0442",
+      "recipientRoles": [],
+      "kind": "Approval",
+      "module": "Finance Approvals",
+      "title": "Payment approval required",
+      "body": "Mr. SUNDAY OKEWU submitted Expense Payment DLPC261115 (NGN 440,952.96) for GM approval.",
+      "severity": "warning",
+      "status": "Unread",
+      "href": "/finance/approvals/request/PREQ-1794580379578",
+      "createdAt": "2026-11-26T07:33:51.431Z",
+      "actor": "Payment Approval Reminder",
+      "channels": [
+        "In-App",
+        "Email"
+      ],
+      "metadata": {
+        "requestId": "PREQ-1794580379578",
+        "requestNumber": "DLPC261115",
+        "stage": "GM",
+        "recipientCode": "P0442",
+        "recipientName": "Mrs. TEMITOPE ABIODUN ODULATE"
+      }
+    },
+    {
       "id": "ntf-1795530886818-rqnec0",
       "recipientUserId": "P0442",
       "recipientUsername": "P0442",

@@ -11,7 +11,8 @@ import { canAccessRecruitment } from '@/lib/access/recruitment-access';
 import { canAccessTimesheetEntryAndApproval, isTimesheetEntryOrApprovalPath } from '@/lib/access/timesheet-access';
 import { canAccessTenderPortal } from '@/lib/access/commercial-access';
 import { canViewGalvanizing } from '@/lib/galvanizing/access';
-type SessionLike = Pick<SessionPayload, 'department' | 'unit' | 'roles' | 'permissions' | 'isGlobalAdmin'> & {
+import { portalVisitorPathAllowed } from '@/lib/auth/portal-users';
+type SessionLike = Pick<SessionPayload, 'department' | 'unit' | 'roles' | 'permissions' | 'isGlobalAdmin' | 'accountKind'> & {
   employeeCode?: string;
   username?: string;
   sub?: string;
@@ -479,6 +480,15 @@ export const canAccessHrisPath = (session: SessionLike, pathname: string) => {
 
 export const itSupportRoutePermissionOptions = (pathname: string): string[] | null => {
   const path = normalizePath(pathname);
+  if (path.startsWith('/it-support/other-users') || path.startsWith('/api/it-support/other-users')) {
+    return [
+      'it.other-users.view',
+      'it.other-users.edit',
+      'page.it-support.other-users.view',
+      'it.*',
+      'security.*',
+    ];
+  }
   if (path.startsWith('/it-support/account-recovery') || path.startsWith('/api/it-support/account-recovery')) {
     return [
       'it.account-recovery.view',
@@ -538,6 +548,7 @@ export const itSupportRoutePermissionOptions = (pathname: string): string[] | nu
 };
 
 export const canAccessRoute = (session: SessionLike, pathname: string) => {
+  if (session.accountKind === 'portal') return portalVisitorPathAllowed(pathname);
   const path = routePathFromRequestPath(pathname);
   if (isSecurityAuditTrailPath(pathname) || isSecurityAuditTrailPath(path)) return isGlobalSuperAdministrator(session);
   if (path.startsWith('/hris')) {
