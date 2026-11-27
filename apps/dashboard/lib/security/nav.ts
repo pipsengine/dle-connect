@@ -55,7 +55,6 @@ export const SECURITY_NAV_SECTIONS: SecurityNavSection[] = [
     status: 'live',
     children: [
       { id: 'vm-dashboard', label: 'Dashboard', href: '/security/visitor-management/dashboard', status: 'live' },
-      { id: 'vm-registration', label: 'Visitor Registration', href: '/security/visitor-management/visitor-registration', status: 'live' },
       { id: 'vm-records', label: 'Visitor Records', href: '/security/visitor-management/visitor-records', status: 'live' },
       { id: 'badges', label: 'Badge Management', href: '/security/visitor-management/badge-management', status: 'live' },
       { id: 'reports', label: 'Reports', href: '/security/visitor-management/reports', status: 'live' },
@@ -77,7 +76,7 @@ export const SECURITY_MODULE_CARDS = [
     id: 'visitor-registration',
     title: 'Visitor Registration',
     description: 'Register guests, vendors, contractors, and walk-ins.',
-    href: '/security/visitor-management/visitor-registration',
+    href: '/security/visitor-management/dashboard?register=1',
     icon: UserPlus,
     status: 'live' as const,
     permissionKeys: [...VISITOR_PERMS],

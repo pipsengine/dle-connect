@@ -25,6 +25,7 @@ import { loadVisitorWorkspace, patchVisitorVisit } from "@/lib/security/visitor-
 import type { VisitorVisit } from "@/lib/security/visitor-types";
 import { emptyVisitorAccess, type VisitorAccess } from "@/lib/security/visitor-access";
 import { todayISO, visitorInitials, visitorStageAction } from "@/lib/security/visitor-views";
+import { VisitorRegistrationForm } from "../_components/visitor-registration-form";
 import "./visitor-dashboard.css";
 
 const lagosDate = (value: string | Date) => new Date(new Date(value).toLocaleString("en-US", { timeZone: "Africa/Lagos" }));
@@ -60,6 +61,7 @@ export default function VisitorManagementDashboardPage() {
   const [detailId, setDetailId] = useState("");
   const [busyId, setBusyId] = useState("");
   const [loading, setLoading] = useState(true);
+  const [registerOpen, setRegisterOpen] = useState(false);
 
   const notify = (message: string) => {
     setToast(message);
@@ -78,6 +80,13 @@ export default function VisitorManagementDashboardPage() {
       .catch((error) => notify(error instanceof Error ? error.message : "Visitor records could not be loaded."))
       .finally(() => setLoading(false));
   }, []);
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("register") !== "1") return;
+    setRegisterOpen(true);
+    router.replace("/security/visitor-management/dashboard");
+  }, [router]);
 
   const today = todayISO();
   const expected = visits.filter((visit) => visit.visitDate.slice(0, 10) === today && !["Draft", "Cancelled", "Rejected"].includes(visit.status));
@@ -98,8 +107,8 @@ export default function VisitorManagementDashboardPage() {
   const detail = stats.find((card) => card.id === detailId);
 
   const roster = visits
-    .filter((visit) => visit.status !== "Draft" && visit.status !== "Cancelled" && visit.status !== "Rejected")
-    .filter((visit) => visit.visitDate.slice(0, 10) === today || !closed(visit) || (visit.checkOutAt && dayKey(visit.checkOutAt) === today))
+    .filter((visit) => !closed(visit))
+    .filter((visit) => visit.visitDate.slice(0, 10) === today || inside(visit))
     .filter((visit) => {
       const query = activitySearch.trim().toLowerCase();
       if (!query) return true;
@@ -169,7 +178,7 @@ export default function VisitorManagementDashboardPage() {
             <button className="vms-button" type="button"><CalendarDays /> Today, {headingDate} <ChevronDown /></button>
             <button className="vms-button" type="button" onClick={exportReport}><Download /> Export Report</button>
             <button className="vms-button" type="button" onClick={() => window.print()}><Printer /> Print</button>
-            <button className="vms-button vms-button-primary" type="button" onClick={() => router.push("/security/visitor-management/visitor-registration")}><UserPlus /> Register Visitor</button>
+            <button className="vms-button vms-button-primary" type="button" onClick={() => setRegisterOpen(true)}><UserPlus /> Register Visitor</button>
           </div>
         </section>
 
@@ -247,14 +256,14 @@ export default function VisitorManagementDashboardPage() {
               })}
             </div>
           ) : (
-            <div className="vms-empty">{activitySearch ? "No matching visitor found." : loading ? "Loading visitors..." : "No visitors scheduled today."}</div>
+            <div className="vms-empty">{activitySearch ? "No matching visitor found." : loading ? "Loading visitors..." : "No open visits right now."}</div>
           )}
         </section>
 
         <section className="vms-bottom-grid">
           <article className="vms-panel vms-quick-panel">
             <div className="vms-panel-heading"><h2><Zap /> Quick Actions</h2></div>
-            <button type="button" onClick={() => router.push("/security/visitor-management/visitor-registration")}><CalendarDays /> Pre-Register Visitor</button>
+            <button type="button" onClick={() => setRegisterOpen(true)}><CalendarDays /> Pre-Register Visitor</button>
             <button type="button" onClick={() => document.getElementById("visitor-check")?.scrollIntoView({ behavior: "smooth", block: "center" })}>
               <CheckCircle2 /> Open Visits {waitingCount > 0 ? <b className="vms-alert-count">{waitingCount}</b> : null}
             </button>
@@ -295,6 +304,14 @@ export default function VisitorManagementDashboardPage() {
 
       {toast ? (
         <div className="vms-toast"><CheckCircle2 />{toast}<button type="button" onClick={() => setToast("")}><X /></button></div>
+      ) : null}
+
+      {registerOpen ? (
+        <div className="vms-register-back" role="dialog" aria-modal="true" aria-label="Register Visitor">
+          <div className="vms-register-modal">
+            <VisitorRegistrationForm onClose={() => setRegisterOpen(false)} onSaved={() => { void refresh(); }} />
+          </div>
+        </div>
       ) : null}
     </div>
   );

@@ -137,6 +137,8 @@
 .vms-toast > svg { width: 17px; height: 17px; color: #38d49b; flex: 0 0 17px; }
 .vms-toast button { border: 0; background: transparent; color: #fff; display: grid; place-items: center; margin-left: 8px; }
 .vms-modal-back { position: fixed; inset: 0; background: #0b1b33aa; z-index: 30; display: flex; align-items: center; justify-content: center; padding: 24px; }
+.vms-register-back { position: fixed; inset: 0; z-index: 40; background: #0b1b33aa; display: flex; justify-content: center; padding: 24px; overflow: auto; }
+.vms-register-modal { width: min(1120px, 100%); margin: auto; }
 .vms-modal { width: min(560px, 100%); background: #fff; border-radius: 14px; padding: 16px; box-shadow: 0 16px 40px #0b1b3340; }
 .vms-modal-list { display: flex; flex-direction: column; gap: 8px; margin-top: 12px; max-height: 360px; overflow: auto; }
 .vms-modal-row { display: flex; align-items: center; gap: 10px; border: 1px solid #e5ebf4; border-radius: 10px; padding: 10px; }
@@ -177,6 +179,6 @@
   .vms-quick-panel > button { margin-bottom: 7px; }
 }
 @media print {
-  .vms-heading-actions, .vms-quick-panel, .vms-toast, .vms-modal-back { display: none !important; }
+  .vms-heading-actions, .vms-quick-panel, .vms-toast, .vms-modal-back, .vms-register-back { display: none !important; }
   .vms-panel, .vms-kpi { break-inside: avoid; }
 }

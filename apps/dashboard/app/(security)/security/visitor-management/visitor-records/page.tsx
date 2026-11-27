@@ -18,8 +18,6 @@ import {
   Filter,
   Globe,
   IdCard,
-  LayoutGrid,
-  List,
   Mail,
   Package,
   Phone,
@@ -101,12 +99,6 @@ const statusColor = (status: VisitorStatus) =>
   status === "Pre-Registered" ? "bg-blue-50 text-blue-700" :
   status === "Blacklisted" ? "bg-red-50 text-red-700" : "bg-slate-100 text-slate-500";
 
-const statusDot = (status: VisitorStatus) =>
-  status === "Currently Inside" ? "bg-emerald-500" :
-  status === "Expected Today" ? "bg-amber-500" :
-  status === "Pre-Registered" ? "bg-blue-500" :
-  status === "Blacklisted" ? "bg-red-500" : "bg-slate-400";
-
 // ---------- component ----------
 export default function VisitorRecordsPage() {
   const router = useRouter();
@@ -114,7 +106,7 @@ export default function VisitorRecordsPage() {
   const [directories, setDirectories] = useState<VisitorDirectories>(emptyDirectories());
   const [selectedId, setSelectedId] = useState("");
   const [toast, setToast] = useState<string | null>(null);
-  const [viewMode, setViewMode] = useState<"card" | "list">("card");
+  const [page, setPage] = useState(1);
 
   const [searchQuery, setSearchQuery] = useState("");
   const [activeChips, setActiveChips] = useState<string[]>([]);
@@ -191,6 +183,16 @@ export default function VisitorRecordsPage() {
     });
   }, [visitorRecords, records, searchQuery, companyFilter, typeFilter, deptFilter, hostFilter, statusFilter, activeChips]);
 
+  const pageSize = 8;
+  const pageCount = Math.max(1, Math.ceil(filteredVisitors.length / pageSize));
+  const currentPage = Math.min(page, pageCount);
+  const pageStart = filteredVisitors.length === 0 ? 0 : (currentPage - 1) * pageSize;
+  const pageRows = filteredVisitors.slice(pageStart, pageStart + pageSize);
+
+  useEffect(() => {
+    setPage(1);
+  }, [searchQuery, companyFilter, typeFilter, deptFilter, hostFilter, statusFilter, activeChips]);
+
   const filteredVisits = useMemo(() => {
     return selected.visits.filter((visit) => {
       if (!visit.dateISO || historyFilter === "All Visits") return true;
@@ -226,7 +228,7 @@ export default function VisitorRecordsPage() {
         <div className="flex items-center gap-3 flex-wrap">
           <button onClick={() => setShowExportRecords(true)} className="border border-slate-200 px-3 py-1.5 rounded-lg text-sm text-slate-700 hover:bg-slate-50 flex items-center gap-1.5"><Download size={16} /> Export Records</button>
           <button onClick={() => setShowPrintReport(true)} className="border border-slate-200 px-3 py-1.5 rounded-lg text-sm text-slate-700 hover:bg-slate-50 flex items-center gap-1.5"><Printer size={16} /> Print Visitor Report</button>
-          <button onClick={() => router.push("/security/visitor-management/visitor-registration")} className="bg-blue-600 text-white px-4 py-1.5 rounded-lg text-sm font-medium hover:bg-blue-700 flex items-center gap-2"><UserPlus size={16} /> Register Visitor</button>
+          <button onClick={() => router.push("/security/visitor-management/dashboard?register=1")} className="bg-blue-600 text-white px-4 py-1.5 rounded-lg text-sm font-medium hover:bg-blue-700 flex items-center gap-2"><UserPlus size={16} /> Register Visitor</button>
         </div>
       </div>
 
@@ -264,66 +266,61 @@ export default function VisitorRecordsPage() {
       <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm">
         <div className="flex items-center justify-between mb-4">
           <h2 className="text-lg font-semibold text-slate-900">Visitor Directory</h2>
-          <div className="flex items-center gap-2">
-            <span className="text-xs text-slate-400">{filteredVisitors.length} visitors</span>
-            <div className="flex items-center gap-1 bg-slate-100 rounded-lg p-1">
-              <button onClick={() => setViewMode("card")} className={`p-1.5 rounded-md ${viewMode === "card" ? "bg-white shadow-sm text-slate-800" : "text-slate-400"}`}><LayoutGrid size={14} /></button>
-              <button onClick={() => setViewMode("list")} className={`p-1.5 rounded-md ${viewMode === "list" ? "bg-white shadow-sm text-slate-800" : "text-slate-400"}`}><List size={14} /></button>
-            </div>
-          </div>
+          <span className="text-xs text-slate-400">{filteredVisitors.length} visitors</span>
         </div>
 
-        {viewMode === "card" ? (
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-            {filteredVisitors.map(v => (
-              <button key={v.id} onClick={() => setSelectedId(v.id)} className={`text-left border rounded-xl p-4 hover:shadow-md transition ${selectedId === v.id ? "border-blue-300 ring-1 ring-blue-200" : "border-slate-200"}`}>
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2.5">
-                    <span className={`w-10 h-10 rounded-full ${v.color} text-white flex items-center justify-center text-xs font-bold flex-shrink-0`}>{v.initials}</span>
-                    <div className="min-w-0">
-                      <div className="flex items-center gap-1">
-                        <span className="text-sm font-semibold text-slate-900 truncate">{v.name}</span>
-                        {v.isVIP && <Award size={12} className="text-amber-500 flex-shrink-0" />}
-                        {v.totalVisits >= 6 && !v.isVIP && <Star size={11} className="text-blue-400 flex-shrink-0" />}
-                      </div>
-                      <div className="text-xs text-slate-400 truncate">{v.company}</div>
+        <div className="overflow-x-auto">
+          <table className="w-full min-w-[760px] text-left">
+            <thead>
+              <tr className="border-b border-slate-200 text-[11px] uppercase tracking-wide text-slate-400">
+                <th className="py-2 pr-3 font-semibold">Visitor</th>
+                <th className="py-2 pr-3 font-semibold">Company</th>
+                <th className="py-2 pr-3 font-semibold">Type</th>
+                <th className="py-2 pr-3 font-semibold">Phone</th>
+                <th className="py-2 pr-3 font-semibold">Host</th>
+                <th className="py-2 pr-3 font-semibold">Last visit</th>
+                <th className="py-2 pr-3 font-semibold">Visits</th>
+                <th className="py-2 font-semibold">Status</th>
+              </tr>
+            </thead>
+            <tbody>
+              {pageRows.map(v => (
+                <tr
+                  key={v.id}
+                  onClick={() => setSelectedId(v.id)}
+                  className={`border-b border-slate-100 cursor-pointer ${selectedId === v.id ? "bg-blue-50/70" : "hover:bg-slate-50"}`}
+                >
+                  <td className="py-3 pr-3">
+                    <div className="flex items-center gap-2.5">
+                      <span className={`w-8 h-8 rounded-full ${v.color} text-white flex items-center justify-center text-[10px] font-bold flex-shrink-0`}>{v.initials}</span>
+                      <span className="text-sm font-medium text-slate-900">{v.name}</span>
+                      {v.isVIP && <Award size={12} className="text-amber-500 flex-shrink-0" />}
                     </div>
-                  </div>
-                  <span className={`w-2 h-2 rounded-full flex-shrink-0 ${statusDot(v.status)}`} />
-                </div>
-                <div className="text-xs text-slate-500 mt-2">{v.visitorType}</div>
-                <div className="grid grid-cols-2 gap-2 mt-2 text-xs">
-                  <div><div className="text-slate-400">Last Visit</div><div className="font-medium text-slate-700">{v.lastVisit}</div></div>
-                  <div><div className="text-slate-400">Visits</div><div className="font-medium text-slate-700">{v.totalVisits}</div></div>
-                </div>
-                <div className="text-xs text-slate-400 mt-1.5">Host: {v.host}</div>
-                <div className="flex items-center justify-between mt-3">
-                  <span className={`text-[10px] px-1.5 py-0.5 rounded-full ${statusColor(v.status)}`}>{v.status}</span>
-                  <span className="text-xs font-medium text-blue-600 flex items-center gap-0.5">View Profile <ChevronRight size={12} /></span>
-                </div>
-              </button>
-            ))}
-            {filteredVisitors.length === 0 && <div className="col-span-full text-center text-sm text-slate-400 py-10">No visitors match these filters.</div>}
+                  </td>
+                  <td className="py-3 pr-3 text-sm text-slate-600">{v.company || "—"}</td>
+                  <td className="py-3 pr-3 text-sm text-slate-600">{v.visitorType || "—"}</td>
+                  <td className="py-3 pr-3 text-sm text-slate-600">{v.phone || "—"}</td>
+                  <td className="py-3 pr-3 text-sm text-slate-600">{v.host || "—"}</td>
+                  <td className="py-3 pr-3 text-sm text-slate-600">{v.lastVisit}</td>
+                  <td className="py-3 pr-3 text-sm text-slate-600">{v.totalVisits}</td>
+                  <td className="py-3"><span className={`text-[10px] px-1.5 py-0.5 rounded-full ${statusColor(v.status)}`}>{v.status}</span></td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          {filteredVisitors.length === 0 && <div className="text-center text-sm text-slate-400 py-10">No visitors match these filters.</div>}
+        </div>
+
+        <div className="flex flex-wrap items-center justify-between gap-3 mt-4">
+          <span className="text-xs text-slate-400">
+            {filteredVisitors.length === 0 ? "No visitors" : `Showing ${pageStart + 1}–${Math.min(pageStart + pageSize, filteredVisitors.length)} of ${filteredVisitors.length}`}
+          </span>
+          <div className="flex items-center gap-2">
+            <button type="button" disabled={currentPage <= 1} onClick={() => setPage(currentPage - 1)} className="px-3 py-1.5 border border-slate-200 rounded-lg text-xs text-slate-600 disabled:opacity-40">Previous</button>
+            <span className="text-xs text-slate-500">Page {currentPage} of {pageCount}</span>
+            <button type="button" disabled={currentPage >= pageCount} onClick={() => setPage(currentPage + 1)} className="px-3 py-1.5 border border-slate-200 rounded-lg text-xs text-slate-600 disabled:opacity-40">Next</button>
           </div>
-        ) : (
-          <div className="divide-y divide-slate-100">
-            {filteredVisitors.map(v => (
-              <button key={v.id} onClick={() => setSelectedId(v.id)} className={`w-full flex items-center gap-3 py-3 px-2 hover:bg-slate-50 rounded-lg text-left ${selectedId === v.id ? "bg-blue-50/60" : ""}`}>
-                <span className={`w-8 h-8 rounded-full ${v.color} text-white flex items-center justify-center text-[10px] font-bold flex-shrink-0`}>{v.initials}</span>
-                <div className="flex-1 min-w-0 flex items-center gap-4">
-                  <span className="text-sm font-medium text-slate-900 w-40 truncate">{v.name}</span>
-                  <span className="text-xs text-slate-500 w-36 truncate">{v.company}</span>
-                  <span className="text-xs text-slate-400 w-24">{v.visitorType}</span>
-                  <span className="text-xs text-slate-400 w-24">{v.lastVisit}</span>
-                  <span className="text-xs text-slate-400 w-16">{v.totalVisits} visits</span>
-                  <span className="text-xs text-slate-400 flex-1 truncate">Host: {v.host}</span>
-                </div>
-                <span className={`text-[10px] px-1.5 py-0.5 rounded-full flex-shrink-0 ${statusColor(v.status)}`}>{v.status}</span>
-              </button>
-            ))}
-            {filteredVisitors.length === 0 && <div className="text-center text-sm text-slate-400 py-10">No visitors match these filters.</div>}
-          </div>
-        )}
+        </div>
       </div>
 
       {/* Visitor Profile + Visit History */}

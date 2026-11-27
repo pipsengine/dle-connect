@@ -1001,6 +1001,17 @@ export const resolveTimesheetEntry = async (input: { periodId: string; workDate:
     WHERE [Area] = N'offshore' AND [Status] = N'Active' AND [WorkDate] <= @WorkDate AND ([EffectiveTo] IS NULL OR [EffectiveTo] >= @WorkDate)
   `).catch(() => ({ recordset: [] as Record<string, unknown>[] }));
   const legacyOffshoreCodes = new Set((legacyOffshore.recordset || []).map((row) => text(row.EmployeeCode).toUpperCase()));
+  const endedOffshore = await connection.request().input('WorkDate', sql.Date, workDate).query(`
+    SELECT DISTINCT [EmployeeCode]
+    FROM [tsmgmt].[MobilizationEmployees]
+    WHERE [EffectiveFrom] <= @WorkDate
+      AND (
+        ([ActualDemobilization] IS NOT NULL AND [ActualDemobilization] <= @WorkDate)
+        OR ([ActualReturn] IS NOT NULL AND [ActualReturn] <= @WorkDate)
+      )
+  `).catch(() => ({ recordset: [] as Record<string, unknown>[] }));
+  const endedOffshoreCodes = new Set((endedOffshore.recordset || []).map((row) => text(row.EmployeeCode).toUpperCase()));
+  for (const code of endedOffshoreCodes) legacyOffshoreCodes.delete(code);
   if (!timesheet) {
     const coveringRows = await loadCoveringCrewAssignments(connection, workDate, supervisor, supervisorCode);
     const offshoreCodes = legacyOffshoreCodes;
@@ -1166,6 +1177,7 @@ export const resolveTimesheetEntry = async (input: { periodId: string; workDate:
     for (const row of periodCrew.recordset || []) {
       const code = text(row.EmployeeCode);
       if (Number(row.FromPriorPeriod) === 1 && !stillOffshore.has(code.toUpperCase())) continue;
+      if (endedOffshoreCodes.has(code.toUpperCase())) continue;
       if (!isBookableCrewCode(code) || presentOnCrew.has(code.toUpperCase()) || removedFromPeriod.has(code.toUpperCase()) || code.toUpperCase() === supervisorCode.toUpperCase()) continue;
       presentOnCrew.add(code.toUpperCase());
       const onLeave = leaveCodes.has(code.toUpperCase());
@@ -1278,7 +1290,7 @@ export const resolveTimesheetEntry = async (input: { periodId: string; workDate:
     const carriedOffshore = bookedOffshoreLinesForSheet(crew, location || 'OFFSHORE')
       .filter((row) => {
         const code = text(row.employeeCode).toUpperCase();
-        return Boolean(code) && !present.has(code);
+        return Boolean(code) && !present.has(code) && !endedOffshoreCodes.has(code);
       })
       .map((row) => ({
         employeeCode: text(row.employeeCode),
@@ -1303,6 +1315,9 @@ export const resolveTimesheetEntry = async (input: { periodId: string; workDate:
     });
   }
   if (timesheet) {
+    if (timesheetLocationsMatch(location || timesheet.location, 'OFFSHORE')) {
+      timesheet.lines = timesheet.lines.filter((line) => !endedOffshoreCodes.has(text(line.employeeCode).toUpperCase()));
+    }
     const coveringRows = await loadCoveringCrewAssignments(connection, workDate, supervisor, supervisorCode);
     const assignmentByCode = new Map<string, Record<string, unknown>>();
     for (const row of coveringRows) {
